@@ -21,6 +21,7 @@ engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames), s
 examples/                  triangle (minimal), scene (scene graph, depth, lighting, ImGui inspector)
 web/                       index.html.in (per-example page), landing.html (Pages index)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
+docs/specs/                feature specs (read the relevant one before working on a feature)
 .github/workflows/build.yml  CI: web build + GitHub Pages deploy
 ```
 
