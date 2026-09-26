@@ -1,11 +1,11 @@
-#include "engine/window.h"
+#include "nv/window.h"
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
 #include <math.h>
 
-bool eng_window_create(EngWindow* window, const char* title, uint32_t width, uint32_t height)
+bool nv_window_create(NvWindow* window, const char* title, uint32_t width, uint32_t height)
 {
     (void)width, (void)height;
     window->canvas_selector = "#canvas";
@@ -13,12 +13,12 @@ bool eng_window_create(EngWindow* window, const char* title, uint32_t width, uin
     return true;
 }
 
-void eng_window_destroy(EngWindow* window)
+void nv_window_destroy(NvWindow* window)
 {
     (void)window;
 }
 
-void eng_window_framebuffer_size(const EngWindow* window, uint32_t* width, uint32_t* height)
+void nv_window_framebuffer_size(const NvWindow* window, uint32_t* width, uint32_t* height)
 {
     /* Keep the canvas backing store matched to its displayed size in device pixels. */
     double css_w = 0.0, css_h = 0.0;
@@ -36,7 +36,7 @@ void eng_window_framebuffer_size(const EngWindow* window, uint32_t* width, uint3
     *height = (uint32_t)h;
 }
 
-void eng_window_run(EngWindow* window, EngFrameFn frame, void* userdata)
+void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
     (void)window;
     emscripten_set_main_loop_arg(frame, userdata, 0, true);

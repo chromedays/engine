@@ -7,7 +7,7 @@
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-void* eng_get_or_create_metal_layer(GLFWwindow* window)
+void* nv_get_or_create_metal_layer(GLFWwindow* window)
 {
     NSWindow* ns_window = glfwGetCocoaWindow(window);
     NSView* view = [ns_window contentView];

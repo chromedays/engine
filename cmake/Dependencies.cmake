@@ -16,7 +16,7 @@ if(EMSCRIPTEN)
 
     # Emits <target>.js/.wasm plus index.html from web/index.html.in into the target's directory,
     # and installs all three into <prefix>/<target>/.
-    function(engine_setup_executable target)
+    function(nv_setup_executable target)
         set_target_properties(${target} PROPERTIES SUFFIX ".js")
         set(ENGINE_WEB_SCRIPT "${target}.js")
         configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
@@ -101,7 +101,7 @@ endif()
 
 # Copies the wgpu-native shared library next to an executable, sets up RPATH, and
 # installs both into the root of the install prefix (a self-contained, portable folder).
-function(engine_setup_executable target)
+function(nv_setup_executable target)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:wgpu_native> $<TARGET_FILE_DIR:${target}>)

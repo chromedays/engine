@@ -1,3 +1,3 @@
 add_executable(triangle main.c)
-target_link_libraries(triangle PRIVATE engine)
-engine_setup_executable(triangle)
+target_link_libraries(triangle PRIVATE nv)
+nv_setup_executable(triangle)

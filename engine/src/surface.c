@@ -1,6 +1,6 @@
 #include "surface.h"
 
-#include "engine/window.h"
+#include "nv/window.h"
 
 #include <stdio.h>
 
@@ -18,7 +18,7 @@
 #    endif
 #endif
 
-WGPUSurface eng_create_surface(WGPUInstance instance, const EngWindow* window)
+WGPUSurface nv_create_surface(WGPUInstance instance, const NvWindow* window)
 {
     WGPUSurfaceDescriptor desc = WGPU_SURFACE_DESCRIPTOR_INIT;
 
@@ -37,7 +37,7 @@ WGPUSurface eng_create_surface(WGPUInstance instance, const EngWindow* window)
 
 #elif defined(__APPLE__)
     WGPUSurfaceSourceMetalLayer src = WGPU_SURFACE_SOURCE_METAL_LAYER_INIT;
-    src.layer = eng_get_or_create_metal_layer(window->handle);
+    src.layer = nv_get_or_create_metal_layer(window->handle);
     desc.nextInChain = &src.chain;
     return wgpuInstanceCreateSurface(instance, &desc);
 
@@ -58,7 +58,7 @@ WGPUSurface eng_create_surface(WGPUInstance instance, const EngWindow* window)
         return wgpuInstanceCreateSurface(instance, &desc);
     }
     default:
-        fprintf(stderr, "[engine] unsupported GLFW platform\n");
+        fprintf(stderr, "[nv] unsupported GLFW platform\n");
         return NULL;
     }
 #else

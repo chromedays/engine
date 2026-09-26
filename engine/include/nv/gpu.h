@@ -3,11 +3,11 @@
 #include <stdbool.h>
 #include <webgpu/webgpu.h>
 
-typedef struct EngWindow EngWindow;
+typedef struct NvWindow NvWindow;
 
 /* Owns the WebGPU instance, adapter, device, queue and the window surface. */
-typedef struct EngGpu {
-    EngWindow* window;
+typedef struct NvGpu {
+    NvWindow* window;
     WGPUInstance instance;
     WGPUSurface surface;
     WGPUAdapter adapter;
@@ -20,14 +20,14 @@ typedef struct EngGpu {
 
     WGPUTexture current_texture;
     WGPUTextureView current_view;
-} EngGpu;
+} NvGpu;
 
-bool eng_gpu_create(EngGpu* gpu, EngWindow* window);
-void eng_gpu_destroy(EngGpu* gpu);
+bool nv_gpu_create(NvGpu* gpu, NvWindow* window);
+void nv_gpu_destroy(NvGpu* gpu);
 
 /* Reconfigures the surface when the framebuffer size changed. */
-void eng_gpu_resize(EngGpu* gpu, uint32_t width, uint32_t height);
+void nv_gpu_resize(NvGpu* gpu, uint32_t width, uint32_t height);
 
 /* Acquires the next swapchain texture view. Returns NULL if the frame should be skipped. */
-WGPUTextureView eng_gpu_begin_frame(EngGpu* gpu);
-void eng_gpu_end_frame(EngGpu* gpu);
+WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu);
+void nv_gpu_end_frame(NvGpu* gpu);

@@ -17,8 +17,8 @@ sources.
 - Web: Emscripten + the `emdawnwebgpu` port, drawing into a `<canvas>`.
 
 ```
-cmake/Dependencies.cmake   dependency setup; defines the `webgpu` target and engine_setup_executable()
-engine/include/engine/     public API: window.h (EngWindow), gpu.h (EngGpu)
+cmake/Dependencies.cmake   dependency setup; defines the `webgpu` target and nv_setup_executable()
+engine/include/nv/     public API: window.h (NvWindow), gpu.h (NvGpu)
 engine/src/                window_glfw.c / window_web.c, gpu.c, surface.c, surface_metal.m (macOS)
 examples/triangle/         example app
 web/                       index.html.in (per-example page), landing.html (Pages index)
@@ -44,16 +44,16 @@ Linux builds need the X11/Wayland dev packages listed in README.md.
 ## Conventions
 
 - Pure C17 (Objective-C only for the macOS Metal layer). Compile warning-free with `-Wall -Wextra`.
-- Public API uses the `eng_` prefix for functions and `Eng` for types; setup functions return
-  `bool` and clean up after themselves on failure.
+- Public API prefixes (from "night view"): `nv_` for functions, `Nv` for types, `NV_` for macros.
+  Setup functions return `bool` and clean up after themselves on failure.
 - Use the `WGPU_*_INIT` macros to initialize WebGPU structs, and `WGPUStringView` with
   `WGPU_STRLEN` for strings.
 - Platform differences go behind `#if defined(__EMSCRIPTEN__)` and friends inside the engine, not in
   examples.
 - Web constraints: `wgpuSurfacePresent` must not be called (the browser presents); blocking waits
-  use `wgpuInstanceWaitAny` with Asyncify; `eng_window_run` never returns on the web, so app state
+  use `wgpuInstanceWaitAny` with Asyncify; `nv_window_run` never returns on the web, so app state
   must not live on `main`'s stack.
-- New examples call `engine_setup_executable(<target>)` so they get packaged for native and web.
+- New examples call `nv_setup_executable(<target>)` so they get packaged for native and web.
 
 ## Testing without a display
 

@@ -1,5 +1,5 @@
-#include "engine/gpu.h"
-#include "engine/window.h"
+#include "nv/gpu.h"
+#include "nv/window.h"
 
 #include "surface.h"
 
@@ -8,11 +8,11 @@
 
 #if defined(__EMSCRIPTEN__)
 /* The browser resolves requests on its event loop; wgpuInstanceWaitAny yields to it via Asyncify. */
-#    define ENG_CALLBACK_MODE WGPUCallbackMode_WaitAnyOnly
-#    define ENG_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowSpontaneous
+#    define NV_CALLBACK_MODE WGPUCallbackMode_WaitAnyOnly
+#    define NV_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowSpontaneous
 #else
-#    define ENG_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
-#    define ENG_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
+#    define NV_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
+#    define NV_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
 #endif
 
 /* Prints a WGPUStringView, which is not necessarily NUL-terminated. */
@@ -91,7 +91,7 @@ static WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
 
     AdapterRequest req = {0};
     WGPURequestAdapterCallbackInfo cb = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
-    cb.mode = ENG_CALLBACK_MODE;
+    cb.mode = NV_CALLBACK_MODE;
     cb.callback = on_adapter;
     cb.userdata1 = &req;
 
@@ -103,13 +103,13 @@ static WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter)
 {
     WGPUDeviceDescriptor desc = WGPU_DEVICE_DESCRIPTOR_INIT;
     desc.label = (WGPUStringView){"engine device", WGPU_STRLEN};
-    desc.deviceLostCallbackInfo.mode = ENG_EVENT_CALLBACK_MODE;
+    desc.deviceLostCallbackInfo.mode = NV_EVENT_CALLBACK_MODE;
     desc.deviceLostCallbackInfo.callback = on_device_lost;
     desc.uncapturedErrorCallbackInfo.callback = on_uncaptured_error;
 
     DeviceRequest req = {0};
     WGPURequestDeviceCallbackInfo cb = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
-    cb.mode = ENG_CALLBACK_MODE;
+    cb.mode = NV_CALLBACK_MODE;
     cb.callback = on_device;
     cb.userdata1 = &req;
 
@@ -126,7 +126,7 @@ static WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
     }
 }
 
-static void configure_surface(EngGpu* gpu)
+static void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
@@ -146,7 +146,7 @@ static void configure_surface(EngGpu* gpu)
     wgpuSurfaceConfigure(gpu->surface, &config);
 }
 
-bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
+bool nv_gpu_create(NvGpu* gpu, NvWindow* window)
 {
     memset(gpu, 0, sizeof(*gpu));
     gpu->window = window;
@@ -159,13 +159,13 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
 #endif
     gpu->instance = wgpuCreateInstance(&instance_desc);
     if (!gpu->instance) {
-        fprintf(stderr, "[engine] wgpuCreateInstance failed\n");
+        fprintf(stderr, "[nv] wgpuCreateInstance failed\n");
         goto fail;
     }
 
-    gpu->surface = eng_create_surface(gpu->instance, window);
+    gpu->surface = nv_create_surface(gpu->instance, window);
     if (!gpu->surface) {
-        fprintf(stderr, "[engine] failed to create surface\n");
+        fprintf(stderr, "[nv] failed to create surface\n");
         goto fail;
     }
 
@@ -175,7 +175,7 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
 
     WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
     if (wgpuAdapterGetInfo(gpu->adapter, &info) == WGPUStatus_Success) {
-        printf("[engine] adapter: " SV_FMT " (" SV_FMT ")\n", SV_ARG(info.device), SV_ARG(info.description));
+        printf("[nv] adapter: " SV_FMT " (" SV_FMT ")\n", SV_ARG(info.device), SV_ARG(info.description));
         wgpuAdapterInfoFreeMembers(info);
     }
 
@@ -187,7 +187,7 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(gpu->surface, gpu->adapter, &caps);
     if (caps.formatCount == 0) {
-        fprintf(stderr, "[engine] surface reports no supported formats\n");
+        fprintf(stderr, "[nv] surface reports no supported formats\n");
         wgpuSurfaceCapabilitiesFreeMembers(caps);
         goto fail;
     }
@@ -206,16 +206,16 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
     gpu->surface_format = srgb_view_format(gpu->config_format);
     wgpuSurfaceCapabilitiesFreeMembers(caps);
 
-    eng_window_framebuffer_size(window, &gpu->width, &gpu->height);
+    nv_window_framebuffer_size(window, &gpu->width, &gpu->height);
     configure_surface(gpu);
     return true;
 
 fail:
-    eng_gpu_destroy(gpu);
+    nv_gpu_destroy(gpu);
     return false;
 }
 
-void eng_gpu_destroy(EngGpu* gpu)
+void nv_gpu_destroy(NvGpu* gpu)
 {
     if (gpu->current_view)
         wgpuTextureViewRelease(gpu->current_view);
@@ -236,7 +236,7 @@ void eng_gpu_destroy(EngGpu* gpu)
     memset(gpu, 0, sizeof(*gpu));
 }
 
-void eng_gpu_resize(EngGpu* gpu, uint32_t width, uint32_t height)
+void nv_gpu_resize(NvGpu* gpu, uint32_t width, uint32_t height)
 {
     if (width == gpu->width && height == gpu->height)
         return;
@@ -245,11 +245,11 @@ void eng_gpu_resize(EngGpu* gpu, uint32_t width, uint32_t height)
     configure_surface(gpu);
 }
 
-WGPUTextureView eng_gpu_begin_frame(EngGpu* gpu)
+WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
 {
     uint32_t w = 0, h = 0;
-    eng_window_framebuffer_size(gpu->window, &w, &h);
-    eng_gpu_resize(gpu, w, h);
+    nv_window_framebuffer_size(gpu->window, &w, &h);
+    nv_gpu_resize(gpu, w, h);
     if (gpu->width == 0 || gpu->height == 0)
         return NULL; /* minimized */
 
@@ -268,7 +268,7 @@ WGPUTextureView eng_gpu_begin_frame(EngGpu* gpu)
         configure_surface(gpu);
         return NULL;
     default:
-        fprintf(stderr, "[engine] wgpuSurfaceGetCurrentTexture failed (%d)\n", (int)surface_texture.status);
+        fprintf(stderr, "[nv] wgpuSurfaceGetCurrentTexture failed (%d)\n", (int)surface_texture.status);
         return NULL;
     }
 
@@ -279,7 +279,7 @@ WGPUTextureView eng_gpu_begin_frame(EngGpu* gpu)
     return gpu->current_view;
 }
 
-void eng_gpu_end_frame(EngGpu* gpu)
+void nv_gpu_end_frame(NvGpu* gpu)
 {
 #if !defined(__EMSCRIPTEN__)
     /* Browsers present the canvas automatically when the animation frame callback returns. */

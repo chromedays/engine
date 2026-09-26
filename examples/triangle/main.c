@@ -1,5 +1,5 @@
-#include <engine/gpu.h>
-#include <engine/window.h>
+#include <nv/gpu.h>
+#include <nv/window.h>
 
 #include <stdio.h>
 
@@ -76,8 +76,8 @@ typedef struct Uniforms {
 } Uniforms;
 
 typedef struct App {
-    EngWindow window;
-    EngGpu gpu;
+    NvWindow window;
+    NvGpu gpu;
     WGPURenderPipeline pipeline;
     WGPUBuffer uniform_buffer;
     WGPUBindGroup bind_group;
@@ -120,7 +120,7 @@ static void update_uniforms(App* app)
 
 static void draw_frame(App* app, WGPUTextureView target)
 {
-    EngGpu* gpu = &app->gpu;
+    NvGpu* gpu = &app->gpu;
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(gpu->device, NULL);
 
     WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
@@ -152,37 +152,37 @@ static App g_app;
 static void frame(void* userdata)
 {
     App* app = userdata;
-    WGPUTextureView target = eng_gpu_begin_frame(&app->gpu);
+    WGPUTextureView target = nv_gpu_begin_frame(&app->gpu);
     if (target) {
         update_uniforms(app);
         draw_frame(app, target);
-        eng_gpu_end_frame(&app->gpu);
+        nv_gpu_end_frame(&app->gpu);
     }
 }
 
 int main(void)
 {
     App* app = &g_app;
-    if (!eng_window_create(&app->window, "engine - triangle", 1280, 720)) {
+    if (!nv_window_create(&app->window, "engine - triangle", 1280, 720)) {
         fprintf(stderr, "fatal: failed to create window\n");
         return 1;
     }
 
-    if (!eng_gpu_create(&app->gpu, &app->window)) {
+    if (!nv_gpu_create(&app->gpu, &app->window)) {
         fprintf(stderr, "fatal: failed to initialize WebGPU\n");
-        eng_window_destroy(&app->window);
+        nv_window_destroy(&app->window);
         return 1;
     }
 
     app->pipeline = create_pipeline(app->gpu.device, app->gpu.surface_format);
     create_uniforms(app);
 
-    eng_window_run(&app->window, frame, app);
+    nv_window_run(&app->window, frame, app);
 
     wgpuBindGroupRelease(app->bind_group);
     wgpuBufferRelease(app->uniform_buffer);
     wgpuRenderPipelineRelease(app->pipeline);
-    eng_gpu_destroy(&app->gpu);
-    eng_window_destroy(&app->window);
+    nv_gpu_destroy(&app->gpu);
+    nv_window_destroy(&app->window);
     return 0;
 }

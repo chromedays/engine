@@ -1,24 +1,24 @@
-add_library(engine STATIC
+add_library(nv STATIC
     src/gpu.c
     src/surface.c)
 
 if(EMSCRIPTEN)
-    target_sources(engine PRIVATE src/window_web.c)
+    target_sources(nv PRIVATE src/window_web.c)
 else()
-    target_sources(engine PRIVATE src/window_glfw.c)
-    target_link_libraries(engine PUBLIC glfw)
+    target_sources(nv PRIVATE src/window_glfw.c)
+    target_link_libraries(nv PUBLIC glfw)
     # Stop glfw3.h from pulling in OpenGL headers; rendering goes through WebGPU.
-    target_compile_definitions(engine PRIVATE GLFW_INCLUDE_NONE)
+    target_compile_definitions(nv PRIVATE GLFW_INCLUDE_NONE)
 endif()
 
 if(APPLE)
-    target_sources(engine PRIVATE src/surface_metal.m)
-    target_compile_options(engine PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
-    target_link_libraries(engine PRIVATE "-framework Metal" "-framework QuartzCore" "-framework Cocoa")
+    target_sources(nv PRIVATE src/surface_metal.m)
+    target_compile_options(nv PRIVATE $<$<COMPILE_LANGUAGE:OBJC>:-fobjc-arc>)
+    target_link_libraries(nv PRIVATE "-framework Metal" "-framework QuartzCore" "-framework Cocoa")
 endif()
 
-target_include_directories(engine PUBLIC include PRIVATE src)
-target_link_libraries(engine PUBLIC webgpu)
+target_include_directories(nv PUBLIC include PRIVATE src)
+target_link_libraries(nv PUBLIC webgpu)
 if(NOT MSVC)
-    target_compile_options(engine PRIVATE -Wall -Wextra)
+    target_compile_options(nv PRIVATE -Wall -Wextra)
 endif()

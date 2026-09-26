@@ -1,4 +1,4 @@
-#include "engine/window.h"
+#include "nv/window.h"
 
 #include <GLFW/glfw3.h>
 
@@ -9,7 +9,7 @@ static void on_glfw_error(int code, const char* desc)
     fprintf(stderr, "[glfw] error %d: %s\n", code, desc);
 }
 
-bool eng_window_create(EngWindow* window, const char* title, uint32_t width, uint32_t height)
+bool nv_window_create(NvWindow* window, const char* title, uint32_t width, uint32_t height)
 {
     window->handle = NULL;
 
@@ -27,7 +27,7 @@ bool eng_window_create(EngWindow* window, const char* title, uint32_t width, uin
     return true;
 }
 
-void eng_window_destroy(EngWindow* window)
+void nv_window_destroy(NvWindow* window)
 {
     if (window->handle) {
         glfwDestroyWindow(window->handle);
@@ -36,7 +36,7 @@ void eng_window_destroy(EngWindow* window)
     }
 }
 
-void eng_window_framebuffer_size(const EngWindow* window, uint32_t* width, uint32_t* height)
+void nv_window_framebuffer_size(const NvWindow* window, uint32_t* width, uint32_t* height)
 {
     int w = 0, h = 0;
     glfwGetFramebufferSize(window->handle, &w, &h);
@@ -44,7 +44,7 @@ void eng_window_framebuffer_size(const EngWindow* window, uint32_t* width, uint3
     *height = (uint32_t)h;
 }
 
-void eng_window_run(EngWindow* window, EngFrameFn frame, void* userdata)
+void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
     while (!glfwWindowShouldClose(window->handle)) {
         glfwPollEvents();
