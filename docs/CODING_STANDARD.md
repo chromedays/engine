@@ -17,7 +17,10 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 ## Language and files
 
 - C17 only for our code. Compile warning-free with `-Wall -Wextra`. Third-party sources are
-  compiled as they come (Dear ImGui is C++) with their warnings off.
+  compiled as they come (Dear ImGui and ozz-animation are C++) with their warnings off.
+- The one exception is a C++ library whose API has no C binding: the file that wraps it is C++,
+  exposes only `extern "C"` functions through a C header, and stays as thin as possible
+  (currently the ozz-animation wrapper).
 - Public headers live in `engine/include/nv/`, one per module; sources in `engine/src/`.
 - `nv/base.h` is included (directly or through another nv header) by every file.
 
@@ -68,6 +71,11 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 - Dear ImGui, through cimgui (its C API), for debug and tool UI: writing an immediate-mode UI
   library is not the point of this project. Its platform and renderer backends are ours
   (`engine/src/imgui.c`), in C.
+- cgltf, a single-header C glTF parser, for loading models and animations: glTF is the asset
+  format, and parsing it (JSON included) is not the point of this project.
+- ozz-animation for skeletal animation at runtime (sampling, blending, skinning matrices): a
+  mature, data-oriented library that covers what we would otherwise rebuild. Its API is C++, so
+  the engine talks to it only through our own C wrapper.
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 
