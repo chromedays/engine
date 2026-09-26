@@ -68,14 +68,19 @@ else()
         IMPORTED_NO_SONAME TRUE)
 endif()
 
-# Copies the wgpu-native shared library next to an executable and sets up RPATH.
+# Copies the wgpu-native shared library next to an executable, sets up RPATH, and
+# installs both into the root of the install prefix (a self-contained, portable folder).
 function(engine_setup_executable target)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:wgpu_native> $<TARGET_FILE_DIR:${target}>)
     if(APPLE)
-        set_target_properties(${target} PROPERTIES BUILD_RPATH "@executable_path")
+        set_target_properties(${target} PROPERTIES
+            BUILD_RPATH "@executable_path" INSTALL_RPATH "@executable_path")
     elseif(UNIX)
-        set_target_properties(${target} PROPERTIES BUILD_RPATH "$ORIGIN")
+        set_target_properties(${target} PROPERTIES
+            BUILD_RPATH "$ORIGIN" INSTALL_RPATH "$ORIGIN")
     endif()
+    install(TARGETS ${target} RUNTIME DESTINATION .)
+    install(FILES $<TARGET_FILE:wgpu_native> DESTINATION .)
 endfunction()

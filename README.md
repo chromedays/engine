@@ -32,3 +32,16 @@ cmake --build build
 
 The wgpu-native release is chosen from the host OS and CPU architecture
 (x86_64 or aarch64/arm64); override the version with `-DWGPU_NATIVE_VERSION=<tag>`.
+
+## Prebuilt binaries
+
+GitHub Actions (`.github/workflows/build.yml`) builds every push for Linux x86_64,
+Linux aarch64, Windows x86_64 and macOS aarch64 (Apple Silicon). Each build is uploaded as a
+workflow artifact: open the run on the repository's **Actions** tab and download
+`engine-<platform>`. Unzip it and run `triangle` (or `triangle.exe`); the WebGPU library sits
+next to the executable.
+
+Pushing a tag like `v0.1.0` also publishes the zips as a GitHub Release.
+
+The macOS build is unsigned, so macOS blocks it the first time; clear the quarantine flag with
+`xattr -dr com.apple.quarantine <folder>`.
