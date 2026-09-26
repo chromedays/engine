@@ -53,6 +53,15 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
   `web/landing.html`.
 
+## Third-party libraries
+
+- When implementing a feature or designing a spec, first look for third-party libraries that
+  would help. Present the candidates to the user (what each does, language, license, how it fits
+  this engine and the coding standard, trade-offs) with a recommendation, including "write it
+  ourselves" when that is the better fit.
+- Do not add a library until the user confirms it. Then record the reason in the Dependencies
+  section of `docs/CODING_STANDARD.md`.
+
 ## Testing without a display
 
 There is no physical display in cloud sessions. Headless Chromium renders WebGPU with
