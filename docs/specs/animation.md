@@ -53,8 +53,9 @@ The full packs are too large for a web download, so `assets/` holds a trimmed se
   Jump_Start / Jump_Loop / Jump_Land, Dance_Loop),
 - `assets/quaternius/LICENSE.txt` with the CC0 text and the source URLs above.
 
-Trimming uses [gltf-transform](https://gltf-transform.dev/) (Node CLI, MIT) once, offline. It is
-not part of the build.
+Trimming uses [gltf-transform](https://gltf-transform.dev/) (Node CLI, MIT), run with `npx` from
+`tools/trim_assets.sh`. The script records which files and clips were kept so the assets can be
+rebuilt; the tool itself is not added to the repository, the build or CI.
 
 ## Architecture
 
@@ -176,8 +177,9 @@ in both Release and Debug builds, and deployed.
 
 ## Open questions
 
-1. OK to use gltf-transform once, offline, for trimming the assets?
-2. Male or female character (or both)?
-3. Is the proposed clip list right?
-4. Textures: start with base color only (normal and roughness maps later, since there is no PBR
+1. Male or female character (or both)?
+2. Is the proposed clip list right?
+3. Textures: start with base color only (normal and roughness maps later, since there is no PBR
    shading yet)?
+
+Resolved: gltf-transform runs through `npx` from a kept script (`tools/trim_assets.sh`).
