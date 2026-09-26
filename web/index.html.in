@@ -29,6 +29,6 @@
       onAbort: (what) => fail('The engine stopped: ' + what),
     };
   </script>
-  <script async src="@ENGINE_WEB_SCRIPT@"></script>
+  <script async src="@NV_WEB_SCRIPT@"></script>
 </body>
 </html>

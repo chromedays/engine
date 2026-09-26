@@ -1,67 +1,44 @@
-# engine
+# nv
 
-A C17 rendering engine built on WebGPU (`webgpu.h`) that runs both natively and in the browser
-from the same source:
+nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
+WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go to the browser through
+Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`.
 
-- **Native:** [wgpu-native](https://github.com/gfx-rs/wgpu-native) (Vulkan, D3D12, Metal) with
-  [GLFW](https://www.glfw.org/) for windowing.
-- **Web:** compiled to WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go
-  to the browser through Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`.
+Live: https://chromedays.github.io/engine/
 
 ## Layout
 
 ```
-cmake/Dependencies.cmake   native: fetches GLFW and wgpu-native; web: sets up emdawnwebgpu
-engine/                    static library: window (GLFW or canvas), gpu context, surface creation
-examples/triangle/         draws a single colored triangle
-web/                       HTML page template for web builds
+engine/include/nv/   public API: base.h (types, asserts, arenas), window.h, gpu.h
+engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames)
+examples/triangle/   draws a single colored triangle
+web/                 HTML page template for examples, and the Pages landing page
+docs/                coding standard
 ```
 
 ## Build
-
-Requirements: CMake 3.24+, a C17 compiler, and a Vulkan (Linux/Windows),
-D3D12 (Windows) or Metal (macOS) capable driver.
-
-Linux also needs the X11/Wayland development packages GLFW builds against, e.g. on Ubuntu:
-
-```sh
-sudo apt install libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-                 libwayland-dev libxkbcommon-dev wayland-protocols
-```
-
-```sh
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
-./build/examples/triangle/triangle
-```
-
-### Web build
 
 Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
 (tested with 6.0.10), then:
 
 ```sh
-emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-web
-python3 -m http.server -d build-web/examples/triangle 8000   # open http://localhost:8000
+emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+python3 -m http.server -d build/examples/triangle 8000   # open http://localhost:8000
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
 recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 
-### Native build details
-
-The wgpu-native release is chosen from the host OS and CPU architecture
-(x86_64 or aarch64/arm64); override the version with `-DWGPU_NATIVE_VERSION=<tag>`.
-
 ## CI and deployment
 
-GitHub Actions (`.github/workflows/build.yml`) builds only the web version (downloadable as the
-`engine-web` artifact) and deploys it to GitHub Pages on every push to the default branch. Native
-builds are done locally with the steps above.
-
-Enable Pages once under **Settings > Pages > Source: GitHub Actions**; the site is then at
-`https://<owner>.github.io/<repo>/`. On the free GitHub plan the repository must be public for
-Pages to work.
+GitHub Actions (`.github/workflows/build.yml`) builds the web version on every push (downloadable
+as the `engine-web` artifact) and deploys it to GitHub Pages on every push to the default branch.
+Enable Pages once under **Settings > Pages > Source: GitHub Actions**. On the free GitHub plan the
+repository must be public for Pages to work.
 
 Pushing a tag like `v0.1.0` also publishes the web build as a zip on a GitHub Release.
+
+## Contributing
+
+See [docs/CODING_STANDARD.md](docs/CODING_STANDARD.md).

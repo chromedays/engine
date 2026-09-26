@@ -1,6 +1,4 @@
 build/
-out/
 .cache/
 compile_commands.json
 dist/
-build-web/

@@ -1,31 +1,19 @@
 #pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "nv/base.h"
 
-typedef struct GLFWwindow GLFWwindow;
-
+// NOTE: The window is the page's <canvas>; its size follows the canvas's CSS layout.
 typedef struct NvWindow {
-#if defined(__EMSCRIPTEN__)
-    const char* canvas_selector; /* CSS selector of the <canvas> element, e.g. "#canvas" */
-#else
-    GLFWwindow* handle;
-#endif
+    const char* canvas_selector; // CSS selector of the <canvas> element, e.g. "#canvas"
 } NvWindow;
 
-/* On the web, `title` sets the document title and the size is taken from the canvas's CSS layout. */
-bool nv_window_create(NvWindow* window, const char* title, uint32_t width, uint32_t height);
-void nv_window_destroy(NvWindow* window);
+void nv_window_create(NvWindow* window, const char* title);
 
-/* Framebuffer size in pixels (may differ from window size on HiDPI displays). */
-void nv_window_framebuffer_size(const NvWindow* window, uint32_t* width, uint32_t* height);
+// NOTE: Returns the canvas size in device pixels and resizes its backing store to match.
+void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 
 typedef void (*NvFrameFn)(void* userdata);
 
-/*
- * Runs `frame` once per display refresh until the window is closed.
- * Native: returns after the window closes.
- * Web: hands control to the browser's requestAnimationFrame loop and never returns, so any state
- * `frame` uses must not live on the caller's stack.
- */
+// IMPORTANT: Hands control to the browser's requestAnimationFrame loop and never returns, so any
+// state `frame` uses must not live on the caller's stack.
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata);

@@ -25,14 +25,14 @@ jobs:
         run: sudo apt-get install -y ninja-build
 
       - name: Configure
-        run: emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build-web
+        run: cmake --build build
 
       - name: Package
         run: |
-          cmake --install build-web --prefix dist/engine-web
+          cmake --install build --prefix dist/engine-web
           cp web/landing.html dist/engine-web/index.html
 
       - uses: actions/upload-artifact@v4

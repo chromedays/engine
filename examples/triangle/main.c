@@ -3,11 +3,9 @@
 
 #include <stdio.h>
 
-/*
- * Vertex positions and colors are generated from the vertex index, so no vertex buffer is needed.
- * `u.scale` squeezes the shorter screen axis so the triangle keeps its shape at any aspect ratio.
- */
-static const char* k_shader =
+// Vertex positions and colors are generated from the vertex index, so no vertex buffer is needed.
+// `u.scale` squeezes the longer screen axis so the triangle keeps its shape at any aspect ratio.
+global const char* triangle_shader =
     "struct Uniforms {\n"
     "    scale: vec2f,\n"
     "};\n"
@@ -41,10 +39,10 @@ static const char* k_shader =
     "    return vec4f(in.color, 1.0);\n"
     "}\n";
 
-static WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format)
+internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format)
 {
     WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl.code = (WGPUStringView){k_shader, WGPU_STRLEN};
+    wgsl.code = (WGPUStringView){triangle_shader, WGPU_STRLEN};
     WGPUShaderModuleDescriptor module_desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
     module_desc.nextInChain = &wgsl.chain;
     WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
@@ -71,8 +69,8 @@ static WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat f
 }
 
 typedef struct Uniforms {
-    float scale[2];
-    float _pad[2]; /* uniform buffers are sized in 16-byte multiples */
+    f32 scale[2];
+    f32 pad[2]; // uniform buffers are sized in 16-byte multiples
 } Uniforms;
 
 typedef struct App {
@@ -83,7 +81,7 @@ typedef struct App {
     WGPUBindGroup bind_group;
 } App;
 
-static void create_uniforms(App* app)
+internal void create_uniforms(App* app)
 {
     WGPUBufferDescriptor buffer_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
     buffer_desc.label = (WGPUStringView){"triangle uniforms", WGPU_STRLEN};
@@ -96,7 +94,7 @@ static void create_uniforms(App* app)
     entry.buffer = app->uniform_buffer;
     entry.size = sizeof(Uniforms);
 
-    /* The pipeline was created with an automatic layout; take group 0's layout from it. */
+    // The pipeline was created with an automatic layout; take group 0's layout from it.
     WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(app->pipeline, 0);
     WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     group_desc.layout = layout;
@@ -106,10 +104,10 @@ static void create_uniforms(App* app)
     wgpuBindGroupLayoutRelease(layout);
 }
 
-static void update_uniforms(App* app)
+internal void update_uniforms(App* app)
 {
-    const float w = (float)app->gpu.width;
-    const float h = (float)app->gpu.height;
+    f32 w = (f32)app->gpu.width;
+    f32 h = (f32)app->gpu.height;
     Uniforms u = {.scale = {1.0f, 1.0f}};
     if (w > h)
         u.scale[0] = h / w;
@@ -118,7 +116,7 @@ static void update_uniforms(App* app)
     wgpuQueueWriteBuffer(app->gpu.queue, app->uniform_buffer, 0, &u, sizeof(u));
 }
 
-static void draw_frame(App* app, WGPUTextureView target)
+internal void draw_frame(App* app, WGPUTextureView target)
 {
     NvGpu* gpu = &app->gpu;
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(gpu->device, NULL);
@@ -146,10 +144,10 @@ static void draw_frame(App* app, WGPUTextureView target)
     wgpuCommandEncoderRelease(encoder);
 }
 
-/* Static rather than on main's stack: on the web, main returns before the first frame runs. */
-static App g_app;
+// IMPORTANT: Global rather than on main's stack: main returns before the first frame runs.
+global App app_state;
 
-static void frame(void* userdata)
+internal void frame(void* userdata)
 {
     App* app = userdata;
     WGPUTextureView target = nv_gpu_begin_frame(&app->gpu);
@@ -162,15 +160,10 @@ static void frame(void* userdata)
 
 int main(void)
 {
-    App* app = &g_app;
-    if (!nv_window_create(&app->window, "engine - triangle", 1280, 720)) {
-        fprintf(stderr, "fatal: failed to create window\n");
-        return 1;
-    }
-
+    App* app = &app_state;
+    nv_window_create(&app->window, "nv - triangle");
     if (!nv_gpu_create(&app->gpu, &app->window)) {
         fprintf(stderr, "fatal: failed to initialize WebGPU\n");
-        nv_window_destroy(&app->window);
         return 1;
     }
 
@@ -178,11 +171,5 @@ int main(void)
     create_uniforms(app);
 
     nv_window_run(&app->window, frame, app);
-
-    wgpuBindGroupRelease(app->bind_group);
-    wgpuBufferRelease(app->uniform_buffer);
-    wgpuRenderPipelineRelease(app->pipeline);
-    nv_gpu_destroy(&app->gpu);
-    nv_window_destroy(&app->window);
     return 0;
 }

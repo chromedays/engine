@@ -1,123 +1,102 @@
 #include "nv/gpu.h"
 #include "nv/window.h"
 
-#include "surface.h"
-
 #include <stdio.h>
 #include <string.h>
 
-#if defined(__EMSCRIPTEN__)
-/* The browser resolves requests on its event loop; wgpuInstanceWaitAny yields to it via Asyncify. */
-#    define NV_CALLBACK_MODE WGPUCallbackMode_WaitAnyOnly
-#    define NV_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowSpontaneous
-#else
-#    define NV_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
-#    define NV_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
-#endif
-
-/* Prints a WGPUStringView, which is not necessarily NUL-terminated. */
+// Prints a WGPUStringView, which is not necessarily NUL-terminated.
 #define SV_FMT "%.*s"
 #define SV_ARG(sv) (int)((sv).data ? ((sv).length == WGPU_STRLEN ? strlen((sv).data) : (sv).length) : 0), (sv).data
 
 typedef struct AdapterRequest {
     WGPUAdapter adapter;
-    bool done;
 } AdapterRequest;
 
 typedef struct DeviceRequest {
     WGPUDevice device;
-    bool done;
 } DeviceRequest;
 
-static void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message,
-                       void* userdata1, void* userdata2)
+internal void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message,
+                         void* userdata1, void* userdata2)
 {
     (void)userdata2;
-    AdapterRequest* req = userdata1;
+    AdapterRequest* request = userdata1;
     if (status == WGPURequestAdapterStatus_Success)
-        req->adapter = adapter;
+        request->adapter = adapter;
     else
         fprintf(stderr, "[wgpu] request adapter failed: " SV_FMT "\n", SV_ARG(message));
-    req->done = true;
 }
 
-static void on_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message,
-                      void* userdata1, void* userdata2)
+internal void on_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message,
+                        void* userdata1, void* userdata2)
 {
     (void)userdata2;
-    DeviceRequest* req = userdata1;
+    DeviceRequest* request = userdata1;
     if (status == WGPURequestDeviceStatus_Success)
-        req->device = device;
+        request->device = device;
     else
         fprintf(stderr, "[wgpu] request device failed: " SV_FMT "\n", SV_ARG(message));
-    req->done = true;
 }
 
-static void on_device_lost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message,
-                           void* userdata1, void* userdata2)
+internal void on_device_lost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message,
+                             void* userdata1, void* userdata2)
 {
     (void)device, (void)userdata1, (void)userdata2;
     if (reason != WGPUDeviceLostReason_Destroyed && reason != WGPUDeviceLostReason_CallbackCancelled)
         fprintf(stderr, "[wgpu] device lost (%d): " SV_FMT "\n", (int)reason, SV_ARG(message));
 }
 
-static void on_uncaptured_error(WGPUDevice const* device, WGPUErrorType type, WGPUStringView message,
-                                void* userdata1, void* userdata2)
+internal void on_uncaptured_error(WGPUDevice const* device, WGPUErrorType type, WGPUStringView message,
+                                  void* userdata1, void* userdata2)
 {
     (void)device, (void)userdata1, (void)userdata2;
     fprintf(stderr, "[wgpu] error (%d): " SV_FMT "\n", (int)type, SV_ARG(message));
 }
 
-/* Blocks until the callback behind `future` has set `*done`. */
-static void wait_for(WGPUInstance instance, WGPUFuture future, const bool* done)
+// NOTE: The browser resolves requests on its own event loop. wgpuInstanceWaitAny yields to it
+// through Asyncify, so setup reads as straight-line code.
+internal void wait_for(WGPUInstance instance, WGPUFuture future)
 {
-#if defined(__EMSCRIPTEN__)
-    (void)done;
     WGPUFutureWaitInfo wait = WGPU_FUTURE_WAIT_INFO_INIT;
     wait.future = future;
     wgpuInstanceWaitAny(instance, 1, &wait, UINT64_MAX);
-#else
-    (void)future;
-    while (!*done)
-        wgpuInstanceProcessEvents(instance);
-#endif
 }
 
-static WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
+internal WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
 {
     WGPURequestAdapterOptions options = WGPU_REQUEST_ADAPTER_OPTIONS_INIT;
     options.compatibleSurface = surface;
     options.powerPreference = WGPUPowerPreference_HighPerformance;
 
-    AdapterRequest req = {0};
-    WGPURequestAdapterCallbackInfo cb = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
-    cb.mode = NV_CALLBACK_MODE;
-    cb.callback = on_adapter;
-    cb.userdata1 = &req;
+    AdapterRequest request = {0};
+    WGPURequestAdapterCallbackInfo callback = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
+    callback.mode = WGPUCallbackMode_WaitAnyOnly;
+    callback.callback = on_adapter;
+    callback.userdata1 = &request;
 
-    wait_for(instance, wgpuInstanceRequestAdapter(instance, &options, cb), &req.done);
-    return req.adapter;
+    wait_for(instance, wgpuInstanceRequestAdapter(instance, &options, callback));
+    return request.adapter;
 }
 
-static WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter)
+internal WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter)
 {
     WGPUDeviceDescriptor desc = WGPU_DEVICE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"engine device", WGPU_STRLEN};
-    desc.deviceLostCallbackInfo.mode = NV_EVENT_CALLBACK_MODE;
+    desc.label = (WGPUStringView){"nv device", WGPU_STRLEN};
+    desc.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     desc.deviceLostCallbackInfo.callback = on_device_lost;
     desc.uncapturedErrorCallbackInfo.callback = on_uncaptured_error;
 
-    DeviceRequest req = {0};
-    WGPURequestDeviceCallbackInfo cb = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
-    cb.mode = NV_CALLBACK_MODE;
-    cb.callback = on_device;
-    cb.userdata1 = &req;
+    DeviceRequest request = {0};
+    WGPURequestDeviceCallbackInfo callback = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
+    callback.mode = WGPUCallbackMode_WaitAnyOnly;
+    callback.callback = on_device;
+    callback.userdata1 = &request;
 
-    wait_for(instance, wgpuAdapterRequestDevice(adapter, &desc, cb), &req.done);
-    return req.device;
+    wait_for(instance, wgpuAdapterRequestDevice(adapter, &desc, callback));
+    return request.device;
 }
 
-static WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
+internal WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
 {
     switch (format) {
     case WGPUTextureFormat_BGRA8Unorm: return WGPUTextureFormat_BGRA8UnormSrgb;
@@ -126,7 +105,7 @@ static WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
     }
 }
 
-static void configure_surface(NvGpu* gpu)
+internal void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
@@ -146,83 +125,8 @@ static void configure_surface(NvGpu* gpu)
     wgpuSurfaceConfigure(gpu->surface, &config);
 }
 
-bool nv_gpu_create(NvGpu* gpu, NvWindow* window)
+internal void release_gpu(NvGpu* gpu)
 {
-    memset(gpu, 0, sizeof(*gpu));
-    gpu->window = window;
-
-    WGPUInstanceDescriptor instance_desc = WGPU_INSTANCE_DESCRIPTOR_INIT;
-#if defined(__EMSCRIPTEN__)
-    static const WGPUInstanceFeatureName k_instance_features[] = {WGPUInstanceFeatureName_TimedWaitAny};
-    instance_desc.requiredFeatureCount = 1;
-    instance_desc.requiredFeatures = k_instance_features;
-#endif
-    gpu->instance = wgpuCreateInstance(&instance_desc);
-    if (!gpu->instance) {
-        fprintf(stderr, "[nv] wgpuCreateInstance failed\n");
-        goto fail;
-    }
-
-    gpu->surface = nv_create_surface(gpu->instance, window);
-    if (!gpu->surface) {
-        fprintf(stderr, "[nv] failed to create surface\n");
-        goto fail;
-    }
-
-    gpu->adapter = request_adapter(gpu->instance, gpu->surface);
-    if (!gpu->adapter)
-        goto fail;
-
-    WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
-    if (wgpuAdapterGetInfo(gpu->adapter, &info) == WGPUStatus_Success) {
-        printf("[nv] adapter: " SV_FMT " (" SV_FMT ")\n", SV_ARG(info.device), SV_ARG(info.description));
-        wgpuAdapterInfoFreeMembers(info);
-    }
-
-    gpu->device = request_device(gpu->instance, gpu->adapter);
-    if (!gpu->device)
-        goto fail;
-    gpu->queue = wgpuDeviceGetQueue(gpu->device);
-
-    WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
-    wgpuSurfaceGetCapabilities(gpu->surface, gpu->adapter, &caps);
-    if (caps.formatCount == 0) {
-        fprintf(stderr, "[nv] surface reports no supported formats\n");
-        wgpuSurfaceCapabilitiesFreeMembers(caps);
-        goto fail;
-    }
-    /*
-     * Render through an sRGB view so shader output is gamma-corrected on present. Native surfaces
-     * usually offer an sRGB format directly; browser canvases only offer the linear format but
-     * accept its sRGB twin as a view format.
-     */
-    gpu->config_format = caps.formats[0];
-    for (size_t i = 0; i < caps.formatCount; ++i) {
-        if (caps.formats[i] == WGPUTextureFormat_BGRA8UnormSrgb || caps.formats[i] == WGPUTextureFormat_RGBA8UnormSrgb) {
-            gpu->config_format = caps.formats[i];
-            break;
-        }
-    }
-    gpu->surface_format = srgb_view_format(gpu->config_format);
-    wgpuSurfaceCapabilitiesFreeMembers(caps);
-
-    nv_window_framebuffer_size(window, &gpu->width, &gpu->height);
-    configure_surface(gpu);
-    return true;
-
-fail:
-    nv_gpu_destroy(gpu);
-    return false;
-}
-
-void nv_gpu_destroy(NvGpu* gpu)
-{
-    if (gpu->current_view)
-        wgpuTextureViewRelease(gpu->current_view);
-    if (gpu->current_texture)
-        wgpuTextureRelease(gpu->current_texture);
-    if (gpu->surface && gpu->device)
-        wgpuSurfaceUnconfigure(gpu->surface);
     if (gpu->queue)
         wgpuQueueRelease(gpu->queue);
     if (gpu->device)
@@ -233,29 +137,82 @@ void nv_gpu_destroy(NvGpu* gpu)
         wgpuSurfaceRelease(gpu->surface);
     if (gpu->instance)
         wgpuInstanceRelease(gpu->instance);
-    memset(gpu, 0, sizeof(*gpu));
+    *gpu = (NvGpu){0};
 }
 
-void nv_gpu_resize(NvGpu* gpu, uint32_t width, uint32_t height)
+b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
 {
-    if (width == gpu->width && height == gpu->height)
-        return;
-    gpu->width = width;
-    gpu->height = height;
+    *gpu = (NvGpu){0};
+    gpu->window = window;
+
+    local_persist const WGPUInstanceFeatureName instance_features[] = {WGPUInstanceFeatureName_TimedWaitAny};
+    WGPUInstanceDescriptor instance_desc = WGPU_INSTANCE_DESCRIPTOR_INIT;
+    instance_desc.requiredFeatureCount = NV_ARRAY_COUNT(instance_features);
+    instance_desc.requiredFeatures = instance_features;
+    gpu->instance = wgpuCreateInstance(&instance_desc);
+    if (!gpu->instance) {
+        fprintf(stderr, "[nv] wgpuCreateInstance failed\n");
+        goto fail;
+    }
+
+    WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = WGPU_EMSCRIPTEN_SURFACE_SOURCE_CANVAS_HTML_SELECTOR_INIT;
+    canvas.selector = (WGPUStringView){window->canvas_selector, WGPU_STRLEN};
+    WGPUSurfaceDescriptor surface_desc = WGPU_SURFACE_DESCRIPTOR_INIT;
+    surface_desc.nextInChain = &canvas.chain;
+    gpu->surface = wgpuInstanceCreateSurface(gpu->instance, &surface_desc);
+    if (!gpu->surface) {
+        fprintf(stderr, "[nv] failed to create canvas surface\n");
+        goto fail;
+    }
+
+    gpu->adapter = request_adapter(gpu->instance, gpu->surface);
+    if (!gpu->adapter)
+        goto fail;
+
+    gpu->device = request_device(gpu->instance, gpu->adapter);
+    if (!gpu->device)
+        goto fail;
+    gpu->queue = wgpuDeviceGetQueue(gpu->device);
+
+    WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
+    wgpuSurfaceGetCapabilities(gpu->surface, gpu->adapter, &caps);
+    if (caps.formatCount == 0) {
+        fprintf(stderr, "[nv] canvas reports no supported formats\n");
+        wgpuSurfaceCapabilitiesFreeMembers(caps);
+        goto fail;
+    }
+    // NOTE: Canvases only offer linear formats, but accept the sRGB twin as a view format.
+    // Rendering through that view gamma-corrects shader output.
+    gpu->config_format = caps.formats[0];
+    gpu->surface_format = srgb_view_format(gpu->config_format);
+    wgpuSurfaceCapabilitiesFreeMembers(caps);
+
+    nv_window_framebuffer_size(window, &gpu->width, &gpu->height);
     configure_surface(gpu);
+    return 1;
+
+fail:
+    release_gpu(gpu);
+    return 0;
 }
 
 WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
 {
-    uint32_t w = 0, h = 0;
-    nv_window_framebuffer_size(gpu->window, &w, &h);
-    nv_gpu_resize(gpu, w, h);
+    NV_ASSERT(!gpu->current_view);
+
+    u32 width = 0;
+    u32 height = 0;
+    nv_window_framebuffer_size(gpu->window, &width, &height);
+    if (width != gpu->width || height != gpu->height) {
+        gpu->width = width;
+        gpu->height = height;
+        configure_surface(gpu);
+    }
     if (gpu->width == 0 || gpu->height == 0)
-        return NULL; /* minimized */
+        return NULL; // canvas is hidden or collapsed
 
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(gpu->surface, &surface_texture);
-
     switch (surface_texture.status) {
     case WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal:
     case WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal:
@@ -279,15 +236,13 @@ WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
     return gpu->current_view;
 }
 
+// NOTE: No wgpuSurfacePresent here: the browser presents the canvas when the animation frame
+// callback returns (and emdawnwebgpu aborts if it is called).
 void nv_gpu_end_frame(NvGpu* gpu)
 {
-#if !defined(__EMSCRIPTEN__)
-    /* Browsers present the canvas automatically when the animation frame callback returns. */
-    wgpuSurfacePresent(gpu->surface);
-#endif
+    NV_ASSERT(gpu->current_view);
     wgpuTextureViewRelease(gpu->current_view);
     wgpuTextureRelease(gpu->current_texture);
     gpu->current_view = NULL;
     gpu->current_texture = NULL;
-    wgpuInstanceProcessEvents(gpu->instance);
 }

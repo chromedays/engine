@@ -10,54 +10,41 @@ Guidance for AI coding agents working in this repository.
 
 ## Project
 
-A C17 rendering engine on WebGPU (`webgpu.h`) that builds natively and for the web from the same
-sources.
-
-- Native: wgpu-native (prebuilt, fetched by CMake) + GLFW.
-- Web: Emscripten + the `emdawnwebgpu` port, drawing into a `<canvas>`.
+nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
+WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emdawnwebgpu` port.
+There is no native build.
 
 ```
-cmake/Dependencies.cmake   dependency setup; defines the `webgpu` target and nv_setup_executable()
-engine/include/nv/     public API: window.h (NvWindow), gpu.h (NvGpu)
-engine/src/                window_glfw.c / window_web.c, gpu.c, surface.c, surface_metal.m (macOS)
+engine/include/nv/         public API: base.h (types, asserts, arenas), window.h, gpu.h
+engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames)
 examples/triangle/         example app
 web/                       index.html.in (per-example page), landing.html (Pages index)
-.github/workflows/build.yml  CI: web build + GitHub Pages deploy only (native is built locally)
+docs/CODING_STANDARD.md    coding standard (read before writing code)
+.github/workflows/build.yml  CI: web build + GitHub Pages deploy
 ```
 
 ## Build and run
 
+Requires the Emscripten SDK (tested with 6.0.10).
+
 ```sh
-# Native
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-./build/examples/triangle/triangle
-
-# Web (requires the Emscripten SDK, tested with 6.0.10)
-emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-web
-python3 -m http.server -d build-web/examples/triangle 8000
+python3 -m http.server -d build/examples/triangle 8000
 ```
-
-Linux builds need the X11/Wayland dev packages listed in README.md.
 
 ## Conventions
 
-- Pure C17 (Objective-C only for the macOS Metal layer). Compile warning-free with `-Wall -Wextra`.
-- Public API prefixes (from "night view"): `nv_` for functions, `Nv` for types, `NV_` for macros.
-  Setup functions return `bool` and clean up after themselves on failure.
-- Use the `WGPU_*_INIT` macros to initialize WebGPU structs, and `WGPUStringView` with
-  `WGPU_STRLEN` for strings.
-- Platform differences go behind `#if defined(__EMSCRIPTEN__)` and friends inside the engine, not in
-  examples.
-- Web constraints: `wgpuSurfacePresent` must not be called (the browser presents); blocking waits
-  use `wgpuInstanceWaitAny` with Asyncify; `nv_window_run` never returns on the web, so app state
-  must not live on `main`'s stack.
-- New examples call `nv_setup_executable(<target>)` so they get packaged for native and web.
+Follow `docs/CODING_STANDARD.md`. The web-specific rules:
+
+- `wgpuSurfacePresent` must not be called; the browser presents the canvas.
+- Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify.
+- `nv_window_run` never returns, so app state must not live on `main`'s stack.
+- New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged.
 
 ## Testing without a display
 
-There is no physical display in cloud sessions. Run native builds under Xvfb (Mesa's software
-Vulkan driver) and capture screenshots with `xwd`. For the web build, headless Chromium renders
-WebGPU with `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
+There is no physical display in cloud sessions. Headless Chromium renders WebGPU with
+`--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
 --use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-fallback-to-gl-for-testing`.
+Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
