@@ -1,6 +1,6 @@
 # engine
 
-A C++20 rendering engine built on native WebGPU (`webgpu.h`), using
+A C17 rendering engine built on native WebGPU (`webgpu.h`), using
 [wgpu-native](https://github.com/gfx-rs/wgpu-native) as the implementation and
 [GLFW](https://www.glfw.org/) for windowing.
 
@@ -8,13 +8,13 @@ A C++20 rendering engine built on native WebGPU (`webgpu.h`), using
 
 ```
 cmake/Dependencies.cmake   fetches GLFW (source) and wgpu-native (prebuilt release)
-engine/                    static library: Window, GpuContext, GLFW -> WGPUSurface glue
+engine/                    static library: window, gpu context, GLFW -> WGPUSurface glue
 examples/triangle/         draws a single colored triangle
 ```
 
 ## Build
 
-Requirements: CMake 3.24+, a C++20 compiler, and a Vulkan (Linux/Windows),
+Requirements: CMake 3.24+, a C17 compiler, and a Vulkan (Linux/Windows),
 D3D12 (Windows) or Metal (macOS) capable driver.
 
 Linux also needs the X11/Wayland development packages GLFW builds against, e.g. on Ubuntu:

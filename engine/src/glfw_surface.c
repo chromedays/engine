@@ -1,6 +1,8 @@
-#include "GlfwSurface.h"
+#include "glfw_surface.h"
 
 #include <GLFW/glfw3.h>
+
+#include <stdio.h>
 
 #if defined(_WIN32)
 #    define GLFW_EXPOSE_NATIVE_WIN32
@@ -13,24 +15,20 @@
 #    include <GLFW/glfw3native.h>
 #endif
 
-#include <stdexcept>
-
-namespace engine {
-
-WGPUSurface createGlfwSurface(WGPUInstance instance, GLFWwindow* window)
+WGPUSurface eng_create_glfw_surface(WGPUInstance instance, GLFWwindow* window)
 {
     WGPUSurfaceDescriptor desc = WGPU_SURFACE_DESCRIPTOR_INIT;
 
 #if defined(_WIN32)
     WGPUSurfaceSourceWindowsHWND src = WGPU_SURFACE_SOURCE_WINDOWS_HWND_INIT;
-    src.hinstance = GetModuleHandle(nullptr);
+    src.hinstance = GetModuleHandle(NULL);
     src.hwnd = glfwGetWin32Window(window);
     desc.nextInChain = &src.chain;
     return wgpuInstanceCreateSurface(instance, &desc);
 
 #elif defined(__APPLE__)
     WGPUSurfaceSourceMetalLayer src = WGPU_SURFACE_SOURCE_METAL_LAYER_INIT;
-    src.layer = getOrCreateMetalLayer(window);
+    src.layer = eng_get_or_create_metal_layer(window);
     desc.nextInChain = &src.chain;
     return wgpuInstanceCreateSurface(instance, &desc);
 
@@ -51,11 +49,10 @@ WGPUSurface createGlfwSurface(WGPUInstance instance, GLFWwindow* window)
         return wgpuInstanceCreateSurface(instance, &desc);
     }
     default:
-        throw std::runtime_error("Unsupported GLFW platform");
+        fprintf(stderr, "[engine] unsupported GLFW platform\n");
+        return NULL;
     }
 #else
 #    error "Unsupported platform"
 #endif
 }
-
-} // namespace engine
