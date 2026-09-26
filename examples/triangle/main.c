@@ -88,34 +88,45 @@ static void draw_frame(EngGpu* gpu, WGPURenderPipeline pipeline, WGPUTextureView
     wgpuCommandEncoderRelease(encoder);
 }
 
+typedef struct App {
+    EngWindow window;
+    EngGpu gpu;
+    WGPURenderPipeline pipeline;
+} App;
+
+/* Static rather than on main's stack: on the web, main returns before the first frame runs. */
+static App g_app;
+
+static void frame(void* userdata)
+{
+    App* app = userdata;
+    WGPUTextureView target = eng_gpu_begin_frame(&app->gpu);
+    if (target) {
+        draw_frame(&app->gpu, app->pipeline, target);
+        eng_gpu_end_frame(&app->gpu);
+    }
+}
+
 int main(void)
 {
-    EngWindow window;
-    if (!eng_window_create(&window, "engine - triangle", 1280, 720)) {
+    App* app = &g_app;
+    if (!eng_window_create(&app->window, "engine - triangle", 1280, 720)) {
         fprintf(stderr, "fatal: failed to create window\n");
         return 1;
     }
 
-    EngGpu gpu;
-    if (!eng_gpu_create(&gpu, &window)) {
+    if (!eng_gpu_create(&app->gpu, &app->window)) {
         fprintf(stderr, "fatal: failed to initialize WebGPU\n");
-        eng_window_destroy(&window);
+        eng_window_destroy(&app->window);
         return 1;
     }
 
-    WGPURenderPipeline pipeline = create_pipeline(gpu.device, gpu.surface_format);
+    app->pipeline = create_pipeline(app->gpu.device, app->gpu.surface_format);
 
-    while (!eng_window_should_close(&window)) {
-        eng_window_poll_events(&window);
-        WGPUTextureView target = eng_gpu_begin_frame(&gpu);
-        if (target) {
-            draw_frame(&gpu, pipeline, target);
-            eng_gpu_end_frame(&gpu);
-        }
-    }
+    eng_window_run(&app->window, frame, app);
 
-    wgpuRenderPipelineRelease(pipeline);
-    eng_gpu_destroy(&gpu);
-    eng_window_destroy(&window);
+    wgpuRenderPipelineRelease(app->pipeline);
+    eng_gpu_destroy(&app->gpu);
+    eng_window_destroy(&app->window);
     return 0;
 }

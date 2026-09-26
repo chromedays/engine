@@ -1,5 +1,35 @@
 include(FetchContent)
 
+if(EMSCRIPTEN)
+    # -----------------------------------------------------------------------
+    # Web: WebGPU comes from the browser through Emscripten's emdawnwebgpu port,
+    # which exposes the same webgpu.h. No windowing library is needed.
+    # -----------------------------------------------------------------------
+    add_library(webgpu INTERFACE)
+    target_compile_options(webgpu INTERFACE --use-port=emdawnwebgpu)
+    target_link_options(webgpu INTERFACE
+        --use-port=emdawnwebgpu
+        -sDEFAULT_TO_CXX   # the port's implementation is C++
+        -sASYNCIFY         # lets wgpuInstanceWaitAny yield to the browser during setup
+        -sALLOW_MEMORY_GROWTH
+        -sENVIRONMENT=web)
+
+    # Emits <target>.js/.wasm plus index.html from web/index.html.in into the target's directory,
+    # and installs all three into <prefix>/<target>/.
+    function(engine_setup_executable target)
+        set_target_properties(${target} PROPERTIES SUFFIX ".js")
+        set(ENGINE_WEB_SCRIPT "${target}.js")
+        configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
+        install(FILES
+            "$<TARGET_FILE_DIR:${target}>/${target}.js"
+            "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
+            "${CMAKE_CURRENT_BINARY_DIR}/index.html"
+            DESTINATION ${target})
+    endfunction()
+    return()
+endif()
+
 # ---------------------------------------------------------------------------
 # GLFW (windowing / input)
 # ---------------------------------------------------------------------------
@@ -50,6 +80,7 @@ FetchContent_Declare(wgpu_native
 FetchContent_MakeAvailable(wgpu_native)
 
 add_library(wgpu_native SHARED IMPORTED GLOBAL)
+add_library(webgpu ALIAS wgpu_native)
 set_target_properties(wgpu_native PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${wgpu_native_SOURCE_DIR}/include")
 

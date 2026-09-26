@@ -13,7 +13,8 @@ typedef struct EngGpu {
     WGPUAdapter adapter;
     WGPUDevice device;
     WGPUQueue queue;
-    WGPUTextureFormat surface_format;
+    WGPUTextureFormat surface_format; /* format of the per-frame view; render pipelines target this */
+    WGPUTextureFormat config_format;  /* format the surface itself is configured with */
     uint32_t width;
     uint32_t height;
 

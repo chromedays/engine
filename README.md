@@ -1,15 +1,20 @@
 # engine
 
-A C17 rendering engine built on native WebGPU (`webgpu.h`), using
-[wgpu-native](https://github.com/gfx-rs/wgpu-native) as the implementation and
-[GLFW](https://www.glfw.org/) for windowing.
+A C17 rendering engine built on WebGPU (`webgpu.h`) that runs both natively and in the browser
+from the same source:
+
+- **Native:** [wgpu-native](https://github.com/gfx-rs/wgpu-native) (Vulkan, D3D12, Metal) with
+  [GLFW](https://www.glfw.org/) for windowing.
+- **Web:** compiled to WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go
+  to the browser through Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`.
 
 ## Layout
 
 ```
-cmake/Dependencies.cmake   fetches GLFW (source) and wgpu-native (prebuilt release)
-engine/                    static library: window, gpu context, GLFW -> WGPUSurface glue
+cmake/Dependencies.cmake   native: fetches GLFW and wgpu-native; web: sets up emdawnwebgpu
+engine/                    static library: window (GLFW or canvas), gpu context, surface creation
 examples/triangle/         draws a single colored triangle
+web/                       HTML page template for web builds
 ```
 
 ## Build
@@ -30,6 +35,22 @@ cmake --build build
 ./build/examples/triangle/triangle
 ```
 
+### Web build
+
+Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
+(tested with 6.0.10), then:
+
+```sh
+emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web
+python3 -m http.server -d build-web/examples/triangle 8000   # open http://localhost:8000
+```
+
+The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
+recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
+
+### Native build details
+
 The wgpu-native release is chosen from the host OS and CPU architecture
 (x86_64 or aarch64/arm64); override the version with `-DWGPU_NATIVE_VERSION=<tag>`.
 
@@ -40,6 +61,11 @@ Linux aarch64, Windows x86_64 and macOS aarch64 (Apple Silicon). Each build is u
 workflow artifact: open the run on the repository's **Actions** tab and download
 `engine-<platform>`. Unzip it and run `triangle` (or `triangle.exe`); the WebGPU library sits
 next to the executable.
+
+CI also builds the web version (`engine-web` artifact). To host it on GitHub Pages, enable
+Pages under **Settings > Pages > Source: GitHub Actions** and add the repository variable
+`ENABLE_PAGES=true` (**Settings > Secrets and variables > Actions > Variables**); each push to
+the default branch then deploys it. Pages on a private repository requires a paid GitHub plan.
 
 Pushing a tag like `v0.1.0` also publishes the zips as a GitHub Release.
 

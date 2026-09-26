@@ -1,10 +1,19 @@
 #include "engine/gpu.h"
 #include "engine/window.h"
 
-#include "glfw_surface.h"
+#include "surface.h"
 
 #include <stdio.h>
 #include <string.h>
+
+#if defined(__EMSCRIPTEN__)
+/* The browser resolves requests on its event loop; wgpuInstanceWaitAny yields to it via Asyncify. */
+#    define ENG_CALLBACK_MODE WGPUCallbackMode_WaitAnyOnly
+#    define ENG_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowSpontaneous
+#else
+#    define ENG_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
+#    define ENG_EVENT_CALLBACK_MODE WGPUCallbackMode_AllowProcessEvents
+#endif
 
 /* Prints a WGPUStringView, which is not necessarily NUL-terminated. */
 #define SV_FMT "%.*s"
@@ -59,6 +68,21 @@ static void on_uncaptured_error(WGPUDevice const* device, WGPUErrorType type, WG
     fprintf(stderr, "[wgpu] error (%d): " SV_FMT "\n", (int)type, SV_ARG(message));
 }
 
+/* Blocks until the callback behind `future` has set `*done`. */
+static void wait_for(WGPUInstance instance, WGPUFuture future, const bool* done)
+{
+#if defined(__EMSCRIPTEN__)
+    (void)done;
+    WGPUFutureWaitInfo wait = WGPU_FUTURE_WAIT_INFO_INIT;
+    wait.future = future;
+    wgpuInstanceWaitAny(instance, 1, &wait, UINT64_MAX);
+#else
+    (void)future;
+    while (!*done)
+        wgpuInstanceProcessEvents(instance);
+#endif
+}
+
 static WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
 {
     WGPURequestAdapterOptions options = WGPU_REQUEST_ADAPTER_OPTIONS_INIT;
@@ -67,13 +91,11 @@ static WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
 
     AdapterRequest req = {0};
     WGPURequestAdapterCallbackInfo cb = WGPU_REQUEST_ADAPTER_CALLBACK_INFO_INIT;
-    cb.mode = WGPUCallbackMode_AllowProcessEvents;
+    cb.mode = ENG_CALLBACK_MODE;
     cb.callback = on_adapter;
     cb.userdata1 = &req;
 
-    wgpuInstanceRequestAdapter(instance, &options, cb);
-    while (!req.done)
-        wgpuInstanceProcessEvents(instance);
+    wait_for(instance, wgpuInstanceRequestAdapter(instance, &options, cb), &req.done);
     return req.adapter;
 }
 
@@ -81,20 +103,27 @@ static WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter)
 {
     WGPUDeviceDescriptor desc = WGPU_DEVICE_DESCRIPTOR_INIT;
     desc.label = (WGPUStringView){"engine device", WGPU_STRLEN};
-    desc.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowProcessEvents;
+    desc.deviceLostCallbackInfo.mode = ENG_EVENT_CALLBACK_MODE;
     desc.deviceLostCallbackInfo.callback = on_device_lost;
     desc.uncapturedErrorCallbackInfo.callback = on_uncaptured_error;
 
     DeviceRequest req = {0};
     WGPURequestDeviceCallbackInfo cb = WGPU_REQUEST_DEVICE_CALLBACK_INFO_INIT;
-    cb.mode = WGPUCallbackMode_AllowProcessEvents;
+    cb.mode = ENG_CALLBACK_MODE;
     cb.callback = on_device;
     cb.userdata1 = &req;
 
-    wgpuAdapterRequestDevice(adapter, &desc, cb);
-    while (!req.done)
-        wgpuInstanceProcessEvents(instance);
+    wait_for(instance, wgpuAdapterRequestDevice(adapter, &desc, cb), &req.done);
     return req.device;
+}
+
+static WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
+{
+    switch (format) {
+    case WGPUTextureFormat_BGRA8Unorm: return WGPUTextureFormat_BGRA8UnormSrgb;
+    case WGPUTextureFormat_RGBA8Unorm: return WGPUTextureFormat_RGBA8UnormSrgb;
+    default: return format;
+    }
 }
 
 static void configure_surface(EngGpu* gpu)
@@ -104,7 +133,11 @@ static void configure_surface(EngGpu* gpu)
 
     WGPUSurfaceConfiguration config = WGPU_SURFACE_CONFIGURATION_INIT;
     config.device = gpu->device;
-    config.format = gpu->surface_format;
+    config.format = gpu->config_format;
+    if (gpu->surface_format != gpu->config_format) {
+        config.viewFormatCount = 1;
+        config.viewFormats = &gpu->surface_format;
+    }
     config.usage = WGPUTextureUsage_RenderAttachment;
     config.width = gpu->width;
     config.height = gpu->height;
@@ -118,13 +151,19 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
     memset(gpu, 0, sizeof(*gpu));
     gpu->window = window;
 
-    gpu->instance = wgpuCreateInstance(NULL);
+    WGPUInstanceDescriptor instance_desc = WGPU_INSTANCE_DESCRIPTOR_INIT;
+#if defined(__EMSCRIPTEN__)
+    static const WGPUInstanceFeatureName k_instance_features[] = {WGPUInstanceFeatureName_TimedWaitAny};
+    instance_desc.requiredFeatureCount = 1;
+    instance_desc.requiredFeatures = k_instance_features;
+#endif
+    gpu->instance = wgpuCreateInstance(&instance_desc);
     if (!gpu->instance) {
         fprintf(stderr, "[engine] wgpuCreateInstance failed\n");
         goto fail;
     }
 
-    gpu->surface = eng_create_glfw_surface(gpu->instance, window->handle);
+    gpu->surface = eng_create_surface(gpu->instance, window);
     if (!gpu->surface) {
         fprintf(stderr, "[engine] failed to create surface\n");
         goto fail;
@@ -152,14 +191,19 @@ bool eng_gpu_create(EngGpu* gpu, EngWindow* window)
         wgpuSurfaceCapabilitiesFreeMembers(caps);
         goto fail;
     }
-    gpu->surface_format = caps.formats[0];
-    /* Prefer an sRGB format so shader output is gamma-corrected on present. */
+    /*
+     * Render through an sRGB view so shader output is gamma-corrected on present. Native surfaces
+     * usually offer an sRGB format directly; browser canvases only offer the linear format but
+     * accept its sRGB twin as a view format.
+     */
+    gpu->config_format = caps.formats[0];
     for (size_t i = 0; i < caps.formatCount; ++i) {
         if (caps.formats[i] == WGPUTextureFormat_BGRA8UnormSrgb || caps.formats[i] == WGPUTextureFormat_RGBA8UnormSrgb) {
-            gpu->surface_format = caps.formats[i];
+            gpu->config_format = caps.formats[i];
             break;
         }
     }
+    gpu->surface_format = srgb_view_format(gpu->config_format);
     wgpuSurfaceCapabilitiesFreeMembers(caps);
 
     eng_window_framebuffer_size(window, &gpu->width, &gpu->height);
@@ -229,13 +273,18 @@ WGPUTextureView eng_gpu_begin_frame(EngGpu* gpu)
     }
 
     gpu->current_texture = surface_texture.texture;
-    gpu->current_view = wgpuTextureCreateView(gpu->current_texture, NULL);
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.format = gpu->surface_format;
+    gpu->current_view = wgpuTextureCreateView(gpu->current_texture, &view_desc);
     return gpu->current_view;
 }
 
 void eng_gpu_end_frame(EngGpu* gpu)
 {
+#if !defined(__EMSCRIPTEN__)
+    /* Browsers present the canvas automatically when the animation frame callback returns. */
     wgpuSurfacePresent(gpu->surface);
+#endif
     wgpuTextureViewRelease(gpu->current_view);
     wgpuTextureRelease(gpu->current_texture);
     gpu->current_view = NULL;

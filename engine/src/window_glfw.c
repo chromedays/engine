@@ -36,21 +36,18 @@ void eng_window_destroy(EngWindow* window)
     }
 }
 
-bool eng_window_should_close(const EngWindow* window)
-{
-    return glfwWindowShouldClose(window->handle);
-}
-
-void eng_window_poll_events(EngWindow* window)
-{
-    (void)window;
-    glfwPollEvents();
-}
-
 void eng_window_framebuffer_size(const EngWindow* window, uint32_t* width, uint32_t* height)
 {
     int w = 0, h = 0;
     glfwGetFramebufferSize(window->handle, &w, &h);
     *width = (uint32_t)w;
     *height = (uint32_t)h;
+}
+
+void eng_window_run(EngWindow* window, EngFrameFn frame, void* userdata)
+{
+    while (!glfwWindowShouldClose(window->handle)) {
+        glfwPollEvents();
+        frame(userdata);
+    }
 }

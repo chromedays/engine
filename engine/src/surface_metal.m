@@ -1,4 +1,4 @@
-#include "glfw_surface.h"
+#include "surface.h"
 
 #define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3.h>

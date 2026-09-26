@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>engine</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #status { position: fixed; inset: 0; display: none; place-items: center; padding: 16px; text-align: center; }
+    #status.show { display: grid; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="status"></div>
+  <script>
+    const status = document.getElementById('status');
+    const fail = (msg) => { status.textContent = msg; status.classList.add('show'); };
+    if (!navigator.gpu) {
+      fail('This browser does not support WebGPU. Try a recent Chrome, Edge, Safari 26+, or Firefox 141+ (Windows).');
+    }
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: (text) => console.log(text),
+      printErr: (text) => console.error(text),
+      onAbort: (what) => fail('The engine stopped: ' + what),
+    };
+  </script>
+  <script async src="@ENGINE_WEB_SCRIPT@"></script>
+</body>
+</html>
