@@ -10,6 +10,7 @@
 typedef struct NvNodeId     { u32 index, gen; } NvNodeId;
 typedef struct NvMeshId     { u32 index; } NvMeshId;     // 0 = no mesh
 typedef struct NvMaterialId { u32 index; } NvMaterialId; // 0 = default material
+typedef struct NvAnimatorId { u32 index; } NvAnimatorId; // 0 = not animated (see nv/anim.h)
 
 typedef enum NvProjection {
     NV_PROJECTION_NONE, // node has no camera
@@ -61,6 +62,7 @@ typedef struct NvNode {
     // Components: each one is absent while zero.
     NvMeshId mesh;
     NvMaterialId material;
+    NvAnimatorId animator; // poses a skinned mesh; unused by static meshes
     NvCamera camera;
     NvLight light;
 } NvNode;

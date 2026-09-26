@@ -1,0 +1,11 @@
+Quaternius assets, CC0 1.0 Universal (public domain dedication)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+character.glb   Universal Base Characters [Standard], Superhero_Male_FullBody
+                https://quaternius.itch.io/universal-base-characters
+clips.glb       Universal Animation Library [Standard], UAL1_Standard.glb
+clips_rm.glb    Universal Animation Library [Standard], UAL1_Standard_RM.glb (root motion)
+                https://quaternius.itch.io/universal-animation-library
+
+Trimmed with tools/trim_assets.sh: see docs/specs/animation.md for what is kept.
+Models by @Quaternius - https://www.patreon.com/quaternius

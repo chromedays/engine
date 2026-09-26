@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
 if(NOT EMSCRIPTEN)
@@ -9,6 +9,8 @@ endif()
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD 17) # ozz-animation and our wrapper around it
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_compile_options(-Wall -Wextra)
 
@@ -24,17 +26,35 @@ target_link_options(webgpu INTERFACE
     -sENVIRONMENT=web)
 
 # Emits <target>.js/.wasm plus index.html (from web/index.html.in) into the target's directory,
-# and installs all three into <prefix>/<target>/.
+# and installs them into <prefix>/<target>/ as the "web" install component.
+#   nv_setup_executable(<target> [ASSETS <dir>])
+# ASSETS preloads <dir> as /assets, readable with fopen; it ships as <target>.data.
 function(nv_setup_executable target)
+    cmake_parse_arguments(ARG "" "ASSETS" "" ${ARGN})
     set_target_properties(${target} PROPERTIES SUFFIX ".js")
     set(NV_WEB_SCRIPT "${target}.js")
     configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
         "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
-    install(FILES
+    set(files
         "$<TARGET_FILE_DIR:${target}>/${target}.js"
         "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
-        "${CMAKE_CURRENT_BINARY_DIR}/index.html"
-        DESTINATION ${target})
+        "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+
+    if(ARG_ASSETS)
+        # A Git LFS pointer instead of the real file means the clone skipped LFS.
+        file(GLOB_RECURSE asset_files "${ARG_ASSETS}/*")
+        foreach(asset ${asset_files})
+            file(READ "${asset}" head LIMIT 40)
+            if(head MATCHES "^version https://git-lfs")
+                message(FATAL_ERROR "${asset} is a Git LFS pointer. Run: git lfs install && git lfs pull")
+            endif()
+        endforeach()
+        target_link_options(${target} PRIVATE "--preload-file=${ARG_ASSETS}@/assets")
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${asset_files})
+        list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.data")
+    endif()
+
+    install(FILES ${files} DESTINATION ${target} COMPONENT web)
 endfunction()
 
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
@@ -61,6 +81,40 @@ target_compile_definitions(cimgui
     INTERFACE CIMGUI_DEFINE_ENUMS_AND_STRUCTS) # C users get plain structs; cimgui.cpp must not
 target_compile_options(cimgui PRIVATE -w)
 
+# cgltf: single-header glTF parser. The implementation gets its own translation unit so its
+# warnings stay off.
+FetchContent_Declare(cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+    GIT_TAG        v1.15
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  no-cmake)
+FetchContent_MakeAvailable(cgltf)
+file(WRITE "${CMAKE_BINARY_DIR}/cgltf_impl.c" "#define CGLTF_IMPLEMENTATION\n#include <cgltf.h>\n")
+add_library(cgltf STATIC "${CMAKE_BINARY_DIR}/cgltf_impl.c")
+target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
+target_compile_options(cgltf PRIVATE -w)
+
+# ozz-animation: runtime and the offline builders we use to build skeletons and clips at load time.
+set(ozz_build_tools    OFF CACHE BOOL "" FORCE)
+set(ozz_build_fbx      OFF CACHE BOOL "" FORCE)
+set(ozz_build_gltf     OFF CACHE BOOL "" FORCE)
+set(ozz_build_data     OFF CACHE BOOL "" FORCE)
+set(ozz_build_samples  OFF CACHE BOOL "" FORCE)
+set(ozz_build_howtos   OFF CACHE BOOL "" FORCE)
+set(ozz_build_tests    OFF CACHE BOOL "" FORCE)
+set(ozz_build_postfix  OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(ozz
+    GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
+    GIT_TAG        0.17.0
+    GIT_SHALLOW    TRUE
+    EXCLUDE_FROM_ALL # only the libraries nv links get built
+    SYSTEM)          # its headers' warnings stay out of our builds
+FetchContent_MakeAvailable(ozz)
+foreach(ozz_target ozz_base ozz_animation ozz_animation_offline)
+    target_compile_options(${ozz_target} PRIVATE -w)
+endforeach()
+
 add_subdirectory(engine)
 add_subdirectory(examples/triangle)
 add_subdirectory(examples/scene)
+add_subdirectory(examples/character)
