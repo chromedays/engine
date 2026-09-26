@@ -1,6 +1,6 @@
 # Animation spec
 
-Status: draft, agreed direction. Phases ship one at a time.
+Status: final (agreed 2026-09-26). Phases ship one at a time; changes to this spec are agreed first.
 
 ## Goal
 
@@ -13,9 +13,11 @@ and control them from ImGui. Everything runs in the browser like the rest of nv.
 |---|---|
 | glTF parsing | [cgltf](https://github.com/jkuhlmann/cgltf) (single-header C, MIT), used from C |
 | Animation runtime | [ozz-animation](https://github.com/guillaumeblanc/ozz-animation) (C++17, MIT) behind our own C API; the wrapper is the one C++ file of ours (see `docs/CODING_STANDARD.md`) |
-| Character | Quaternius Universal Base Characters (Standard, free), CC0 |
-| Animations | Quaternius Universal Animation Library (Standard, free), CC0 |
+| Character | Quaternius Universal Base Characters (Standard, free), CC0: `Superhero_Male_FullBody` only, to start |
+| Animations | Quaternius Universal Animation Library (Standard, free), CC0: 8 clips (below) |
+| Textures | Base color only, downscaled to 1024 px; normal and roughness maps wait for PBR shading |
 | Binary assets | Git LFS (`.gitattributes`), under `assets/` |
+| Asset trimming | gltf-transform through `npx` from `tools/trim_assets.sh`; the tool is not added to the repo |
 
 ## Source assets
 
@@ -46,12 +48,17 @@ Swim_Fwd_Loop, Swim_Idle_Loop, Sword_Attack, Sword_Idle, Walk_Formal_Loop, Walk_
 
 ### What goes into the repository
 
-The full packs are too large for a web download, so `assets/` holds a trimmed selection:
+The full packs are too large for a web download, so `assets/quaternius/` holds a trimmed selection:
 
-- one character (`.gltf` + `.bin` + base color textures only at first),
-- a clip file with a handful of clips (proposed: Idle_Loop, Walk_Loop, Jog_Fwd_Loop, Sprint_Loop,
-  Jump_Start / Jump_Loop / Jump_Land, Dance_Loop),
-- `assets/quaternius/LICENSE.txt` with the CC0 text and the source URLs above.
+- `character.glb`: `Superhero_Male_FullBody` with its 3 meshes, the skin, and base color textures
+  downscaled to 1024 px (normal and roughness textures dropped).
+- `clips.glb`: the rig from `UAL1_Standard.glb` with these 8 clips and no mesh:
+  - Idle_Loop, Walk_Loop, Jog_Fwd_Loop, Sprint_Loop (locomotion, for crossfades),
+  - Jump_Start, Jump_Loop, Jump_Land (a chained move),
+  - Dance_Loop (a long loop).
+- `LICENSE.txt`: the CC0 text and the source URLs above.
+
+The female character and more clips can be added later the same way; both use the same rig.
 
 Trimming uses [gltf-transform](https://gltf-transform.dev/) (Node CLI, MIT), run with `npx` from
 `tools/trim_assets.sh`. The script records which files and clips were kept so the assets can be
@@ -175,11 +182,9 @@ downloads before `main` runs.
 Each phase is checked in headless Chromium (captures a few moments apart to see the pose change)
 in both Release and Debug builds, and deployed.
 
-## Open questions
+## Resolved questions
 
-1. Male or female character (or both)?
-2. Is the proposed clip list right?
-3. Textures: start with base color only (normal and roughness maps later, since there is no PBR
-   shading yet)?
-
-Resolved: gltf-transform runs through `npx` from a kept script (`tools/trim_assets.sh`).
+- Asset trimming: gltf-transform through `npx`, from a kept script (`tools/trim_assets.sh`).
+- Character: the male character only, to start.
+- Clips: the 8 listed above.
+- Textures: base color only, 1024 px.
