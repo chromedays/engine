@@ -3,8 +3,16 @@
 
 #include <stdio.h>
 
-/* Vertex positions and colors are generated from the vertex index, so no vertex buffer is needed. */
+/*
+ * Vertex positions and colors are generated from the vertex index, so no vertex buffer is needed.
+ * `u.scale` squeezes the shorter screen axis so the triangle keeps its shape at any aspect ratio.
+ */
 static const char* k_shader =
+    "struct Uniforms {\n"
+    "    scale: vec2f,\n"
+    "};\n"
+    "@group(0) @binding(0) var<uniform> u: Uniforms;\n"
+    "\n"
     "struct VsOut {\n"
     "    @builtin(position) position: vec4f,\n"
     "    @location(0) color: vec3f,\n"
@@ -23,7 +31,7 @@ static const char* k_shader =
     "        vec3f(0.0, 0.0, 1.0),\n"
     "    );\n"
     "    var out: VsOut;\n"
-    "    out.position = vec4f(positions[i], 0.0, 1.0);\n"
+    "    out.position = vec4f(positions[i] * u.scale, 0.0, 1.0);\n"
     "    out.color = colors[i];\n"
     "    return out;\n"
     "}\n"
@@ -62,8 +70,57 @@ static WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat f
     return pipeline;
 }
 
-static void draw_frame(EngGpu* gpu, WGPURenderPipeline pipeline, WGPUTextureView target)
+typedef struct Uniforms {
+    float scale[2];
+    float _pad[2]; /* uniform buffers are sized in 16-byte multiples */
+} Uniforms;
+
+typedef struct App {
+    EngWindow window;
+    EngGpu gpu;
+    WGPURenderPipeline pipeline;
+    WGPUBuffer uniform_buffer;
+    WGPUBindGroup bind_group;
+} App;
+
+static void create_uniforms(App* app)
 {
+    WGPUBufferDescriptor buffer_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    buffer_desc.label = (WGPUStringView){"triangle uniforms", WGPU_STRLEN};
+    buffer_desc.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
+    buffer_desc.size = sizeof(Uniforms);
+    app->uniform_buffer = wgpuDeviceCreateBuffer(app->gpu.device, &buffer_desc);
+
+    WGPUBindGroupEntry entry = WGPU_BIND_GROUP_ENTRY_INIT;
+    entry.binding = 0;
+    entry.buffer = app->uniform_buffer;
+    entry.size = sizeof(Uniforms);
+
+    /* The pipeline was created with an automatic layout; take group 0's layout from it. */
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(app->pipeline, 0);
+    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    group_desc.layout = layout;
+    group_desc.entryCount = 1;
+    group_desc.entries = &entry;
+    app->bind_group = wgpuDeviceCreateBindGroup(app->gpu.device, &group_desc);
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+static void update_uniforms(App* app)
+{
+    const float w = (float)app->gpu.width;
+    const float h = (float)app->gpu.height;
+    Uniforms u = {.scale = {1.0f, 1.0f}};
+    if (w > h)
+        u.scale[0] = h / w;
+    else
+        u.scale[1] = w / h;
+    wgpuQueueWriteBuffer(app->gpu.queue, app->uniform_buffer, 0, &u, sizeof(u));
+}
+
+static void draw_frame(App* app, WGPUTextureView target)
+{
+    EngGpu* gpu = &app->gpu;
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(gpu->device, NULL);
 
     WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
@@ -77,7 +134,8 @@ static void draw_frame(EngGpu* gpu, WGPURenderPipeline pipeline, WGPUTextureView
     pass_desc.colorAttachments = &color;
 
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-    wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+    wgpuRenderPassEncoderSetPipeline(pass, app->pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, app->bind_group, 0, NULL);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
@@ -88,12 +146,6 @@ static void draw_frame(EngGpu* gpu, WGPURenderPipeline pipeline, WGPUTextureView
     wgpuCommandEncoderRelease(encoder);
 }
 
-typedef struct App {
-    EngWindow window;
-    EngGpu gpu;
-    WGPURenderPipeline pipeline;
-} App;
-
 /* Static rather than on main's stack: on the web, main returns before the first frame runs. */
 static App g_app;
 
@@ -102,7 +154,8 @@ static void frame(void* userdata)
     App* app = userdata;
     WGPUTextureView target = eng_gpu_begin_frame(&app->gpu);
     if (target) {
-        draw_frame(&app->gpu, app->pipeline, target);
+        update_uniforms(app);
+        draw_frame(app, target);
         eng_gpu_end_frame(&app->gpu);
     }
 }
@@ -122,9 +175,12 @@ int main(void)
     }
 
     app->pipeline = create_pipeline(app->gpu.device, app->gpu.surface_format);
+    create_uniforms(app);
 
     eng_window_run(&app->window, frame, app);
 
+    wgpuBindGroupRelease(app->bind_group);
+    wgpuBufferRelease(app->uniform_buffer);
     wgpuRenderPipelineRelease(app->pipeline);
     eng_gpu_destroy(&app->gpu);
     eng_window_destroy(&app->window);
