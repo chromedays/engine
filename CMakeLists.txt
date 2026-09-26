@@ -38,3 +38,4 @@ endfunction()
 
 add_subdirectory(engine)
 add_subdirectory(examples/triangle)
+add_subdirectory(examples/scene)

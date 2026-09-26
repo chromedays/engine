@@ -30,6 +30,11 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height)
     *height = (u32)new_height;
 }
 
+f64 nv_time_seconds(void)
+{
+    return emscripten_get_now() / 1000.0;
+}
+
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
     (void)window;

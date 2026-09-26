@@ -9,9 +9,9 @@ Live: https://chromedays.github.io/engine/
 ## Layout
 
 ```
-engine/include/nv/   public API: base.h (types, asserts, arenas), window.h, gpu.h
-engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames)
-examples/triangle/   draws a single colored triangle
+engine/include/nv/   public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h
+engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames), scene.c
+examples/            triangle (minimal), scene (scene graph, depth, lighting)
 web/                 HTML page template for examples, and the Pages landing page
 docs/                coding standard
 ```
@@ -24,7 +24,7 @@ Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloa
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/examples/triangle 8000   # open http://localhost:8000
+python3 -m http.server -d build/examples/scene 8000   # open http://localhost:8000
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:

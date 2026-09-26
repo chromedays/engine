@@ -15,9 +15,9 @@ WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emd
 There is no native build.
 
 ```
-engine/include/nv/         public API: base.h (types, asserts, arenas), window.h, gpu.h
-engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames)
-examples/triangle/         example app
+engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h
+engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames), scene.c
+examples/                  triangle (minimal), scene (scene graph, depth, lighting)
 web/                       index.html.in (per-example page), landing.html (Pages index)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 .github/workflows/build.yml  CI: web build + GitHub Pages deploy
@@ -30,7 +30,7 @@ Requires the Emscripten SDK (tested with 6.0.10).
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/examples/triangle 8000
+python3 -m http.server -d build/examples/scene 8000
 ```
 
 ## Conventions
@@ -40,7 +40,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - `wgpuSurfacePresent` must not be called; the browser presents the canvas.
 - Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
-- New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged.
+- New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged,
+  are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
+  `web/landing.html`.
 
 ## Testing without a display
 

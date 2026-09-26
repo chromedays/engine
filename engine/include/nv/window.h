@@ -12,6 +12,9 @@ void nv_window_create(NvWindow* window, const char* title);
 // NOTE: Returns the canvas size in device pixels and resizes its backing store to match.
 void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 
+// Seconds since the page loaded.
+f64 nv_time_seconds(void);
+
 typedef void (*NvFrameFn)(void* userdata);
 
 // IMPORTANT: Hands control to the browser's requestAnimationFrame loop and never returns, so any
