@@ -62,10 +62,10 @@ workflow artifact: open the run on the repository's **Actions** tab and download
 `engine-<platform>`. Unzip it and run `triangle` (or `triangle.exe`); the WebGPU library sits
 next to the executable.
 
-CI also builds the web version (`engine-web` artifact). To host it on GitHub Pages, enable
-Pages under **Settings > Pages > Source: GitHub Actions** and add the repository variable
-`ENABLE_PAGES=true` (**Settings > Secrets and variables > Actions > Variables**); each push to
-the default branch then deploys it. Pages on a private repository requires a paid GitHub plan.
+CI also builds the web version (`engine-web` artifact) and deploys it to GitHub Pages on every push
+to the default branch. Enable Pages once under **Settings > Pages > Source: GitHub Actions**; the
+site is then at `https://<owner>.github.io/<repo>/`. On the free GitHub plan the repository must be
+public for Pages to work.
 
 Pushing a tag like `v0.1.0` also publishes the zips as a GitHub Release.
 
