@@ -59,8 +59,9 @@ typedef struct NvEditorLayout {
 
 NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction);
 
-// Begins an ImGui window that fills `rect` (framebuffer pixels) and cannot be moved, resized or
-// collapsed. Like igBegin, always pair it with igEnd.
+// Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be
+// moved, resized or collapsed. `name` only identifies the window. Like igBegin, always pair it
+// with igEnd.
 bool nv_imgui_begin_panel(const char* name, NvRect rect);
 
 // Finishes the ImGui frame and records a render pass that draws it over `target`.
