@@ -5,6 +5,7 @@
 // NOTE: The window is the page's <canvas>; its size follows the canvas's CSS layout.
 typedef struct NvWindow {
     const char* canvas_selector; // CSS selector of the <canvas> element, e.g. "#canvas"
+    f32 pixel_ratio;             // device pixels per CSS pixel, updated by nv_window_framebuffer_size
 } NvWindow;
 
 void nv_window_create(NvWindow* window, const char* title);

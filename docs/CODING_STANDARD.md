@@ -16,7 +16,8 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 ## Language and files
 
-- C17 only. Compile warning-free with `-Wall -Wextra`.
+- C17 only for our code. Compile warning-free with `-Wall -Wextra`. Third-party sources are
+  compiled as they come (Dear ImGui is C++) with their warnings off.
 - Public headers live in `engine/include/nv/`, one per module; sources in `engine/src/`.
 - `nv/base.h` is included (directly or through another nv header) by every file.
 
@@ -33,7 +34,8 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 ## Types and keywords
 
 - Use the aliases from `nv/base.h`: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32` (true/false),
-  `umm` (memory sizes and indices into memory). Use `int` only where an external API demands it.
+  `umm` (memory sizes and indices into memory). Use `int` or `bool` only where an external API
+  demands it (Emscripten callback signatures, ImGui's `bool*` parameters).
 - `static` is spelled by intent:
   - `internal` for file-local functions,
   - `global` for file-scope variables,
@@ -62,7 +64,10 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 ## Dependencies
 
-- Only what the platform requires: Emscripten and its WebGPU port (`emdawnwebgpu`).
+- What the platform requires: Emscripten and its WebGPU port (`emdawnwebgpu`).
+- Dear ImGui, through cimgui (its C API), for debug and tool UI: writing an immediate-mode UI
+  library is not the point of this project. Its platform and renderer backends are ours
+  (`engine/src/imgui.c`), in C.
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 

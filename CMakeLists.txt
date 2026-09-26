@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(engine LANGUAGES C)
+project(engine LANGUAGES C CXX)
 
 if(NOT EMSCRIPTEN)
     message(FATAL_ERROR "nv builds for the web only. Configure with emcmake: "
@@ -19,6 +19,7 @@ target_link_options(webgpu INTERFACE
     --use-port=emdawnwebgpu
     -sDEFAULT_TO_CXX   # the port's implementation is C++
     -sASYNCIFY         # lets wgpuInstanceWaitAny yield to the browser during setup
+    -sASYNCIFY_IGNORE_INDIRECT # setup reaches WaitAny only through direct calls
     -sALLOW_MEMORY_GROWTH
     -sENVIRONMENT=web)
 
@@ -35,6 +36,30 @@ function(nv_setup_executable target)
         "${CMAKE_CURRENT_BINARY_DIR}/index.html"
         DESTINATION ${target})
 endfunction()
+
+# Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
+# here so cimgui's own install rules stay out of the web package.
+include(FetchContent)
+FetchContent_Declare(cimgui
+    GIT_REPOSITORY https://github.com/cimgui/cimgui.git
+    GIT_TAG        125f397e0982fe9466eb0a162de547be5efec849 # Dear ImGui 1.92.9b
+    GIT_SUBMODULES imgui
+    SOURCE_SUBDIR  no-cmake)
+FetchContent_MakeAvailable(cimgui)
+
+add_library(cimgui STATIC
+    ${cimgui_SOURCE_DIR}/cimgui.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_demo.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_draw.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_tables.cpp
+    ${cimgui_SOURCE_DIR}/imgui/imgui_widgets.cpp)
+target_include_directories(cimgui SYSTEM PUBLIC ${cimgui_SOURCE_DIR})
+target_include_directories(cimgui PRIVATE ${cimgui_SOURCE_DIR}/imgui)
+target_compile_definitions(cimgui
+    PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS
+    INTERFACE CIMGUI_DEFINE_ENUMS_AND_STRUCTS) # C users get plain structs; cimgui.cpp must not
+target_compile_options(cimgui PRIVATE -w)
 
 add_subdirectory(engine)
 add_subdirectory(examples/triangle)

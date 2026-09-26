@@ -1,4 +1,5 @@
 #include <nv/gpu.h>
+#include <nv/imgui.h>
 #include <nv/scene.h>
 #include <nv/window.h>
 
@@ -89,6 +90,13 @@ typedef struct App {
     NvNodeId planet;
     NvNodeId moon;
 
+    NvImgui imgui;
+    f64 last_time;
+    f32 orbit_angle;
+    f32 orbit_speed;   // radians per second
+    NvNodeId selected; // node shown in the inspector
+    bool show_demo;    // bool because ImGui writes it through a bool*
+
     Mesh meshes[MESH_COUNT]; // [0] unused: mesh id 0 means "no mesh"
     WGPURenderPipeline pipeline;
     WGPUBuffer frame_buffer;
@@ -106,7 +114,7 @@ typedef struct App {
 
 // IMPORTANT: Global rather than on main's stack: main returns before the first frame runs.
 global App app_state;
-global u8 permanent_memory[NV_MEGABYTES(2)];
+global u8 permanent_memory[NV_MEGABYTES(6)];
 
 internal WGPUBuffer create_buffer(NvGpu* gpu, WGPUBufferUsage usage, const void* data, umm size)
 {
@@ -266,7 +274,7 @@ internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
     return nv_mat4_mul(proj, nv_mat4_inverse(camera_node->world));
 }
 
-internal void render(App* app, WGPUTextureView target)
+internal void render_scene(App* app, WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     NvScene* scene = app->scene;
     FrameUniforms uniforms = {0};
@@ -326,7 +334,6 @@ internal void render(App* app, WGPUTextureView target)
     pass_desc.colorAttachments = &color;
     pass_desc.depthStencilAttachment = &depth;
 
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
     wgpuRenderPassEncoderSetPipeline(pass, app->pipeline);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, app->bind_group, 0, NULL);
@@ -346,10 +353,6 @@ internal void render(App* app, WGPUTextureView target)
 
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
-    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
-    wgpuQueueSubmit(queue, 1, &commands);
-    wgpuCommandBufferRelease(commands);
-    wgpuCommandEncoderRelease(encoder);
 }
 
 internal void build_scene(App* app)
@@ -398,23 +401,89 @@ internal void build_scene(App* app)
     moon_node->material = (NvMaterialId){MATERIAL_MOON};
 }
 
+internal void node_tree(App* app, u32 index)
+{
+    NvScene* scene = app->scene;
+    NvNode* node = &scene->nodes[index];
+    NvNodeId id = {index, node->gen};
+
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
+    if (!node->first_child)
+        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    if (app->selected.index == id.index && app->selected.gen == id.gen)
+        flags |= ImGuiTreeNodeFlags_Selected;
+
+    b32 open = igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s", node->name);
+    if (igIsItemClicked(ImGuiMouseButton_Left))
+        app->selected = id;
+    if (open && node->first_child) {
+        for (u32 child = node->first_child; child; child = scene->nodes[child].next_sibling)
+            node_tree(app, child);
+        igTreePop();
+    }
+}
+
+internal void build_ui(App* app)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    igSetNextWindowPos((ImVec2_c){10.0f, 10.0f}, ImGuiCond_FirstUseEver, (ImVec2_c){0.0f, 0.0f});
+    igSetNextWindowSize((ImVec2_c){270.0f, 0.0f}, ImGuiCond_FirstUseEver);
+    if (igBegin("Scene", NULL, 0)) {
+        igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
+        igSliderFloat("Orbit speed", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+        igCheckbox("ImGui demo", &app->show_demo);
+
+        igSeparator();
+        for (u32 root = app->scene->first_root; root; root = app->scene->nodes[root].next_sibling)
+            node_tree(app, root);
+
+        igSeparator();
+        if (app->selected.index) {
+            NvNode* node = nv_scene_get(app->scene, app->selected);
+            igText("%s", node->name);
+            igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
+            igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
+        } else {
+            igTextDisabled("Select a node to edit it.");
+        }
+    }
+    igEnd();
+
+    if (app->show_demo)
+        igShowDemoWindow(&app->show_demo);
+}
+
 internal void frame(void* userdata)
 {
     App* app = userdata;
-    f32 t = (f32)nv_time_seconds();
-
-    // The moon is the planet's child, so spinning the planet carries the moon around it.
-    nv_scene_get(app->scene, app->planet)->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 0.7f);
-    nv_scene_get(app->scene, app->moon)->rotation =
-        nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), t * 2.0f);
-    nv_scene_update(app->scene);
+    f64 now = nv_time_seconds();
+    f32 dt = (f32)(now - app->last_time);
+    app->last_time = now;
 
     WGPUTextureView target = nv_gpu_begin_frame(&app->gpu);
-    if (target) {
-        update_depth_buffer(app);
-        render(app, target);
-        nv_gpu_end_frame(&app->gpu);
-    }
+    if (!target)
+        return;
+
+    nv_imgui_new_frame(&app->imgui, dt);
+    build_ui(app);
+
+    // The moon is the planet's child, so spinning the planet carries the moon around it.
+    app->orbit_angle += app->orbit_speed * dt;
+    nv_scene_get(app->scene, app->planet)->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), app->orbit_angle);
+    nv_scene_get(app->scene, app->moon)->rotation =
+        nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), (f32)now * 2.0f);
+    nv_scene_update(app->scene);
+
+    update_depth_buffer(app);
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
+    render_scene(app, encoder, target);
+    nv_imgui_render(&app->imgui, encoder, target);
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
+    wgpuQueueSubmit(app->gpu.queue, 1, &commands);
+    wgpuCommandBufferRelease(commands);
+    wgpuCommandEncoderRelease(encoder);
+
+    nv_gpu_end_frame(&app->gpu);
 }
 
 int main(void)
@@ -432,7 +501,11 @@ int main(void)
     }
 
     create_gpu_resources(app);
+    nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->arena);
     build_scene(app);
+    app->orbit_speed = 0.7f;
+    app->selected = app->moon;
+    app->last_time = nv_time_seconds();
     nv_window_run(&app->window, frame, app);
     return 0;
 }

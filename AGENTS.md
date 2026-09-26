@@ -15,9 +15,10 @@ WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emd
 There is no native build.
 
 ```
-engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h
-engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames), scene.c
-examples/                  triangle (minimal), scene (scene graph, depth, lighting)
+engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
+                           imgui.h (Dear ImGui input and rendering)
+engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames), scene.c, imgui.c
+examples/                  triangle (minimal), scene (scene graph, depth, lighting, ImGui inspector)
 web/                       index.html.in (per-example page), landing.html (Pages index)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 .github/workflows/build.yml  CI: web build + GitHub Pages deploy
@@ -40,6 +41,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - `wgpuSurfacePresent` must not be called; the browser presents the canvas.
 - Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
+- ImGui input reads page client coordinates, which match canvas coordinates only because the page
+  pins the canvas to the top-left corner. Keep that true in `web/index.html.in`.
+- UI code uses the cimgui API (`ig*` functions, `ImGuiIO_*`), fetched by CMake. Call it between
+  `nv_imgui_new_frame` and `nv_imgui_render`.
 - New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged,
   are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
   `web/landing.html`.

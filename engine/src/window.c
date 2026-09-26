@@ -17,6 +17,7 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height)
     f64 css_height = 0.0;
     emscripten_get_element_css_size(window->canvas_selector, &css_width, &css_height);
     f64 pixel_ratio = emscripten_get_device_pixel_ratio();
+    window->pixel_ratio = (f32)pixel_ratio;
     s32 new_width = (s32)lround(css_width * pixel_ratio);
     s32 new_height = (s32)lround(css_height * pixel_ratio);
 

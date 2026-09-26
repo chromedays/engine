@@ -2,16 +2,18 @@
 
 nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
 WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go to the browser through
-Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`.
+Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`. Tool UI uses
+[Dear ImGui](https://github.com/ocornut/imgui) through [cimgui](https://github.com/cimgui/cimgui).
 
 Live: https://chromedays.github.io/engine/
 
 ## Layout
 
 ```
-engine/include/nv/   public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h
-engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames), scene.c
-examples/            triangle (minimal), scene (scene graph, depth, lighting)
+engine/include/nv/   public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
+                     imgui.h (Dear ImGui input and rendering)
+engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames), scene.c, imgui.c
+examples/            triangle (minimal), scene (scene graph, depth, lighting, ImGui inspector)
 web/                 HTML page template for examples, and the Pages landing page
 docs/                coding standard
 ```
