@@ -139,7 +139,7 @@ internal void node_tree(App* app, u32 index)
 internal void build_ui(App* app, NvRect panel)
 {
     ImGuiIO* io = igGetIO_Nil();
-    if (nv_imgui_begin_panel("Scene", panel)) {
+    if (nv_imgui_begin_panel(&app->imgui, "Scene", panel)) {
         igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
         igSliderFloat("Orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
 

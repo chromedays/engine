@@ -42,6 +42,10 @@ typedef struct NvImgui {
 
     // 1 with a mouse; larger on touch screens so text and hit areas suit fingers.
     f32 ui_scale;
+
+    // Touch drag scrolling in panels: the panel a touch started in, and whether it is scrolling.
+    ImGuiWindow* touch_panel;
+    b32 touch_scrolling;
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for
@@ -60,9 +64,9 @@ typedef struct NvEditorLayout {
 NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction);
 
 // Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be
-// moved, resized or collapsed. `name` only identifies the window. Like igBegin, always pair it
-// with igEnd.
-bool nv_imgui_begin_panel(const char* name, NvRect rect);
+// moved, resized or collapsed. `name` only identifies the window. A vertical touch drag scrolls
+// it. Like igBegin, always pair it with igEnd.
+bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect);
 
 // Finishes the ImGui frame and records a render pass that draws it over `target`.
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target);

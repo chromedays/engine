@@ -5,6 +5,8 @@
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
+#include <float.h>
+#include <math.h>
 #include <string.h>
 
 // NOTE: imgui.h spells this as a macro that cimgui does not carry over.
@@ -322,6 +324,8 @@ internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* 
         ImGuiIO_AddMouseButtonEvent(io, 0, 1);
     } else if (event_type == EMSCRIPTEN_EVENT_TOUCHEND || event_type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
         ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+        // A lifted finger points at nothing, so the last widget touched does not stay hovered.
+        ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
         // IMPORTANT: iOS only opens the keyboard for focus() called inside a touch handler. The
         // press has already been through a frame, so ImGui knows whether a text field took it.
         if (io->WantTextInput)
@@ -570,7 +574,41 @@ NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction)
     return layout;
 }
 
-bool nv_imgui_begin_panel(const char* name, NvRect rect)
+// ImGui has no touch scrolling, so a finger that moves mostly vertically past a threshold scrolls
+// the panel instead. The widget under the finger loses its activation then, so a button the drag
+// started on does not fire on release.
+// TODO: A slider the drag starts on still takes the touch position as its value first.
+internal void update_touch_scroll(NvImgui* imgui)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiWindow* window = igGetCurrentWindow();
+    if (!igIsMouseDown_Nil(ImGuiMouseButton_Left)) {
+        if (imgui->touch_panel == window) {
+            imgui->touch_panel = NULL;
+            imgui->touch_scrolling = 0;
+        }
+        return;
+    }
+    if (igIsMouseClicked_Bool(ImGuiMouseButton_Left, false) && io->MouseSource == ImGuiMouseSource_TouchScreen &&
+        igIsWindowHovered(0)) {
+        imgui->touch_panel = window;
+        imgui->touch_scrolling = 0;
+    }
+    if (imgui->touch_panel != window)
+        return;
+
+    if (!imgui->touch_scrolling) {
+        ImVec2_c drag = igGetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+        f32 threshold = 8.0f * imgui->ui_scale;
+        if (fabsf(drag.y) < threshold || fabsf(drag.y) < fabsf(drag.x))
+            return;
+        imgui->touch_scrolling = 1;
+    }
+    igClearActiveID();
+    igSetScrollY_Float(igGetScrollY() - io->MouseDelta.y);
+}
+
+bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
 {
     // ImGui works in CSS pixels; `rect` is in framebuffer pixels.
     f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
@@ -580,7 +618,9 @@ bool nv_imgui_begin_panel(const char* name, NvRect rect)
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoBringToFrontOnFocus;
-    return igBegin(name, NULL, flags);
+    bool open = igBegin(name, NULL, flags);
+    update_touch_scroll(imgui);
+    return open;
 }
 
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)

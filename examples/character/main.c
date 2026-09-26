@@ -333,7 +333,7 @@ internal void view_tab(App* app)
 internal void build_ui(App* app, NvRect panel)
 {
     // NOTE: The panel is short on phones, so each group of controls gets its own tab.
-    if (nv_imgui_begin_panel("Animation", panel) && igBeginTabBar("tabs", 0)) {
+    if (nv_imgui_begin_panel(&app->imgui, "Animation", panel) && igBeginTabBar("tabs", 0)) {
         if (igBeginTabItem("Clips", NULL, 0)) {
             clips_tab(app);
             igEndTabItem();
