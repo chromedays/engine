@@ -56,11 +56,11 @@ The wgpu-native release is chosen from the host OS and CPU architecture
 
 ## Prebuilt binaries
 
-GitHub Actions (`.github/workflows/build.yml`) builds every push for Linux x86_64,
-Linux aarch64, Windows x86_64 and macOS aarch64 (Apple Silicon). Each build is uploaded as a
-workflow artifact: open the run on the repository's **Actions** tab and download
-`engine-<platform>`. Unzip it and run `triangle` (or `triangle.exe`); the WebGPU library sits
-next to the executable.
+GitHub Actions (`.github/workflows/build.yml`) builds every push for Linux x86_64 and
+Linux aarch64. Each build is uploaded as a workflow artifact: open the run on the repository's
+**Actions** tab and download `engine-<platform>`. Unzip it and run `triangle`; the WebGPU library
+sits next to the executable. Windows and macOS are supported by the code but not built in CI;
+build them locally with the steps above.
 
 CI also builds the web version (`engine-web` artifact) and deploys it to GitHub Pages on every push
 to the default branch. Enable Pages once under **Settings > Pages > Source: GitHub Actions**; the
@@ -68,6 +68,3 @@ site is then at `https://<owner>.github.io/<repo>/`. On the free GitHub plan the
 public for Pages to work.
 
 Pushing a tag like `v0.1.0` also publishes the zips as a GitHub Release.
-
-The macOS build is unsigned, so macOS blocks it the first time; clear the quarantine flag with
-`xattr -dr com.apple.quarantine <folder>`.
