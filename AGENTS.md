@@ -22,7 +22,7 @@ engine/include/nv/     public API: window.h (NvWindow), gpu.h (NvGpu)
 engine/src/                window_glfw.c / window_web.c, gpu.c, surface.c, surface_metal.m (macOS)
 examples/triangle/         example app
 web/                       index.html.in (per-example page), landing.html (Pages index)
-.github/workflows/build.yml  CI: Linux x86_64/aarch64 and web (Windows/macOS are not built in CI)
+.github/workflows/build.yml  CI: web build + GitHub Pages deploy only (native is built locally)
 ```
 
 ## Build and run

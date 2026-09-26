@@ -54,17 +54,14 @@ recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 The wgpu-native release is chosen from the host OS and CPU architecture
 (x86_64 or aarch64/arm64); override the version with `-DWGPU_NATIVE_VERSION=<tag>`.
 
-## Prebuilt binaries
+## CI and deployment
 
-GitHub Actions (`.github/workflows/build.yml`) builds every push for Linux x86_64 and
-Linux aarch64. Each build is uploaded as a workflow artifact: open the run on the repository's
-**Actions** tab and download `engine-<platform>`. Unzip it and run `triangle`; the WebGPU library
-sits next to the executable. Windows and macOS are supported by the code but not built in CI;
-build them locally with the steps above.
+GitHub Actions (`.github/workflows/build.yml`) builds only the web version (downloadable as the
+`engine-web` artifact) and deploys it to GitHub Pages on every push to the default branch. Native
+builds are done locally with the steps above.
 
-CI also builds the web version (`engine-web` artifact) and deploys it to GitHub Pages on every push
-to the default branch. Enable Pages once under **Settings > Pages > Source: GitHub Actions**; the
-site is then at `https://<owner>.github.io/<repo>/`. On the free GitHub plan the repository must be
-public for Pages to work.
+Enable Pages once under **Settings > Pages > Source: GitHub Actions**; the site is then at
+`https://<owner>.github.io/<repo>/`. On the free GitHub plan the repository must be public for
+Pages to work.
 
-Pushing a tag like `v0.1.0` also publishes the zips as a GitHub Release.
+Pushing a tag like `v0.1.0` also publishes the web build as a zip on a GitHub Release.
