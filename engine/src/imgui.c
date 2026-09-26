@@ -2,6 +2,7 @@
 #include "nv/math.h"
 #include "nv/window.h"
 
+#include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 
 #include <string.h>
@@ -43,6 +44,116 @@ global const char* imgui_shader =
     "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
     "    return in.col * textureSample(t, s, in.uv);\n"
     "}\n";
+
+//
+// Browser glue
+//
+
+// NOTE: Phones only show their on-screen keyboard for a focused text field, and a canvas is not
+// one. A hidden <input> (the "text agent") takes focus while ImGui edits text; what the keyboard
+// types arrives as input events and is forwarded to ImGui. The agent always holds one sentinel
+// space, so a Backspace on an otherwise empty field is still visible as a shorter value.
+EM_JS_DEPS(nv_imgui, "$stringToUTF8,$UTF8ToString");
+
+EM_JS(void, js_setup_text_agent, (char* clipboard, int clipboard_size), {
+    const agent = document.createElement("input");
+    agent.id = "nv-text-agent";
+    agent.type = "text";
+    agent.setAttribute("autocomplete", "off");
+    agent.setAttribute("autocapitalize", "off");
+    agent.setAttribute("autocorrect", "off");
+    agent.spellcheck = false;
+    // 16px keeps iOS from zooming the page when the field gains focus.
+    agent.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0;" +
+                          "padding:0;font-size:16px;pointer-events:none;";
+    document.body.appendChild(agent);
+
+    const reset = () => { agent.value = " "; agent.setSelectionRange(1, 1); };
+    const flush = () => {
+        const value = agent.value;
+        if (value.length < 1) {
+            _nv_imgui_js_backspace();
+        } else {
+            for (const ch of value.slice(1)) _nv_imgui_js_char(ch.codePointAt(0));
+        }
+        reset();
+    };
+    let composing = false;
+    agent.addEventListener("focus", reset);
+    agent.addEventListener("compositionstart", () => { composing = true; });
+    agent.addEventListener("compositionend", () => { composing = false; flush(); });
+    agent.addEventListener("input", () => { if (!composing) flush(); });
+
+    // Keyboard pastes land here; pastes into the agent (long-press menu) arrive as input instead.
+    window.addEventListener("paste", (event) => {
+        if (event.target === agent) return;
+        const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+        stringToUTF8(text, clipboard, clipboard_size);
+        event.preventDefault();
+        _nv_imgui_js_paste();
+    });
+});
+
+EM_JS(int, js_text_agent_focused, (void), {
+    return document.activeElement === document.getElementById("nv-text-agent") ? 1 : 0;
+});
+
+EM_JS(void, js_focus_text_agent, (int focus), {
+    const agent = document.getElementById("nv-text-agent");
+    if (focus) agent.focus({preventScroll: true});
+    else agent.blur();
+});
+
+EM_JS(void, js_write_clipboard, (const char* text), {
+    if (navigator.clipboard) navigator.clipboard.writeText(UTF8ToString(text)).catch(() => {});
+});
+
+EM_JS(int, js_touch_is_primary, (void), {
+    return matchMedia("(pointer: coarse)").matches ? 1 : 0;
+});
+
+// Entry points for the JavaScript above; not part of the public API.
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_char(u32 codepoint)
+{
+    ImGuiIO_AddInputCharacter(igGetIO_Nil(), codepoint);
+}
+
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_backspace(void)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_Backspace, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_Backspace, 0);
+}
+
+// The pasted text is already in the clipboard buffer; replaying Ctrl+V makes ImGui read it.
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_paste(void)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_V, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_V, 0);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, 0);
+}
+
+internal const char* get_clipboard(ImGuiContext* context)
+{
+    (void)context;
+    NvImgui* imgui = igGetPlatformIO_Nil()->Platform_ClipboardUserData;
+    return imgui->clipboard;
+}
+
+internal void set_clipboard(ImGuiContext* context, const char* text)
+{
+    (void)context;
+    NvImgui* imgui = igGetPlatformIO_Nil()->Platform_ClipboardUserData;
+    umm length = strlen(text);
+    if (length > NV_IMGUI_CLIPBOARD_SIZE - 1)
+        length = NV_IMGUI_CLIPBOARD_SIZE - 1;
+    memcpy(imgui->clipboard, text, length);
+    imgui->clipboard[length] = 0;
+    // NOTE: Best effort: browsers may refuse writes that are not close to a user gesture.
+    js_write_clipboard(imgui->clipboard);
+}
 
 //
 // Input
@@ -125,12 +236,12 @@ internal b32 is_single_character(const char* text)
     return expected && strlen(text) == expected;
 }
 
-internal void add_modifiers(ImGuiIO* io, b32 ctrl, b32 shift, b32 alt, b32 super)
+// NOTE: Cmd (metaKey) is reported as Ctrl so macOS shortcuts (Cmd+C, Cmd+V, Cmd+A) work.
+internal void add_modifiers(ImGuiIO* io, const EmscriptenKeyboardEvent* event)
 {
-    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, ctrl);
-    ImGuiIO_AddKeyEvent(io, ImGuiMod_Shift, shift);
-    ImGuiIO_AddKeyEvent(io, ImGuiMod_Alt, alt);
-    ImGuiIO_AddKeyEvent(io, ImGuiMod_Super, super);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, event->ctrlKey || event->metaKey);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Shift, event->shiftKey);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Alt, event->altKey);
 }
 
 // Browser callbacks return true to stop the browser's default handling. Return values and
@@ -140,14 +251,32 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
     (void)userdata;
     ImGuiIO* io = igGetIO_Nil();
     b32 down = (event_type == EMSCRIPTEN_EVENT_KEYDOWN);
-    add_modifiers(io, event->ctrlKey, event->shiftKey, event->altKey, event->metaKey);
+    b32 shortcut = event->ctrlKey || event->metaKey;
+    add_modifiers(io, event);
+
+    // On-screen keyboards often leave `code` empty, but name special keys in `key`.
     ImGuiKey key = key_from_code(event->code);
+    if (key == ImGuiKey_None)
+        key = key_from_code(event->key);
+
+    // Leave paste to the browser: it fires a paste event carrying the text (see the glue above).
+    if (shortcut && key == ImGuiKey_V)
+        return 0;
+
+    // While the text agent has focus, its input events carry text and Backspace; taking them
+    // from keydown too would apply them twice. The agent needs the default action to see them.
+    if (js_text_agent_focused()) {
+        if (key != ImGuiKey_None && key != ImGuiKey_Backspace)
+            ImGuiIO_AddKeyEvent(io, key, down);
+        return 0;
+    }
+
     if (key != ImGuiKey_None)
         ImGuiIO_AddKeyEvent(io, key, down);
 
     // NOTE: Text is taken from keydown instead of keypress so keydown can be consumed below
     // (consuming keydown suppresses keypress).
-    if (down && !event->ctrlKey && !event->metaKey && is_single_character(event->key))
+    if (down && !shortcut && is_single_character(event->key))
         ImGuiIO_AddInputCharactersUTF8(io, event->key);
 
     return io->WantCaptureKeyboard;
@@ -189,10 +318,15 @@ internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* 
     const EmscriptenTouchPoint* touch = &event->touches[0];
     ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_TouchScreen);
     ImGuiIO_AddMousePosEvent(io, (f32)touch->clientX, (f32)touch->clientY);
-    if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART)
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART) {
         ImGuiIO_AddMouseButtonEvent(io, 0, 1);
-    else if (event_type == EMSCRIPTEN_EVENT_TOUCHEND || event_type == EMSCRIPTEN_EVENT_TOUCHCANCEL)
+    } else if (event_type == EMSCRIPTEN_EVENT_TOUCHEND || event_type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
         ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+        // IMPORTANT: iOS only opens the keyboard for focus() called inside a touch handler. The
+        // press has already been through a frame, so ImGui knows whether a text field took it.
+        if (io->WantTextInput)
+            js_focus_text_agent(1);
+    }
     // Consuming touches stops the browser from also sending emulated mouse events.
     return 1;
 }
@@ -375,6 +509,7 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     imgui->window = window;
     imgui->vertices = NV_PUSH_ARRAY(arena, NV_IMGUI_MAX_VERTICES, ImDrawVert);
     imgui->indices = NV_PUSH_ARRAY(arena, NV_IMGUI_MAX_INDICES, ImDrawIdx);
+    imgui->clipboard = NV_PUSH_ARRAY(arena, NV_IMGUI_CLIPBOARD_SIZE, char);
 
     igCreateContext(NULL);
     ImGuiIO* io = igGetIO_Nil();
@@ -382,7 +517,20 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     io->BackendPlatformName = "nv_html5";
     io->BackendRendererName = "nv_webgpu";
     io->BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
+
+    ImGuiPlatformIO* platform_io = igGetPlatformIO_Nil();
+    platform_io->Platform_ClipboardUserData = imgui;
+    platform_io->Platform_GetClipboardTextFn = get_clipboard;
+    platform_io->Platform_SetClipboardTextFn = set_clipboard;
+
     hook_input(window);
+    js_setup_text_agent(imgui->clipboard, NV_IMGUI_CLIPBOARD_SIZE);
+
+    // Fingers need bigger text and hit areas than a mouse pointer.
+    imgui->ui_scale = js_touch_is_primary() ? 1.5f : 1.0f;
+    ImGuiStyle* style = igGetStyle();
+    ImGuiStyle_ScaleAllSizes(style, imgui->ui_scale);
+    style->FontScaleMain = imgui->ui_scale;
 
     WGPUDevice device = gpu->device;
     imgui->pipeline = create_pipeline(device, gpu->surface_format);
@@ -403,6 +551,11 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     io->DisplaySize = (ImVec2_c){(f32)imgui->gpu->width / scale, (f32)imgui->gpu->height / scale};
     io->DisplayFramebufferScale = (ImVec2_c){scale, scale};
     io->DeltaTime = delta_seconds > 0.0f ? delta_seconds : 1.0f / 60.0f;
+
+    // Close the on-screen keyboard once ImGui stops editing text (after Enter, or a tap outside).
+    if (!io->WantTextInput && js_text_agent_focused())
+        js_focus_text_agent(0);
+
     igNewFrame();
 }
 

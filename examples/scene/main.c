@@ -426,11 +426,14 @@ internal void node_tree(App* app, u32 index)
 internal void build_ui(App* app)
 {
     ImGuiIO* io = igGetIO_Nil();
+    f32 width = 270.0f * app->imgui.ui_scale;
+    if (width > io->DisplaySize.x - 20.0f)
+        width = io->DisplaySize.x - 20.0f;
     igSetNextWindowPos((ImVec2_c){10.0f, 10.0f}, ImGuiCond_FirstUseEver, (ImVec2_c){0.0f, 0.0f});
-    igSetNextWindowSize((ImVec2_c){270.0f, 0.0f}, ImGuiCond_FirstUseEver);
+    igSetNextWindowSize((ImVec2_c){width, 0.0f}, ImGuiCond_FirstUseEver);
     if (igBegin("Scene", NULL, 0)) {
         igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
-        igSliderFloat("Orbit speed", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+        igSliderFloat("Orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
         igCheckbox("ImGui demo", &app->show_demo);
 
         igSeparator();
@@ -440,7 +443,7 @@ internal void build_ui(App* app)
         igSeparator();
         if (app->selected.index) {
             NvNode* node = nv_scene_get(app->scene, app->selected);
-            igText("%s", node->name);
+            igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
             igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
             igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
         } else {

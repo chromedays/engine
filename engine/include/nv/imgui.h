@@ -7,6 +7,7 @@
 #define NV_IMGUI_MAX_TEXTURES 16
 #define NV_IMGUI_MAX_VERTICES 131072
 #define NV_IMGUI_MAX_INDICES  262144
+#define NV_IMGUI_CLIPBOARD_SIZE 65536
 
 typedef struct NvImguiTexture {
     WGPUTexture texture;
@@ -32,6 +33,12 @@ typedef struct NvImgui {
     // CPU copies of one frame's geometry, uploaded with one write per buffer.
     ImDrawVert* vertices; // [NV_IMGUI_MAX_VERTICES]
     ImDrawIdx* indices;   // [NV_IMGUI_MAX_INDICES]
+
+    // Text ImGui copies, or the browser last pasted; NUL-terminated, truncated to fit.
+    char* clipboard; // [NV_IMGUI_CLIPBOARD_SIZE]
+
+    // 1 with a mouse; larger on touch screens so text and hit areas suit fingers.
+    f32 ui_scale;
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for

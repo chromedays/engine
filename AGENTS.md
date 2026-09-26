@@ -45,6 +45,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   pins the canvas to the top-left corner. Keep that true in `web/index.html.in`.
 - UI code uses the cimgui API (`ig*` functions, `ImGuiIO_*`), fetched by CMake. Call it between
   `nv_imgui_new_frame` and `nv_imgui_render`.
+- On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
+  show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
+  in `engine/src/imgui.c`.
+- `NvImgui.ui_scale` is 1.5 on touch screens; size ImGui windows with it.
 - New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged,
   are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
   `web/landing.html`.
