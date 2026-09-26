@@ -25,7 +25,6 @@ typedef struct App {
     f32 orbit_angle;
     f32 orbit_speed;   // radians per second
     NvNodeId selected; // node shown in the inspector
-    bool show_demo;    // bool because ImGui writes it through a bool*
 } App;
 
 // IMPORTANT: Global rather than on main's stack: main returns before the first frame runs.
@@ -143,7 +142,6 @@ internal void build_ui(App* app, NvRect panel)
     if (nv_imgui_begin_panel("Scene", panel)) {
         igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
         igSliderFloat("Orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
-        igCheckbox("ImGui demo", &app->show_demo);
 
         igSeparator();
         for (u32 root = app->scene->first_root; root; root = app->scene->nodes[root].next_sibling)
@@ -160,9 +158,6 @@ internal void build_ui(App* app, NvRect panel)
         }
     }
     igEnd();
-
-    if (app->show_demo)
-        igShowDemoWindow(&app->show_demo);
 }
 
 internal void frame(void* userdata)
