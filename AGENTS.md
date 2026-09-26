@@ -56,6 +56,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
 - `NvImgui.ui_scale` is 1.5 on touch screens; size ImGui windows with it.
+- Examples with an editor UI use the editor layout: `nv_editor_layout` splits the canvas into the
+  scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
+  with `nv_imgui_begin_panel`). Keep editor UI inside the panel.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).

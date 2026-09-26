@@ -480,14 +480,19 @@ internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
     return nv_mat4_mul(proj, nv_mat4_inverse(camera_node->world));
 }
 
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,
                       WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     NvGpu* gpu = renderer->gpu;
     update_depth_buffer(renderer);
 
+    if (!viewport.width || !viewport.height)
+        viewport = (NvRect){0, 0, gpu->width, gpu->height};
+    NV_ASSERT(viewport.x + viewport.width <= gpu->width && viewport.y + viewport.height <= gpu->height);
+
     FrameUniforms uniforms = {0};
-    uniforms.view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera), (f32)gpu->width / (f32)gpu->height);
+    uniforms.view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera),
+                                          (f32)viewport.width / (f32)viewport.height);
     memcpy(uniforms.ambient, renderer->ambient, sizeof(renderer->ambient));
 
     u32 object_count = 0;
@@ -554,6 +559,9 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     pass_desc.depthStencilAttachment = &depth;
 
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
+    wgpuRenderPassEncoderSetViewport(pass, (f32)viewport.x, (f32)viewport.y, (f32)viewport.width,
+                                     (f32)viewport.height, 0.0f, 1.0f);
+    wgpuRenderPassEncoderSetScissorRect(pass, viewport.x, viewport.y, viewport.width, viewport.height);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->frame_group, 0, NULL);
 
     WGPURenderPipeline bound_pipeline = NULL;

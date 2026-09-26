@@ -124,7 +124,9 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);
 
-// Records the scene pass. A skinned node is posed by `skins[node->animator.index]`; with no
-// animator, or `skins` NULL, it is drawn in its bind pose.
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
+// Records the scene pass. The whole target is cleared and the scene is drawn inside `viewport`,
+// whose size also sets the camera's aspect ratio; a zeroed viewport means the whole target.
+// A skinned node is posed by `skins[node->animator.index]`; with no animator, or `skins` NULL,
+// it is drawn in its bind pose.
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,
                       WGPUCommandEncoder encoder, WGPUTextureView target);

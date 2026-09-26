@@ -262,72 +262,95 @@ internal void update_blend(App* app)
     base->weight = 1.0f - app->blend_weight;
 }
 
-internal void build_ui(App* app)
+internal void clips_tab(App* app)
+{
+    NvAnimator* animator = nv_anim_get(app->animator);
+    for (u32 i = 0; i < app->clip_count; ++i) {
+        bool current = animator->layers[0].clip.index && regular_clip(app, animator->layers[0].clip).index == app->clips[i].index;
+        if (igSelectable_Bool(app->clip_names[i], current, 0, (ImVec2_c){0, 0})) {
+            app->jump = JUMP_NONE;
+            play(app, app->clips[i]);
+        }
+    }
+    if (igButton("Jump", (ImVec2_c){-1.0f, 0.0f}) && app->jump == JUMP_NONE) {
+        app->jump_return = animator->layers[0].clip;
+        nv_anim_play(animator, find_clip(app, "Jump_Start"), 0.1f, 0);
+        app->jump = JUMP_START;
+    }
+}
+
+internal void playback_tab(App* app)
+{
+    NvAnimator* animator = nv_anim_get(app->animator);
+    igSliderFloat("Speed", &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
+    igSliderFloat("Fade", &app->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
+    igCombo_Str_arr("Blend", &app->blend_clip, app->clip_names, (int)app->clip_count, -1);
+    igSliderFloat("Weight", &app->blend_weight, 0.0f, 1.0f, "%.2f", 0);
+
+    igSeparatorText("Layers");
+    f32 total = 0.0f;
+    for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
+        if (animator->layers[l].clip.index)
+            total += animator->layers[l].weight;
+    }
+    for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
+        NvAnimLayer* layer = &animator->layers[l];
+        if (!layer->clip.index)
+            continue;
+        char overlay[64];
+        snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
+        igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
+    }
+}
+
+internal void extras_tab(App* app)
+{
+    NvAnimator* animator = nv_anim_get(app->animator);
+    igCheckbox("Sword in hand", &app->attach_sword);
+    if (igCheckbox("Root motion", &app->root_motion) && app->jump == JUMP_NONE)
+        play(app, regular_clip(app, animator->layers[0].clip));
+    igBeginDisabled(!app->root_motion);
+    NvVec3 position = nv_scene_get(app->scene, app->character.root)->position;
+    igText("Position %.2f, %.2f m", position.x, position.z);
+    igSliderFloat("Turn", &app->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
+    if (igButton("Back to center", (ImVec2_c){-1.0f, 0.0f})) {
+        NvNode* root = nv_scene_get(app->scene, app->character.root);
+        root->position = nv_vec3(0, 0, 0);
+        root->rotation = nv_quat_identity();
+    }
+    igEndDisabled();
+    igCheckbox("Look at target", &app->look_at);
+}
+
+internal void view_tab(App* app)
 {
     ImGuiIO* io = igGetIO_Nil();
-    NvAnimator* animator = nv_anim_get(app->animator);
-    f32 width = 300.0f * app->imgui.ui_scale;
-    if (width > io->DisplaySize.x - 20.0f)
-        width = io->DisplaySize.x - 20.0f;
-    igSetNextWindowPos((ImVec2_c){10.0f, 10.0f}, ImGuiCond_FirstUseEver, (ImVec2_c){0.0f, 0.0f});
-    igSetNextWindowSize((ImVec2_c){width, 0.0f}, ImGuiCond_FirstUseEver);
-    if (igBegin("Animation", NULL, 0)) {
-        igText("%.0f FPS", io->Framerate);
+    igText("%.0f FPS", io->Framerate);
+    igCheckbox("Show bones", &app->show_bones);
+    igSliderAngle("Camera", &app->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
+}
 
-        igSeparatorText("Clips");
-        for (u32 i = 0; i < app->clip_count; ++i) {
-            bool current = animator->layers[0].clip.index && regular_clip(app, animator->layers[0].clip).index == app->clips[i].index;
-            if (igSelectable_Bool(app->clip_names[i], current, 0, (ImVec2_c){0, 0})) {
-                app->jump = JUMP_NONE;
-                play(app, app->clips[i]);
-            }
+internal void build_ui(App* app, NvRect panel)
+{
+    // NOTE: The panel is short on phones, so each group of controls gets its own tab.
+    if (nv_imgui_begin_panel("Animation", panel) && igBeginTabBar("tabs", 0)) {
+        if (igBeginTabItem("Clips", NULL, 0)) {
+            clips_tab(app);
+            igEndTabItem();
         }
-        if (igButton("Jump", (ImVec2_c){-1.0f, 0.0f}) && app->jump == JUMP_NONE) {
-            app->jump_return = animator->layers[0].clip;
-            nv_anim_play(animator, find_clip(app, "Jump_Start"), 0.1f, 0);
-            app->jump = JUMP_START;
+        if (igBeginTabItem("Playback", NULL, 0)) {
+            playback_tab(app);
+            igEndTabItem();
         }
-
-        igSeparatorText("Playback");
-        igSliderFloat("Speed", &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
-        igSliderFloat("Fade", &app->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
-        igCombo_Str_arr("Blend", &app->blend_clip, app->clip_names, (int)app->clip_count, -1);
-        igSliderFloat("Weight", &app->blend_weight, 0.0f, 1.0f, "%.2f", 0);
-
-        igSeparatorText("Layers");
-        f32 total = 0.0f;
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            if (animator->layers[l].clip.index)
-                total += animator->layers[l].weight;
+        if (igBeginTabItem("Extras", NULL, 0)) {
+            extras_tab(app);
+            igEndTabItem();
         }
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            NvAnimLayer* layer = &animator->layers[l];
-            if (!layer->clip.index)
-                continue;
-            char overlay[64];
-            snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
-            igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
+        if (igBeginTabItem("View", NULL, 0)) {
+            view_tab(app);
+            igEndTabItem();
         }
-
-        igSeparatorText("Extras");
-        igCheckbox("Sword in hand", &app->attach_sword);
-        if (igCheckbox("Root motion", &app->root_motion) && app->jump == JUMP_NONE)
-            play(app, regular_clip(app, animator->layers[0].clip));
-        igBeginDisabled(!app->root_motion);
-        NvVec3 position = nv_scene_get(app->scene, app->character.root)->position;
-        igText("Position %.2f, %.2f m", position.x, position.z);
-        igSliderFloat("Turn", &app->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
-        if (igButton("Back to center", (ImVec2_c){-1.0f, 0.0f})) {
-            NvNode* root = nv_scene_get(app->scene, app->character.root);
-            root->position = nv_vec3(0, 0, 0);
-            root->rotation = nv_quat_identity();
-        }
-        igEndDisabled();
-        igCheckbox("Look at target", &app->look_at);
-
-        igSeparatorText("View");
-        igCheckbox("Show bones", &app->show_bones);
-        igSliderAngle("Camera", &app->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
+        igEndTabBar();
     }
     igEnd();
 }
@@ -484,8 +507,9 @@ internal void frame(void* userdata)
     if (!target)
         return;
 
+    NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
     nv_imgui_new_frame(&app->imgui, dt);
-    build_ui(app);
+    build_ui(app, layout.panel);
 
     app->time = now;
     update_jump(app, dt);
@@ -500,7 +524,7 @@ internal void frame(void* userdata)
         draw_bones(app);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
-    nv_renderer_draw(&app->renderer, app->scene, nv_anim_skins(), encoder, target);
+    nv_renderer_draw(&app->renderer, app->scene, nv_anim_skins(), layout.viewport, encoder, target);
     nv_imgui_render(&app->imgui, encoder, target);
     WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
     wgpuQueueSubmit(app->gpu.queue, 1, &commands);

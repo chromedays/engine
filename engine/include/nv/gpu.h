@@ -6,6 +6,11 @@
 
 typedef struct NvWindow NvWindow;
 
+// A region of the canvas in framebuffer pixels, with the origin at the top-left corner.
+typedef struct NvRect {
+    u32 x, y, width, height;
+} NvRect;
+
 // NOTE: Owns the WebGPU instance, adapter, device, queue and the canvas surface.
 // A zeroed NvGpu is the valid "not created" state.
 typedef struct NvGpu {

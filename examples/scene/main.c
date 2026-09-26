@@ -137,15 +137,10 @@ internal void node_tree(App* app, u32 index)
     }
 }
 
-internal void build_ui(App* app)
+internal void build_ui(App* app, NvRect panel)
 {
     ImGuiIO* io = igGetIO_Nil();
-    f32 width = 270.0f * app->imgui.ui_scale;
-    if (width > io->DisplaySize.x - 20.0f)
-        width = io->DisplaySize.x - 20.0f;
-    igSetNextWindowPos((ImVec2_c){10.0f, 10.0f}, ImGuiCond_FirstUseEver, (ImVec2_c){0.0f, 0.0f});
-    igSetNextWindowSize((ImVec2_c){width, 0.0f}, ImGuiCond_FirstUseEver);
-    if (igBegin("Scene", NULL, 0)) {
+    if (nv_imgui_begin_panel("Scene", panel)) {
         igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
         igSliderFloat("Orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
         igCheckbox("ImGui demo", &app->show_demo);
@@ -181,8 +176,9 @@ internal void frame(void* userdata)
     if (!target)
         return;
 
+    NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
     nv_imgui_new_frame(&app->imgui, dt);
-    build_ui(app);
+    build_ui(app, layout.panel);
 
     // The moon is the planet's child, so spinning the planet carries the moon around it.
     app->orbit_angle += app->orbit_speed * dt;
@@ -192,7 +188,7 @@ internal void frame(void* userdata)
     nv_scene_update(app->scene);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
-    nv_renderer_draw(&app->renderer, app->scene, NULL, encoder, target);
+    nv_renderer_draw(&app->renderer, app->scene, NULL, layout.viewport, encoder, target);
     nv_imgui_render(&app->imgui, encoder, target);
     WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
     wgpuQueueSubmit(app->gpu.queue, 1, &commands);

@@ -559,6 +559,29 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
+NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction)
+{
+    NV_ASSERT(viewport_fraction > 0.0f && viewport_fraction <= 1.0f);
+    u32 split = (u32)((f32)gpu->height * viewport_fraction);
+    NvEditorLayout layout = {
+        .viewport = {0, 0, gpu->width, split},
+        .panel = {0, split, gpu->width, gpu->height - split},
+    };
+    return layout;
+}
+
+bool nv_imgui_begin_panel(const char* name, NvRect rect)
+{
+    // ImGui works in CSS pixels; `rect` is in framebuffer pixels.
+    f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
+    igSetNextWindowPos((ImVec2_c){(f32)rect.x / scale, (f32)rect.y / scale}, ImGuiCond_Always, (ImVec2_c){0.0f, 0.0f});
+    igSetNextWindowSize((ImVec2_c){(f32)rect.width / scale, (f32)rect.height / scale}, ImGuiCond_Always);
+    igSetNextWindowBgAlpha(1.0f);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse |
+                             ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    return igBegin(name, NULL, flags);
+}
+
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     igRender();
