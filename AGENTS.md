@@ -16,9 +16,14 @@ There is no native build.
 
 ```
 engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
-                           imgui.h (Dear ImGui input and rendering)
-engine/src/                window.c (canvas), gpu.c (WebGPU setup and frames), scene.c, imgui.c
-examples/                  triangle (minimal), scene (scene graph, depth, lighting, ImGui inspector)
+                           imgui.h (Dear ImGui), renderer.h (meshes, materials, skinning, debug lines),
+                           gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation)
+engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c,
+                           anim.cpp (the ozz wrapper; our only C++ file)
+examples/                  triangle (minimal), scene (scene graph, ImGui inspector),
+                           character (glTF character: clips, crossfades, blending, root motion, IK)
+assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
+tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 web/                       index.html.in (per-example page), landing.html (Pages index)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
@@ -27,13 +32,13 @@ docs/specs/                feature specs (read the relevant one before working o
 
 ## Build and run
 
-Requires the Emscripten SDK (tested with 6.0.10) and Git LFS. Cloud sessions may not have Git LFS;
+Requires the Emscripten SDK (tested with 6.0.10), CMake 3.30+ (ozz-animation needs it) and Git LFS. Cloud sessions may not have Git LFS;
 install it with `apt-get install -y git-lfs && git lfs install --local && git lfs pull`.
 
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/examples/scene 8000
+python3 -m http.server -d build/examples 8000   # then open /character/ or /scene/
 ```
 
 ## Conventions
@@ -51,6 +56,12 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
 - `NvImgui.ui_scale` is 1.5 on touch screens; size ImGui windows with it.
+- In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
+  `internal` as a macro, which breaks ozz's `internal::` namespace.
+- Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
+  Assert on `nv_anim_find_joint` results.
+- Assets are packaged per example with `nv_setup_executable(<target> ASSETS <dir>)` and read from
+  `/assets/...` with `fopen`.
 - New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged,
   are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
   `web/landing.html`.
@@ -78,3 +89,5 @@ There is no physical display in cloud sessions. Headless Chromium renders WebGPU
 `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
 --use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-fallback-to-gl-for-testing`.
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
+When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
+an instant click can land between frames and be missed, which real users never trigger.

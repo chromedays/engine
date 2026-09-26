@@ -3,17 +3,23 @@
 nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
 WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go to the browser through
 Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`. Tool UI uses
-[Dear ImGui](https://github.com/ocornut/imgui) through [cimgui](https://github.com/cimgui/cimgui).
+[Dear ImGui](https://github.com/ocornut/imgui) through [cimgui](https://github.com/cimgui/cimgui);
+models load with [cgltf](https://github.com/jkuhlmann/cgltf) and skeletal animation runs on
+[ozz-animation](https://github.com/guillaumeblanc/ozz-animation). The character and animations
+are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`).
 
 Live: https://chromedays.github.io/engine/
 
 ## Layout
 
 ```
-engine/include/nv/   public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
-                     imgui.h (Dear ImGui input and rendering)
-engine/src/          window.c (canvas), gpu.c (WebGPU setup and frames), scene.c, imgui.c
-examples/            triangle (minimal), scene (scene graph, depth, lighting, ImGui inspector)
+engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
+                     gltf.h, anim.h
+engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
+examples/            triangle (minimal), scene (scene graph, ImGui inspector),
+                     character (skeletal animation: clips, crossfades, blending, root motion, IK)
+assets/              binary assets (Git LFS)
+tools/               offline asset scripts
 web/                 HTML page template for examples, and the Pages landing page
 docs/                coding standard
 ```
@@ -24,12 +30,12 @@ Binary assets (models, textures, audio) are stored with [Git LFS](https://git-lf
 before cloning, or run `git lfs install && git lfs pull` in an existing clone.
 
 Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
-(tested with 6.0.10), then:
+(tested with 6.0.10) and CMake 3.30 or newer, then:
 
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/examples/scene 8000   # open http://localhost:8000
+python3 -m http.server -d build/examples 8000   # open http://localhost:8000/character/
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:

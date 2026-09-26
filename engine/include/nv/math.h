@@ -165,3 +165,44 @@ static inline NvVec3 nv_mat4_forward(NvMat4 m)
 {
     return nv_vec3_normalize((NvVec3){-m.e[8], -m.e[9], -m.e[10]});
 }
+
+// Rotates `v` by the unit quaternion `q`.
+static inline NvVec3 nv_quat_rotate(NvQuat q, NvVec3 v)
+{
+    NvVec3 u = nv_vec3(q.x, q.y, q.z);
+    NvVec3 t = nv_vec3_scale(nv_vec3_cross(u, v), 2.0f);
+    return nv_vec3_add(nv_vec3_add(v, nv_vec3_scale(t, q.w)), nv_vec3_cross(u, t));
+}
+
+// Splits a matrix without shear into translation, rotation and scale (the inverse of nv_mat4_trs).
+static inline void nv_mat4_decompose(NvMat4 m, NvVec3* translation, NvQuat* rotation, NvVec3* scale)
+{
+    const f32* e = m.e;
+    *translation = nv_vec3(e[12], e[13], e[14]);
+    NvVec3 s = nv_vec3(sqrtf(e[0] * e[0] + e[1] * e[1] + e[2] * e[2]),
+                       sqrtf(e[4] * e[4] + e[5] * e[5] + e[6] * e[6]),
+                       sqrtf(e[8] * e[8] + e[9] * e[9] + e[10] * e[10]));
+    NV_ASSERT(s.x > 0.0f && s.y > 0.0f && s.z > 0.0f);
+    *scale = s;
+
+    // Rotation part, rows and columns named as in math notation (m_rowcol).
+    f32 m00 = e[0] / s.x, m10 = e[1] / s.x, m20 = e[2] / s.x;
+    f32 m01 = e[4] / s.y, m11 = e[5] / s.y, m21 = e[6] / s.y;
+    f32 m02 = e[8] / s.z, m12 = e[9] / s.z, m22 = e[10] / s.z;
+    f32 trace = m00 + m11 + m22;
+    NvQuat q;
+    if (trace > 0.0f) {
+        f32 k = sqrtf(trace + 1.0f) * 2.0f;
+        q = (NvQuat){(m21 - m12) / k, (m02 - m20) / k, (m10 - m01) / k, 0.25f * k};
+    } else if (m00 > m11 && m00 > m22) {
+        f32 k = sqrtf(1.0f + m00 - m11 - m22) * 2.0f;
+        q = (NvQuat){0.25f * k, (m01 + m10) / k, (m02 + m20) / k, (m21 - m12) / k};
+    } else if (m11 > m22) {
+        f32 k = sqrtf(1.0f + m11 - m00 - m22) * 2.0f;
+        q = (NvQuat){(m01 + m10) / k, 0.25f * k, (m12 + m21) / k, (m02 - m20) / k};
+    } else {
+        f32 k = sqrtf(1.0f + m22 - m00 - m11) * 2.0f;
+        q = (NvQuat){(m02 + m20) / k, (m12 + m21) / k, 0.25f * k, (m10 - m01) / k};
+    }
+    *rotation = q;
+}

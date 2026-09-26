@@ -1,6 +1,6 @@
 # Animation spec
 
-Status: final (agreed 2026-09-26). Phases ship one at a time; changes to this spec are agreed first.
+Status: implemented (phases 1–4, 2026-09-26). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -181,6 +181,28 @@ downloads before `main` runs.
 
 Each phase is checked in headless Chromium (captures a few moments apart to see the pose change)
 in both Release and Debug builds, and deployed.
+
+## Implementation notes
+
+What shipped, and where it differs from the plan above:
+
+- **Assets:** `clips_rm.glb` holds the root-motion versions of Walk_Loop, Jog_Fwd_Loop and
+  Sprint_Loop alongside the 8 clips in `clips.glb`. Totals: character 685 KB, clips 439 KB,
+  root-motion clips 166 KB.
+- **Textures** are decoded by the browser (`createImageBitmap`) rather than a C image library, and
+  get mipmaps from a box filter at load.
+- **Renderer:** skinned draws read their matrices from `nv_anim_skins()`, indexed by
+  `NvNode.animator`; a skinned node without an animator draws in its bind pose.
+- **Root motion** uses ozz's `MotionExtractor` (horizontal root translation of the `root` joint)
+  and a `Float3Track`; `nv_anim_update` accumulates the model-space motion in
+  `NvAnimator.root_motion`, and the example moves and turns the character by it.
+- **Crossfades** use layers 0 (fading in) and 1 (fading out); the example's manual blend uses
+  layer 2, time-synchronized to layer 0.
+- **Aim IK** corrects one joint (`Head`) with ozz's `IKAimJob`. The joint's forward and up axes are
+  found from the rest pose instead of being hard-coded.
+- **Attachment:** the sword's offset from `hand_r` is computed once from the rest pose ("grip in the
+  fist, blade forward"), then applied to the animated hand every frame.
+- **Memory:** ozz allocates from its own arena (about 1 MB after loading everything).
 
 ## Resolved questions
 
