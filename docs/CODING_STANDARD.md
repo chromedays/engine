@@ -16,11 +16,11 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 ## Language and files
 
-- C17 only for our code. Compile warning-free with `-Wall -Wextra`. Third-party sources are
-  compiled as they come (Dear ImGui and ozz-animation are C++) with their warnings off.
-- The one exception is a C++ library whose API has no C binding: the file that wraps it is C++,
-  exposes only `extern "C"` functions through a C header, and stays as thin as possible
-  (currently the ozz-animation wrapper).
+- The C17 rule covers only the code we write. External libraries may be written in C or C++
+  (Dear ImGui and ozz-animation are C++); they are compiled as they come, with their warnings off.
+- Our code is C17 and compiles warning-free with `-Wall -Wextra`. The one exception is the wrapper
+  around a C++ library that has no C API: that file is C++, exposes only `extern "C"` functions
+  through a C header, and stays as thin as possible (currently the ozz-animation wrapper).
 - Public headers live in `engine/include/nv/`, one per module; sources in `engine/src/`.
 - `nv/base.h` is included (directly or through another nv header) by every file.
 
