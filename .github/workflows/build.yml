@@ -17,6 +17,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # LFS objects are cached by content so repeated runs don't spend the LFS download quota.
+      - name: List LFS objects
+        run: git lfs ls-files --long | cut -d ' ' -f1 | sort > .lfs-objects
+
+      - uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('.lfs-objects') }}
+
+      - name: Fetch LFS objects
+        run: git lfs pull
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 6.0.10

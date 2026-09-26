@@ -20,6 +20,9 @@ docs/                coding standard
 
 ## Build
 
+Binary assets (models, textures, audio) are stored with [Git LFS](https://git-lfs.com/). Install it
+before cloning, or run `git lfs install && git lfs pull` in an existing clone.
+
 Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
 (tested with 6.0.10), then:
 

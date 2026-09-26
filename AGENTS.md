@@ -26,7 +26,8 @@ docs/CODING_STANDARD.md    coding standard (read before writing code)
 
 ## Build and run
 
-Requires the Emscripten SDK (tested with 6.0.10).
+Requires the Emscripten SDK (tested with 6.0.10) and Git LFS. Cloud sessions may not have Git LFS;
+install it with `apt-get install -y git-lfs && git lfs install --local && git lfs pull`.
 
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -52,6 +53,14 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - New examples call `nv_setup_executable(<target>)` so they get an HTML page and are packaged,
   are added with `add_subdirectory` in the top-level `CMakeLists.txt`, and get a link in
   `web/landing.html`.
+
+## Assets
+
+- Binary assets live under `assets/` and are stored with Git LFS. `.gitattributes` lists the
+  tracked types; add a pattern there before committing a new binary type.
+- Check `git lfs ls-files` after adding assets, so a binary never lands in plain Git history.
+- Only commit assets whose license allows redistribution in a public repository, and record the
+  source and license next to them.
 
 ## Third-party libraries
 
