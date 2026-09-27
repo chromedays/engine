@@ -1,3 +1,14 @@
-add_executable(app main.c ui.c)
+add_executable(app main.c stress.c ui.c)
 target_link_libraries(app PRIVATE nv)
 nv_setup_executable(app ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets/quaternius")
+
+# The benchmark report names the commit it was built from (as of the last configure).
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
+        WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
+        OUTPUT_VARIABLE NV_GIT_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
+if(NV_GIT_COMMIT)
+    target_compile_definitions(app PRIVATE NV_GIT_COMMIT="${NV_GIT_COMMIT}")
+endif()

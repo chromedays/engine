@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <emscripten/emscripten.h>
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -159,7 +161,7 @@ internal void append_box(NvVertex* vertices, u32* vertex_count, u32* indices, u3
     }
 }
 
-internal NvMeshId create_box_mesh(NvRenderer* renderer, NvVec3 half)
+NvMeshId app_box_mesh(App* app, NvVec3 half)
 {
     NvVertex vertices[24];
     u32 indices[36];
@@ -167,7 +169,7 @@ internal NvMeshId create_box_mesh(NvRenderer* renderer, NvVec3 half)
     u32 index_count = 0;
     append_box(vertices, &vertex_count, indices, &index_count, nv_vec3(0, 0, 0), half);
     NvMeshData data = {.vertices = vertices, .vertex_count = vertex_count, .indices = indices, .index_count = index_count};
-    return nv_renderer_add_mesh(renderer, &data);
+    return nv_renderer_add_mesh(&app->renderer, &data);
 }
 
 // A sword along +Y: the grip is centered on the origin so it sits in the fist.
@@ -209,14 +211,21 @@ internal void build_world(App* app)
     NvScene* scene = app->scene;
     NvNodeId none = {0};
 
-    app->camera = nv_scene_add_node(scene, none, "camera");
-    nv_scene_get(scene, app->camera)->camera = (NvCamera){
+    NvNodeId camera = nv_scene_add_node(scene, none, "camera");
+    nv_scene_get(scene, camera)->camera = (NvCamera){
         .projection = NV_PROJECTION_PERSPECTIVE,
         .fov_y = 45.0f * NV_PI / 180.0f,
         .near_z = 0.05f,
         .far_z = 100.0f,
     };
-    scene->active_camera = app->camera;
+    scene->active_camera = camera;
+    app->views[SCENE_SHOWCASE] = (SceneView){
+        .scene = scene,
+        .camera = camera,
+        .camera_yaw = 0.35f,
+        .camera_pitch = 0.12f,
+        .camera_distance = 5.0f,
+    };
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
     NvNode* sun_node = nv_scene_get(scene, sun);
@@ -230,7 +239,7 @@ internal void build_world(App* app)
     ground_node->material = add_color(app, 0.32f, 0.34f, 0.38f, 0);
 
     // The planet floats beside the character, far enough that the moon's orbit misses it.
-    NvMeshId cube = create_box_mesh(&app->renderer, nv_vec3(0.5f, 0.5f, 0.5f));
+    NvMeshId cube = app_box_mesh(app, nv_vec3(0.5f, 0.5f, 0.5f));
     app->planet = nv_scene_add_node(scene, none, "planet");
     NvNode* planet = nv_scene_get(scene, app->planet);
     planet->position = nv_vec3(-4.5f, 1.6f, -4.0f);
@@ -293,7 +302,7 @@ internal b32 build_character(App* app)
     sword->attach = (NvJointAttach){.animator = app->animator, .joint = (u32)hand_joint};
     nv_mat4_decompose(nv_mat4_mul(nv_mat4_inverse(hand), desired), &sword->position, &sword->rotation, &sword->scale);
 
-    app->target_mesh = create_box_mesh(&app->renderer, nv_vec3(0.06f, 0.06f, 0.06f));
+    app->target_mesh = app_box_mesh(app, nv_vec3(0.06f, 0.06f, 0.06f));
     app->target = nv_scene_add_node(app->scene, (NvNodeId){0}, "look target");
     nv_scene_get(app->scene, app->target)->material = add_color(app, 1.0f, 0.75f, 0.2f, 0);
 
@@ -310,15 +319,40 @@ internal b32 build_character(App* app)
     return 1;
 }
 
-NvAnimatorId app_node_animator(App* app, NvNodeId id)
+NvAnimatorId app_node_animator(NvScene* scene, NvNodeId id)
 {
-    NvNode* node = nv_scene_get(app->scene, id);
+    NvNode* node = nv_scene_get(scene, id);
     if (node->animator.index)
         return node->animator;
-    NvNodeId owner = nv_anim_get(app->animator)->owner;
-    if (owner.index == id.index && owner.gen == id.gen)
-        return app->animator;
+    for (u32 child = node->first_child; child; child = scene->nodes[child].next_sibling) {
+        if (scene->nodes[child].animator.index)
+            return scene->nodes[child].animator;
+    }
     return (NvAnimatorId){0};
+}
+
+SceneView* app_view(App* app)
+{
+    return &app->views[app->shown];
+}
+
+// The URL hash names the shown scene, so a link or a reload opens the same one.
+EM_JS(int, js_hash_is_stress, (void), {
+    return location.hash === "#stress" ? 1 : 0;
+});
+
+EM_JS(void, js_set_hash, (int stress), {
+    history.replaceState(null, "", stress ? "#stress" : location.pathname + location.search);
+});
+
+void app_show_scene(App* app, SceneKind kind)
+{
+    if (kind == SCENE_STRESS && !app->stress.built)
+        stress_build(app);
+    if (kind == SCENE_STRESS && app->shown != SCENE_STRESS)
+        app->open_stress = 1;
+    app->shown = kind;
+    js_set_hash(kind == SCENE_STRESS);
 }
 
 void app_back_to_center(App* app)
@@ -357,25 +391,28 @@ internal void update_look_target(App* app)
     target->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 2.0f);
 }
 
-// Orbits the selected node. Cameras and lights are not worth orbiting, so they fall back to the
-// character. The character's origin is at its feet, so its focus is raised to the chest.
+// Orbits the selected node, or the view's focus. Cameras and lights are not worth orbiting, so
+// they fall back to the focus. A character's origin is at its feet, so its focus is raised.
 internal void update_camera(App* app)
 {
-    NvScene* scene = app->scene;
-    NvNodeId focus = app->selected;
+    SceneView* view = app_view(app);
+    NvScene* scene = view->scene;
+    NvNodeId focus = view->selected;
     if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
-        focus = app->character.root;
-    NvNode* node = nv_scene_get(scene, focus);
-    NvVec3 point = nv_mat4_translation(node->world);
-    if (app_node_animator(app, focus).index)
-        point.y += 0.92f;
+        focus = view->focus;
+    NvVec3 point = nv_vec3(0, 0, 0);
+    if (focus.index) {
+        point = nv_mat4_translation(nv_scene_get(scene, focus)->world);
+        if (app_node_animator(scene, focus).index)
+            point.y += 0.92f;
+    }
 
-    f32 d = app->camera_distance;
-    f32 cp = cosf(app->camera_pitch);
-    NvNode* camera = nv_scene_get(scene, app->camera);
-    camera->position = nv_vec3_add(point, nv_vec3(sinf(app->camera_yaw) * cp * d, sinf(app->camera_pitch) * d, cosf(app->camera_yaw) * cp * d));
-    camera->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), app->camera_yaw),
-                                   nv_quat_axis_angle(nv_vec3(1, 0, 0), -app->camera_pitch));
+    f32 d = view->camera_distance;
+    f32 cp = cosf(view->camera_pitch);
+    NvNode* camera = nv_scene_get(scene, view->camera);
+    camera->position = nv_vec3_add(point, nv_vec3(sinf(view->camera_yaw) * cp * d, sinf(view->camera_pitch) * d, cosf(view->camera_yaw) * cp * d));
+    camera->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), view->camera_yaw),
+                                   nv_quat_axis_angle(nv_vec3(1, 0, 0), -view->camera_pitch));
     // The camera is a top-level node and nv_scene_update already ran this frame.
     camera->world = nv_mat4_trs(camera->position, camera->rotation, camera->scale);
 }
@@ -407,6 +444,48 @@ internal void draw_bones(App* app)
     }
 }
 
+internal f64 now_ms(void)
+{
+    return nv_time_seconds() * 1000.0;
+}
+
+// Averages the frame times over windows of about a second, for the stats and the benchmark.
+internal void accumulate_times(App* app, f64 now)
+{
+    FrameTimes* t = &app->times;
+    FrameTimes* sum = &app->window_sum;
+    sum->frame += t->frame;
+    sum->anim += t->anim;
+    sum->scene += t->scene;
+    sum->draw += t->draw;
+    sum->ui += t->ui;
+    sum->gpu += t->gpu;
+    if (t->frame > app->window_worst_frame)
+        app->window_worst_frame = t->frame;
+    ++app->window_frames;
+    if (now - app->window_start < 1.0)
+        return;
+    f64 n = (f64)app->window_frames;
+    app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n};
+    app->shown_worst_frame = app->window_worst_frame;
+    *sum = (FrameTimes){0};
+    app->window_worst_frame = 0.0;
+    app->window_frames = 0;
+    app->window_start = now;
+}
+
+internal void update_showcase(App* app, f32 dt)
+{
+    app->orbit_angle += app->orbit_speed * dt;
+    nv_scene_get(app->scene, app->planet)->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), app->orbit_angle);
+    nv_scene_get(app->scene, app->moon)->rotation = nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), (f32)app->time * 2.0f);
+    update_jump(app, dt);
+    update_blend(app);
+    update_look_target(app);
+    apply_turn(app, dt);
+    nv_scene_get(app->scene, app->sword)->mesh = app->show_sword ? app->sword_mesh : (NvMeshId){0};
+}
+
 internal void frame(void* userdata)
 {
     App* app = userdata;
@@ -419,33 +498,49 @@ internal void frame(void* userdata)
     if (!target)
         return;
 
+    FrameTimes* times = &app->times;
+    times->frame = (f64)dt * 1000.0;
+    f64 t = now_ms();
     NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
     nv_imgui_new_frame(&app->imgui, dt);
     app_build_ui(app, layout.panel);
+    times->ui = now_ms() - t;
 
-    app->orbit_angle += app->orbit_speed * dt;
-    nv_scene_get(app->scene, app->planet)->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), app->orbit_angle);
-    nv_scene_get(app->scene, app->moon)->rotation = nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), (f32)now * 2.0f);
+    NvScene* scene = app_view(app)->scene;
+    if (app->shown == SCENE_SHOWCASE)
+        update_showcase(app, dt);
+    else
+        stress_update(app, dt);
 
-    update_jump(app, dt);
-    update_blend(app);
-    update_look_target(app);
-    apply_turn(app, dt);
-    nv_scene_get(app->scene, app->sword)->mesh = app->show_sword ? app->sword_mesh : (NvMeshId){0};
-    nv_anim_update_scene(app->scene, dt);
-    nv_scene_update(app->scene);
+    t = now_ms();
+    nv_anim_update_scene(scene, dt);
+    times->anim = now_ms() - t;
+    t = now_ms();
+    nv_scene_update(scene);
+    times->scene = now_ms() - t;
     update_camera(app);
-    if (app->show_bones)
+    if (app->shown == SCENE_SHOWCASE && app->show_bones)
         draw_bones(app);
+    if (app->shown == SCENE_STRESS && app->stress.want.show_bones)
+        stress_draw_bones(app);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
-    nv_renderer_draw(&app->renderer, app->scene, nv_anim_skins(), layout.viewport, encoder, target);
+    t = now_ms();
+    nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout.viewport, encoder, target);
+    times->draw = now_ms() - t;
+    times->gpu = app->renderer.gpu_ms;
+    t = now_ms();
     nv_imgui_render(&app->imgui, encoder, target);
+    times->ui += now_ms() - t;
     WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
     wgpuQueueSubmit(app->gpu.queue, 1, &commands);
     wgpuCommandBufferRelease(commands);
     wgpuCommandEncoderRelease(encoder);
+    nv_renderer_end_frame(&app->renderer);
     nv_gpu_end_frame(&app->gpu);
+
+    accumulate_times(app, now);
+    stress_after_frame(app);
 }
 
 int main(void)
@@ -475,10 +570,10 @@ int main(void)
     app->fade_seconds = 0.3f;
     app->turn_rate = 0.6f;
     app->show_sword = true;
-    app->selected = app->character.root;
-    app->camera_yaw = 0.35f;
-    app->camera_pitch = 0.12f;
-    app->camera_distance = 5.0f;
+    app->views[SCENE_SHOWCASE].selected = app->character.root;
+    app->views[SCENE_SHOWCASE].focus = app->character.root;
+    app->window_start = nv_time_seconds();
+    app_show_scene(app, js_hash_is_stress() ? SCENE_STRESS : SCENE_SHOWCASE);
     app_play(app, app_find_clip(app, "Idle_Loop"));
     app->last_time = nv_time_seconds();
     nv_window_run(&app->window, frame, app);

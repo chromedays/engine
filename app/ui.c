@@ -6,34 +6,52 @@
 // Scene tab
 //
 
-internal void node_tree(App* app, u32 index)
+// Deeper than this, the tree stops and says how much is hidden (the stress chain is 1000 deep).
+#define TREE_MAX_DEPTH 24
+
+internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
 {
-    NvScene* scene = app->scene;
+    NvScene* scene = view->scene;
     NvNode* node = &scene->nodes[index];
     NvNodeId id = {index, node->gen};
+    if (depth >= TREE_MAX_DEPTH) {
+        u32 hidden = 0;
+        for (u32 i = index; i; i = scene->nodes[i].first_child)
+            ++hidden;
+        igTextDisabled("... %u more levels", hidden);
+        return;
+    }
 
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_DefaultOpen;
-    if (!node->first_child)
+    // Big groups start closed: thousands of rows would cost more than what they display.
+    u32 children = 0;
+    for (u32 child = node->first_child; child; child = scene->nodes[child].next_sibling)
+        ++children;
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+    if (children <= 16 && depth < 2)
+        flags |= ImGuiTreeNodeFlags_DefaultOpen;
+    if (!children)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (app->selected.index == id.index && app->selected.gen == id.gen)
+    if (view->selected.index == id.index && view->selected.gen == id.gen)
         flags |= ImGuiTreeNodeFlags_Selected;
 
-    b32 open = igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s", node->name);
+    b32 open = children > 16 ? igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s (%u)", node->name, children)
+                             : igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s", node->name);
     if (igIsItemClicked(ImGuiMouseButton_Left) && !igIsItemToggledOpen()) {
-        app->selected = id;
+        view->selected = id;
         app->open_inspector = 1;
     }
-    if (open && node->first_child) {
+    if (open && children) {
         for (u32 child = node->first_child; child; child = scene->nodes[child].next_sibling)
-            node_tree(app, child);
+            node_tree(app, view, child, depth + 1);
         igTreePop();
     }
 }
 
 internal void scene_tab(App* app)
 {
-    for (u32 root = app->scene->first_root; root; root = app->scene->nodes[root].next_sibling)
-        node_tree(app, root);
+    SceneView* view = app_view(app);
+    for (u32 root = view->scene->first_root; root; root = view->scene->nodes[root].next_sibling)
+        node_tree(app, view, root, 0);
 }
 
 //
@@ -104,17 +122,18 @@ internal void attach_section(App* app, NvNode* node)
         }
         igEndCombo();
     }
-    if (node == nv_scene_get(app->scene, app->sword))
+    if (app->shown == SCENE_SHOWCASE && node == nv_scene_get(app->scene, app->sword))
         igCheckbox("Visible", &app->show_sword);
 }
 
 internal void inspector_tab(App* app)
 {
-    if (!app->selected.index) {
+    SceneView* view = app_view(app);
+    if (!view->selected.index) {
         igTextDisabled("Select a node in the Scene tab.");
         return;
     }
-    NvNode* node = nv_scene_get(app->scene, app->selected);
+    NvNode* node = nv_scene_get(view->scene, view->selected);
     igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
     igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
     igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
@@ -140,9 +159,16 @@ internal void inspector_tab(App* app)
     }
     if (node->attach.animator.index)
         attach_section(app, node);
-    NvAnimatorId animator = app_node_animator(app, app->selected);
-    if (animator.index)
+    // The full animator controls drive the showcase character; others show what they play.
+    NvAnimatorId animator = app_node_animator(view->scene, view->selected);
+    if (animator.index == app->animator.index) {
         animator_section(app, nv_anim_get(animator));
+    } else if (animator.index) {
+        igSeparatorText("Animator");
+        NvAnimLayer* layer = &nv_anim_get(animator)->layers[0];
+        if (layer->clip.index)
+            igText("%s  %.2f / %.2f s", nv_anim_clip_name(layer->clip), layer->time, nv_anim_clip_duration(layer->clip));
+    }
 }
 
 //
@@ -152,12 +178,19 @@ internal void inspector_tab(App* app)
 internal void view_tab(App* app)
 {
     ImGuiIO* io = igGetIO_Nil();
+    SceneView* view = app_view(app);
+    local_persist const char* scenes[SCENE_COUNT] = {"Showcase", "Stress"};
+    int shown = (int)app->shown;
+    if (igCombo_Str_arr("Scene", &shown, scenes, SCENE_COUNT, -1))
+        app_show_scene(app, (SceneKind)shown);
     igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
-    igSliderAngle("Camera yaw", &app->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
-    igSliderAngle("Camera pitch", &app->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
-    igSliderFloat("Distance", &app->camera_distance, 1.0f, 20.0f, "%.1f m", 0);
-    igCheckbox("Show bones", &app->show_bones);
-    igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+    igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
+    igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
+    igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+    if (app->shown == SCENE_SHOWCASE) {
+        igCheckbox("Show bones", &app->show_bones);
+        igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+    }
 }
 
 void app_build_ui(App* app, NvRect panel)
@@ -177,6 +210,14 @@ void app_build_ui(App* app, NvRect panel)
         if (igBeginTabItem("View", NULL, 0)) {
             view_tab(app);
             igEndTabItem();
+        }
+        if (app->shown == SCENE_STRESS) {
+            ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
+            app->open_stress = 0;
+            if (igBeginTabItem("Stress", NULL, stress_flags)) {
+                stress_ui(app);
+                igEndTabItem();
+            }
         }
         igEndTabBar();
     }

@@ -16,8 +16,9 @@ Live: https://chromedays.github.io/engine/
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
                      gltf.h, anim.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
-app/                 the app: one scene (a planet and moon, an animated character with a sword)
-                     and an editor panel (node tree, inspector, view settings)
+app/                 the app: a showcase scene (a planet and moon, an animated character with a
+                     sword), a stress scene with a benchmark (open it with #stress), and an
+                     editor panel (node tree, inspector, view settings, stress workloads)
 assets/              binary assets (Git LFS)
 tools/               offline asset scripts
 web/                 HTML page template

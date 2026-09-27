@@ -20,7 +20,8 @@ engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, 
                            gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation)
 engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c,
                            anim.cpp (the ozz wrapper; our only C++ file)
-app/                       the app: main.c (scene, frame), ui.c (editor panel), app.h (shared state)
+app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
+                           benchmark, opened with #stress), ui.c (editor panel), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 web/                       index.html.in (the page: downloads the app with a progress bar, then
