@@ -310,26 +310,78 @@ internal bool on_wheel(int event_type, const EmscriptenWheelEvent* event, void* 
     return io->WantCaptureMouse;
 }
 
-// Touch drives ImGui's mouse with the first finger.
+// A touch that is held still this long becomes a press, for widgets that are dragged in place.
+#define TOUCH_PRESS_SECONDS 0.3
+
+internal void touch_press(NvImgui* imgui)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddMousePosEvent(io, imgui->touch_start_x, imgui->touch_start_y);
+    ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+    ImGuiIO_AddMousePosEvent(io, imgui->touch_x, imgui->touch_y);
+    imgui->touch_gesture = NV_TOUCH_PRESS;
+}
+
+// Touch drives ImGui's mouse with the first finger, but only once the gesture is clear:
+// - moving mostly vertically past a threshold scrolls the panel, and ImGui sees no click;
+// - moving sideways first, or holding still, presses (sliders drag sideways);
+// - lifting before either is a tap: a press and a release together.
 internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* userdata)
 {
-    (void)userdata;
-    if (event->numTouches < 1)
-        return 0;
+    NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
-    const EmscriptenTouchPoint* touch = &event->touches[0];
     ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_TouchScreen);
-    ImGuiIO_AddMousePosEvent(io, (f32)touch->clientX, (f32)touch->clientY);
+    const EmscriptenTouchPoint* touch = event->numTouches ? &event->touches[0] : NULL;
+    f32 x = touch ? (f32)touch->clientX : imgui->touch_x;
+    f32 y = touch ? (f32)touch->clientY : imgui->touch_y;
+
     if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART) {
-        ImGuiIO_AddMouseButtonEvent(io, 0, 1);
-    } else if (event_type == EMSCRIPTEN_EVENT_TOUCHEND || event_type == EMSCRIPTEN_EVENT_TOUCHCANCEL) {
-        ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+        if (imgui->touch_gesture != NV_TOUCH_NONE)
+            return 1; // a second finger
+        imgui->touch_gesture = NV_TOUCH_UNDECIDED;
+        imgui->touch_start_x = imgui->touch_x = x;
+        imgui->touch_start_y = imgui->touch_y = y;
+        imgui->touch_start_time = emscripten_get_now() / 1000.0;
+        // Hovering the touched widget lets a tap on a text field be recognized (below).
+        ImGuiIO_AddMousePosEvent(io, x, y);
+    } else if (event_type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+        f32 step = y - imgui->touch_y;
+        imgui->touch_x = x;
+        imgui->touch_y = y;
+        if (imgui->touch_gesture == NV_TOUCH_UNDECIDED) {
+            f32 dx = fabsf(x - imgui->touch_start_x);
+            f32 dy = fabsf(y - imgui->touch_start_y);
+            f32 threshold = 8.0f * imgui->ui_scale;
+            if (dy >= threshold && dy >= dx) {
+                imgui->touch_gesture = NV_TOUCH_SCROLL;
+                step = y - imgui->touch_start_y;
+            } else if (dx >= threshold) {
+                touch_press(imgui);
+            }
+        } else if (imgui->touch_gesture == NV_TOUCH_PRESS) {
+            ImGuiIO_AddMousePosEvent(io, x, y);
+        }
+        if (imgui->touch_gesture == NV_TOUCH_SCROLL)
+            imgui->touch_scroll_pending += step;
+    } else {
+        // Touch end or cancel.
+        if (imgui->touch_gesture == NV_TOUCH_UNDECIDED && event_type == EMSCRIPTEN_EVENT_TOUCHEND) {
+            // IMPORTANT: iOS only opens the keyboard for focus() called inside a touch handler,
+            // and ImGui activates the field a frame later. The text cursor shows it is one.
+            if (igGetMouseCursor() == ImGuiMouseCursor_TextInput) {
+                js_focus_text_agent(1);
+                imgui->text_agent_grace = 4;
+            }
+            ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+            ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+        } else if (imgui->touch_gesture == NV_TOUCH_PRESS) {
+            ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+            if (io->WantTextInput)
+                js_focus_text_agent(1);
+        }
+        imgui->touch_gesture = NV_TOUCH_NONE;
         // A lifted finger points at nothing, so the last widget touched does not stay hovered.
         ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
-        // IMPORTANT: iOS only opens the keyboard for focus() called inside a touch handler. The
-        // press has already been through a frame, so ImGui knows whether a text field took it.
-        if (io->WantTextInput)
-            js_focus_text_agent(1);
     }
     // Consuming touches stops the browser from also sending emulated mouse events.
     return 1;
@@ -342,7 +394,7 @@ internal bool on_focus(int event_type, const EmscriptenFocusEvent* event, void* 
     return 0;
 }
 
-internal void hook_input(NvWindow* window)
+internal void hook_input(NvImgui* imgui, NvWindow* window)
 {
     const char* page = EMSCRIPTEN_EVENT_TARGET_WINDOW;
     emscripten_set_keydown_callback(page, NULL, 1, on_key);
@@ -352,10 +404,10 @@ internal void hook_input(NvWindow* window)
     emscripten_set_mousemove_callback(page, NULL, 1, on_mouse);
     emscripten_set_mouseup_callback(page, NULL, 1, on_mouse);
     emscripten_set_wheel_callback(window->canvas_selector, NULL, 1, on_wheel);
-    emscripten_set_touchstart_callback(window->canvas_selector, NULL, 1, on_touch);
-    emscripten_set_touchmove_callback(window->canvas_selector, NULL, 1, on_touch);
-    emscripten_set_touchend_callback(window->canvas_selector, NULL, 1, on_touch);
-    emscripten_set_touchcancel_callback(window->canvas_selector, NULL, 1, on_touch);
+    emscripten_set_touchstart_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchmove_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchend_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchcancel_callback(window->canvas_selector, imgui, 1, on_touch);
     emscripten_set_focus_callback(page, NULL, 1, on_focus);
     emscripten_set_blur_callback(page, NULL, 1, on_focus);
 }
@@ -527,7 +579,7 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     platform_io->Platform_GetClipboardTextFn = get_clipboard;
     platform_io->Platform_SetClipboardTextFn = set_clipboard;
 
-    hook_input(window);
+    hook_input(imgui, window);
     js_setup_text_agent(imgui->clipboard, NV_IMGUI_CLIPBOARD_SIZE);
 
     // Fingers need bigger text and hit areas than a mouse pointer.
@@ -557,8 +609,17 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     io->DeltaTime = delta_seconds > 0.0f ? delta_seconds : 1.0f / 60.0f;
 
     // Close the on-screen keyboard once ImGui stops editing text (after Enter, or a tap outside).
-    if (!io->WantTextInput && js_text_agent_focused())
+    if (imgui->text_agent_grace)
+        --imgui->text_agent_grace;
+    else if (!io->WantTextInput && js_text_agent_focused())
         js_focus_text_agent(0);
+
+    // A touch held still long enough becomes a press; its scrolling is applied this frame.
+    if (imgui->touch_gesture == NV_TOUCH_UNDECIDED &&
+        emscripten_get_now() / 1000.0 - imgui->touch_start_time >= TOUCH_PRESS_SECONDS)
+        touch_press(imgui);
+    imgui->touch_scroll = imgui->touch_scroll_pending;
+    imgui->touch_scroll_pending = 0.0f;
 
     igNewFrame();
 }
@@ -574,40 +635,6 @@ NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction)
     return layout;
 }
 
-// ImGui has no touch scrolling, so a finger that moves mostly vertically past a threshold scrolls
-// the panel instead. The widget under the finger loses its activation then, so a button the drag
-// started on does not fire on release.
-// TODO: A slider the drag starts on still takes the touch position as its value first.
-internal void update_touch_scroll(NvImgui* imgui)
-{
-    ImGuiIO* io = igGetIO_Nil();
-    ImGuiWindow* window = igGetCurrentWindow();
-    if (!igIsMouseDown_Nil(ImGuiMouseButton_Left)) {
-        if (imgui->touch_panel == window) {
-            imgui->touch_panel = NULL;
-            imgui->touch_scrolling = 0;
-        }
-        return;
-    }
-    if (igIsMouseClicked_Bool(ImGuiMouseButton_Left, false) && io->MouseSource == ImGuiMouseSource_TouchScreen &&
-        igIsWindowHovered(0)) {
-        imgui->touch_panel = window;
-        imgui->touch_scrolling = 0;
-    }
-    if (imgui->touch_panel != window)
-        return;
-
-    if (!imgui->touch_scrolling) {
-        ImVec2_c drag = igGetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
-        f32 threshold = 8.0f * imgui->ui_scale;
-        if (fabsf(drag.y) < threshold || fabsf(drag.y) < fabsf(drag.x))
-            return;
-        imgui->touch_scrolling = 1;
-    }
-    igClearActiveID();
-    igSetScrollY_Float(igGetScrollY() - io->MouseDelta.y);
-}
-
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
 {
     // ImGui works in CSS pixels; `rect` is in framebuffer pixels.
@@ -619,7 +646,9 @@ bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoBringToFrontOnFocus;
     bool open = igBegin(name, NULL, flags);
-    update_touch_scroll(imgui);
+    // ImGui has no touch scrolling; on_touch collects it for the panel under the finger.
+    if (imgui->touch_scroll != 0.0f && igIsWindowHovered(0))
+        igSetScrollY_Float(igGetScrollY() - imgui->touch_scroll);
     return open;
 }
 

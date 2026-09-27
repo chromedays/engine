@@ -12,6 +12,13 @@
 // Share of the canvas height the scene viewport gets in the editor layout; the panel gets the rest.
 #define NV_EDITOR_VIEWPORT_FRACTION 0.6f
 
+typedef enum NvTouchGesture {
+    NV_TOUCH_NONE,
+    NV_TOUCH_UNDECIDED, // finger down, not yet a tap, press or scroll
+    NV_TOUCH_PRESS,     // ImGui sees the mouse button down
+    NV_TOUCH_SCROLL,    // scrolls the panel under the finger; ImGui sees no button
+} NvTouchGesture;
+
 typedef struct NvImguiTexture {
     WGPUTexture texture;
     WGPUTextureView view;
@@ -43,9 +50,15 @@ typedef struct NvImgui {
     // 1 with a mouse; larger on touch screens so text and hit areas suit fingers.
     f32 ui_scale;
 
-    // Touch drag scrolling in panels: the panel a touch started in, and whether it is scrolling.
-    ImGuiWindow* touch_panel;
-    b32 touch_scrolling;
+    // A touch reaches ImGui only once it is known to be a tap or a press, so a finger that scrolls
+    // a panel never clicks what it started on (see on_touch in imgui.c).
+    NvTouchGesture touch_gesture;
+    f32 touch_start_x, touch_start_y; // CSS pixels
+    f32 touch_x, touch_y;
+    f64 touch_start_time; // seconds
+    f32 touch_scroll_pending; // pixels scrolled since the last frame
+    f32 touch_scroll;         // this frame's scroll, applied by nv_imgui_begin_panel
+    u32 text_agent_grace;     // frames to keep the keyboard up while a tapped field activates
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for
