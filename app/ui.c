@@ -194,8 +194,22 @@ internal void view_tab(App* app)
     }
 }
 
+// The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
+internal void build_label(void)
+{
+    char text[64];
+    snprintf(text, sizeof(text), "%s build %s", NV_BUILD_NAME, NV_GIT_COMMIT);
+    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
+    ImVec2_c pos = {6.0f, 6.0f};
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, pos.y - 2.0f}, (ImVec2_c){pos.x + size.x + 4.0f, pos.y + size.y + 2.0f},
+                             0x99000000u, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
+}
+
 void app_build_ui(App* app, NvRect panel)
 {
+    build_label();
     if (nv_imgui_begin_panel(&app->imgui, "Editor", panel) && igBeginTabBar("tabs", 0)) {
         if (igBeginTabItem("Scene", NULL, 0)) {
             scene_tab(app);

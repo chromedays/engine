@@ -60,7 +60,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - The app uses the editor layout: `nv_editor_layout` splits the canvas into the
   scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
   with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the
-  panel.
+  panel; the one exception is the build label in the viewport's top-left corner.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
