@@ -329,7 +329,7 @@ NvSkeletonId nv_anim_clip_skeleton(NvClipId clip)
     return get_clip(clip)->skeleton;
 }
 
-NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id, NvNodeId owner)
+NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id, NvScene* scene, NvNodeId owner)
 {
     NV_ASSERT(g_animator_count < NV_MAX_ANIMATORS);
     Skeleton* skeleton = get_skeleton(skeleton_id);
@@ -339,6 +339,7 @@ NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id, NvNodeId owner)
     AnimatorState* state = &g_animators[g_animator_count];
     *state = AnimatorState{};
     state->pub.skeleton = skeleton_id;
+    state->pub.scene = scene;
     state->pub.owner = owner;
     state->pub.joint_count = skeleton->joint_count;
     state->pub.joint_model = push_array<NvMat4>(skeleton->joint_count);
@@ -522,6 +523,8 @@ void nv_anim_update_scene(NvScene* scene, f32 dt)
 {
     for (u32 a = 1; a < g_animator_count; ++a) {
         NvAnimator* animator = &g_animators[a].pub;
+        if (animator->scene != scene)
+            continue;
         NvNode* owner = animator->owner.index ? nv_scene_get(scene, animator->owner) : nullptr;
 
         NvLookAt* look = &animator->look_at;
@@ -544,7 +547,7 @@ void nv_anim_update_scene(NvScene* scene, f32 dt)
         if (!(node->gen & 1) || !node->attach.animator.index)
             continue;
         NvAnimator* animator = nv_anim_get(node->attach.animator);
-        NV_ASSERT(node->attach.joint < animator->joint_count);
+        NV_ASSERT(animator->scene == scene && node->attach.joint < animator->joint_count);
         node->attach.joint_model = animator->joint_model[node->attach.joint];
     }
 }

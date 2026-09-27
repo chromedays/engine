@@ -69,6 +69,18 @@ typedef struct NvSkin {
     u32 count;
 } NvSkin;
 
+// What the last nv_renderer_draw did.
+typedef struct NvRenderStats {
+    u32 draws;          // mesh draw calls, one per mesh node
+    u32 skinned_draws;
+    u32 triangles;
+    u32 pipeline_changes;
+    u32 material_changes; // material bind group changes
+    u32 mesh_changes;     // vertex and index buffer changes
+    u32 skin_matrices;
+    u32 debug_lines;
+} NvRenderStats;
+
 // Draws an NvScene: meshes with a base color material, lit by the first directional light, seen
 // through the scene's active camera. Tables are indexed by the ids in nv/scene.h; slot 0 of each
 // is the default (no mesh, white material, white texture).
@@ -109,6 +121,8 @@ typedef struct NvRenderer {
 
     f32 ambient[3];
     f32 clear_color[4];
+
+    NvRenderStats stats;
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);

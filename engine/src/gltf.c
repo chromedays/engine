@@ -211,6 +211,7 @@ b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, N
         materials[i] = load_material(&data->materials[i], renderer, scratch);
 
     const char* name = strrchr(path, '/') ? strrchr(path, '/') + 1 : path;
+    out->scene = scene;
     out->root = nv_scene_add_node(scene, (NvNodeId){0}, name);
 
     for (cgltf_size n = 0; n < data->nodes_count; ++n) {
@@ -253,7 +254,7 @@ b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, N
         }
 
         out->skeleton = nv_anim_create_skeleton(out->joints, out->joint_count, out->inverse_bind);
-        out->animator = nv_anim_create_animator(out->skeleton, out->root);
+        out->animator = nv_anim_create_animator(out->skeleton, scene, out->root);
         for (u32 i = 0; i < out->mesh_node_count; ++i) {
             NvNode* mesh_node = nv_scene_get(scene, out->mesh_nodes[i]);
             if (renderer->meshes[mesh_node->mesh.index].skinned)
@@ -263,6 +264,23 @@ b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, N
 
     scratch->used = mark;
     return 1;
+}
+
+void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvGltfModel* out)
+{
+    *out = *model;
+    out->scene = scene;
+    out->root = nv_scene_add_node(scene, (NvNodeId){0}, nv_scene_get(model->scene, model->root)->name);
+    if (model->skeleton.index)
+        out->animator = nv_anim_create_animator(model->skeleton, scene, out->root);
+    for (u32 i = 0; i < model->mesh_node_count; ++i) {
+        NvNode* source = nv_scene_get(model->scene, model->mesh_nodes[i]);
+        out->mesh_nodes[i] = nv_scene_add_node(scene, out->root, source->name);
+        NvNode* node = nv_scene_get(scene, out->mesh_nodes[i]);
+        node->mesh = source->mesh;
+        node->material = source->material;
+        node->animator = source->animator.index ? out->animator : (NvAnimatorId){0};
+    }
 }
 
 //

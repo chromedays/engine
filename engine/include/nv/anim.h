@@ -67,7 +67,8 @@ typedef struct NvLookAt {
 
 typedef struct NvAnimator {
     NvSkeletonId skeleton;
-    NvNodeId owner; // moved by root motion in nv_anim_update_scene; 0 = none
+    NvScene* scene; // nv_anim_update_scene updates the animator only for this scene
+    NvNodeId owner; // in `scene`; moved by root motion in nv_anim_update_scene; 0 = none
     NvAnimLayer layers[NV_MAX_ANIM_LAYERS];
 
     // Crossfade in progress: layer 1 fades out while layer 0 fades in.
@@ -104,7 +105,7 @@ b32 nv_anim_clip_has_root_motion(NvClipId clip);
 u32 nv_anim_clip_count(void);
 NvSkeletonId nv_anim_clip_skeleton(NvClipId clip);
 
-NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton, NvNodeId owner);
+NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton, NvScene* scene, NvNodeId owner);
 NvAnimator* nv_anim_get(NvAnimatorId id);
 
 // Plays `clip` on layer 0, crossfading from what layer 0 played over `fade_seconds` (0 = cut).
@@ -113,7 +114,7 @@ void nv_anim_play(NvAnimator* animator, NvClipId clip, f32 fade_seconds, b32 loo
 // Advances every layer by dt, samples and blends them, applies IK and updates joint_model.
 void nv_anim_update(NvAnimator* animator, f32 dt);
 
-// For every animator: aims look-at at its target node, runs nv_anim_update, moves the owner by
+// For every animator of `scene` (animators of other scenes pause): aims look-at at its target node, runs nv_anim_update, moves the owner by
 // the root motion (turned by the owner's rotation) and clears it. Then fills every attached node's
 // joint matrix. Call before nv_scene_update.
 void nv_anim_update_scene(NvScene* scene, f32 dt);

@@ -577,6 +577,9 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     WGPURenderPipeline bound_pipeline = NULL;
     u32 bound_mesh = 0;
     u32 bound_material = 0xFFFFFFFFu;
+    NvRenderStats* stats = &renderer->stats;
+    *stats = (NvRenderStats){.draws = object_count, .skin_matrices = renderer->skin_matrix_count,
+                             .debug_lines = renderer->debug_vertex_count / 2};
     for (u32 i = 0; i < object_count; ++i) {
         NvNode* node = &scene->nodes[renderer->object_nodes[i]];
         NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
@@ -586,18 +589,23 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         if (pipeline != bound_pipeline) {
             wgpuRenderPassEncoderSetPipeline(pass, pipeline);
             bound_pipeline = pipeline;
+            ++stats->pipeline_changes;
         }
         if (node->material.index != bound_material) {
             wgpuRenderPassEncoderSetBindGroup(pass, 1, material->bind_group, 0, NULL);
             bound_material = node->material.index;
+            ++stats->material_changes;
         }
         if (node->mesh.index != bound_mesh) {
+            ++stats->mesh_changes;
             wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertices, 0, WGPU_WHOLE_SIZE);
             wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->indices, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
             bound_mesh = node->mesh.index;
         }
         // The first-instance offset makes instance_index equal the object's slot in `objects`.
         wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, i);
+        stats->triangles += mesh->index_count / 3;
+        stats->skinned_draws += mesh->skinned;
     }
 
     if (renderer->debug_vertex_count) {

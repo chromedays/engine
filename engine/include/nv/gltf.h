@@ -10,6 +10,7 @@
 #define NV_GLTF_MAX_MESH_NODES 32
 
 typedef struct NvGltfModel {
+    NvScene* scene; // the scene the nodes below live in
     NvNodeId root;                               // parent of every node the model created
     NvNodeId mesh_nodes[NV_GLTF_MAX_MESH_NODES]; // one per mesh primitive
     u32 mesh_node_count;
@@ -30,6 +31,10 @@ typedef struct NvGltfModel {
 // new root node in `scene`. Loading uses `scratch` and leaves it as it was.
 b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent,
                        NvArena* scratch, NvGltfModel* out);
+
+// Adds another copy of a loaded model to `scene` (any scene): a new root with the same node
+// names, meshes and materials, and a new animator on the same skeleton. Nothing is loaded again.
+void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvGltfModel* out);
 
 // Creates a clip on `skeleton` for every animation in the file, matching animated nodes to joints
 // by name. Joints named `root_motion_joint` (NULL for none) have their horizontal motion taken
