@@ -43,6 +43,14 @@ typedef struct NvLight {
     f32 outer_cone; // spot, radians
 } NvLight;
 
+// Makes a node follow a joint of an animator's skeleton. The node's parent should be the
+// animator's owner. nv_anim_update_scene writes `joint_model`; the scene only multiplies by it.
+typedef struct NvJointAttach {
+    NvAnimatorId animator; // 0 = not attached
+    u32 joint;
+    NvMat4 joint_model; // the joint in the owner's model space
+} NvJointAttach;
+
 typedef struct NvNode {
     u32 gen; // odd while the slot is in use, even while it is free
     char name[NV_NODE_NAME_MAX];
@@ -63,6 +71,7 @@ typedef struct NvNode {
     NvMeshId mesh;
     NvMaterialId material;
     NvAnimatorId animator; // poses a skinned mesh; unused by static meshes
+    NvJointAttach attach;
     NvCamera camera;
     NvLight light;
 } NvNode;

@@ -52,7 +52,6 @@ typedef struct App {
     NvNodeId sword;
     NvMeshId sword_mesh;
     s32 hand_joint;
-    NvMat4 sword_offset; // hand joint space -> sword space
 
     // Root motion: the character moves by what the clip's root joint does, turning as it goes.
     bool root_motion;
@@ -391,16 +390,12 @@ internal void draw_bones(App* app)
     }
 }
 
-// Moves the character by the root motion the animator accumulated, turning it as it walks.
-internal void apply_root_motion(App* app, f32 dt)
+// Turns the character while root motion walks it (nv_anim_update_scene moves it).
+internal void apply_turn(App* app, f32 dt)
 {
-    NvAnimator* animator = nv_anim_get(app->animator);
     NvNode* root = nv_scene_get(app->scene, app->character.root);
-    if (app->root_motion) {
+    if (app->root_motion)
         root->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), app->turn_rate * dt), root->rotation);
-        root->position = nv_vec3_add(root->position, nv_quat_rotate(root->rotation, animator->root_motion));
-    }
-    animator->root_motion = nv_vec3(0, 0, 0);
 }
 
 // The target sweeps in front of the character; the head's aim IK follows it.
@@ -419,22 +414,13 @@ internal void update_look_at(App* app)
     NvNode* root = nv_scene_get(app->scene, app->character.root);
     target->position = nv_vec3_add(root->position, nv_quat_rotate(root->rotation, local));
     target->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 2.0f);
-
-    // IK works in the character's model space.
-    animator->look_at.target = local;
     animator->look_at.weight = 1.0f;
 }
 
-// The sword follows the hand: hand joint (model space) * the offset found in the rest pose.
+// The sword node is attached to the hand joint; this only shows or hides it.
 internal void update_sword(App* app)
 {
-    NvNode* sword = nv_scene_get(app->scene, app->sword);
-    sword->mesh = app->attach_sword ? app->sword_mesh : (NvMeshId){0};
-    if (!app->attach_sword)
-        return;
-    NvAnimator* animator = nv_anim_get(app->animator);
-    NvMat4 local = nv_mat4_mul(animator->joint_model[app->hand_joint], app->sword_offset);
-    nv_mat4_decompose(local, &sword->position, &sword->rotation, &sword->scale);
+    nv_scene_get(app->scene, app->sword)->mesh = app->attach_sword ? app->sword_mesh : (NvMeshId){0};
 }
 
 // Returns the joint-space axis (+-X, +-Y or +-Z) that points most along `direction` in model space.
@@ -483,7 +469,9 @@ internal void setup_extras(App* app)
     NvMat4 hand = animator->joint_model[app->hand_joint];
     NvVec3 grip = nv_vec3_add(nv_mat4_translation(hand), nv_vec3(-0.08f, -0.02f, 0.0f));
     NvMat4 desired = nv_mat4_trs(grip, nv_quat_axis_angle(nv_vec3(1, 0, 0), NV_PI * 0.5f), nv_vec3(1, 1, 1));
-    app->sword_offset = nv_mat4_mul(nv_mat4_inverse(hand), desired);
+    NvNode* sword = nv_scene_get(app->scene, app->sword);
+    sword->attach = (NvJointAttach){.animator = app->animator, .joint = (u32)app->hand_joint};
+    nv_mat4_decompose(nv_mat4_mul(nv_mat4_inverse(hand), desired), &sword->position, &sword->rotation, &sword->scale);
 
     app->head_joint = nv_anim_find_joint(app->skeleton, "Head");
     NV_ASSERT(app->head_joint >= 0);
@@ -492,6 +480,7 @@ internal void setup_extras(App* app)
         .joint = app->head_joint,
         .forward = joint_axis_towards(head, nv_vec3(0, 0, 1)),
         .up = joint_axis_towards(head, nv_vec3(0, 1, 0)),
+        .target_node = app->target,
     };
     app->turn_rate = 0.6f;
 }
@@ -515,9 +504,9 @@ internal void frame(void* userdata)
     update_jump(app, dt);
     update_blend(app);
     update_look_at(app);
-    nv_anim_update(nv_anim_get(app->animator), dt);
-    apply_root_motion(app, dt);
+    apply_turn(app, dt);
     update_sword(app);
+    nv_anim_update_scene(app->scene, dt);
     update_camera(app);
     nv_scene_update(app->scene);
     if (app->show_bones)
@@ -550,22 +539,18 @@ int main(void)
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
     build_scene(app);
 
+    nv_anim_init(&app->anim_memory);
     if (!nv_gltf_load_model("/assets/character.glb", app->scene, &app->renderer, &app->permanent, &app->scratch, &app->character)) {
         fprintf(stderr, "fatal: failed to load the character\n");
         return 1;
     }
-
-    nv_anim_init(&app->anim_memory);
-    app->skeleton = nv_anim_create_skeleton(app->character.joints, app->character.joint_count, app->character.inverse_bind);
+    app->skeleton = app->character.skeleton;
+    app->animator = app->character.animator;
     app->clip_count = nv_gltf_load_clips("/assets/clips.glb", app->skeleton, NULL, &app->scratch, app->clips, MAX_CLIPS);
     for (u32 i = 0; i < app->clip_count; ++i)
         app->clip_names[i] = nv_anim_clip_name(app->clips[i]);
     app->root_motion_clip_count = nv_gltf_load_clips("/assets/clips_rm.glb", app->skeleton, "root", &app->scratch,
                                                      app->root_motion_clips, MAX_CLIPS);
-
-    app->animator = nv_anim_create_animator(app->skeleton);
-    for (u32 i = 0; i < app->character.mesh_node_count; ++i)
-        nv_scene_get(app->scene, app->character.mesh_nodes[i])->animator = app->animator;
 
     setup_extras(app); // before any clip plays: it reads the rest pose
     app->fade_seconds = 0.3f;

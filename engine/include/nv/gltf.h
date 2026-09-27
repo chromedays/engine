@@ -19,6 +19,11 @@ typedef struct NvGltfModel {
     u32 joint_count;
     NvJointDesc* joints; // [joint_count], from the permanent arena
     NvMat4* inverse_bind; // [joint_count], from the permanent arena
+
+    // Created for the first skin (0 without one): the animator's owner is `root`, and it poses
+    // every skinned mesh node. Needs nv_anim_init.
+    NvSkeletonId skeleton;
+    NvAnimatorId animator;
 } NvGltfModel;
 
 // Loads meshes, base color materials and textures into `renderer`, and adds a node tree under a

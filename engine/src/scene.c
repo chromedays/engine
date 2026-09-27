@@ -118,6 +118,8 @@ void nv_scene_update(NvScene* scene)
     while (index) {
         NvNode* node = &scene->nodes[index];
         NvMat4 local = nv_mat4_trs(node->position, node->rotation, node->scale);
+        if (node->attach.animator.index)
+            local = nv_mat4_mul(node->attach.joint_model, local);
         node->world = node->parent ? nv_mat4_mul(scene->nodes[node->parent].world, local) : local;
 
         if (node->first_child) {

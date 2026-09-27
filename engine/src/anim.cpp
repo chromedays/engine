@@ -319,7 +319,17 @@ b32 nv_anim_clip_has_root_motion(NvClipId clip)
     return get_clip(clip)->motion != nullptr;
 }
 
-NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id)
+u32 nv_anim_clip_count(void)
+{
+    return g_clip_count - 1;
+}
+
+NvSkeletonId nv_anim_clip_skeleton(NvClipId clip)
+{
+    return get_clip(clip)->skeleton;
+}
+
+NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id, NvNodeId owner)
 {
     NV_ASSERT(g_animator_count < NV_MAX_ANIMATORS);
     Skeleton* skeleton = get_skeleton(skeleton_id);
@@ -329,6 +339,7 @@ NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton_id)
     AnimatorState* state = &g_animators[g_animator_count];
     *state = AnimatorState{};
     state->pub.skeleton = skeleton_id;
+    state->pub.owner = owner;
     state->pub.joint_count = skeleton->joint_count;
     state->pub.joint_model = push_array<NvMat4>(skeleton->joint_count);
     for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
@@ -489,6 +500,53 @@ void nv_anim_update(NvAnimator* animator, f32 dt)
     u32 index = (u32)(state - g_animators);
     g_skins[index].matrices = state->skinning;
     g_skins[index].count = skeleton->joint_count;
+}
+
+// World matrix of a node from its local transforms up to the root. Unlike NvNode.world it is
+// current, so look-at targets and owners moved this frame are used where they are now.
+internal NvMat4 current_world(NvScene* scene, u32 index)
+{
+    NvMat4 world = nv_mat4_identity();
+    while (index) {
+        NvNode* node = &scene->nodes[index];
+        NvMat4 local = nv_mat4_trs(node->position, node->rotation, node->scale);
+        if (node->attach.animator.index)
+            local = nv_mat4_mul(node->attach.joint_model, local);
+        world = nv_mat4_mul(local, world);
+        index = node->parent;
+    }
+    return world;
+}
+
+void nv_anim_update_scene(NvScene* scene, f32 dt)
+{
+    for (u32 a = 1; a < g_animator_count; ++a) {
+        NvAnimator* animator = &g_animators[a].pub;
+        NvNode* owner = animator->owner.index ? nv_scene_get(scene, animator->owner) : nullptr;
+
+        NvLookAt* look = &animator->look_at;
+        if (look->target_node.index && owner) {
+            nv_scene_get(scene, look->target_node); // asserts the id is live
+            NvMat4 to_model = nv_mat4_inverse(current_world(scene, animator->owner.index));
+            NvVec3 target = nv_mat4_translation(current_world(scene, look->target_node.index));
+            look->target = nv_mat4_transform_point(to_model, target);
+        }
+
+        nv_anim_update(animator, dt);
+
+        if (owner)
+            owner->position = nv_vec3_add(owner->position, nv_quat_rotate(owner->rotation, animator->root_motion));
+        animator->root_motion = nv_vec3(0, 0, 0);
+    }
+
+    for (u32 index = 1; index <= scene->node_count; ++index) {
+        NvNode* node = &scene->nodes[index];
+        if (!(node->gen & 1) || !node->attach.animator.index)
+            continue;
+        NvAnimator* animator = nv_anim_get(node->attach.animator);
+        NV_ASSERT(node->attach.joint < animator->joint_count);
+        node->attach.joint_model = animator->joint_model[node->attach.joint];
+    }
 }
 
 const NvSkin* nv_anim_skins(void)

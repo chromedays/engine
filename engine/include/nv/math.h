@@ -160,6 +160,13 @@ static inline NvMat4 nv_mat4_inverse(NvMat4 m)
 
 static inline NvVec3 nv_mat4_translation(NvMat4 m) { return (NvVec3){m.e[12], m.e[13], m.e[14]}; }
 
+static inline NvVec3 nv_mat4_transform_point(NvMat4 m, NvVec3 p)
+{
+    return (NvVec3){m.e[0] * p.x + m.e[4] * p.y + m.e[8] * p.z + m.e[12],
+                    m.e[1] * p.x + m.e[5] * p.y + m.e[9] * p.z + m.e[13],
+                    m.e[2] * p.x + m.e[6] * p.y + m.e[10] * p.z + m.e[14]};
+}
+
 // The direction the local -Z axis points in world space (where a camera or light faces).
 static inline NvVec3 nv_mat4_forward(NvMat4 m)
 {
