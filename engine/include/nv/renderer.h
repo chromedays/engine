@@ -7,7 +7,7 @@
 #define NV_MAX_MATERIALS     256
 #define NV_MAX_TEXTURES      256
 #define NV_MAX_SKIN_MATRICES 16384 // joint matrices across all skinned draws in one frame
-#define NV_MAX_DEBUG_LINES   8192
+#define NV_MAX_DEBUG_LINES   16384
 
 typedef struct NvTextureId { u32 index; } NvTextureId; // 0 = plain white
 
@@ -116,6 +116,11 @@ typedef struct NvRenderer {
     u32* object_nodes;            // [NV_MAX_NODES] node index per object
     NvMat4* skin_matrices;        // [NV_MAX_SKIN_MATRICES]
     u32 skin_matrix_count;
+    // Where each animator's matrices start in this frame's skin buffer, so the meshes of one
+    // character share one copy. Valid while skin_frame matches frame_index.
+    u32 skin_offsets[NV_MAX_ANIMATORS];
+    u32 skin_frame[NV_MAX_ANIMATORS];
+    u32 frame_index;
     NvDebugVertex* debug_vertices; // [NV_MAX_DEBUG_LINES * 2]
     u32 debug_vertex_count;
 

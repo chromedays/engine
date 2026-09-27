@@ -15,9 +15,9 @@
 
 #define APP_MAX_CLIPS 16
 
-#define STRESS_MAX_GRID     4000
+#define STRESS_MAX_GRID     16000
 #define STRESS_MAX_CHAIN    1000
-#define STRESS_MAX_CROWD    60
+#define STRESS_MAX_CROWD    200
 #define STRESS_MAX_COLORS   200
 #define STRESS_MAX_CHURN    256
 #define STRESS_MAX_STEPS    16
@@ -60,6 +60,10 @@ typedef struct BenchmarkResult {
     FrameTimes average;
     f64 worst_frame;
 } BenchmarkResult;
+
+// How busy the frame is: the larger of the CPU stages and the GPU pass, as a share of the frame
+// time. Unlike the frame time it keeps rising while vsync holds the frame rate at the display's.
+f64 app_load(const FrameTimes* t);
 
 // What the stress scene is asked to hold. bools because ImGui writes them through bool*.
 typedef struct StressWorkloads {

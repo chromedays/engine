@@ -8,7 +8,6 @@
 
 #define NV_MAX_SKELETONS   8
 #define NV_MAX_CLIPS       64
-#define NV_MAX_ANIMATORS   64
 #define NV_MAX_JOINTS      128 // the Quaternius rig has 65
 #define NV_MAX_ANIM_LAYERS 4
 

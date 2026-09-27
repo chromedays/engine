@@ -2,7 +2,8 @@
 
 #include "nv/math.h"
 
-#define NV_MAX_NODES     4096
+#define NV_MAX_NODES     16384
+#define NV_MAX_ANIMATORS 256 // animator ids index tables in nv/anim.h and nv/renderer.h
 #define NV_NODE_NAME_MAX 32
 
 // NOTE: Slot 0 is never used, so a zeroed id means "no node". `gen` catches ids that outlived

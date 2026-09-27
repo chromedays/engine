@@ -16,7 +16,7 @@ uploaded every frame. None of that has been measured yet.
 | Topic | Decision |
 |---|---|
 | Where | A second scene in the same app. The View tab switches between Showcase and Stress; `#stress` in the URL opens it directly |
-| Limits | Kept as they are (`NV_MAX_NODES` 4096, `NV_MAX_ANIMATORS` 64, `NV_MAX_MATERIALS` 256). The test measures up to them; raising them is decided from the results |
+| Limits | Raised after the first phone results, where every step still ran at 60 fps: `NV_MAX_NODES` 16384 (was 4096), `NV_MAX_ANIMATORS` 256 (was 64), `NV_MAX_DEBUG_LINES` 16384 (was 8192); `NV_MAX_MATERIALS` stays 256 |
 | Benchmark | A button runs fixed steps and shows a table that can be copied |
 | Timing | Measured in the app with `emscripten_get_now`; GPU time only where the browser offers `timestamp-query` |
 | Third-party | None. Tracy (C++, BSD) was considered as a profiler, but its wasm support is weak |
@@ -28,12 +28,12 @@ workloads together stay under `NV_MAX_NODES`.
 
 | Workload | What it builds | Max | Measures |
 |---|---|---|---|
-| Cube grid | N static cubes on a square grid | ~4000 | draw calls, scene update, object upload |
+| Cube grid | N static cubes on a square grid | 16000 | draw calls, scene update, object upload |
 | Deep hierarchy | a chain of N small cubes, each the child of the last, all turning | 1000 | transform propagation |
-| Crowd | N characters in rows, each on its own clip and start time | 60 | ozz sampling, skin matrix upload, skinning shader |
+| Crowd | N characters in rows, each on its own clip and start time | 200 | ozz sampling, skin matrix upload, skinning shader |
 | Material variety | the grid uses one material, or up to 256 distinct colors | 256 | bind group switches |
 | Churn | K grid cubes removed and added again every frame | 256/frame | free list, generation ids |
-| Bone overlay | bone lines for every crowd character | ~3900 lines | debug lines |
+| Bone overlay | bone lines for every crowd character | ~12800 lines | debug lines |
 
 The stress scene also has a camera, a sun and a ground. Big workloads sit under group nodes
 ("grid", "chain", "crowd") that start collapsed in the Scene tab. Otherwise the tree would draw
@@ -72,8 +72,10 @@ thousands of rows every frame and distort the measurements.
     GPU time when available.
 - **Benchmark:** "Run benchmark" steps through fixed setups and records 3 seconds of each, after
   1 second of warm-up.
-  - Cubes: 250, 500, 1000, 2000 and 4000, the crowd off.
-  - Characters: 8, 16, 32 and 60, the grid off.
+  - Cubes: 250, 1000, 4000, 8000 and 16000, the crowd off.
+  - Characters: 8, 32, 60, 120 and 200, the grid off.
+  - The table also shows the load: the larger of the CPU stage total and the GPU pass, as a
+    share of the frame time. It keeps rising while vsync holds the frame rate.
   - The table shows average and worst frame time and the CPU stage times per step.
   - "Copy" puts the table on the clipboard as text, with the browser's user agent and the commit
     hash.

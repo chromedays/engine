@@ -517,6 +517,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
 
     u32 object_count = 0;
     renderer->skin_matrix_count = 0;
+    ++renderer->frame_index;
     b32 have_light = 0;
     for (u32 index = 1; index <= scene->node_count; ++index) {
         NvNode* node = &scene->nodes[index];
@@ -544,10 +545,16 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         object->joint_offset = NO_SKIN;
         const NvSkin* skin = (skins && node->animator.index) ? &skins[node->animator.index] : NULL;
         if (renderer->meshes[node->mesh.index].skinned && skin && skin->count) {
-            NV_ASSERT(renderer->skin_matrix_count + skin->count <= NV_MAX_SKIN_MATRICES);
-            object->joint_offset = renderer->skin_matrix_count;
-            memcpy(renderer->skin_matrices + renderer->skin_matrix_count, skin->matrices, skin->count * sizeof(NvMat4));
-            renderer->skin_matrix_count += skin->count;
+            u32 a = node->animator.index;
+            NV_ASSERT(a < NV_MAX_ANIMATORS);
+            if (renderer->skin_frame[a] != renderer->frame_index) {
+                NV_ASSERT(renderer->skin_matrix_count + skin->count <= NV_MAX_SKIN_MATRICES);
+                renderer->skin_frame[a] = renderer->frame_index;
+                renderer->skin_offsets[a] = renderer->skin_matrix_count;
+                memcpy(renderer->skin_matrices + renderer->skin_matrix_count, skin->matrices, skin->count * sizeof(NvMat4));
+                renderer->skin_matrix_count += skin->count;
+            }
+            object->joint_offset = renderer->skin_offsets[a];
         }
         renderer->object_nodes[object_count] = index;
         ++object_count;

@@ -449,6 +449,13 @@ internal f64 now_ms(void)
     return nv_time_seconds() * 1000.0;
 }
 
+f64 app_load(const FrameTimes* t)
+{
+    f64 cpu = t->anim + t->scene + t->draw + t->ui;
+    f64 busy = cpu > t->gpu ? cpu : t->gpu;
+    return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
+}
+
 // Averages the frame times over windows of about a second, for the stats and the benchmark.
 internal void accumulate_times(App* app, f64 now)
 {

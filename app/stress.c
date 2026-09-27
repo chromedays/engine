@@ -13,9 +13,9 @@
 #define NV_GIT_COMMIT "unknown"
 #endif
 
-#define GRID_COLUMNS 64
+#define GRID_COLUMNS 128
 #define GRID_SPACING 0.9f
-#define CROWD_COLUMNS 10
+#define CROWD_COLUMNS 20
 #define CROWD_SPACING 1.6f
 
 // Nodes the scene has besides the workloads: camera, sun, ground and the three groups.
@@ -85,8 +85,8 @@ void stress_build(App* app)
     }
 
     NvNode* ground = nv_scene_get(scene, nv_scene_add_node(scene, none, "ground"));
-    ground->position = nv_vec3(0, -0.05f, -20.0f);
-    ground->scale = nv_vec3(160.0f, 0.1f, 160.0f);
+    ground->position = nv_vec3(0, -0.05f, -50.0f);
+    ground->scale = nv_vec3(260.0f, 0.1f, 260.0f);
     ground->mesh = stress->cube;
     ground->material = nv_renderer_add_material(&app->renderer, &(NvMaterialDesc){.base_color = {0.28f, 0.3f, 0.34f, 1.0f}});
 
@@ -108,9 +108,10 @@ void stress_build(App* app)
     };
 
     local_persist const BenchmarkStep steps[] = {
-        {"Cubes 250", 250, 0},   {"Cubes 500", 500, 0},   {"Cubes 1000", 1000, 0},
-        {"Cubes 2000", 2000, 0}, {"Cubes 4000", 4000, 0}, {"Crowd 8", 0, 8},
-        {"Crowd 16", 0, 16},     {"Crowd 32", 0, 32},     {"Crowd 60", 0, 60},
+        {"Cubes 250", 250, 0},   {"Cubes 1000", 1000, 0}, {"Cubes 4000", 4000, 0},
+        {"Cubes 8000", 8000, 0}, {"Cubes 16000", 16000, 0}, {"Crowd 8", 0, 8},
+        {"Crowd 32", 0, 32},     {"Crowd 60", 0, 60},     {"Crowd 120", 0, 120},
+        {"Crowd 200", 0, 200},
     };
     NV_ASSERT(NV_ARRAY_COUNT(steps) <= STRESS_MAX_STEPS);
     memcpy(stress->steps, steps, sizeof(steps));
@@ -384,13 +385,13 @@ internal void copy_results(App* app)
     umm used = 0;
     used += (umm)snprintf(text + used, sizeof(text) - used,
                           "nv stress benchmark\ncommit: %s\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n\n"
-                          "step        frames  avg ms  worst ms  anim  scene  draw    ui   gpu\n",
+                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu\n",
                           NV_GIT_COMMIT, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no");
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
-        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %4.2f  %5.2f  %4.2f  %4.2f  %4.2f\n",
-                              stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, r->average.anim,
-                              r->average.scene, r->average.draw, r->average.ui, r->average.gpu);
+        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f\n",
+                              stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, app_load(&r->average),
+                              r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu);
     }
     igSetClipboardText(text);
 }
@@ -418,6 +419,7 @@ internal void stats_section(App* app)
     if (!igBeginTable("stats", columns, ImGuiTableFlags_SizingStretchProp, (ImVec2_c){0, 0}, 0.0f))
         return;
     stat("Frame", "%.2f", a->frame);
+    stat("Load %", "%.0f", app_load(a));
     stat("FPS", "%.0f", a->frame > 0.0 ? 1000.0 / a->frame : 0.0);
     stat("Worst frame", "%.2f", app->shown_worst_frame);
     if (app->gpu.has_timestamps) {
@@ -480,9 +482,10 @@ internal void benchmark_section(App* app)
     if (!stress->result_count)
         return;
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
-    if (igBeginTable("results", 5, flags, (ImVec2_c){0, 0}, 0.0f)) {
+    if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
+        igTableSetupColumn("Load %", 0, 0.0f, 0);
         igTableSetupColumn("Worst", 0, 0.0f, 0);
         igTableSetupColumn("CPU a/s/d", 0, 0.0f, 0);
         igTableSetupColumn("GPU", 0, 0.0f, 0);
@@ -494,6 +497,8 @@ internal void benchmark_section(App* app)
             igTextUnformatted(stress->steps[i].name, NULL);
             igTableNextColumn();
             igText("%.2f", r->average.frame);
+            igTableNextColumn();
+            igText("%.0f", app_load(&r->average));
             igTableNextColumn();
             igText("%.2f", r->worst_frame);
             igTableNextColumn();
