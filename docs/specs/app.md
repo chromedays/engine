@@ -1,101 +1,182 @@
-# One app spec
+# One app, one scene spec
 
-Status: draft (2026-09-26). Changes to this spec are agreed first.
+Status: draft (2026-09-27). Changes to this spec are agreed first.
 
 ## Goal
 
-Merge the three examples (triangle, scene, character) into one app at one address. The editor
-panel picks which sample is shown; the viewport above it draws that sample.
+Replace the three examples with one app that shows one scene: the scene example's planet and
+moon and the character example's animated character, sword and target, side by side. The editor
+panel shows the node tree and the selected node's components. Animation becomes part of the
+scene, so the app no longer moves nodes by hand to follow the animation.
 
 ## Decisions
 
 | Topic | Decision |
 |---|---|
-| Structure | One executable. Each former example becomes a **sample**: a C file behind a small function table |
-| Location | `app/` (`app/main.c` is the shell, `app/samples/*.c` the samples); `examples/` is removed |
-| Address | Pages root: `https://chromedays.github.io/engine/`. `#triangle`, `#scene`, `#character` pick the sample |
-| Old addresses | `/engine/character/` and the others stay as tiny pages that redirect to `/engine/#character` |
-| Default sample | `character` |
-| Loading | A sample is set up the first time it is shown and then stays loaded; switching back keeps its state |
-| Updating | Only the shown sample updates and draws; the others are paused |
-| Assets | One preloaded `app.data` with everything (1.3 MB today). Loading per sample waits until assets grow |
-| Engine state | One `NvGpu`, `NvRenderer`, `NvImgui` and nv_anim instance, shared by all samples |
-| Third-party | None needed; this is app structure |
+| Examples | `triangle` is deleted. `scene` and `character` merge into one app |
+| Location | `app/main.c` (scene setup, frame) and `app/ui.c` (editor panel); `examples/` is removed |
+| Address | Pages root, `https://chromedays.github.io/engine/`; `web/landing.html` is removed |
+| Old addresses | `/engine/character/`, `/engine/scene/` and `/engine/triangle/` become tiny pages that redirect to `/engine/` |
+| Assets | One preloaded `app.data` with `assets/quaternius/` (1.3 MB) |
+| Animation in the scene | New `attach` node component, animator `owner`, look-at `target_node`, and `nv_anim_update_scene` (below) |
+| glTF loading | The loader creates the skeleton and animator when the file has a skin |
+| `scene.c` | Still knows nothing about anim or the renderer; it only multiplies by a matrix anim writes |
+| Third-party | None needed |
 
-## Sample interface
+## Structure changes
 
-```c
-// app/sample.h
-typedef struct NvSampleContext {
-    NvGpu* gpu;
-    NvRenderer* renderer;
-    NvImgui* imgui;
-    NvArena* permanent; // lives as long as the app
-    NvArena* scratch;   // reset by the shell after every call
-} NvSampleContext;
+`+` is added, `-` removed, unmarked lines stay.
 
-typedef struct NvSample {
-    const char* name;                                // "character"; also the URL hash
-    void* (*init)(NvSampleContext* ctx);             // first time shown; returns the sample's state
-    void (*enter)(void* state, NvSampleContext* ctx); // every time it becomes the shown sample
-    void (*update)(void* state, NvSampleContext* ctx, f32 dt);
-    void (*ui)(void* state, NvSampleContext* ctx);    // inside the editor panel
-    void (*draw)(void* state, NvSampleContext* ctx, WGPUCommandEncoder encoder,
-                 WGPUTextureView target, NvRect viewport);
-} NvSample;
+```diff
+ NvScene  (4096 slots)
+ ├─ nodes[1..]    NvNode
+ │   ├─ parent / first_child / next_sibling
+ │   ├─ position, rotation, scale
+ │   ├─ world     ← nv_scene_update
++│   │              (× attach.joint_model if attached)
+ │   └─ components (0 = none)
+ │       ├─ mesh, material ─────────► NvRenderer
+ │       ├─ animator NvAnimatorId ────► nv_anim
++│       ├─ attach   NvJointAttach
++│       │    ├─ animator ───────────► nv_anim
++│       │    ├─ joint
++│       │    └─ joint_model  ◄── written by anim
+ │       ├─ camera
+ │       └─ light
+ └─ active_camera
 ```
 
-- `init` pushes the sample's state (its own `NvScene`, ids, UI values) from `permanent`, so state
-  stays off the stack (`nv_window_run` never returns) and there is no malloc.
-- `enter` sets what the renderer shares between samples, such as `clear_color` and `ambient`.
-- `draw` must stay inside `viewport`; the shell clears the rest and draws ImGui over it.
+```diff
+ nv_anim
+ └─ animators[64] NvAnimator
+     ├─ skeleton
++    ├─ owner  NvNodeId ──► e.g. the character root
+     ├─ layers[4]
+     ├─ look_at
++    │   └─ target_node NvNodeId (0 = use target)
+     ├─ root_motion
+     └─ joint_model[]
 
-## Shell (`app/main.c`)
+ NvGltfModel
+ ├─ root, mesh_nodes[]
+ ├─ joints, inverse_bind
++├─ skeleton   (created by the loader)
++└─ animator   (created by the loader, owner = root)
+```
 
-Every frame:
+```diff
+ Frame
+ 1  app: play / blend / demo motion ─► NvAnimator
+-2  app: nv_anim_update(animator)
+-3  app: apply_root_motion ─► root node
+-4  app: update_sword ─► sword node
+-5  app: update_look_at ─► look_at.target
++2  nv_anim_update_scene(scene, dt)
++     ├─ look_at.target_node ─► look_at.target
++     ├─ every animator ─► joint_model[]
++     ├─ root_motion ─► owner node
++     └─ every attach ─► attach.joint_model
+ 6  nv_scene_update ─► world
+ 7  nv_renderer_draw(scene, skins)
+```
 
-1. `nv_gpu_begin_frame`, `nv_editor_layout`, `nv_imgui_new_frame`.
-2. If the URL hash changed (see below), switch to that sample.
-3. Open the panel with `nv_imgui_begin_panel`. Its first row is a sample selector (a combo or
-   tabs) and the FPS readout; the shown sample's `ui` fills the rest.
-4. `update` then `draw` for the shown sample, then `nv_imgui_render`, submit, `nv_gpu_end_frame`.
+```diff
+-scene example          character example
+-├─ camera              ├─ camera
+-├─ sun                 ├─ sun
+-├─ ground              ├─ ground
+-└─ planet              ├─ character
+-   └─ moon             │  ├─ mesh ×3  animator=#1
+-                       │  └─ sword    (app moves it)
+-                       └─ target
++one scene
++├─ camera
++├─ sun
++├─ ground
++├─ planet
++│  └─ moon
++├─ character   owner of animator #1
++│  ├─ mesh ×3  animator = #1
++│  └─ sword    attach = {#1, hand_r}
++└─ target      look_at.target_node of #1
+```
 
-Switching sets the hash with `history.replaceState`, so a link or a reload opens the same
-sample. A `hashchange` listener handles the browser back button and edited URLs.
+## Engine API changes
 
-## Engine changes
+- **`nv/scene.h`**
+  - `NvJointAttach { NvAnimatorId animator; u32 joint; NvMat4 joint_model; }` and
+    `NvNode.attach`.
+  - An attached node's parent should be its animator's owner. `nv_scene_update` computes
+    `world = parent.world × attach.joint_model × local`. Nothing else in `scene.c` changes.
+- **`nv/anim.h`**
+  - `NvAnimator.owner` (`NvNodeId`) and `NvLookAt.target_node` (`NvNodeId`).
+  - `nv_anim_create_animator(skeleton, owner)` replaces `nv_anim_create_animator(skeleton)`.
+  - `nv_anim_update_scene(NvScene* scene, f32 dt)`. For every animator:
+    - It turns `look_at.target_node`'s world position into the owner's model space. It uses
+      last frame's world matrices, so it lags one frame, which is not visible.
+    - It calls `nv_anim_update`.
+    - It moves the owner by `root_motion` (rotated by the owner's rotation), then clears it.
+  - After that, it copies `joint_model[joint]` into every node's `attach`.
+  - `nv_anim_update` stays for callers that do not use a scene.
+  - `nv_anim_clip_skeleton(NvClipId)` and `nv_anim_clip_count()`, so UI can list a skeleton's
+    clips without the app keeping its own table.
+- **`nv/gltf.h`**
+  - `NvGltfModel.skeleton` and `NvGltfModel.animator`. When the file has a skin, the loader
+    creates both, with `owner` set to the model root, and sets `animator` on every skinned mesh
+    node.
 
-- **Shared renderer.** Meshes, materials and textures of every sample live in one renderer. The
-  totals (under 40 meshes, 20 materials, 10 textures today) fit the current limits of 256. The
-  renderer draws the scene it is given, so each sample passes its own `NvScene`.
-- **Debug lines.** Queued lines belong to the frame's shown sample; the queue is cleared on switch
-  so a hidden sample's lines never show.
-- **Triangle.** It keeps its own pipeline (the "raw WebGPU" sample) and draws into the viewport
-  with `wgpuRenderPassEncoderSetViewport`, clearing only the viewport.
-- **Memory.** One set of arenas: permanent 64 MB, scratch 32 MB, anim 48 MB (today's largest,
-  character, uses 48/32/48). These are zero-filled globals, so they do not grow the download.
+## App
+
+- **Scene layout:**
+  - The character stands at the origin, and the planet and moon sit about 3 m to one side.
+  - The camera orbits a focus node: the selected node, or the character when nothing is selected.
+    It keeps following the character's root motion.
+- **Behavior that stays in the app:**
+  - The jump chain (Jump_Start → Jump_Loop → Jump_Land).
+  - The blend helper.
+  - Choosing root-motion or in-place clips.
+  - The turn rate.
+  - Moving the look-at target.
+  - The planet's orbit.
+  - The bone overlay.
+- **Editor panel (`nv_imgui_begin_panel`), tabs:**
+  - **Scene:** the node tree; tapping a node selects it.
+  - **Inspector:** the selected node.
+    - Its name and transform, as today.
+    - One section per component it has: Mesh (material color), Camera, Light (color,
+      intensity), Attach (joint).
+    - Animator: today's character controls, which are clips, Jump, speed, fade, blend, layer
+      bars, root motion, turn and look at.
+  - **View:** FPS, camera yaw and distance, show bones, and planet orbit speed.
 
 ## Build and deploy
 
-- `app/CMakeLists.txt`: `add_executable(app ...)` and
-  `nv_setup_executable(app ASSETS assets/quaternius)`, installed at the package root rather than
-  in a subfolder.
-- `web/landing.html` is removed; `index.html` is the app. `web/redirect.html.in` produces the three
-  old-address pages.
-- CI keeps the same steps; only the installed layout changes.
+- `app/CMakeLists.txt`: `add_executable(app main.c ui.c)` and
+  `nv_setup_executable(app ASSETS assets/quaternius)`.
+- `nv_setup_executable` gains an option to install at the package root instead of a subfolder.
+- `web/redirect.html.in` produces the three old-address pages.
+- CI keeps the same steps; only the install layout changes. The `cp web/landing.html` step goes.
 
 ## Phases
 
-1. **Shell:** `app/`, the sample interface, hash routing, and triangle and scene ported. Remove
-   those two from `examples/`.
-2. **Character:** port character, move its assets into `app.data`, remove `examples/`.
-3. **Deploy:** install at the root, old-address redirects, update `AGENTS.md`, `README.md` and
-   CI. Check Release and Debug in headless Chromium: every sample, switching back and forth with
-   state kept, hash links, reload, and phone size.
+1. **Engine:** `attach`, `owner`, `target_node`, `nv_anim_update_scene`, clip queries, and the
+   loader creating animators. Port the character example to them, with its behavior unchanged,
+   to check the engine change on its own.
+2. **App:**
+   - Create `app/` with the merged scene and the Scene / Inspector / View panel.
+   - Delete `examples/`.
+3. **Deploy and docs:**
+   - Install at the root, add the old-address redirects and update CI.
+   - Update `AGENTS.md`, `README.md` and the implementation notes in `docs/specs/animation.md`.
+
+Every phase is checked in Release and Debug in headless Chromium at desktop and phone size:
+
+- all clips, jump, blend, sword, root motion and look at still work;
+- the planet orbits;
+- selecting nodes and editing transforms works;
+- the panel scrolls by touch.
 
 ## Open questions
 
-1. Directory and target name: `app` (proposed), `editor` or keep `examples`?
+1. Directory and target name: `app` (proposed) or something else?
 2. Keep redirect pages for the old addresses (proposed), or drop them?
-3. Default sample: `character` (proposed)?
-4. Sample selector: a combo (proposed; fits a phone) or a tab row?
