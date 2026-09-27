@@ -9,9 +9,6 @@
 // The stress scene (docs/specs/stress.md): workloads that load the engine with many objects,
 // live frame statistics and a benchmark that steps through fixed setups.
 
-#ifndef NV_GIT_COMMIT
-#define NV_GIT_COMMIT "unknown"
-#endif
 
 #define GRID_COLUMNS 128
 #define GRID_SPACING 0.9f
@@ -384,9 +381,9 @@ internal void copy_results(App* app)
     char text[4096];
     umm used = 0;
     used += (umm)snprintf(text + used, sizeof(text) - used,
-                          "nv stress benchmark\ncommit: %s\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n\n"
+                          "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n\n"
                           "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu\n",
-                          NV_GIT_COMMIT, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no");
+                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no");
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
         used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f\n",

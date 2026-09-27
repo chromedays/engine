@@ -8,7 +8,9 @@ models load with [cgltf](https://github.com/jkuhlmann/cgltf) and skeletal animat
 [ozz-animation](https://github.com/guillaumeblanc/ozz-animation). The character and animations
 are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`).
 
-Live: https://chromedays.github.io/engine/
+Live:
+- Release: https://chromedays.github.io/engine/release/
+- Debug (`NV_ASSERT` on, crashes show their stack on the page): https://chromedays.github.io/engine/debug/
 
 ## Layout
 
@@ -44,8 +46,9 @@ recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 
 ## CI and deployment
 
-GitHub Actions (`.github/workflows/build.yml`) builds the web version on every push (downloadable
-as the `engine-web` artifact) and deploys it to GitHub Pages on every push to the default branch.
+GitHub Actions (`.github/workflows/build.yml`) builds a Release and a Debug web version on every
+push (downloadable together as the `engine-web` artifact) and deploys them to GitHub Pages, under
+`release/` and `debug/`, on every push to the default branch.
 Enable Pages once under **Settings > Pages > Source: GitHub Actions**. On the free GitHub plan the
 repository must be public for Pages to work.
 

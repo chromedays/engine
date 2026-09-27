@@ -15,7 +15,7 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 |---|---|
 | Examples | `triangle` is deleted. `scene` and `character` merge into one app |
 | Location | `app/main.c` (scene setup, frame) and `app/ui.c` (editor panel); the CMake target is `app`; `examples/` is removed |
-| Address | Pages root, `https://chromedays.github.io/engine/`; `web/landing.html` is removed |
+| Address | Pages root, `https://chromedays.github.io/engine/`; `web/landing.html` is removed. Later moved: Release to `/engine/release/`, Debug to `/engine/debug/` |
 | Old addresses | `/engine/character/`, `/engine/scene/` and `/engine/triangle/` are dropped, with no redirects |
 | Assets | One preloaded `app.data` with `assets/quaternius/` (1.3 MB) |
 | Animation in the scene | New `attach` node component, animator `owner`, look-at `target_node`, and `nv_anim_update_scene` (below) |

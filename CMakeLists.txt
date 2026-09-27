@@ -30,6 +30,8 @@ target_link_options(webgpu INTERFACE
 #   nv_setup_executable(<target> [ROOT] [ASSETS <dir>])
 # ROOT installs into <prefix>/ instead, so the page is the package's index.html.
 # ASSETS preloads <dir> as /assets, readable with fopen; it ships as <target>.data.
+# Debug builds keep their DWARF debug info in <target>.debug.wasm next to the page. The page does
+# not download it; browser developer tools fetch it for source-level debugging.
 function(nv_setup_executable target)
     cmake_parse_arguments(ARG "ROOT" "ASSETS" "" ${ARGN})
     set_target_properties(${target} PROPERTIES SUFFIX ".js")
@@ -41,6 +43,12 @@ function(nv_setup_executable target)
         "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
         "$<TARGET_FILE_DIR:${target}>/${target}.manifest.json"
         "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        target_link_options(${target} PRIVATE
+            "-gseparate-dwarf=$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm"
+            "-sSEPARATE_DWARF_URL=${target}.debug.wasm")
+        list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm")
+    endif()
     # The page reads file sizes from the manifest to show download progress.
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}

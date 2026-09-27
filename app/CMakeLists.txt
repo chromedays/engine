@@ -12,3 +12,5 @@ endif()
 if(NV_GIT_COMMIT)
     target_compile_definitions(app PRIVATE NV_GIT_COMMIT="${NV_GIT_COMMIT}")
 endif()
+# Shown in the View tab and in benchmark reports, so Debug numbers are not taken for Release ones.
+target_compile_definitions(app PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")

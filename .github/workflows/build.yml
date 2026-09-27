@@ -36,14 +36,21 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
+      # Both builds are deployed: Release at <pages>/release/, Debug (NV_ASSERT on) at <pages>/debug/.
       - name: Configure
-        run: emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+        run: |
+          emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+          emcmake cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
-        run: cmake --build build
+        run: |
+          cmake --build build-release
+          cmake --build build-debug
 
       - name: Package
-        run: cmake --install build --prefix dist/engine-web --component web
+        run: |
+          cmake --install build-release --prefix dist/engine-web/release --component web
+          cmake --install build-debug --prefix dist/engine-web/debug --component web
 
       - uses: actions/upload-artifact@v4
         with:

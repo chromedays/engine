@@ -184,6 +184,7 @@ internal void view_tab(App* app)
     if (igCombo_Str_arr("Scene", &shown, scenes, SCENE_COUNT, -1))
         app_show_scene(app, (SceneKind)shown);
     igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
+    igTextDisabled("%s build, commit %s", NV_BUILD_NAME, NV_GIT_COMMIT);
     igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
     igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
     igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);

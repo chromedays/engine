@@ -13,6 +13,14 @@
 #include <nv/scene.h>
 #include <nv/window.h>
 
+// Set by app/CMakeLists.txt; shown in the View tab and in benchmark reports.
+#ifndef NV_GIT_COMMIT
+#define NV_GIT_COMMIT "unknown"
+#endif
+#ifndef NV_BUILD_NAME
+#define NV_BUILD_NAME "unknown"
+#endif
+
 #define APP_MAX_CLIPS 16
 
 #define STRESS_MAX_GRID     16000

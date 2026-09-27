@@ -28,7 +28,7 @@ web/                       index.html.in (the page: downloads the app with a pro
                            starts it), manifest.cmake (file sizes for that progress bar)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
-.github/workflows/build.yml  CI: web build + GitHub Pages deploy
+.github/workflows/build.yml  CI: Release and Debug web builds + GitHub Pages deploy
 ```
 
 ## Build and run
@@ -71,8 +71,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model; call `nv_anim_init`
   first.
 - There is one executable, `app`. Its assets are packaged with
-  `nv_setup_executable(app ROOT ASSETS <dir>)` and read from `/assets/...` with `fopen`; `ROOT`
-  installs it at the package root, so it is the Pages index.
+  `nv_setup_executable(app ROOT ASSETS <dir>)` and read from `/assets/...` with `fopen`. CI installs
+  the Release build to `release/` and the Debug build to `debug/` on Pages (the site root has
+  nothing). Debug builds keep their DWARF in `app.debug.wasm`, which only browser developer tools
+  download.
 
 ## Assets
 
