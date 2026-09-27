@@ -121,6 +121,9 @@ NvTextureId nv_renderer_add_texture(NvRenderer* renderer, u32 width, u32 height,
 
 NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc* desc);
 
+// Changes a material's base color (linear RGBA); the default material (id 0) included.
+void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const f32 base_color[4]);
+
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);
 

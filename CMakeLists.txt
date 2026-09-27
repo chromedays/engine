@@ -27,10 +27,11 @@ target_link_options(webgpu INTERFACE
 
 # Emits <target>.js/.wasm plus index.html (from web/index.html.in) into the target's directory,
 # and installs them into <prefix>/<target>/ as the "web" install component.
-#   nv_setup_executable(<target> [ASSETS <dir>])
+#   nv_setup_executable(<target> [ROOT] [ASSETS <dir>])
+# ROOT installs into <prefix>/ instead, so the page is the package's index.html.
 # ASSETS preloads <dir> as /assets, readable with fopen; it ships as <target>.data.
 function(nv_setup_executable target)
-    cmake_parse_arguments(ARG "" "ASSETS" "" ${ARGN})
+    cmake_parse_arguments(ARG "ROOT" "ASSETS" "" ${ARGN})
     set_target_properties(${target} PROPERTIES SUFFIX ".js")
     set(NV_WEB_SCRIPT "${target}.js")
     configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
@@ -54,7 +55,11 @@ function(nv_setup_executable target)
         list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.data")
     endif()
 
-    install(FILES ${files} DESTINATION ${target} COMPONENT web)
+    set(destination ${target})
+    if(ARG_ROOT)
+        set(destination .)
+    endif()
+    install(FILES ${files} DESTINATION ${destination} COMPONENT web)
 endfunction()
 
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
@@ -115,6 +120,4 @@ foreach(ozz_target ozz_base ozz_animation ozz_animation_offline)
 endforeach()
 
 add_subdirectory(engine)
-add_subdirectory(examples/triangle)
-add_subdirectory(examples/scene)
-add_subdirectory(examples/character)
+add_subdirectory(app)

@@ -433,6 +433,16 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
     return (NvMaterialId){renderer->material_count++};
 }
 
+void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const f32 base_color[4])
+{
+    NV_ASSERT(id.index < renderer->material_count);
+    NvRenderMaterial* material = &renderer->materials[id.index];
+    memcpy(material->desc.base_color, base_color, sizeof(material->desc.base_color));
+    MaterialUniforms uniforms = {0};
+    memcpy(uniforms.base_color, base_color, sizeof(uniforms.base_color));
+    wgpuQueueWriteBuffer(renderer->gpu->queue, material->uniform, 0, &uniforms, sizeof(uniforms));
+}
+
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color)
 {
     if (renderer->debug_vertex_count + 2 > NV_MAX_DEBUG_LINES * 2)
