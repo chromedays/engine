@@ -32,9 +32,10 @@ typedef struct NvGltfModel {
 b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent,
                        NvArena* scratch, NvGltfModel* out);
 
-// Adds another copy of a loaded model to `scene` (any scene): a new root with the same node
-// names, meshes and materials, and a new animator on the same skeleton. Nothing is loaded again.
-void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvGltfModel* out);
+// Adds another copy of a loaded model to `scene` (any scene), under `parent` (a zeroed id adds it
+// at the top level): a new root with the same node names, meshes and materials, and a new animator
+// on the same skeleton. Nothing is loaded again.
+void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId parent, NvGltfModel* out);
 
 // Creates a clip on `skeleton` for every animation in the file, matching animated nodes to joints
 // by name. Joints named `root_motion_joint` (NULL for none) have their horizontal motion taken

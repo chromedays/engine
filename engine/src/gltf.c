@@ -266,11 +266,11 @@ b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, N
     return 1;
 }
 
-void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvGltfModel* out)
+void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId parent, NvGltfModel* out)
 {
     *out = *model;
     out->scene = scene;
-    out->root = nv_scene_add_node(scene, (NvNodeId){0}, nv_scene_get(model->scene, model->root)->name);
+    out->root = nv_scene_add_node(scene, parent, nv_scene_get(model->scene, model->root)->name);
     if (model->skeleton.index)
         out->animator = nv_anim_create_animator(model->skeleton, scene, out->root);
     for (u32 i = 0; i < model->mesh_node_count; ++i) {

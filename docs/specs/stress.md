@@ -1,6 +1,6 @@
 # Stress scene spec
 
-Status: agreed, not started (2026-09-27). Changes to this spec are agreed first.
+Status: implemented (2026-09-27). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -46,8 +46,8 @@ thousands of rows every frame and distort the measurements.
   - `nv_anim_update_scene(scene, dt)` updates only that scene's animators, so the hidden scene's
     characters pause instead of asserting on a node from the other scene.
 - **Instantiating a loaded model.**
-  - `nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvGltfModel* out)` copies the
-    model's node tree into `scene` with a new root.
+  - `nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId parent, NvGltfModel* out)`
+    copies the model's node tree into `scene` with a new root under `parent`.
   - It reuses the same meshes, materials and skeleton, and creates a new animator. Without it,
     each crowd character would load its own meshes and textures and run past `NV_MAX_MESHES`.
 - **Draw statistics.**

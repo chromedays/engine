@@ -78,10 +78,17 @@ internal WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
     return request.adapter;
 }
 
-internal WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter)
+internal WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter, b32* has_timestamps)
 {
     WGPUDeviceDescriptor desc = WGPU_DEVICE_DESCRIPTOR_INIT;
     desc.label = (WGPUStringView){"nv device", WGPU_STRLEN};
+    // Pass timing is optional: many browsers, phones especially, do not offer it.
+    local_persist const WGPUFeatureName timestamps = WGPUFeatureName_TimestampQuery;
+    *has_timestamps = wgpuAdapterHasFeature(adapter, timestamps);
+    if (*has_timestamps) {
+        desc.requiredFeatureCount = 1;
+        desc.requiredFeatures = &timestamps;
+    }
     desc.deviceLostCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
     desc.deviceLostCallbackInfo.callback = on_device_lost;
     desc.uncapturedErrorCallbackInfo.callback = on_uncaptured_error;
@@ -169,7 +176,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     if (!gpu->adapter)
         goto fail;
 
-    gpu->device = request_device(gpu->instance, gpu->adapter);
+    gpu->device = request_device(gpu->instance, gpu->adapter, &gpu->has_timestamps);
     if (!gpu->device)
         goto fail;
     gpu->queue = wgpuDeviceGetQueue(gpu->device);

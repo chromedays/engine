@@ -24,6 +24,7 @@ typedef struct NvGpu {
     WGPUTextureFormat config_format;  // format the canvas itself is configured with
     u32 width;
     u32 height;
+    b32 has_timestamps; // the device can time passes (WGPUFeatureName_TimestampQuery)
 
     WGPUTexture current_texture;
     WGPUTextureView current_view;
