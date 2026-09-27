@@ -1,6 +1,6 @@
 # One app, one scene spec
 
-Status: agreed, not started (2026-09-27). Changes to this spec are agreed first.
+Status: implemented (2026-09-27). Changes to this spec are agreed first.
 
 ## Goal
 

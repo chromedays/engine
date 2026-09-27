@@ -16,12 +16,12 @@ Live: https://chromedays.github.io/engine/
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
                      gltf.h, anim.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
-examples/            triangle (minimal), scene (scene graph, ImGui inspector),
-                     character (skeletal animation: clips, crossfades, blending, root motion, IK)
+app/                 the app: one scene (a planet and moon, an animated character with a sword)
+                     and an editor panel (node tree, inspector, view settings)
 assets/              binary assets (Git LFS)
 tools/               offline asset scripts
-web/                 HTML page template for examples, and the Pages landing page
-docs/                coding standard
+web/                 HTML page template
+docs/                coding standard and feature specs
 ```
 
 ## Build
@@ -35,7 +35,7 @@ Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloa
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/examples 8000   # open http://localhost:8000/character/
+python3 -m http.server -d build/app 8000   # open http://localhost:8000/
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:

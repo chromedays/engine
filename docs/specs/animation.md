@@ -195,13 +195,14 @@ What shipped, and where it differs from the plan above:
   `NvNode.animator`; a skinned node without an animator draws in its bind pose.
 - **Root motion** uses ozz's `MotionExtractor` (horizontal root translation of the `root` joint)
   and a `Float3Track`; `nv_anim_update` accumulates the model-space motion in
-  `NvAnimator.root_motion`, and the example moves and turns the character by it.
-- **Crossfades** use layers 0 (fading in) and 1 (fading out); the example's manual blend uses
+  `NvAnimator.root_motion`. Since the app spec (`docs/specs/app.md`), `nv_anim_update_scene`
+  moves the animator's `owner` node by it; the app only adds turning.
+- **Crossfades** use layers 0 (fading in) and 1 (fading out); the app's manual blend uses
   layer 2, time-synchronized to layer 0.
 - **Aim IK** corrects one joint (`Head`) with ozz's `IKAimJob`. The joint's forward and up axes are
   found from the rest pose instead of being hard-coded.
 - **Attachment:** the sword's offset from `hand_r` is computed once from the rest pose ("grip in the
-  fist, blade forward"), then applied to the animated hand every frame.
+  fist, blade forward"). The sword node's `attach` component keeps it on the animated hand.
 - **Memory:** ozz allocates from its own arena (about 1 MB after loading everything).
 
 ## Resolved questions
