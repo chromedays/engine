@@ -1,6 +1,6 @@
 # One app, one scene spec
 
-Status: draft (2026-09-27). Changes to this spec are agreed first.
+Status: agreed, not started (2026-09-27). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -14,9 +14,9 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 | Topic | Decision |
 |---|---|
 | Examples | `triangle` is deleted. `scene` and `character` merge into one app |
-| Location | `app/main.c` (scene setup, frame) and `app/ui.c` (editor panel); `examples/` is removed |
+| Location | `app/main.c` (scene setup, frame) and `app/ui.c` (editor panel); the CMake target is `app`; `examples/` is removed |
 | Address | Pages root, `https://chromedays.github.io/engine/`; `web/landing.html` is removed |
-| Old addresses | `/engine/character/`, `/engine/scene/` and `/engine/triangle/` become tiny pages that redirect to `/engine/` |
+| Old addresses | `/engine/character/`, `/engine/scene/` and `/engine/triangle/` are dropped, with no redirects |
 | Assets | One preloaded `app.data` with `assets/quaternius/` (1.3 MB) |
 | Animation in the scene | New `attach` node component, animator `owner`, look-at `target_node`, and `nv_anim_update_scene` (below) |
 | glTF loading | The loader creates the skeleton and animator when the file has a skin |
@@ -154,7 +154,6 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 - `app/CMakeLists.txt`: `add_executable(app main.c ui.c)` and
   `nv_setup_executable(app ASSETS assets/quaternius)`.
 - `nv_setup_executable` gains an option to install at the package root instead of a subfolder.
-- `web/redirect.html.in` produces the three old-address pages.
 - CI keeps the same steps; only the install layout changes. The `cp web/landing.html` step goes.
 
 ## Phases
@@ -166,7 +165,7 @@ scene, so the app no longer moves nodes by hand to follow the animation.
    - Create `app/` with the merged scene and the Scene / Inspector / View panel.
    - Delete `examples/`.
 3. **Deploy and docs:**
-   - Install at the root, add the old-address redirects and update CI.
+   - Install at the root and update CI.
    - Update `AGENTS.md`, `README.md` and the implementation notes in `docs/specs/animation.md`.
 
 Every phase is checked in Release and Debug in headless Chromium at desktop and phone size:
@@ -176,7 +175,3 @@ Every phase is checked in Release and Debug in headless Chromium at desktop and 
 - selecting nodes and editing transforms works;
 - the panel scrolls by touch.
 
-## Open questions
-
-1. Directory and target name: `app` (proposed) or something else?
-2. Keep redirect pages for the old addresses (proposed), or drop them?
