@@ -3,32 +3,116 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
-  <title>engine</title>
+  <title>nv</title>
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
     /* Pin the canvas to the visible viewport. 100vh is taller than the visible area on mobile
        while the address bar is showing, which makes the page scroll. */
     canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
-    #status { position: fixed; inset: 0; display: none; place-items: center; padding: 16px; text-align: center; }
-    #status.show { display: grid; }
+    #status { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; background: #111; }
+    #status.hidden { display: none; }
+    #status-box { width: min(320px, 100%); }
+    #bar { height: 6px; margin: 12px 0 8px; border-radius: 3px; background: #2a2a2a; overflow: hidden; }
+    #bar-fill { width: 0; height: 100%; background: #6ea8fe; transition: width 0.15s; }
+    #bar.busy #bar-fill { width: 30%; animation: busy 1.2s ease-in-out infinite; }
+    @keyframes busy { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+    #detail { color: #999; font-variant-numeric: tabular-nums; }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
-  <div id="status"></div>
+  <div id="status">
+    <div id="status-box">
+      <div id="message">Loading</div>
+      <div id="bar"><div id="bar-fill"></div></div>
+      <div id="detail"></div>
+    </div>
+  </div>
   <script>
-    const status = document.getElementById('status');
-    const fail = (msg) => { status.textContent = msg; status.classList.add('show'); };
-    if (!navigator.gpu) {
-      fail('This browser does not support WebGPU. Try a recent Chrome, Edge, Safari 26+, or Firefox 141+ (Windows).');
-    }
+    const target = "@NV_WEB_TARGET@";
+    const status = document.getElementById("status");
+    const message = document.getElementById("message");
+    const bar = document.getElementById("bar");
+    const fill = document.getElementById("bar-fill");
+    const detail = document.getElementById("detail");
+    const fail = (text) => {
+      status.classList.remove("hidden");
+      message.textContent = text;
+      bar.style.display = "none";
+      detail.textContent = "";
+    };
+    const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
+
     var Module = {
-      canvas: document.getElementById('canvas'),
+      canvas: document.getElementById("canvas"),
       print: (text) => console.log(text),
       printErr: (text) => console.error(text),
-      onAbort: (what) => fail('The engine stopped: ' + what),
+      onAbort: (what) => fail("The engine stopped: " + what),
+      // Called by nv_window_run once loading is over.
+      nvRunning: () => status.classList.add("hidden"),
     };
+
+    // The page downloads the engine and its assets itself, so it can show one progress bar for
+    // both, then hands them to the Emscripten loader. The manifest has the uncompressed sizes,
+    // which the browser cannot see when the server compresses the files.
+    async function download(name, onBytes) {
+      const response = await fetch(name);
+      if (!response.ok) throw new Error(response.status + " " + name);
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        size += value.length;
+        onBytes(value.length);
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return bytes;
+    }
+
+    async function start() {
+      const manifest = await (await fetch(target + ".manifest.json")).json();
+      const names = Object.keys(manifest);
+      const total = names.reduce((sum, name) => sum + manifest[name], 0);
+      let loaded = 0;
+      message.textContent = "Downloading";
+      const progress = (bytes) => {
+        loaded += bytes;
+        const ratio = Math.min(loaded / total, 1);
+        fill.style.width = (ratio * 100).toFixed(1) + "%";
+        detail.textContent = megabytes(loaded) + " / " + megabytes(total) + " MB";
+      };
+      progress(0);
+      const files = {};
+      await Promise.all(names.map(async (name) => { files[name] = await download(name, progress); }));
+
+      message.textContent = "Starting";
+      detail.textContent = "";
+      bar.classList.add("busy");
+      fill.style.width = "";
+      Module.instantiateWasm = (imports, done) => {
+        WebAssembly.instantiate(files[target + ".wasm"], imports)
+          .then((result) => done(result.instance, result.module))
+          .catch((error) => fail("The engine failed to start: " + error));
+        return {};
+      };
+      Module.getPreloadedPackage = (name) => files[target + ".data"].buffer;
+
+      const script = document.createElement("script");
+      script.src = target + ".js";
+      script.onerror = () => fail("Could not load " + script.src);
+      document.body.appendChild(script);
+    }
+
+    if (!navigator.gpu) {
+      fail("This browser does not support WebGPU. Try a recent Chrome, Edge, Safari 26+, or Firefox 141+ (Windows).");
+    } else {
+      start().catch((error) => fail("Could not download the engine: " + error.message));
+    }
   </script>
-  <script async src="@NV_WEB_SCRIPT@"></script>
 </body>
 </html>

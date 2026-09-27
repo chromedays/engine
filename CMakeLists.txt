@@ -25,21 +25,27 @@ target_link_options(webgpu INTERFACE
     -sALLOW_MEMORY_GROWTH
     -sENVIRONMENT=web)
 
-# Emits <target>.js/.wasm plus index.html (from web/index.html.in) into the target's directory,
-# and installs them into <prefix>/<target>/ as the "web" install component.
+# Emits <target>.js, .wasm and .manifest.json plus index.html (from web/index.html.in) into the
+# target's directory, and installs them into <prefix>/<target>/ as the "web" install component.
 #   nv_setup_executable(<target> [ROOT] [ASSETS <dir>])
 # ROOT installs into <prefix>/ instead, so the page is the package's index.html.
 # ASSETS preloads <dir> as /assets, readable with fopen; it ships as <target>.data.
 function(nv_setup_executable target)
     cmake_parse_arguments(ARG "ROOT" "ASSETS" "" ${ARGN})
     set_target_properties(${target} PROPERTIES SUFFIX ".js")
-    set(NV_WEB_SCRIPT "${target}.js")
+    set(NV_WEB_TARGET "${target}")
     configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
         "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
     set(files
         "$<TARGET_FILE_DIR:${target}>/${target}.js"
         "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
+        "$<TARGET_FILE_DIR:${target}>/${target}.manifest.json"
         "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+    # The page reads file sizes from the manifest to show download progress.
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
+                -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"
+        VERBATIM)
 
     if(ARG_ASSETS)
         # A Git LFS pointer instead of the real file means the clone skipped LFS.

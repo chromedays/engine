@@ -36,8 +36,14 @@ f64 nv_time_seconds(void)
     return emscripten_get_now() / 1000.0;
 }
 
+// Tells the page that loading is over, so it can take down its progress screen.
+EM_JS(void, js_notify_running, (void), {
+    if (Module["nvRunning"]) Module["nvRunning"]();
+});
+
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
     (void)window;
+    js_notify_running();
     emscripten_set_main_loop_arg(frame, userdata, 0, 1);
 }

@@ -23,7 +23,8 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
 app/                       the app: main.c (scene, frame), ui.c (editor panel), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
-web/                       index.html.in (the page; the app installs as the Pages index)
+web/                       index.html.in (the page: downloads the app with a progress bar, then
+                           starts it), manifest.cmake (file sizes for that progress bar)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
 .github/workflows/build.yml  CI: web build + GitHub Pages deploy
