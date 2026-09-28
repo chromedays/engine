@@ -284,12 +284,75 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
     return io->WantCaptureKeyboard;
 }
 
+// Whether input starting at page position (x, y) belongs to the view rather than to ImGui. Open
+// popups (a combo's list can reach over the viewport) keep their input.
+internal b32 in_view(NvImgui* imgui, f32 x, f32 y)
+{
+    f32 ratio = imgui->window->pixel_ratio > 0.0f ? imgui->window->pixel_ratio : 1.0f;
+    NvRect r = imgui->view_rect;
+    f32 px = x * ratio;
+    f32 py = y * ratio;
+    return px >= (f32)r.x && py >= (f32)r.y && px < (f32)(r.x + r.width) && py < (f32)(r.y + r.height) &&
+           !igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+}
+
+internal void view_tap(NvImgui* imgui, f32 x, f32 y)
+{
+    imgui->view_pending.tapped = 1;
+    imgui->view_pending.tap_x = x;
+    imgui->view_pending.tap_y = y;
+}
+
+// A press in the view drags the camera: left orbits, right and middle pan. A left press that does
+// not move is a tap.
+internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEvent* event)
+{
+    f32 x = (f32)event->clientX;
+    f32 y = (f32)event->clientY;
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
+        if (imgui->view_mouse_button || !in_view(imgui, x, y))
+            return 0;
+        imgui->view_mouse_button = event->button + 1;
+        imgui->view_moved = 0;
+        imgui->view_press_x = imgui->view_mouse_x = x;
+        imgui->view_press_y = imgui->view_mouse_y = y;
+        return 1;
+    }
+    if (!imgui->view_mouse_button)
+        return 0;
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEMOVE) {
+        f32 dx = x - imgui->view_mouse_x;
+        f32 dy = y - imgui->view_mouse_y;
+        imgui->view_mouse_x = x;
+        imgui->view_mouse_y = y;
+        if (imgui->view_mouse_button == 1) {
+            imgui->view_pending.orbit_x += dx;
+            imgui->view_pending.orbit_y += dy;
+        } else {
+            imgui->view_pending.pan_x += dx;
+            imgui->view_pending.pan_y += dy;
+        }
+        if (fabsf(x - imgui->view_press_x) + fabsf(y - imgui->view_press_y) > 4.0f)
+            imgui->view_moved = 1;
+        return 1;
+    }
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEUP && event->button + 1 == imgui->view_mouse_button) {
+        if (!imgui->view_moved && imgui->view_mouse_button == 1)
+            view_tap(imgui, x, y);
+        imgui->view_mouse_button = 0;
+        return 1;
+    }
+    return 0;
+}
+
 internal bool on_mouse(int event_type, const EmscriptenMouseEvent* event, void* userdata)
 {
-    (void)userdata;
+    NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
     ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_Mouse);
     ImGuiIO_AddMousePosEvent(io, (f32)event->clientX, (f32)event->clientY);
+    if (view_mouse(imgui, event_type, event))
+        return event_type != EMSCRIPTEN_EVENT_MOUSEMOVE;
 
     if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN || event_type == EMSCRIPTEN_EVENT_MOUSEUP) {
         // DOM order is left, middle, right; ImGui's is left, right, middle.
@@ -302,8 +365,15 @@ internal bool on_mouse(int event_type, const EmscriptenMouseEvent* event, void* 
 
 internal bool on_wheel(int event_type, const EmscriptenWheelEvent* event, void* userdata)
 {
-    (void)event_type, (void)userdata;
+    (void)event_type;
+    NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
+    if (in_view(imgui, io->MousePos.x, io->MousePos.y)) {
+        // One wheel notch (about 100 pixels, or 3 lines) zooms by about 15%.
+        f32 pixels = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f : (event->deltaMode == DOM_DELTA_LINE) ? 33.0f : 400.0f;
+        imgui->view_pending.dolly += (f32)event->deltaY * pixels * 0.0014f;
+        return 1;
+    }
     // ImGui counts in lines; browsers usually report pixels.
     f32 scale = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f / 100.0f : (event->deltaMode == DOM_DELTA_LINE) ? 1.0f / 3.0f : 1.0f;
     ImGuiIO_AddMouseWheelEvent(io, (f32)-event->deltaX * scale, (f32)-event->deltaY * scale);
@@ -322,6 +392,111 @@ internal void touch_press(NvImgui* imgui)
     imgui->touch_gesture = NV_TOUCH_PRESS;
 }
 
+// Where the view's fingers are: their center and, with two, the distance between them.
+internal void view_touch_center(NvImgui* imgui, f32* x, f32* y, f32* spread)
+{
+    *x = *y = *spread = 0.0f;
+    u32 n = imgui->view_touch_count;
+    for (u32 i = 0; i < n; ++i) {
+        *x += imgui->view_touch_x[i] / (f32)n;
+        *y += imgui->view_touch_y[i] / (f32)n;
+    }
+    if (n == 2) {
+        f32 dx = imgui->view_touch_x[1] - imgui->view_touch_x[0];
+        f32 dy = imgui->view_touch_y[1] - imgui->view_touch_y[0];
+        *spread = sqrtf(dx * dx + dy * dy);
+    }
+}
+
+// Touches that start in the view move the camera: one finger orbits, two pan and pinch-zoom, and
+// a single finger that lifts without moving is a tap. Returns whether the event was the view's.
+internal b32 view_touch(NvImgui* imgui, int event_type, const EmscriptenTouchEvent* event)
+{
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        if (imgui->touch_gesture == NV_TOUCH_NONE) {
+            const EmscriptenTouchPoint* first = NULL;
+            for (int i = 0; i < event->numTouches && !first; ++i) {
+                if (event->touches[i].isChanged)
+                    first = &event->touches[i];
+            }
+            if (!first || !in_view(imgui, (f32)first->clientX, (f32)first->clientY))
+                return 0;
+            imgui->touch_gesture = NV_TOUCH_VIEW;
+            imgui->view_touch_count = 0;
+            imgui->view_touch_multi = 0;
+            imgui->view_moved = 0;
+            imgui->view_press_x = (f32)first->clientX;
+            imgui->view_press_y = (f32)first->clientY;
+        } else if (imgui->touch_gesture != NV_TOUCH_VIEW) {
+            return 0;
+        }
+        for (int i = 0; i < event->numTouches; ++i) {
+            const EmscriptenTouchPoint* t = &event->touches[i];
+            if (!t->isChanged || imgui->view_touch_count >= NV_VIEW_MAX_TOUCHES)
+                continue;
+            u32 k = imgui->view_touch_count++;
+            imgui->view_touch_id[k] = t->identifier;
+            imgui->view_touch_x[k] = (f32)t->clientX;
+            imgui->view_touch_y[k] = (f32)t->clientY;
+        }
+        if (imgui->view_touch_count > 1)
+            imgui->view_touch_multi = 1;
+        return 1;
+    }
+    if (imgui->touch_gesture != NV_TOUCH_VIEW)
+        return 0;
+
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+        f32 x0, y0, spread0;
+        view_touch_center(imgui, &x0, &y0, &spread0);
+        for (int i = 0; i < event->numTouches; ++i) {
+            const EmscriptenTouchPoint* t = &event->touches[i];
+            for (u32 k = 0; k < imgui->view_touch_count; ++k) {
+                if (imgui->view_touch_id[k] == t->identifier) {
+                    imgui->view_touch_x[k] = (f32)t->clientX;
+                    imgui->view_touch_y[k] = (f32)t->clientY;
+                }
+            }
+        }
+        f32 x1, y1, spread1;
+        view_touch_center(imgui, &x1, &y1, &spread1);
+        if (imgui->view_touch_count == 1) {
+            imgui->view_pending.orbit_x += x1 - x0;
+            imgui->view_pending.orbit_y += y1 - y0;
+            if (fabsf(x1 - imgui->view_press_x) + fabsf(y1 - imgui->view_press_y) > 8.0f * imgui->ui_scale)
+                imgui->view_moved = 1;
+        } else if (imgui->view_touch_count == 2) {
+            imgui->view_pending.pan_x += x1 - x0;
+            imgui->view_pending.pan_y += y1 - y0;
+            if (spread0 > 1.0f && spread1 > 1.0f)
+                imgui->view_pending.dolly += logf(spread0 / spread1);
+        }
+        return 1;
+    }
+
+    // Touch end or cancel: forget the lifted fingers.
+    for (int i = 0; i < event->numTouches; ++i) {
+        const EmscriptenTouchPoint* t = &event->touches[i];
+        if (!t->isChanged)
+            continue;
+        for (u32 k = 0; k < imgui->view_touch_count; ++k) {
+            if (imgui->view_touch_id[k] != t->identifier)
+                continue;
+            --imgui->view_touch_count;
+            imgui->view_touch_id[k] = imgui->view_touch_id[imgui->view_touch_count];
+            imgui->view_touch_x[k] = imgui->view_touch_x[imgui->view_touch_count];
+            imgui->view_touch_y[k] = imgui->view_touch_y[imgui->view_touch_count];
+            break;
+        }
+    }
+    if (imgui->view_touch_count == 0) {
+        if (event_type == EMSCRIPTEN_EVENT_TOUCHEND && !imgui->view_moved && !imgui->view_touch_multi)
+            view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+        imgui->touch_gesture = NV_TOUCH_NONE;
+    }
+    return 1;
+}
+
 // Touch drives ImGui's mouse with the first finger, but only once the gesture is clear:
 // - moving mostly vertically past a threshold scrolls the panel, and ImGui sees no click;
 // - moving sideways first, or holding still, presses (sliders drag sideways);
@@ -331,6 +506,8 @@ internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* 
     NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
     ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_TouchScreen);
+    if (view_touch(imgui, event_type, event))
+        return 1;
     const EmscriptenTouchPoint* touch = event->numTouches ? &event->touches[0] : NULL;
     f32 x = touch ? (f32)touch->clientX : imgui->touch_x;
     f32 y = touch ? (f32)touch->clientY : imgui->touch_y;
@@ -399,11 +576,11 @@ internal void hook_input(NvImgui* imgui, NvWindow* window)
     const char* page = EMSCRIPTEN_EVENT_TARGET_WINDOW;
     emscripten_set_keydown_callback(page, NULL, 1, on_key);
     emscripten_set_keyup_callback(page, NULL, 1, on_key);
-    emscripten_set_mousedown_callback(window->canvas_selector, NULL, 1, on_mouse);
+    emscripten_set_mousedown_callback(window->canvas_selector, imgui, 1, on_mouse);
     // Moves and releases are watched page-wide so a drag keeps working past the canvas edge.
-    emscripten_set_mousemove_callback(page, NULL, 1, on_mouse);
-    emscripten_set_mouseup_callback(page, NULL, 1, on_mouse);
-    emscripten_set_wheel_callback(window->canvas_selector, NULL, 1, on_wheel);
+    emscripten_set_mousemove_callback(page, imgui, 1, on_mouse);
+    emscripten_set_mouseup_callback(page, imgui, 1, on_mouse);
+    emscripten_set_wheel_callback(window->canvas_selector, imgui, 1, on_wheel);
     emscripten_set_touchstart_callback(window->canvas_selector, imgui, 1, on_touch);
     emscripten_set_touchmove_callback(window->canvas_selector, imgui, 1, on_touch);
     emscripten_set_touchend_callback(window->canvas_selector, imgui, 1, on_touch);
@@ -620,6 +797,8 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
         touch_press(imgui);
     imgui->touch_scroll = imgui->touch_scroll_pending;
     imgui->touch_scroll_pending = 0.0f;
+    imgui->view = imgui->view_pending;
+    imgui->view_pending = (NvViewInput){0};
 
     igNewFrame();
 }

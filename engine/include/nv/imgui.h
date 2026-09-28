@@ -17,7 +17,20 @@ typedef enum NvTouchGesture {
     NV_TOUCH_UNDECIDED, // finger down, not yet a tap, press or scroll
     NV_TOUCH_PRESS,     // ImGui sees the mouse button down
     NV_TOUCH_SCROLL,    // scrolls the panel under the finger; ImGui sees no button
+    NV_TOUCH_VIEW,      // started in the view rect: goes to NvViewInput, not to ImGui
 } NvTouchGesture;
+
+// Mouse and touch input that started in NvImgui.view_rect, for moving a camera and picking.
+// Distances are CSS pixels; positions are page (= canvas) client coordinates.
+typedef struct NvViewInput {
+    f32 orbit_x, orbit_y; // left drag, one-finger drag
+    f32 pan_x, pan_y;     // right or middle drag, two-finger drag
+    f32 dolly;            // log of the distance factor: wheel, pinch; 0 = none, < 0 = closer
+    b32 tapped;           // a click or tap that did not move
+    f32 tap_x, tap_y;
+} NvViewInput;
+
+#define NV_VIEW_MAX_TOUCHES 2
 
 typedef struct NvImguiTexture {
     WGPUTexture texture;
@@ -59,6 +72,21 @@ typedef struct NvImgui {
     f32 touch_scroll_pending; // pixels scrolled since the last frame
     f32 touch_scroll;         // this frame's scroll, applied by nv_imgui_begin_panel
     u32 text_agent_grace;     // frames to keep the keyboard up while a tapped field activates
+
+    // The scene viewport, in framebuffer pixels; set by the app every frame. Input that starts
+    // there (while no popup is open) skips ImGui and lands in `view`, which holds this frame's.
+    NvRect view_rect;
+    NvViewInput view;
+    NvViewInput view_pending; // gathered by the event handlers until the next frame
+    s32 view_mouse_button;    // DOM button dragging in the view, + 1; 0 = none
+    b32 view_moved;           // the current press moved too far to be a tap
+    f32 view_press_x, view_press_y;
+    f32 view_mouse_x, view_mouse_y;
+    u32 view_touch_count;
+    b32 view_touch_multi; // two fingers were down during this gesture
+    s32 view_touch_id[NV_VIEW_MAX_TOUCHES];
+    f32 view_touch_x[NV_VIEW_MAX_TOUCHES];
+    f32 view_touch_y[NV_VIEW_MAX_TOUCHES];
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for

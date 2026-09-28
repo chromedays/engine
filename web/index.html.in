@@ -65,6 +65,9 @@
     window.addEventListener("unhandledrejection", (event) => crash(event.reason));
     const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
 
+    // Right-dragging in the viewport pans the camera; keep the browser's context menu out of it.
+    document.getElementById("canvas").addEventListener("contextmenu", (event) => event.preventDefault());
+
     var Module = {
       canvas: document.getElementById("canvas"),
       print: (text) => console.log(text),

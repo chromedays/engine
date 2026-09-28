@@ -391,12 +391,48 @@ internal void update_look_target(App* app)
     target->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 2.0f);
 }
 
+#define CAMERA_MIN_PITCH (-10.0f * NV_PI / 180.0f)
+#define CAMERA_MAX_PITCH (80.0f * NV_PI / 180.0f)
+#define CAMERA_MIN_DISTANCE 1.0f
+#define CAMERA_MAX_DISTANCE 100.0f
+#define ORBIT_RADIANS_PER_PIXEL 0.008f
+
+// Mouse and touch input on the viewport: drags orbit and pan, the wheel and pinches zoom.
+internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
+{
+    const NvViewInput* in = &app->imgui.view;
+    view->camera_yaw -= in->orbit_x * ORBIT_RADIANS_PER_PIXEL;
+    view->camera_pitch += in->orbit_y * ORBIT_RADIANS_PER_PIXEL;
+    view->camera_pitch = view->camera_pitch < CAMERA_MIN_PITCH ? CAMERA_MIN_PITCH : view->camera_pitch;
+    view->camera_pitch = view->camera_pitch > CAMERA_MAX_PITCH ? CAMERA_MAX_PITCH : view->camera_pitch;
+    view->camera_distance *= expf(in->dolly);
+    view->camera_distance = view->camera_distance < CAMERA_MIN_DISTANCE ? CAMERA_MIN_DISTANCE : view->camera_distance;
+    view->camera_distance = view->camera_distance > CAMERA_MAX_DISTANCE ? CAMERA_MAX_DISTANCE : view->camera_distance;
+
+    if (view->selected.index != view->panned_for.index || view->selected.gen != view->panned_for.gen) {
+        view->pan = nv_vec3(0, 0, 0);
+        view->panned_for = view->selected;
+    }
+    if (in->pan_x != 0.0f || in->pan_y != 0.0f) {
+        // Move the orbit point so the scene follows the finger: one pixel is the height the view
+        // covers at the orbit point, divided by the viewport's height in pixels.
+        NvNode* camera = nv_scene_get(view->scene, view->camera);
+        f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+        f32 height = (f32)viewport.height / pixel_ratio;
+        f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
+        NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
+        NvVec3 up = nv_quat_rotate(camera->rotation, nv_vec3(0, 1, 0));
+        view->pan = nv_vec3_add(view->pan, nv_vec3_add(nv_vec3_scale(right, -in->pan_x * meters), nv_vec3_scale(up, in->pan_y * meters)));
+    }
+}
+
 // Orbits the selected node, or the view's focus. Cameras and lights are not worth orbiting, so
 // they fall back to the focus. A character's origin is at its feet, so its focus is raised.
-internal void update_camera(App* app)
+internal void update_camera(App* app, NvRect viewport)
 {
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
+    apply_view_input(app, view, viewport);
     NvNodeId focus = view->selected;
     if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
         focus = view->focus;
@@ -406,6 +442,7 @@ internal void update_camera(App* app)
         if (app_node_animator(scene, focus).index)
             point.y += 0.92f;
     }
+    point = nv_vec3_add(point, view->pan);
 
     f32 d = view->camera_distance;
     f32 cp = cosf(view->camera_pitch);
@@ -509,6 +546,7 @@ internal void frame(void* userdata)
     times->frame = (f64)dt * 1000.0;
     f64 t = now_ms();
     NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
+    app->imgui.view_rect = layout.viewport;
     nv_imgui_new_frame(&app->imgui, dt);
     app_build_ui(app, layout.panel);
     times->ui = now_ms() - t;
@@ -525,7 +563,7 @@ internal void frame(void* userdata)
     t = now_ms();
     nv_scene_update(scene);
     times->scene = now_ms() - t;
-    update_camera(app);
+    update_camera(app, layout.viewport);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
         draw_bones(app);
     if (app->shown == SCENE_STRESS && app->stress.want.show_bones)

@@ -45,6 +45,8 @@ typedef struct SceneView {
     f32 camera_yaw;      // radians
     f32 camera_pitch;    // radians, looking down
     f32 camera_distance; // meters
+    NvVec3 pan;          // added to the orbit point by panning; cleared when the selection changes
+    NvNodeId panned_for; // the selection `pan` belongs to
 } SceneView;
 
 // CPU time of the frame's stages, in milliseconds.

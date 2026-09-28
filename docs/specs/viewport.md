@@ -1,0 +1,52 @@
+# Viewport interaction spec
+
+Status: agreed, in progress (2026-09-28). Changes to this spec are agreed first.
+
+## Goal
+
+Work in the scene viewport directly: orbit, zoom and pan the camera, and pick nodes, by mouse or
+touch. Rotation becomes editable in the inspector.
+
+## Decisions
+
+| Topic | Decision |
+|---|---|
+| Orbit | Left drag / one-finger drag |
+| Zoom | Wheel / two-finger pinch |
+| Pan | Right or middle drag / two-finger drag; moves the orbit point off the focused node |
+| Select | Click / tap: a ray from the camera picks the nearest mesh node |
+| Deselect | Click / tap where no mesh is hit |
+| Characters | Picking a skinned mesh selects its parent, the character root |
+| Selection outline | The picked node's mesh boxes, drawn as debug lines |
+| Rotation | Inspector edits it as Euler angles in degrees (yaw, pitch, roll) |
+| Gizmo | Not now; ImGuizmo (with cimguizmo, MIT) is the candidate for a later step |
+| Third-party | None |
+
+## Engine changes
+
+- **Input routing (`nv/imgui.h`).**
+  - `NvImgui.view_rect` is the viewport (set each frame by the app). Mouse and touch input that
+    starts inside it, while no ImGui popup is open, skips the ImGui gesture handling and fills
+    `NvImgui.view` (`NvViewInput`):
+    - the orbit drag;
+    - the pan drag;
+    - a zoom factor (1 = none);
+    - a tap position.
+  - Everything that starts elsewhere works as before.
+- **Mesh bounds (`nv/renderer.h`).** `NvRenderMesh` keeps its local bounding box (the bind pose
+  for skinned meshes).
+- **Picking (`nv/renderer.h`).**
+  - `nv_renderer_view_ray` turns a viewport position into a world ray through the scene's active
+    camera.
+  - `nv_renderer_pick` returns the nearest mesh node the ray hits, using each node's box in its own
+    space.
+- **Math (`nv/math.h`).** Transforming a direction, and quaternion ↔ Euler (YXZ order).
+
+## Phases
+
+1. **Camera control:** input routing, then orbit, zoom and pan in the app.
+2. **Selection:** mesh bounds, picking, tap to select or deselect, the selection outline.
+3. **Rotation editing:** Euler angles in the inspector.
+
+Every phase is checked in Release and Debug in headless Chromium, with the mouse at desktop size
+and with touch at phone size. Panel input (scrolling, taps, sliders) must keep working.
