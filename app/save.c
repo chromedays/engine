@@ -148,19 +148,19 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     nv_chunk_end(w);
 }
 
-// The character's fields. `undo` leaves out the clip's time, which moves every frame.
+// The character's fields. The clip's time (CTIM) is no longer written: the saved state is the edit
+// state, which has no running time, and a run starts every clip from its start
+// (docs/specs/play.md). Older saves that have it still load.
 internal void write_character_fields(NvChunkWriter* w, App* app, b32 undo)
 {
+    (void)undo;
     NvAnimator* animator = nv_anim_get(app->animator);
     NvAnimLayer* layer = &animator->layers[0];
     // Mid-jump, the clip the jump lands back into stands for it.
     NvClipId clip = app->jump != JUMP_NONE ? app->jump_return : layer->clip;
-    f32 time = app->jump != JUMP_NONE ? 0.0f : layer->time;
 
     if (clip.index)
         nv_chunk_string(w, TAG_CLIP, nv_anim_clip_name(app_regular_clip(app, clip)));
-    if (!undo)
-        nv_chunk_f32(w, TAG_CTIM, time);
     nv_chunk_f32(w, TAG_SPED, layer->speed);
     nv_chunk_f32(w, TAG_FADE, app->fade_seconds);
     if (app->blend_clip >= 0 && (u32)app->blend_clip < app->clip_count)
@@ -248,7 +248,8 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_begin(&w, TAG_SCNE);
     nv_chunk_u32(&w, TAG_LAYT, app->scene_layout);
     write_view(&w, app->scene, &app->views[SCENE_SHOWCASE]);
-    f32 planet[2] = {app->orbit_speed, app->orbit_angle};
+    // The orbit angle is written as 0: like the clip time, it only runs while playing.
+    f32 planet[2] = {app->orbit_speed, 0.0f};
     nv_chunk_f32s(&w, TAG_PLNT, planet, 2);
     nv_chunk_u32(&w, TAG_BONE, app->show_bones);
     write_character(&w, app);
@@ -445,8 +446,9 @@ internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
     read_node_fields(r, chunk, app, node_at(app->scene, path, length), apply);
 }
 
-internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply)
+internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply, u32 parts)
 {
+    b32 apply_scene = apply && (parts & SAVE_PART_SCENE);
     u32 layout = 0;
     nv_chunk_read_u32s(r, scene, TAG_LAYT, &layout, 1);
     b32 nodes_match = layout == app->scene_layout;
@@ -455,31 +457,31 @@ internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply)
     bool bones = app->show_bones;
     nv_chunk_read_f32s(r, scene, TAG_PLNT, planet, 2);
     read_bool(r, scene, TAG_BONE, &bones);
-    if (apply) {
+    if (apply_scene) {
         app->orbit_speed = planet[0];
         app->orbit_angle = planet[1];
         app->show_bones = bones;
     }
-    read_character(r, scene, app, apply);
+    read_character(r, scene, app, apply_scene);
     // Nodes are read even when they will not be applied, so a damaged one still fails the load.
     NvChunk child = {0};
     while (nv_chunk_next(r, scene, &child)) {
         if (child.tag == TAG_NODE)
-            read_node(r, child, app, apply && nodes_match);
+            read_node(r, child, app, apply_scene && nodes_match);
     }
     // After the nodes, so a selection's path finds the tree as saved.
-    read_view(r, scene, app->scene, &app->views[SCENE_SHOWCASE], apply, nodes_match);
+    read_view(r, scene, app->scene, &app->views[SCENE_SHOWCASE], apply && (parts & SAVE_PART_VIEW), nodes_match);
 }
 
-internal b32 read_state(NvChunk root, App* app, b32 apply)
+internal b32 read_state(NvChunk root, App* app, b32 apply, u32 parts)
 {
     NvChunkReader r = {0};
     NvChunk edit = nv_chunk_find(&r, root, TAG_EDIT);
     if (edit.data)
-        read_edit(&r, edit, app, apply);
+        read_edit(&r, edit, app, apply && (parts & SAVE_PART_EDITOR));
     NvChunk scene = nv_chunk_find(&r, root, TAG_SCNE);
     if (scene.data)
-        read_scene(&r, scene, app, apply);
+        read_scene(&r, scene, app, apply, parts);
     // Walk the whole top level too, so a malformed chunk after the known ones is caught.
     NvChunk child = {0};
     while (nv_chunk_next(&r, root, &child)) {
@@ -487,17 +489,22 @@ internal b32 read_state(NvChunk root, App* app, b32 apply)
     return !r.failed;
 }
 
-const char* save_load(App* app, const void* bytes, u32 size)
+const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts)
 {
     u32 version = 0;
     NvChunk root;
     NvChunkFileStatus status = nv_chunk_file_open(bytes, size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
     if (status != NV_CHUNK_FILE_OK)
         return nv_chunk_file_status_name(status);
-    if (!read_state(root, app, 0))
+    if (!read_state(root, app, 0, parts))
         return "malformed";
-    read_state(root, app, 1);
+    read_state(root, app, 1, parts);
     return NULL;
+}
+
+const char* save_load(App* app, const void* bytes, u32 size)
+{
+    return save_load_parts(app, bytes, size, SAVE_PART_ALL);
 }
 
 b32 save_round_trip_matches(App* app)

@@ -72,8 +72,10 @@ internal void animator_section(App* app, NvAnimator* animator)
         if (igSelectable_Bool(nv_anim_clip_name(clip), clip.index == current.index, 0, (ImVec2_c){0, 0}))
             app_play(app, clip);
     }
+    igBeginDisabled(!app->playing); // a jump is something that happens while playing
     if (igButton("Jump", (ImVec2_c){-1.0f, 0.0f}))
         app_jump(app);
+    igEndDisabled();
 
     igSliderFloat("Speed", &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
     igSliderFloat("Fade", &app->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);

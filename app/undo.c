@@ -190,6 +190,17 @@ void undo_ui(App* app)
     b32 on = app->shown == SCENE_SHOWCASE;
     char label[UNDO_LABEL_MAX + 16];
 
+    // Play and Stop lead the row: they belong to the showcase, and the stress scene always runs.
+    if (on) {
+        if (igButton(app->playing ? "Stop###play" : "Play###play", (ImVec2_c){0.0f, 0.0f})) {
+            if (app->playing)
+                app_stop_playing(app);
+            else
+                app_start_playing(app);
+        }
+        igSameLine(0.0f, -1.0f);
+    }
+
     b32 can_undo = on && undo->done > 0;
     if (can_undo)
         snprintf(label, sizeof(label), "Undo: %s###undo", step_at(undo, undo->done - 1)->label);

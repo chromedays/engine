@@ -258,6 +258,15 @@ typedef struct App {
 
     Undo undo;
 
+    // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the showcase by itself;
+    // Play runs it, and Stop restores it from the snapshot taken at Play.
+    b32 playing;
+    f32 play_time;          // seconds since Play
+    u8* play_snapshot;      // save bytes of the showcase at Play [SAVE_MAX_SIZE]
+    u32 play_snapshot_size;
+    NvQuat planet_rotation; // the authored rotations the spin turns from, taken at Play
+    NvQuat moon_rotation;
+
     // Autosave (save.c)
     bool autosave;
     u32 scene_layout; // save_scene_layout of the showcase as built
@@ -290,6 +299,8 @@ NvClipId app_regular_clip(App* app, NvClipId clip); // the in-place clip with th
 void app_play(App* app, NvClipId clip);             // crossfades, with root motion while it is on
 void app_jump(App* app);
 void app_back_to_center(App* app);
+void app_start_playing(App* app); // Play: snapshot the showcase and run it
+void app_stop_playing(App* app);  // Stop: restore the showcase from the snapshot
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
 NvAnimatorId app_node_animator(NvScene* scene, NvNodeId id);
 void app_show_scene(App* app, SceneKind kind);
@@ -314,6 +325,12 @@ u32 save_write(App* app, void* buffer, u32 capacity);
 // Loads a save into the app. It is checked whole first, and nothing changes unless it is good.
 // Returns NULL, or what is wrong with it.
 const char* save_load(App* app, const void* bytes, u32 size);
+// Loads only some parts of a save (SAVE_PART_*), e.g. the scene without the view for Stop.
+#define SAVE_PART_EDITOR (1u << 0) // gizmo and autosave settings
+#define SAVE_PART_VIEW   (1u << 1) // the showcase's camera view and selection
+#define SAVE_PART_SCENE  (1u << 2) // nodes, character and scene settings
+#define SAVE_PART_ALL    (SAVE_PART_EDITOR | SAVE_PART_VIEW | SAVE_PART_SCENE)
+const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts);
 // Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
 // (docs/specs/undo.md). Values the app drives every frame are left out.
 // Returns the size written, or 0 if it did not fit.

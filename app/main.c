@@ -48,8 +48,9 @@ NvClipId app_regular_clip(App* app, NvClipId clip)
 
 void app_play(App* app, NvClipId clip)
 {
+    // Root motion moves the node, which only happens while playing; Edit mode previews in place.
     NvClipId moving = find_root_motion_clip(app, nv_anim_clip_name(clip));
-    if (app->root_motion && moving.index)
+    if (app->root_motion && app->playing && moving.index)
         clip = moving;
     app->jump = JUMP_NONE;
     nv_anim_play(nv_anim_get(app->animator), clip, app->fade_seconds, is_loop(clip));
@@ -59,7 +60,7 @@ void app_play(App* app, NvClipId clip)
 // that was playing before.
 void app_jump(App* app)
 {
-    if (app->jump != JUMP_NONE)
+    if (app->jump != JUMP_NONE || !app->playing)
         return;
     NvAnimator* animator = nv_anim_get(app->animator);
     app->jump_return = animator->layers[0].clip;
@@ -306,7 +307,10 @@ internal b32 build_character(App* app)
 
     app->target_mesh = app_box_mesh(app, nv_vec3(0.06f, 0.06f, 0.06f));
     app->target = nv_scene_add_node(app->scene, (NvNodeId){0}, "look target");
-    nv_scene_get(app->scene, app->target)->material = add_color(app, 1.0f, 0.75f, 0.2f, 0);
+    NvNode* target = nv_scene_get(app->scene, app->target);
+    target->material = add_color(app, 1.0f, 0.75f, 0.2f, 0);
+    // In Edit mode it stays where it is put, so it starts in front of the head.
+    target->position = nv_vec3(0.0f, 1.75f, 1.2f);
 
     s32 head_joint = nv_anim_find_joint(skeleton, "Head");
     NV_ASSERT(head_joint >= 0);
@@ -366,16 +370,17 @@ internal void apply_turn(App* app, f32 dt)
         root->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), app->turn_rate * dt), root->rotation);
 }
 
-// The target sweeps in front of the character; the head's aim IK follows it.
+// The head's aim IK follows the target. While playing, the target sweeps in front of the
+// character; in Edit mode it stays where it was put.
 internal void update_look_target(App* app)
 {
     NvAnimator* animator = nv_anim_get(app->animator);
     NvNode* target = nv_scene_get(app->scene, app->target);
     target->mesh = app->look_at ? app->target_mesh : (NvMeshId){0};
     animator->look_at.enabled = app->look_at;
-    if (!app->look_at)
+    if (!app->look_at || !app->playing)
         return;
-    f32 t = (f32)app->time;
+    f32 t = app->play_time;
     f32 angle = sinf(t * 0.7f) * 1.3f;
     NvVec3 local = nv_vec3(sinf(angle) * 1.2f, 1.75f + 0.3f * sinf(t * 1.3f), cosf(angle) * 1.2f);
     NvNode* root = nv_scene_get(app->scene, app->character.root);
@@ -667,16 +672,68 @@ internal void accumulate_times(App* app, f64 now)
     app->window_start = now;
 }
 
+// What always runs is the animation preview (with its crossfades and blend); what moves the scene
+// runs only while playing.
 internal void update_showcase(App* app, f32 dt)
 {
-    app->orbit_angle += app->orbit_speed * dt;
-    nv_scene_get(app->scene, app->planet)->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), app->orbit_angle);
-    nv_scene_get(app->scene, app->moon)->rotation = nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), (f32)app->time * 2.0f);
-    update_jump(app, dt);
+    if (app->playing) {
+        app->play_time += dt;
+        app->orbit_angle += app->orbit_speed * dt;
+        // The spins turn on top of the rotations authored in Edit mode.
+        nv_scene_get(app->scene, app->planet)->rotation =
+            nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), app->orbit_angle), app->planet_rotation);
+        nv_scene_get(app->scene, app->moon)->rotation =
+            nv_quat_mul(nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), app->play_time * 2.0f), app->moon_rotation);
+        update_jump(app, dt);
+        apply_turn(app, dt);
+    }
     update_blend(app);
     update_look_target(app);
-    apply_turn(app, dt);
     nv_scene_get(app->scene, app->sword)->mesh = app->show_sword ? app->sword_mesh : (NvMeshId){0};
+}
+
+// Restarts the character's clip from its start with no crossfade, as a run begins and ends. With
+// `playing` set, root motion picks the clip's moving copy.
+internal void restart_clip(App* app)
+{
+    NvAnimator* animator = nv_anim_get(app->animator);
+    NvClipId clip = app->jump != JUMP_NONE ? app->jump_return : animator->layers[0].clip;
+    clip = app_regular_clip(app, clip);
+    f32 fade = app->fade_seconds;
+    app->fade_seconds = 0.0f;
+    animator->layers[0].clip = (NvClipId){0}; // so the same clip restarts too
+    app_play(app, clip);
+    app->fade_seconds = fade;
+    animator->layers[0].time = 0.0f;
+}
+
+void app_start_playing(App* app)
+{
+    if (app->playing)
+        return;
+    app->play_snapshot_size = save_write(app, app->play_snapshot, SAVE_MAX_SIZE);
+    NV_ASSERT(app->play_snapshot_size);
+    app->planet_rotation = nv_scene_get(app->scene, app->planet)->rotation;
+    app->moon_rotation = nv_scene_get(app->scene, app->moon)->rotation;
+    app->play_time = 0.0f;
+    app->orbit_angle = 0.0f;
+    app->playing = 1;
+    restart_clip(app);
+}
+
+void app_stop_playing(App* app)
+{
+    if (!app->playing)
+        return;
+    app->playing = 0;
+    // The scene as it was at Play: nodes, character settings, scene settings. The view, the
+    // selection and the editor settings stay as they are now.
+    const char* problem = save_load_parts(app, app->play_snapshot, app->play_snapshot_size, SAVE_PART_SCENE);
+    NV_ASSERT(!problem); // written by save_write at Play
+    (void)problem;
+    app->jump = JUMP_NONE;
+    app->orbit_angle = 0.0f;
+    restart_clip(app);
 }
 
 internal void frame(void* userdata)
@@ -763,6 +820,19 @@ EMSCRIPTEN_KEEPALIVE int app_debug_undo_done(void)
 {
     return (int)app_state.undo.done;
 }
+
+// For tests: Module._app_debug_save_crc() is a CRC-32 of the save the state would write now, so a
+// test can compare the state at two moments (before Play and after Stop).
+EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
+{
+    App* app = &app_state;
+    umm mark = app->scratch.used;
+    u8* bytes = NV_PUSH_ARRAY(&app->scratch, SAVE_MAX_SIZE, u8);
+    u32 size = save_write(app, bytes, SAVE_MAX_SIZE);
+    u32 crc = nv_crc32(bytes, size);
+    app->scratch.used = mark;
+    return crc;
+}
 #endif
 
 int main(void)
@@ -808,6 +878,7 @@ int main(void)
     app->views[SCENE_SHOWCASE].selected = app->character.root;
     app->views[SCENE_SHOWCASE].focus = app->character.root;
     app->autosave = true;
+    app->play_snapshot = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
     // Taken before anything can rename or move nodes: saves apply to nodes by their place in this
     // tree, and only while it is the same tree.
     app->scene_layout = save_scene_layout(app->scene);
