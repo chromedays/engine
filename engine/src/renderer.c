@@ -1,5 +1,6 @@
 #include "nv/renderer.h"
 
+#include <math.h>
 #include <string.h>
 
 #define NO_SKIN 0xFFFFFFFFu
@@ -355,6 +356,19 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
     mesh->vertices = create_buffer(renderer->gpu, WGPUBufferUsage_Vertex, vertices, data->vertex_count * vertex_size);
     mesh->indices = create_buffer(renderer->gpu, WGPUBufferUsage_Index, data->indices, data->index_count * sizeof(u32));
     mesh->index_count = data->index_count;
+
+    mesh->bounds_min = nv_vec3(0, 0, 0);
+    mesh->bounds_max = nv_vec3(0, 0, 0);
+    for (u32 v = 0; v < data->vertex_count; ++v) {
+        const f32* p = mesh->skinned ? data->skinned_vertices[v].position : data->vertices[v].position;
+        NvVec3 q = nv_vec3(p[0], p[1], p[2]);
+        if (v == 0) {
+            mesh->bounds_min = mesh->bounds_max = q;
+            continue;
+        }
+        mesh->bounds_min = nv_vec3(fminf(mesh->bounds_min.x, q.x), fminf(mesh->bounds_min.y, q.y), fminf(mesh->bounds_min.z, q.z));
+        mesh->bounds_max = nv_vec3(fmaxf(mesh->bounds_max.x, q.x), fmaxf(mesh->bounds_max.y, q.y), fmaxf(mesh->bounds_max.z, q.z));
+    }
     return (NvMeshId){renderer->mesh_count++};
 }
 
@@ -498,6 +512,82 @@ internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
         NV_INVALID_CODE_PATH;
     }
     return nv_mat4_mul(proj, nv_mat4_inverse(camera_node->world));
+}
+
+// A point through a projective matrix, with the perspective divide.
+internal NvVec3 project(NvMat4 m, f32 x, f32 y, f32 z)
+{
+    f32 w = m.e[3] * x + m.e[7] * y + m.e[11] * z + m.e[15];
+    NvVec3 p = nv_mat4_transform_point(m, nv_vec3(x, y, z));
+    return nv_vec3_scale(p, 1.0f / w);
+}
+
+NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y)
+{
+    NV_ASSERT(viewport.width && viewport.height);
+    NvMat4 view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera), (f32)viewport.width / (f32)viewport.height);
+    NvMat4 to_world = nv_mat4_inverse(view_proj);
+    f32 ndc_x = ((x - (f32)viewport.x) / (f32)viewport.width) * 2.0f - 1.0f;
+    f32 ndc_y = 1.0f - ((y - (f32)viewport.y) / (f32)viewport.height) * 2.0f;
+    NvVec3 near_point = project(to_world, ndc_x, ndc_y, 0.0f); // depth runs 0 (near) to 1 (far)
+    NvVec3 far_point = project(to_world, ndc_x, ndc_y, 1.0f);
+    return (NvRay){near_point, nv_vec3_normalize(nv_vec3_sub(far_point, near_point))};
+}
+
+// Where a ray enters a box (slab test), or a negative number when it misses.
+internal f32 ray_box(NvVec3 origin, NvVec3 direction, NvVec3 lo, NvVec3 hi)
+{
+    f32 o[3] = {origin.x, origin.y, origin.z};
+    f32 d[3] = {direction.x, direction.y, direction.z};
+    f32 l[3] = {lo.x, lo.y, lo.z};
+    f32 h[3] = {hi.x, hi.y, hi.z};
+    f32 t_enter = 0.0f;
+    f32 t_exit = 1.0e30f;
+    for (u32 axis = 0; axis < 3; ++axis) {
+        // Flat meshes (the ground) get a little thickness so they can still be hit.
+        f32 pad = (h[axis] - l[axis] < 1.0e-3f) ? 1.0e-3f : 0.0f;
+        if (fabsf(d[axis]) < 1.0e-12f) {
+            if (o[axis] < l[axis] - pad || o[axis] > h[axis] + pad)
+                return -1.0f;
+            continue;
+        }
+        f32 t0 = (l[axis] - pad - o[axis]) / d[axis];
+        f32 t1 = (h[axis] + pad - o[axis]) / d[axis];
+        if (t0 > t1) {
+            f32 swap = t0;
+            t0 = t1;
+            t1 = swap;
+        }
+        t_enter = t0 > t_enter ? t0 : t_enter;
+        t_exit = t1 < t_exit ? t1 : t_exit;
+        if (t_enter > t_exit)
+            return -1.0f;
+    }
+    return t_enter;
+}
+
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, NvRay ray, f32* distance)
+{
+    NvNodeId best = {0};
+    f32 best_t = 1.0e30f;
+    for (u32 index = 1; index <= scene->node_count; ++index) {
+        NvNode* node = &scene->nodes[index];
+        if (!(node->gen & 1) || !node->mesh.index)
+            continue;
+        // In the node's space the box is axis-aligned; a linear map keeps the ray parameter, so
+        // hits in different nodes stay comparable.
+        NvMat4 to_local = nv_mat4_inverse(node->world);
+        NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
+        f32 t = ray_box(nv_mat4_transform_point(to_local, ray.origin), nv_mat4_transform_dir(to_local, ray.direction),
+                        mesh->bounds_min, mesh->bounds_max);
+        if (t >= 0.0f && t < best_t) {
+            best_t = t;
+            best = (NvNodeId){index, node->gen};
+        }
+    }
+    if (distance)
+        *distance = best_t;
+    return best;
 }
 
 void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,

@@ -160,6 +160,13 @@ static inline NvMat4 nv_mat4_inverse(NvMat4 m)
 
 static inline NvVec3 nv_mat4_translation(NvMat4 m) { return (NvVec3){m.e[12], m.e[13], m.e[14]}; }
 
+static inline NvVec3 nv_mat4_transform_dir(NvMat4 m, NvVec3 d)
+{
+    return (NvVec3){m.e[0] * d.x + m.e[4] * d.y + m.e[8] * d.z,
+                    m.e[1] * d.x + m.e[5] * d.y + m.e[9] * d.z,
+                    m.e[2] * d.x + m.e[6] * d.y + m.e[10] * d.z};
+}
+
 static inline NvVec3 nv_mat4_transform_point(NvMat4 m, NvVec3 p)
 {
     return (NvVec3){m.e[0] * p.x + m.e[4] * p.y + m.e[8] * p.z + m.e[12],

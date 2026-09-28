@@ -45,7 +45,14 @@ typedef struct NvRenderMesh {
     WGPUBuffer indices;
     u32 index_count;
     b32 skinned;
+    NvVec3 bounds_min; // local bounding box; the bind pose for skinned meshes
+    NvVec3 bounds_max;
 } NvRenderMesh;
+
+typedef struct NvRay {
+    NvVec3 origin;
+    NvVec3 direction; // unit length
+} NvRay;
 
 typedef struct NvRenderTexture {
     WGPUTexture texture;
@@ -154,6 +161,14 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
 
 // Changes a material's base color (linear RGBA); the default material (id 0) included.
 void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const f32 base_color[4]);
+
+// The world ray through (x, y) of `viewport` (framebuffer pixels of the target, as passed to
+// nv_renderer_draw), seen by the scene's active camera.
+NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y);
+
+// The nearest mesh node whose bounding box (in the node's own space) the ray hits, or a zeroed id.
+// `distance`, when not NULL, receives how far along the ray the hit is.
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, NvRay ray, f32* distance);
 
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);

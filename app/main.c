@@ -426,6 +426,60 @@ internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
     }
 }
 
+// A tap in the viewport selects the mesh under it, or clears the selection. A character's meshes
+// stand for the character, so they select its root.
+internal void pick(App* app, NvRect viewport)
+{
+    const NvViewInput* in = &app->imgui.view;
+    if (!in->tapped)
+        return;
+    SceneView* view = app_view(app);
+    f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    NvRay ray = nv_renderer_view_ray(view->scene, viewport, in->tap_x * pixel_ratio, in->tap_y * pixel_ratio);
+    NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, ray, NULL);
+    if (hit.index) {
+        NvNode* node = nv_scene_get(view->scene, hit);
+        if (node->animator.index && node->parent)
+            hit = (NvNodeId){node->parent, view->scene->nodes[node->parent].gen};
+        app->open_inspector = 1;
+    }
+    view->selected = hit;
+}
+
+// The selected node's mesh boxes, and those of its mesh children (a character's meshes).
+internal void draw_selection(App* app)
+{
+    SceneView* view = app_view(app);
+    if (!view->selected.index)
+        return;
+    NvScene* scene = view->scene;
+    NvNode* selected = nv_scene_get(scene, view->selected);
+    u32 nodes[17];
+    u32 count = 0;
+    nodes[count++] = view->selected.index;
+    if (!selected->mesh.index) {
+        for (u32 child = selected->first_child; child && count < NV_ARRAY_COUNT(nodes); child = scene->nodes[child].next_sibling)
+            nodes[count++] = child;
+    }
+    for (u32 n = 0; n < count; ++n) {
+        NvNode* node = &scene->nodes[nodes[n]];
+        if (!node->mesh.index)
+            continue;
+        NvRenderMesh* mesh = &app->renderer.meshes[node->mesh.index];
+        NvVec3 lo = mesh->bounds_min;
+        NvVec3 hi = mesh->bounds_max;
+        NvVec3 corners[8];
+        for (u32 c = 0; c < 8; ++c)
+            corners[c] = nv_mat4_transform_point(node->world, nv_vec3(c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z));
+        for (u32 c = 0; c < 8; ++c) {
+            for (u32 bit = 1; bit < 8; bit <<= 1) {
+                if (!(c & bit))
+                    nv_renderer_debug_line(&app->renderer, corners[c], corners[c | bit], nv_vec3(0.3f, 0.85f, 1.0f));
+            }
+        }
+    }
+}
+
 // Orbits the selected node, or the view's focus. Cameras and lights are not worth orbiting, so
 // they fall back to the focus. A character's origin is at its feet, so its focus is raised.
 internal void update_camera(App* app, NvRect viewport)
@@ -563,7 +617,9 @@ internal void frame(void* userdata)
     t = now_ms();
     nv_scene_update(scene);
     times->scene = now_ms() - t;
+    pick(app, layout.viewport);
     update_camera(app, layout.viewport);
+    draw_selection(app);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
         draw_bones(app);
     if (app->shown == SCENE_STRESS && app->stress.want.show_bones)
