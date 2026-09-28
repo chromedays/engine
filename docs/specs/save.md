@@ -4,8 +4,9 @@ Status: draft (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
-Close the tab, come back, and find each scene as it was left. The app saves by itself into the
-browser's IndexedDB through Emscripten's IDBFS; there is no save button to forget.
+Close the tab, come back, and find the app as it was left. The app saves its whole state (every
+scene, the scene on screen, and the editor settings) as one save, by itself, into the browser's
+IndexedDB through Emscripten's IDBFS; there is no save button to forget.
 
 Out of scope for now: manual saves as files (export and import) and server storage (a CDN such as
 Cloudflare R2 behind a Worker). Both would reuse this spec's format, and the save text is kept
@@ -40,34 +41,48 @@ changes, it can be read when debugging, and a later export is just this text as 
 
 | Topic | Decision |
 |---|---|
-| Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file per scene kind: `showcase.json`, `stress.json` |
-| Format | JSON, `"format": "nv-scene"` with a `"version"` number. Unknown fields are skipped; missing fields read as zero (ZII), with the node defaults for scale and rotation |
+| Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file, `state.json`, holds the whole app state; scenes are never saved on their own |
+| Format | JSON, `"format": "nv-state"` with a `"version"` number. Unknown fields are skipped; missing fields read as zero (ZII), with the node defaults for scale and rotation |
 | When it saves | Every 10 seconds when the text would differ from the last save, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not. A write goes to a temporary name first and is then renamed, so a half-written save never replaces a good one |
-| On start | Each scene kind loads its save if there is one; otherwise it is built as today |
-| A bad save | A file that does not parse, or has a newer `version`, is renamed to `<name>.bad` and the scene is built as today. A message in the View tab says so |
-| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default), when the shown scene was last saved, **Save now**, and **Reset scene** (rebuilds the built-in scene and overwrites its save) |
+| On start | The save loads if there is one: both scenes, the scene that was on screen, and the editor settings. Otherwise the app starts as today |
+| A bad save | A file that does not parse, or has a newer `version`, is renamed to `state.json.bad` and the app starts as today. A message in the View tab says so. Loading is all or nothing: the file is fully parsed and checked before anything in the app changes |
+| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved), when the state was last saved, **Save now**, and **Reset** (rebuilds everything as on a first visit and overwrites the save) |
+| Shown scene | The saved one, unless the address has `#stress`, which still opens the stress scene |
 | Stress scene | Only its settings (workloads and counts) and its camera view; the scene is rebuilt from them. A running benchmark is not saved |
 | Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
 | Third-party | jsmn, pinned to a tagged release |
 
-## What a save holds
+## What the save holds
 
 ```json
 {
-  "format": "nv-scene", "version": 1, "scene": "showcase",
+  "format": "nv-state", "version": 1,
   "saved": "2026-09-28T04:10:00Z", "build": "Release 6422430",
-  "view": {"yaw": 0.35, "pitch": 0.12, "distance": 5.0, "follow": true, "selected": "moon"},
-  "app": {"orbit_speed": 0.7, "clip": "Idle_Loop", "root_motion": false, "look_at": true, "sword": true},
-  "nodes": [
-    {"name": "planet", "position": [-4.5, 1.6, -4.0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
-     "mesh": "cube", "color": [0.95, 0.55, 0.25, 1]},
-    {"name": "moon", "parent": 1, "position": [2.4, 0, 0], "mesh": "cube", "color": [0.55, 0.7, 0.95, 1]},
-    {"name": "character", "model": "/assets/character.glb", "animator": true},
-    {"name": "sword", "parent": 2, "mesh": "sword", "attach": "hand_r"},
-    {"name": "sun", "light": {"type": "directional", "color": [1, 0.96, 0.9], "intensity": 1.1}}
-  ]
+  "shown": "showcase",
+  "editor": {"autosave": true, "gizmo": "move", "gizmo_local": false, "gizmo_snap": false},
+  "showcase": {
+    "view": {"yaw": 0.35, "pitch": 0.12, "distance": 5.0, "follow": true, "selected": "moon"},
+    "app": {"orbit_speed": 0.7, "clip": "Idle_Loop", "root_motion": false, "look_at": true, "sword": true},
+    "nodes": [
+      {"name": "planet", "position": [-4.5, 1.6, -4.0], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1],
+       "mesh": "cube", "color": [0.95, 0.55, 0.25, 1]},
+      {"name": "moon", "parent": 1, "position": [2.4, 0, 0], "mesh": "cube", "color": [0.55, 0.7, 0.95, 1]},
+      {"name": "character", "model": "/assets/character.glb", "animator": true},
+      {"name": "sword", "parent": 2, "mesh": "sword", "attach": "hand_r"},
+      {"name": "sun", "light": {"type": "directional", "color": [1, 0.96, 0.9], "intensity": 1.1}}
+    ]
+  },
+  "stress": {
+    "view": {"yaw": 0.6, "pitch": 0.5, "distance": 28.0, "follow": true},
+    "workloads": {"grid": [true, 4000], "colors": [false, 16], "chain": [false, 200], "crowd": [true, 40],
+                  "churn": [false, 64], "bones": false}
+  }
 }
 ```
+
+- The **whole state** is one object: which scene is shown, the editor settings, and every scene.
+  A scene that was never opened (the stress scene is built on first use) is still saved from its
+  settings, so opening it later starts where it was left.
 
 - **Nodes** are saved in tree order. `parent` is an index into `nodes`, so a parent always comes
   first.
@@ -105,8 +120,10 @@ changes, it can be read when debugging, and a later export is just this text as 
 
 ## App changes
 
-- `app/save.c` writes and reads a scene kind with the JSON helpers. Loading clears that scene,
-  rebuilds it from the text and finds the app's nodes again by name.
+- `app/save.c` writes and reads the whole app state with the JSON helpers. Loading checks the
+  whole file first, then rebuilds the showcase from its nodes, applies the stress settings (the
+  stress scene is rebuilt from them when it is next shown), restores the editor settings, and
+  shows the saved scene. The app's own nodes are found again by name.
 - The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section.
 - Built-in meshes get names in the app (`cube`, `sword`, `ground`, `target`), so they can be
   saved as names.
@@ -122,12 +139,12 @@ changes, it can be read when debugging, and a later export is just this text as 
 
 ## Phases
 
-1. **Format:** jsmn, the JSON writer and reader, and save/load of both scene kinds to a string.
+1. **Format:** jsmn, the JSON writer and reader, and save/load of the whole state to a string.
    A round trip is checked in memory: save, load, save again, and compare the two texts.
 2. **Autosave:** IDBFS, `nv_storage_*`, the timer and the page-hidden save, loading on start, and
    the View tab's Autosave section.
-3. **Failure cases and docs:** bad and newer-version saves, storage that is unavailable, Reset
-   scene, `AGENTS.md`, README, and the Dependencies section of `docs/CODING_STANDARD.md`.
+3. **Failure cases and docs:** bad and newer-version saves, storage that is unavailable, Reset,
+   `AGENTS.md`, README, and the Dependencies section of `docs/CODING_STANDARD.md`.
 
 Every phase is checked in Release and Debug in headless Chromium. Phase 2 edits a scene, reloads
 the page and checks that the edit came back. Phase 3 writes a broken save and a save with a newer
