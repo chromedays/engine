@@ -16,6 +16,11 @@
 #define TAG_GZOP NV_TAG('G', 'Z', 'O', 'P')
 #define TAG_GZLC NV_TAG('G', 'Z', 'L', 'C')
 #define TAG_GZSN NV_TAG('G', 'Z', 'S', 'N')
+#define TAG_SHSZ NV_TAG('S', 'H', 'S', 'Z') // shadow map size, 0 = off
+#define TAG_SHFM NV_TAG('S', 'H', 'F', 'M') // shadow map format
+#define TAG_SHFL NV_TAG('S', 'H', 'F', 'L') // shadow filter
+#define TAG_SHDS NV_TAG('S', 'H', 'D', 'S') // shadow distance
+#define TAG_SHBX NV_TAG('S', 'H', 'B', 'X') // show the light box
 // SCNE
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
@@ -241,6 +246,12 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_GZOP, (u32)app->gizmo_operation);
     nv_chunk_u32(&w, TAG_GZLC, app->gizmo_local);
     nv_chunk_u32(&w, TAG_GZSN, app->gizmo_snap);
+    const NvShadowSettings* shadows = &app->renderer.shadows;
+    nv_chunk_u32(&w, TAG_SHSZ, shadows->size);
+    nv_chunk_u32(&w, TAG_SHFM, (u32)shadows->format);
+    nv_chunk_u32(&w, TAG_SHFL, (u32)shadows->filter);
+    nv_chunk_f32(&w, TAG_SHDS, shadows->distance);
+    nv_chunk_u32(&w, TAG_SHBX, shadows->show_box);
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
@@ -287,12 +298,27 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_GZOP, &operation, 1);
     read_bool(r, edit, TAG_GZLC, &local);
     read_bool(r, edit, TAG_GZSN, &snap);
+    NvShadowSettings shadows = app->renderer.shadows;
+    u32 format = (u32)shadows.format, filter = (u32)shadows.filter;
+    nv_chunk_read_u32s(r, edit, TAG_SHSZ, &shadows.size, 1);
+    nv_chunk_read_u32s(r, edit, TAG_SHFM, &format, 1);
+    nv_chunk_read_u32s(r, edit, TAG_SHFL, &filter, 1);
+    nv_chunk_read_f32s(r, edit, TAG_SHDS, &shadows.distance, 1);
+    nv_chunk_read_u32s(r, edit, TAG_SHBX, (u32*)&shadows.show_box, 1);
     if (!apply)
         return;
     app->autosave = autosave;
     app->gizmo_operation = operation <= GIZMO_SCALE ? (GizmoOperation)operation : GIZMO_MOVE;
     app->gizmo_local = local;
     app->gizmo_snap = snap;
+    // Only the sizes the View tab offers; anything else is off.
+    if (shadows.size != 512 && shadows.size != 1024 && shadows.size != 2048)
+        shadows.size = 0;
+    shadows.format = format == NV_SHADOW_FORMAT_DEPTH16 ? NV_SHADOW_FORMAT_DEPTH16 : NV_SHADOW_FORMAT_DEPTH32F;
+    shadows.filter = filter == NV_SHADOW_FILTER_LOW ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH;
+    shadows.distance = clamp(shadows.distance, 5.0f, 100.0f);
+    shadows.show_box = shadows.show_box != 0;
+    app->renderer.shadows = shadows;
 }
 
 internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)

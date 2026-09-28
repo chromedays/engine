@@ -994,6 +994,13 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
             NvNode* node = &scene->nodes[renderer->object_nodes[i]];
             NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
             NvRenderMaterial* material = &renderer->materials[node->material.index];
+            // Casters outside the light's box cannot shade anything the camera sees. The box goes
+            // through the light's matrix; clip space is a unit box there (depth 0 to 1).
+            const NvSkin* skin = (skins && node->animator.index) ? &skins[node->animator.index] : NULL;
+            NvBox box = nv_box_transform(nv_renderer_mesh_bounds(renderer, node->mesh, skin),
+                                         nv_mat4_mul(renderer->light_view_proj, node->world));
+            if (box.max.x < -1.0f || box.min.x > 1.0f || box.max.y < -1.0f || box.min.y > 1.0f || box.min.z > 1.0f)
+                continue;
             WGPURenderPipeline pipeline = renderer->shadow_pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
             if (pipeline != bound) {
                 wgpuRenderPassEncoderSetPipeline(shadow_pass, pipeline);
