@@ -4,9 +4,12 @@ Status: draft (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
-Close the tab, come back, and find the app as it was left. The app saves its whole state (every
-scene, the scene on screen, and the editor settings) as one save, by itself, into the browser's
-IndexedDB through Emscripten's IDBFS; there is no save button to forget.
+Close the tab, come back, and find the app as it was left. The app saves its state (the showcase
+scene and the editor settings) as one save, by itself, into the browser's IndexedDB through
+Emscripten's IDBFS; there is no save button to forget.
+
+The stress scene is not saved: it is a benchmark, and it starts from its defaults on every visit,
+so every run starts from the same place.
 
 Out of scope for now: manual saves as files (export and import) and server storage (a CDN such as
 Cloudflare R2 behind a Worker). Both could carry this spec's save bytes unchanged.
@@ -71,7 +74,6 @@ Header (16 bytes)
 Chunks
   'EDIT'  editor settings
   'SHOW'  the showcase scene
-  'STRS'  the stress scene
 ```
 
 The checksum and the size catch a save that was cut short or damaged. Every tag lives in one place
@@ -105,13 +107,12 @@ describe created nodes; older builds will skip them.
 
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
-| `SHWN` | u32 | `app->shown`: 0 showcase, 1 stress | 0 |
 | `AUTO` | u32 | autosave on (the View tab checkbox) | 1 |
 | `GZOP` | u32 | `app->gizmo_operation`: 0 move, 1 rotate, 2 scale | 0 |
 | `GZLC` | u32 | `app->gizmo_local` | 0 |
 | `GZSN` | u32 | `app->gizmo_snap` | 0 |
 
-### `VIEW`: a scene's camera and selection (in `SHOW` and in `STRS`)
+### `VIEW`: the showcase's camera and selection
 
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
@@ -124,8 +125,7 @@ describe created nodes; older builds will skip them.
 | `SELN` | u32[] | the selected node's path; empty = nothing selected | the start selection |
 
 `pan` is restored as belonging to the restored selection (`panned_for`). The view's `focus` and
-`camera` are fixed by the build and not saved. In the stress scene, `SELN` is not saved (its nodes
-are rebuilt, so a path would not last).
+`camera` are fixed by the build and not saved.
 
 ### `SHOW`: the showcase
 
@@ -176,30 +176,13 @@ rewrites every frame are saved but have no lasting effect: the look target's tra
 around the head), the planet's rotation (from `PLNT`), and the orbit camera's transform (from
 `VIEW`). A joint name the skeleton does not have leaves the attachment as built.
 
-### `STRS`: the stress scene
-
-| Tag | Type | Saved from | Missing |
-|---|---|---|---|
-| `VIEW` | container | the stress scene's view (no `SELN`) | start view |
-| `GRID` | u32[2] | `want.grid_on`, `want.grid_count` (clamped to the slider's range on load, as are all counts) | as today |
-| `COLS` | u32[2] | `colors_on`, `color_count` | as today |
-| `CHAN` | u32[2] | `chain_on`, `chain_count` | as today |
-| `CRWD` | u32[2] | `crowd_on`, `crowd_count` | as today |
-| `CHRN` | u32[2] | `churn_on`, `churn_count` | as today |
-| `BONE` | u32 | `want.show_bones` | 0 |
-
-While a benchmark runs, the settings from before it started (`before_benchmark`) are saved, not
-the benchmark's own steps. The stress scene is built from these settings the first time it is
-shown, as today; a scene that was never opened is still saved, so opening it later starts where it
-was left.
-
 ### Not saved
 
-- Edits to single nodes in the stress scene: its nodes are generated from the settings.
-- Benchmark results and a running benchmark; frame times and stats.
+- The stress scene: its settings, camera, selection, node edits and benchmark results. The app
+  always starts on the showcase.
+- Frame times and stats.
 - A jump in progress (the returning clip is saved), crossfades in progress, and blend layers'
   own times.
-- The node selected in the stress scene.
 - Panel state: the open tab, scroll positions, which tree nodes are open.
 - Anything rebuilt at start: meshes, materials other than their colors, skeletons, clips, GPU and
   ImGui resources.
@@ -210,9 +193,9 @@ was left.
 |---|---|
 | Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file, `state.nvs`, holds the whole app state |
 | When it saves | Every 10 seconds when the bytes would differ from the last save, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not. A write goes to a temporary name first and is then renamed, so a half-written save never replaces a good one |
-| On start | The app builds the showcase as today, then loads the save if there is one, before the first frame: both scenes, the scene that was on screen, and the editor settings. Otherwise it starts as today, on the showcase |
+| On start | The app builds the showcase as today, then loads the save if there is one, before the first frame: the showcase and the editor settings. It always starts on the showcase |
 | A bad save | A wrong magic, size or checksum, a field of the wrong size, or a newer version: the file is renamed to `state.nvs.bad` and the app starts as on a first visit. A message in the View tab says so. Loading is all or nothing: the whole file is checked before anything in the app changes |
-| `#stress` | Removed. The address no longer names the scene; the save remembers it |
+| `#stress` | Removed. The address no longer names the scene, and the app always starts on the showcase |
 | UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved), when the state was last saved, **Save now**, **Reset** (deletes the save and reloads the page, which starts as on a first visit; animators cannot be removed, so rebuilding in place would leak them), and **Show save** (below) |
 | Save viewer | **Show save** opens a tree of the save's chunks: tags, sizes, and values (numbers, strings, hex for tags it does not know). It reads the file as the loader does, so it also shows where a bad save goes wrong |
 | Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
@@ -245,8 +228,7 @@ was left.
 
 - `app/save.c` writes and reads the whole app state with the chunk helpers. Loading reads the
   whole file into a staging struct first; only if that succeeds does it apply the values to the
-  showcase's nodes, the character, the views, the stress settings and the editor settings, and
-  show the saved scene.
+  showcase's nodes, the character, the showcase's view and the editor settings.
 - The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section
   with the save viewer.
 - The showcase's layout number, computed after it is built.
@@ -272,7 +254,8 @@ was left.
 3. **Failure cases, viewer and docs:** bad, damaged and newer-version saves, storage that is
    unavailable, Reset, the save viewer, `AGENTS.md`, README and `docs/specs/stress.md`.
 
-Every phase is checked in Release and Debug in headless Chromium. Phase 2 edits both scenes,
-reloads the page and checks that the edits and the scene on screen came back. Phase 3 writes a
+Every phase is checked in Release and Debug in headless Chromium. Phase 2 edits the showcase,
+reloads the page and checks that the edits came back, and that the stress scene still opens with
+its defaults. Phase 3 writes a
 truncated save, a save with a flipped byte and a save with a newer version, and checks that the
 app starts as on a first visit and keeps the `.bad` file.
