@@ -1,13 +1,18 @@
 # Save and load spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: draft (2026-09-28); server storage (a CDN with Cloudflare R2) is under discussion. Changes to
+this spec are agreed first.
 
 ## Goal
 
-Keep the edits made in the editor: close the tab and find the scene as it was left, keep a few
-saves, and move a scene to another device or person as a file. The app is served from GitHub
-Pages, a static host, so nothing can be stored on a server. Saves live in the browser (IndexedDB)
-or in the user's files.
+Keep the edits made in the editor, in two ways:
+
+- **Autosave:** close the tab and find the scene as it was left. It lives in the browser
+  (IndexedDB) and is written without being asked.
+- **Manual saves are files:** Export downloads the scene as a file and Import opens one. Files are
+  what the user keeps, names, moves to another device or sends to someone.
+
+The app is served from GitHub Pages, a static host, so nothing can be stored on a server.
 
 ## Third-party candidates
 
@@ -25,16 +30,17 @@ Recommendation: JSON, written by our own small writer and read through jsmn.
 
 | Topic | Decision |
 |---|---|
-| Storage | IndexedDB through Emscripten's IDBFS, mounted at `/nv-save`, plus file export and import |
+| Storage | The autosave in IndexedDB, through Emscripten's IDBFS mounted at `/nv-save`. Manual saves are files (export and import); there are no save slots in the browser |
 | Format | JSON, `"format": "nv-scene"` with a `"version"` number. Unknown fields are skipped; missing fields read as zero (ZII), with the node defaults for scale and rotation |
-| Slots | An autosave and three manual slots, per scene kind (Showcase, Stress) |
+| Autosave files | One per scene kind: `/nv-save/showcase.json`, `/nv-save/stress.json` |
 | Autosave | Every 10 seconds when the saved text would differ from the last one, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not |
 | On start | The autosave loads if there is one. **Reset scene** rebuilds the built-in scene |
-| UI | A new **File** tab: Save and Load per slot (with the time each was saved), Export, Import, Reset scene |
-| Import | A file picker, or a `.json` dropped on the canvas |
+| UI | A new **File** tab: Export, Import, Reset scene, and when the autosave was last written |
+| Import | A file picker, or a `.json` dropped on the canvas. It replaces the scene kind the file names (switching to it), and the next autosave keeps it |
 | Export | Downloads `nv-<scene>-<date>-<time>.json` |
 | Stress scene | Only its settings (workloads and counts) and its camera; the scene is rebuilt from them |
 | Third-party | jsmn, pinned to a tagged release |
+| Not chosen: commits to this repository | Saving through the GitHub API as a git commit was considered. A static page would need a personal access token pasted into the browser, every commit would run CI, it suits neither autosave nor binary assets (the API bypasses Git LFS), and the public repository would make every save public |
 
 ## What a save holds
 
@@ -80,7 +86,8 @@ Recommendation: JSON, written by our own small writer and read through jsmn.
 - **Storage (`nv/storage.h`, `engine/src/storage.c`).**
   - `nv_storage_init` mounts IDBFS at `/nv-save` and waits for the first sync from IndexedDB
     (through Asyncify, like `wgpuInstanceWaitAny`).
-  - `nv_storage_flush` starts a sync to IndexedDB without waiting for it.
+  - `nv_storage_flush` starts a sync to IndexedDB without waiting for it; a flush asked for while
+    one is running starts when it ends.
   - `nv_storage_export(name, bytes, size)` downloads a file.
   - Imported files are written to `/nv-import/`, and `nv_storage_take_import` hands the next
     path to the app.
@@ -108,7 +115,8 @@ Recommendation: JSON, written by our own small writer and read through jsmn.
 
 1. **Format:** jsmn, the JSON writer and reader, and save/load of both scene kinds to a string.
    A round trip is checked in memory: save, load, save again, and compare the two texts.
-2. **Browser storage:** IDBFS, the slots, the autosave, loading it on start, and the File tab.
+2. **Autosave:** IDBFS, the autosave timer and page-hidden save, loading it on start, and the File
+   tab with Reset scene.
 3. **Files and docs:** export, import (picker and drop), `AGENTS.md`, README, and the Dependencies
    section of `docs/CODING_STANDARD.md`.
 
