@@ -52,7 +52,7 @@ u8  payload[size]
   ...). A field's payload is a value: `u32` or `f32` arrays, or a string (its bytes, no NUL; the
   size gives its length).
 - **Order.** Fields can come in any order, and repeat only where the spec says so (`NODE` in
-  `SHOW`). A reader finds fields by tag.
+  `SCNE`). A reader finds fields by tag.
 - **Unknown tags are skipped** by their size, so an older build reads a newer save and ignores what
   it does not know.
 - **A missing field keeps the value the app starts with**, so a save from an older build loads
@@ -73,7 +73,7 @@ Header (16 bytes)
   u32 checksum  CRC-32 of the bytes after the header
 Chunks
   'EDIT'  editor settings
-  'SHOW'  the showcase scene
+  'SCNE'  the scene (the app's showcase)
 ```
 
 The checksum and the size catch a save that was cut short or damaged. Every tag lives in one place
@@ -94,7 +94,7 @@ nodes are never created from the save.
 - A node is identified by its **path**: the index of each node among its siblings, from the top
   level down (`[3]` is the fourth top-level node, `[5, 0]` the first child of the sixth). Names
   are not used because the Inspector can rename nodes.
-- `SHOW` also saves a **layout number**: a hash of the default tree's names and shape, taken right
+- `SCNE` also saves a **layout number**: a hash of the default tree's names and shape, taken right
   after the showcase is built. If a later build changes the showcase so the number differs, the
   saved nodes are skipped (their paths might point at other nodes) and the rest still loads.
 - A saved path that does not exist is skipped.
@@ -127,7 +127,9 @@ describe created nodes; older builds will skip them.
 `pan` is restored as belonging to the restored selection (`panned_for`). The view's `focus` and
 `camera` are fixed by the build and not saved.
 
-### `SHOW`: the showcase
+### `SCNE`: the scene
+
+The save calls the showcase simply "the scene": it is the one scene the save holds.
 
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
