@@ -47,6 +47,8 @@ typedef struct SceneView {
     f32 camera_distance; // meters
     NvVec3 pan;          // added to the orbit point by panning; cleared when the selection changes
     NvNodeId panned_for; // the selection `pan` belongs to
+    bool follow_selection; // orbit the selection; otherwise stay at orbit_point
+    NvVec3 orbit_point;    // where the camera looked last frame; panned directly while not following
 } SceneView;
 
 // CPU time of the frame's stages, in milliseconds.

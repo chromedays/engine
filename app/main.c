@@ -225,6 +225,7 @@ internal void build_world(App* app)
         .camera_yaw = 0.35f,
         .camera_pitch = 0.12f,
         .camera_distance = 5.0f,
+        .follow_selection = true,
     };
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
@@ -422,7 +423,11 @@ internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
         f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
         NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
         NvVec3 up = nv_quat_rotate(camera->rotation, nv_vec3(0, 1, 0));
-        view->pan = nv_vec3_add(view->pan, nv_vec3_add(nv_vec3_scale(right, -in->pan_x * meters), nv_vec3_scale(up, in->pan_y * meters)));
+        NvVec3 move = nv_vec3_add(nv_vec3_scale(right, -in->pan_x * meters), nv_vec3_scale(up, in->pan_y * meters));
+        if (view->follow_selection)
+            view->pan = nv_vec3_add(view->pan, move);
+        else
+            view->orbit_point = nv_vec3_add(view->orbit_point, move);
     }
 }
 
@@ -483,23 +488,30 @@ internal void draw_selection(App* app)
     }
 }
 
-// Orbits the selected node, or the view's focus. Cameras and lights are not worth orbiting, so
-// they fall back to the focus. A character's origin is at its feet, so its focus is raised.
+// Orbits the selected node, or the view's focus, while the view follows the selection. Cameras and
+// lights are not worth orbiting, so they fall back to the focus. A character's origin is at its
+// feet, so its focus is raised.
 internal void update_camera(App* app, NvRect viewport)
 {
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
     apply_view_input(app, view, viewport);
-    NvNodeId focus = view->selected;
-    if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
-        focus = view->focus;
-    NvVec3 point = nv_vec3(0, 0, 0);
-    if (focus.index) {
-        point = nv_mat4_translation(nv_scene_get(scene, focus)->world);
-        if (app_node_animator(scene, focus).index)
-            point.y += 0.92f;
+    // Following, the camera orbits the selection (or the view's focus). Not following, it stays
+    // where it was and only moves by panning, whatever gets selected.
+    NvVec3 point = view->orbit_point;
+    if (view->follow_selection) {
+        NvNodeId focus = view->selected;
+        if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
+            focus = view->focus;
+        point = nv_vec3(0, 0, 0);
+        if (focus.index) {
+            point = nv_mat4_translation(nv_scene_get(scene, focus)->world);
+            if (app_node_animator(scene, focus).index)
+                point.y += 0.92f;
+        }
+        point = nv_vec3_add(point, view->pan);
+        view->orbit_point = point;
     }
-    point = nv_vec3_add(point, view->pan);
 
     f32 d = view->camera_distance;
     f32 cp = cosf(view->camera_pitch);

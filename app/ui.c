@@ -195,6 +195,7 @@ internal void view_tab(App* app)
     igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
     igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
     igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+    igCheckbox("Camera follows selection", &view->follow_selection);
     if (app->shown == SCENE_SHOWCASE) {
         igCheckbox("Show bones", &app->show_bones);
         igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);

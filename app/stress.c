@@ -121,6 +121,7 @@ void stress_build(App* app)
         .camera_yaw = 0.45f,
         .camera_pitch = 0.42f,
         .camera_distance = 28.0f,
+        .follow_selection = true,
     };
     stress->built = 1;
 }
