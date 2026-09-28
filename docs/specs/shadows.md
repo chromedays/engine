@@ -30,15 +30,16 @@ Recommendation: one map fitted to the view, with the code shaped so cascades can
 | Topic | Decision |
 |---|---|
 | Light | The first directional light, as today. Other light types cast no shadows |
-| Map | `depth32float`, 2048² by default, 1024² on touch screens (`NvImgui.ui_scale` > 1), settable to 512, 1024, 2048 or off |
+| Map | 2048² by default, 1024² on touch screens (`NvImgui.ui_scale` > 1), settable to 512, 1024, 2048 or off |
+| Format | Both `depth32float` (the default) and `depth16unorm`, chosen in the settings. Changing it remakes the map and the shadow pipelines (the depth format is part of a pipeline). `depth16unorm` halves the map's memory and bandwidth; `depth32float` keeps more precision if the light's depth range grows. The Stress tab's shadow pass time shows what the choice costs on a device |
 | Fitting | The camera's view from its near plane to the **shadow distance** (30 m by default) is enclosed in a sphere; the light's orthographic box is that sphere's square, pulled back toward the light by 50 m so casters behind the view still cast. The sphere's radius does not change as the camera turns, and its center is snapped to whole shadow-map texels, so shadows do not shimmer or crawl while orbiting |
 | Casters | Every mesh node, static and skinned (the skinned vertex shader's skinning is reused), except those whose world box is outside the light's box (a CPU test with the boxes picking already uses). Double-sided materials cast from both faces |
 | Receivers | Every mesh node. The shadow darkens only the directional light's term; the ambient term stays |
 | Filtering | A comparison sampler with linear filtering, so each lookup is a 2×2 percentage-closer filter in hardware. **High**: 3×3 such lookups (a soft 4×4-texel edge). **Low**: one lookup. High by default, Low on touch screens |
-| Acne and peter-panning | A slope-scaled depth bias in the shadow pipeline, and a normal offset in the scene shader (the lookup moves along the surface normal by about one texel). Both are tuned once in the showcase and the stress scene |
+| Acne and peter-panning | A slope-scaled depth bias in the shadow pipeline, and a normal offset in the scene shader (the lookup moves along the surface normal by about one texel). The constant bias means different things per format (below), so each format has its own tuned bias values, set with its pipelines; the slope scale and the normal offset are shared. All are tuned in the showcase and the stress scene |
 | Beyond the distance | Unshadowed, faded out over the last 10% so the edge is not a line |
-| Settings | A **Shadows** section in the View tab: size (off, 512, 1024, 2048), filter (Low, High), distance (5 to 100 m), and "Show light box" (the fitted box as debug lines). Saved with the editor settings (new `EDIT` tags, per `save.md`) |
-| Cost shown | The Stress tab gains shadow draws, and the GPU time of the shadow pass (a second timestamp pair). The benchmark table gains the shadow setting it ran with |
+| Settings | A **Shadows** section in the View tab: size (off, 512, 1024, 2048), format (32-bit float, 16-bit), filter (Low, High), distance (5 to 100 m), and "Show light box" (the fitted box as debug lines). Saved with the editor settings (new `EDIT` tags, per `save.md`) |
+| Cost shown | The Stress tab gains shadow draws, and the GPU time of the shadow pass (a second timestamp pair). The benchmark table gains the shadow settings it ran with (size, format, filter) |
 | Third-party | None |
 
 ## Notes on the GPU side
@@ -50,14 +51,17 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
 - **Hardware PCF.** A sampler with a comparison function and linear filtering makes one
   `textureSampleCompare` compare the four nearest texels and blend the results: a 2×2
   percentage-closer filter for the cost of one lookup. The High filter is nine such lookups.
-- **Why `depth32float`.** It needs no depth range tuning, and every WebGPU implementation can
-  render to it and sample it with a comparison sampler. `depth16unorm` would halve the map's
-  memory and bandwidth (8 MB instead of 16 MB at 2048²): a candidate if phones prove
-  bandwidth-bound, measured with the Stress tab's shadow pass time.
+- **The two formats.** Every WebGPU implementation can render to both and sample both with a
+  comparison sampler, so both are always offered.
+  - `depth32float` needs no depth range tuning: precision stays ample whatever the shadow
+    distance and the 50 m pulled toward the light. It is 16 MB at 2048².
+  - `depth16unorm` has 65,536 even steps over the light's depth range (the orthographic
+    projection spreads depth linearly), about 1.5 mm over 100 m. It is 8 MB at 2048², and half
+    the bandwidth to write and read.
 - **Depth bias depends on the format.** The pipeline's constant `depthBias` counts the depth
-  format's smallest step. That step is fixed for a normalized format like `depth16unorm`, but for
-  `depth32float` it depends on the triangle's own depth. So the bias values are tuned for
-  `depth32float`, and would have to be tuned again if the format changes.
+  format's smallest step. That step is fixed for a normalized format like `depth16unorm`
+  (1/65,536 of the range), but for `depth32float` it depends on the triangle's own depth. So one
+  constant cannot suit both: each format's pipelines carry their own tuned value.
 - **One pass reads what the other wrote.** The shadow map is written in the shadow pass and
   sampled in the scene pass of the same command buffer; WebGPU orders the two passes, so no
   explicit barrier is needed.
@@ -65,12 +69,14 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
 ## Engine changes
 
 - **Renderer (`nv/renderer.h`, `engine/src/renderer.c`).**
-  - `NvShadowSettings` (size, filter, distance) and `nv_renderer_set_shadows`.
-  - The shadow map texture and its views, remade when the size changes; a comparison sampler.
+  - `NvShadowSettings` (size, format, filter, distance) and `nv_renderer_set_shadows`.
+  - The shadow map texture and its views, remade when the size or the format changes; a
+    comparison sampler.
   - `FrameUniforms` gains the light's view-projection matrix, the map's texel size, the filter
     and the distance; the frame bind group gains the map and the sampler.
-  - Two depth-only pipelines (static and skinned, each with the double-sided variant), using new
-    vertex entry points that transform by the light's matrix.
+  - Depth-only pipelines (static and skinned, each with the double-sided variant) for the chosen
+    format, with that format's bias, remade when the format changes. They use new vertex entry
+    points that transform by the light's matrix.
   - `nv_renderer_draw` records the shadow pass first, then the scene pass; the fragment shader
     applies the shadow to the directional term.
   - The light box as debug lines on request; stats for shadow draws and the shadow pass's GPU
@@ -80,13 +86,14 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
 
 ## Phases
 
-1. **Shadows:** the map, the fitted light box, the depth-only pipelines for static and skinned
+1. **Shadows:** the map (`depth32float`), the fitted light box, the depth-only pipelines for static and skinned
    meshes, one hardware PCF lookup with a slope-scaled bias, and on/off in the View tab. Checked:
    the character's and the planet's shadows land on the ground in the showcase; the stress scene
    draws without asserts at its maximum workloads.
 2. **Quality:** the 3×3 filter, the normal offset, texel snapping (no shimmer while orbiting,
    compared frame to frame in screenshots), the distance and its fade, caster culling, the light
-   box lines, the settings saved and their touch defaults.
+   box lines, the `depth16unorm` option with its own bias (no acne or peter-panning in either
+   format, compared in screenshots), the settings saved and their touch defaults.
 3. **Cost and docs:** the shadow stats and GPU time, the benchmark column, a phone-size check,
    `AGENTS.md` and README.
 
