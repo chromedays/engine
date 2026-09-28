@@ -81,6 +81,50 @@ static inline NvVec3 nv_quat_to_euler(NvQuat q)
     return e;
 }
 
+// Axis-aligned box. An empty box has min > max, so a union with it changes nothing.
+typedef struct NvBox { NvVec3 min, max; } NvBox;
+
+static inline NvBox nv_box_empty(void)
+{
+    return (NvBox){{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
+}
+
+static inline b32 nv_box_is_empty(NvBox b) { return b.min.x > b.max.x; }
+
+static inline NvBox nv_box_add_point(NvBox b, NvVec3 p)
+{
+    return (NvBox){{fminf(b.min.x, p.x), fminf(b.min.y, p.y), fminf(b.min.z, p.z)},
+                   {fmaxf(b.max.x, p.x), fmaxf(b.max.y, p.y), fmaxf(b.max.z, p.z)}};
+}
+
+static inline NvBox nv_box_union(NvBox a, NvBox b)
+{
+    if (nv_box_is_empty(b))
+        return a;
+    return nv_box_add_point(nv_box_add_point(a, b.min), b.max);
+}
+
+// The axis-aligned box around `b` moved by the affine matrix `m` (center and extents, so no
+// corners are needed).
+static inline NvBox nv_box_transform(NvBox b, NvMat4 m)
+{
+    if (nv_box_is_empty(b))
+        return b;
+    f32 c[3] = {(b.min.x + b.max.x) * 0.5f, (b.min.y + b.max.y) * 0.5f, (b.min.z + b.max.z) * 0.5f};
+    f32 h[3] = {(b.max.x - b.min.x) * 0.5f, (b.max.y - b.min.y) * 0.5f, (b.max.z - b.min.z) * 0.5f};
+    f32 out_c[3], out_h[3];
+    for (u32 row = 0; row < 3; ++row) {
+        out_c[row] = m.e[12 + row];
+        out_h[row] = 0.0f;
+        for (u32 col = 0; col < 3; ++col) {
+            out_c[row] += m.e[col * 4 + row] * c[col];
+            out_h[row] += fabsf(m.e[col * 4 + row]) * h[col];
+        }
+    }
+    return (NvBox){{out_c[0] - out_h[0], out_c[1] - out_h[1], out_c[2] - out_h[2]},
+                   {out_c[0] + out_h[0], out_c[1] + out_h[1], out_c[2] + out_h[2]}};
+}
+
 static inline NvMat4 nv_mat4_identity(void)
 {
     NvMat4 m = {0};

@@ -33,8 +33,14 @@ touch. Rotation becomes editable in the inspector.
     - a zoom factor (1 = none);
     - a tap position.
   - Everything that starts elsewhere works as before.
-- **Mesh bounds (`nv/renderer.h`).** `NvRenderMesh` keeps its local bounding box (the bind pose
-  for skinned meshes).
+- **Mesh bounds (`nv/renderer.h`).**
+  - `NvRenderMesh` keeps its local bounding box.
+  - Skinned meshes also keep one bind-pose box per joint, around every vertex that joint has weight
+    on. `nv_renderer_mesh_bounds` moves those boxes by the current skinning matrices and joins
+    them, which bounds the posed mesh. A skinned vertex is a weighted average of its joints'
+    moves, so it stays inside that union.
+  - Picking and the selection outline use the posed box. (First shipped with the bind-pose box,
+    which kept a T-pose width while animated.)
 - **Picking (`nv/renderer.h`).**
   - `nv_renderer_view_ray` turns a viewport position into a world ray through the scene's active
     camera.

@@ -436,7 +436,7 @@ internal void pick(App* app, NvRect viewport)
     SceneView* view = app_view(app);
     f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
     NvRay ray = nv_renderer_view_ray(view->scene, viewport, in->tap_x * pixel_ratio, in->tap_y * pixel_ratio);
-    NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, ray, NULL);
+    NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, nv_anim_skins(), ray, NULL);
     if (hit.index) {
         NvNode* node = nv_scene_get(view->scene, hit);
         if (node->animator.index && node->parent)
@@ -465,9 +465,12 @@ internal void draw_selection(App* app)
         NvNode* node = &scene->nodes[nodes[n]];
         if (!node->mesh.index)
             continue;
-        NvRenderMesh* mesh = &app->renderer.meshes[node->mesh.index];
-        NvVec3 lo = mesh->bounds_min;
-        NvVec3 hi = mesh->bounds_max;
+        const NvSkin* skin = node->animator.index ? &nv_anim_skins()[node->animator.index] : NULL;
+        NvBox box = nv_renderer_mesh_bounds(&app->renderer, node->mesh, skin);
+        if (nv_box_is_empty(box))
+            continue;
+        NvVec3 lo = box.min;
+        NvVec3 hi = box.max;
         NvVec3 corners[8];
         for (u32 c = 0; c < 8; ++c)
             corners[c] = nv_mat4_transform_point(node->world, nv_vec3(c & 1 ? hi.x : lo.x, c & 2 ? hi.y : lo.y, c & 4 ? hi.z : lo.z));

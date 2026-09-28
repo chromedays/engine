@@ -8,6 +8,7 @@
 #define NV_MAX_TEXTURES      256
 #define NV_MAX_SKIN_MATRICES 16384 // joint matrices across all skinned draws in one frame
 #define NV_MAX_DEBUG_LINES   16384
+#define NV_MAX_JOINT_BOUNDS  4096 // per-joint boxes across all skinned meshes
 
 typedef struct NvTextureId { u32 index; } NvTextureId; // 0 = plain white
 
@@ -45,8 +46,12 @@ typedef struct NvRenderMesh {
     WGPUBuffer indices;
     u32 index_count;
     b32 skinned;
-    NvVec3 bounds_min; // local bounding box; the bind pose for skinned meshes
-    NvVec3 bounds_max;
+    NvBox bounds; // local; the bind pose for skinned meshes
+    // Skinned meshes: one bind-pose box per joint, around every vertex that joint moves. Carried
+    // by the joints' skinning matrices, their union bounds the posed mesh (see
+    // nv_renderer_mesh_bounds). They live in NvRenderer.joint_bounds.
+    u32 joint_bounds_offset;
+    u32 joint_bounds_count;
 } NvRenderMesh;
 
 typedef struct NvRay {
@@ -129,6 +134,8 @@ typedef struct NvRenderer {
     u32 skin_frame[NV_MAX_ANIMATORS];
     u32 frame_index;
     NvDebugVertex* debug_vertices; // [NV_MAX_DEBUG_LINES * 2]
+    NvBox* joint_bounds;           // [NV_MAX_JOINT_BOUNDS]
+    u32 joint_bounds_used;
     u32 debug_vertex_count;
 
     f32 ambient[3];
@@ -166,9 +173,15 @@ void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const
 // nv_renderer_draw), seen by the scene's active camera.
 NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y);
 
-// The nearest mesh node whose bounding box (in the node's own space) the ray hits, or a zeroed id.
-// `distance`, when not NULL, receives how far along the ray the hit is.
-NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, NvRay ray, f32* distance);
+// A mesh's box in its node's space. A skinned mesh posed by `skin` gets the box of its current
+// pose (the union of its joint boxes moved by their skinning matrices); without a skin, the bind
+// pose box.
+NvBox nv_renderer_mesh_bounds(NvRenderer* renderer, NvMeshId mesh, const NvSkin* skin);
+
+// The nearest mesh node whose box (nv_renderer_mesh_bounds, in the node's own space) the ray hits,
+// or a zeroed id. Skinned nodes are posed by `skins` as in nv_renderer_draw. `distance`, when not
+// NULL, receives how far along the ray the hit is.
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray, f32* distance);
 
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);

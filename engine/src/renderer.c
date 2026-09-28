@@ -290,6 +290,7 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     *renderer = (NvRenderer){0};
     renderer->gpu = gpu;
     renderer->objects = NV_PUSH_ARRAY(arena, NV_MAX_NODES, NvObjectData);
+    renderer->joint_bounds = NV_PUSH_ARRAY(arena, NV_MAX_JOINT_BOUNDS, NvBox);
     renderer->object_nodes = NV_PUSH_ARRAY(arena, NV_MAX_NODES, u32);
     renderer->skin_matrices = NV_PUSH_ARRAY(arena, NV_MAX_SKIN_MATRICES, NvMat4);
     renderer->debug_vertices = NV_PUSH_ARRAY(arena, NV_MAX_DEBUG_LINES * 2, NvDebugVertex);
@@ -357,17 +358,37 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
     mesh->indices = create_buffer(renderer->gpu, WGPUBufferUsage_Index, data->indices, data->index_count * sizeof(u32));
     mesh->index_count = data->index_count;
 
-    mesh->bounds_min = nv_vec3(0, 0, 0);
-    mesh->bounds_max = nv_vec3(0, 0, 0);
+    mesh->bounds = nv_box_empty();
     for (u32 v = 0; v < data->vertex_count; ++v) {
         const f32* p = mesh->skinned ? data->skinned_vertices[v].position : data->vertices[v].position;
-        NvVec3 q = nv_vec3(p[0], p[1], p[2]);
-        if (v == 0) {
-            mesh->bounds_min = mesh->bounds_max = q;
-            continue;
+        mesh->bounds = nv_box_add_point(mesh->bounds, nv_vec3(p[0], p[1], p[2]));
+    }
+
+    // A skinned vertex ends up at a weighted average of where its joints move it, so it stays
+    // inside the union of the moved boxes of every joint that has weight on it.
+    if (mesh->skinned) {
+        u32 joint_count = 0;
+        for (u32 v = 0; v < data->vertex_count; ++v) {
+            for (u32 k = 0; k < 4; ++k) {
+                if (data->skinned_vertices[v].weights[k] > 0.0f && data->skinned_vertices[v].joints[k] + 1u > joint_count)
+                    joint_count = data->skinned_vertices[v].joints[k] + 1u;
+            }
         }
-        mesh->bounds_min = nv_vec3(fminf(mesh->bounds_min.x, q.x), fminf(mesh->bounds_min.y, q.y), fminf(mesh->bounds_min.z, q.z));
-        mesh->bounds_max = nv_vec3(fmaxf(mesh->bounds_max.x, q.x), fmaxf(mesh->bounds_max.y, q.y), fmaxf(mesh->bounds_max.z, q.z));
+        NV_ASSERT(renderer->joint_bounds_used + joint_count <= NV_MAX_JOINT_BOUNDS);
+        mesh->joint_bounds_offset = renderer->joint_bounds_used;
+        mesh->joint_bounds_count = joint_count;
+        renderer->joint_bounds_used += joint_count;
+        NvBox* boxes = renderer->joint_bounds + mesh->joint_bounds_offset;
+        for (u32 j = 0; j < joint_count; ++j)
+            boxes[j] = nv_box_empty();
+        for (u32 v = 0; v < data->vertex_count; ++v) {
+            const NvSkinnedVertex* vertex = &data->skinned_vertices[v];
+            NvVec3 p = nv_vec3(vertex->position[0], vertex->position[1], vertex->position[2]);
+            for (u32 k = 0; k < 4; ++k) {
+                if (vertex->weights[k] > 0.0f)
+                    boxes[vertex->joints[k]] = nv_box_add_point(boxes[vertex->joints[k]], p);
+            }
+        }
     }
     return (NvMeshId){renderer->mesh_count++};
 }
@@ -566,7 +587,21 @@ internal f32 ray_box(NvVec3 origin, NvVec3 direction, NvVec3 lo, NvVec3 hi)
     return t_enter;
 }
 
-NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, NvRay ray, f32* distance)
+NvBox nv_renderer_mesh_bounds(NvRenderer* renderer, NvMeshId id, const NvSkin* skin)
+{
+    NV_ASSERT(id.index < renderer->mesh_count);
+    NvRenderMesh* mesh = &renderer->meshes[id.index];
+    if (!mesh->skinned || !skin || !skin->count)
+        return mesh->bounds;
+    NvBox posed = nv_box_empty();
+    const NvBox* boxes = renderer->joint_bounds + mesh->joint_bounds_offset;
+    u32 count = mesh->joint_bounds_count < skin->count ? mesh->joint_bounds_count : skin->count;
+    for (u32 j = 0; j < count; ++j)
+        posed = nv_box_union(posed, nv_box_transform(boxes[j], skin->matrices[j]));
+    return posed;
+}
+
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray, f32* distance)
 {
     NvNodeId best = {0};
     f32 best_t = 1.0e30f;
@@ -577,9 +612,12 @@ NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, NvRay ray, f32* 
         // In the node's space the box is axis-aligned; a linear map keeps the ray parameter, so
         // hits in different nodes stay comparable.
         NvMat4 to_local = nv_mat4_inverse(node->world);
-        NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
+        const NvSkin* skin = (skins && node->animator.index) ? &skins[node->animator.index] : NULL;
+        NvBox box = nv_renderer_mesh_bounds(renderer, node->mesh, skin);
+        if (nv_box_is_empty(box))
+            continue;
         f32 t = ray_box(nv_mat4_transform_point(to_local, ray.origin), nv_mat4_transform_dir(to_local, ray.direction),
-                        mesh->bounds_min, mesh->bounds_max);
+                        box.min, box.max);
         if (t >= 0.0f && t < best_t) {
             best_t = t;
             best = (NvNodeId){index, node->gen};
