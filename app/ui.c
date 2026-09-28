@@ -135,6 +135,21 @@ internal void inspector_tab(App* app)
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
     igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
+    if (view->selected.index != view->scene->active_camera.index) {
+        // The gizmo in the viewport; W, E and R switch the operation there too.
+        s32* operation = (s32*)&app->gizmo_operation;
+        igRadioButton_IntPtr("Move", operation, GIZMO_MOVE);
+        igSameLine(0.0f, -1.0f);
+        igRadioButton_IntPtr("Rotate", operation, GIZMO_ROTATE);
+        igSameLine(0.0f, -1.0f);
+        igRadioButton_IntPtr("Scale", operation, GIZMO_SCALE);
+        igSameLine(0.0f, -1.0f);
+        igBeginDisabled(app->gizmo_operation == GIZMO_SCALE);
+        igCheckbox("Local", &app->gizmo_local);
+        igEndDisabled();
+        igSameLine(0.0f, -1.0f);
+        igCheckbox("Snap", &app->gizmo_snap);
+    }
     igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
     // Rotation as pitch (X), yaw (Y) and roll (Z) in degrees; the quaternion is only rewritten when
     // edited, so looking at a node never changes it.

@@ -564,9 +564,32 @@ internal void draw_gizmo(App* app, NvRect viewport)
     ImGuizmo_SetOrthographic(nv_scene_get(scene, scene->active_camera)->camera.projection == NV_PROJECTION_ORTHOGRAPHIC);
     app->gizmo_shown = 1;
 
+    // W, E and R pick the operation while the pointer is over the viewport, as in most editors.
+    ImGuiIO* io = igGetIO_Nil();
+    f32 px = io->MousePos.x * ratio;
+    f32 py = io->MousePos.y * ratio;
+    b32 pointer_in_view = px >= (f32)viewport.x && py >= (f32)viewport.y && px < (f32)(viewport.x + viewport.width) &&
+                          py < (f32)(viewport.y + viewport.height);
+    if (pointer_in_view && !io->WantTextInput && !ImGuizmo_IsUsingAny()) {
+        if (igIsKeyPressed_Bool(ImGuiKey_W, false))
+            app->gizmo_operation = GIZMO_MOVE;
+        if (igIsKeyPressed_Bool(ImGuiKey_E, false))
+            app->gizmo_operation = GIZMO_ROTATE;
+        if (igIsKeyPressed_Bool(ImGuiKey_R, false))
+            app->gizmo_operation = GIZMO_SCALE;
+    }
+
+    // Snap steps: half a meter, 15 degrees, a tenth of the scale.
+    f32 snap[3] = {0.5f, 0.5f, 0.5f};
+    if (app->gizmo_operation == GIZMO_ROTATE)
+        snap[0] = 15.0f;
+    else if (app->gizmo_operation == GIZMO_SCALE)
+        snap[0] = 0.1f;
+
     NvMat4 world = node->world;
     MODE mode = (app->gizmo_local || app->gizmo_operation == GIZMO_SCALE) ? LOCAL : WORLD;
-    if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, world.e, NULL, NULL, NULL, NULL))
+    if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, world.e, NULL,
+                             app->gizmo_snap ? snap : NULL, NULL, NULL))
         return;
 
     // world = parent world * joint (for attached nodes) * local, as in nv_scene_update.
@@ -576,6 +599,13 @@ internal void draw_gizmo(App* app, NvRect viewport)
     NvMat4 local = nv_mat4_mul(nv_mat4_inverse(parent), world);
     NvVec3 position, scale;
     NvQuat rotation;
+    // A scale dragged to (almost) nothing cannot be split back into a rotation.
+    f32 smallest = 1.0e-4f;
+    for (u32 column = 0; column < 3; ++column) {
+        const f32* c = &local.e[column * 4];
+        if (c[0] * c[0] + c[1] * c[1] + c[2] * c[2] < smallest * smallest)
+            return;
+    }
     nv_mat4_decompose(local, &position, &rotation, &scale);
     node->position = position;
     node->rotation = rotation;
