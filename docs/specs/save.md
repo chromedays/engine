@@ -1,18 +1,27 @@
-# Save and load spec
+# Autosave spec
 
-Status: draft (2026-09-28); server storage (a CDN with Cloudflare R2) is under discussion. Changes to
-this spec are agreed first.
+Status: draft (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
-Keep the edits made in the editor, in two ways:
+Close the tab, come back, and find each scene as it was left. The app saves by itself into the
+browser's IndexedDB through Emscripten's IDBFS; there is no save button to forget.
 
-- **Autosave:** close the tab and find the scene as it was left. It lives in the browser
-  (IndexedDB) and is written without being asked.
-- **Manual saves are files:** Export downloads the scene as a file and Import opens one. Files are
-  what the user keeps, names, moves to another device or sends to someone.
+Out of scope for now: manual saves as files (export and import) and server storage (a CDN such as
+Cloudflare R2 behind a Worker). Both would reuse this spec's format, and the save text is kept
+self-contained so they can be added later.
 
-The app is served from GitHub Pages, a static host, so nothing can be stored on a server.
+## How IDBFS works
+
+- Emscripten's file system lives in JavaScript memory (MEMFS). The app already reads
+  `/assets/...` from it with `fopen`, and it is gone when the page closes.
+- IDBFS is MEMFS with one directory paired to an IndexedDB database. Files there are still read and
+  written in memory, so `fopen` and `fwrite` work unchanged.
+- Nothing reaches IndexedDB until the app asks. `FS.syncfs(true)` copies IndexedDB into memory, once
+  at start. `FS.syncfs(false)` copies memory into IndexedDB (only files whose timestamps changed)
+  after a save. Both are asynchronous and call back when done.
+- The database belongs to the page's origin, `chromedays.github.io`, and is named after the mount
+  path.
 
 ## Third-party candidates
 
@@ -22,25 +31,24 @@ The app is served from GitHub Pages, a static host, so nothing can be stored on 
 | cJSON | A JSON parser and writer that builds a tree | C, MIT | Complete, and it writes JSON too | Allocates every node with malloc, which goes against the arena rule |
 | json.h (sheredom) | A parser that builds a tree in one allocation | C, one header, Unlicense | One allocation, which we can hand from an arena | Larger, and we would still walk its tree |
 | Our own line-based format | For example `node "moon" parent=planet position=2.4,0,0` | C | No dependency | We would design, parse and escape it ourselves, and other tools could not read it |
-| glTF through `cgltf_write` | The standard scene format, already a dependency | C, MIT | Opens in Blender | App state must go in `extras`, and writing geometry back is heavy. It fits a later "Export glTF" better than save and load |
+| A binary dump of the structs | `fwrite` of the scene | C | Fastest, no parsing | Breaks whenever a struct changes, and ids and pointers would need fixing up |
 
-Recommendation: JSON, written by our own small writer and read through jsmn.
+Recommendation: JSON, written by our own small writer and read through jsmn. It survives struct
+changes, it can be read when debugging, and a later export is just this text as a file.
 
 ## Decisions
 
 | Topic | Decision |
 |---|---|
-| Storage | The autosave in IndexedDB, through Emscripten's IDBFS mounted at `/nv-save`. Manual saves are files (export and import); there are no save slots in the browser |
+| Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file per scene kind: `showcase.json`, `stress.json` |
 | Format | JSON, `"format": "nv-scene"` with a `"version"` number. Unknown fields are skipped; missing fields read as zero (ZII), with the node defaults for scale and rotation |
-| Autosave files | One per scene kind: `/nv-save/showcase.json`, `/nv-save/stress.json` |
-| Autosave | Every 10 seconds when the saved text would differ from the last one, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not |
-| On start | The autosave loads if there is one. **Reset scene** rebuilds the built-in scene |
-| UI | A new **File** tab: Export, Import, Reset scene, and when the autosave was last written |
-| Import | A file picker, or a `.json` dropped on the canvas. It replaces the scene kind the file names (switching to it), and the next autosave keeps it |
-| Export | Downloads `nv-<scene>-<date>-<time>.json` |
-| Stress scene | Only its settings (workloads and counts) and its camera; the scene is rebuilt from them |
+| When it saves | Every 10 seconds when the text would differ from the last save, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not. A write goes to a temporary name first and is then renamed, so a half-written save never replaces a good one |
+| On start | Each scene kind loads its save if there is one; otherwise it is built as today |
+| A bad save | A file that does not parse, or has a newer `version`, is renamed to `<name>.bad` and the scene is built as today. A message in the View tab says so |
+| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default), when the shown scene was last saved, **Save now**, and **Reset scene** (rebuilds the built-in scene and overwrites its save) |
+| Stress scene | Only its settings (workloads and counts) and its camera view; the scene is rebuilt from them. A running benchmark is not saved |
+| Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
 | Third-party | jsmn, pinned to a tagged release |
-| Not chosen: commits to this repository | Saving through the GitHub API as a git commit was considered. A static page would need a personal access token pasted into the browser, every commit would run CI, it suits neither autosave nor binary assets (the API bypasses Git LFS), and the public repository would make every save public |
 
 ## What a save holds
 
@@ -84,41 +92,43 @@ Recommendation: JSON, written by our own small writer and read through jsmn.
     offers `nv_json_find` (a key in an object), `nv_json_f32`, `nv_json_string` (unescaped into a
     buffer), `nv_json_array_count` and `nv_json_array_at`.
 - **Storage (`nv/storage.h`, `engine/src/storage.c`).**
-  - `nv_storage_init` mounts IDBFS at `/nv-save` and waits for the first sync from IndexedDB
-    (through Asyncify, like `wgpuInstanceWaitAny`).
-  - `nv_storage_flush` starts a sync to IndexedDB without waiting for it; a flush asked for while
-    one is running starts when it ends.
-  - `nv_storage_export(name, bytes, size)` downloads a file.
-  - Imported files are written to `/nv-import/`, and `nv_storage_take_import` hands the next
-    path to the app.
-  - `NvWindow` reports when the page is hidden, so the app can autosave then.
-- **Link flags.** `-lidbfs.js`, and `FS` exported to the page glue.
+  - `nv_storage_init` mounts IDBFS at `/nv-save`, asks for persistent storage, and waits for the
+    first sync from IndexedDB (through Asyncify, like `wgpuInstanceWaitAny`).
+  - `nv_storage_write(name, bytes, size)` writes through a temporary file and a rename.
+  - `nv_storage_flush` starts a sync to IndexedDB without waiting for it. A flush asked for while
+    one is running starts when that one ends.
+  - `NvStorage` reports whether storage is available (private windows may refuse IndexedDB) and
+    the last sync error. Without storage the app runs as today and says autosave is off.
+- **Window (`nv/window.h`).** `NvWindow` reports when the page becomes hidden, so the app can save
+  then.
+- **Link flags.** `-lidbfs.js`.
 
 ## App changes
 
 - `app/save.c` writes and reads a scene kind with the JSON helpers. Loading clears that scene,
-  rebuilds it from the file and finds the app's nodes again by name.
-- The File tab, the autosave timer, and loading the autosave on start.
+  rebuilds it from the text and finds the app's nodes again by name.
+- The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section.
 - Built-in meshes get names in the app (`cube`, `sword`, `ground`, `target`), so they can be
   saved as names.
 
 ## Limits
 
-- Browser storage belongs to the site's origin, `chromedays.github.io`. The Release and Debug
-  builds share it, and so saves made in one open in the other. Every other project on that origin
-  shares it too, which is why the mount has a distinctive name.
-- Browsers may clear it: iOS Safari after 7 days without a visit, private windows when they close.
-  The app asks for `navigator.storage.persist()`, and Export is the durable copy.
-- Saves are at most 4 MB (checked when writing).
+- The origin is shared. The Release and Debug builds use the same saves, and so does every other
+  project on `chromedays.github.io`, which is why the mount has a distinctive name. A Debug build
+  reading a Release save (or the reverse) is fine because both write the same format.
+- Browsers may still clear it: iOS Safari after 7 days without a visit, and private windows when
+  they close. Autosave is a convenience, not an archive.
+- A save is at most 4 MB (checked when writing); the showcase is a few kilobytes.
 
 ## Phases
 
 1. **Format:** jsmn, the JSON writer and reader, and save/load of both scene kinds to a string.
    A round trip is checked in memory: save, load, save again, and compare the two texts.
-2. **Autosave:** IDBFS, the autosave timer and page-hidden save, loading it on start, and the File
-   tab with Reset scene.
-3. **Files and docs:** export, import (picker and drop), `AGENTS.md`, README, and the Dependencies
-   section of `docs/CODING_STANDARD.md`.
+2. **Autosave:** IDBFS, `nv_storage_*`, the timer and the page-hidden save, loading on start, and
+   the View tab's Autosave section.
+3. **Failure cases and docs:** bad and newer-version saves, storage that is unavailable, Reset
+   scene, `AGENTS.md`, README, and the Dependencies section of `docs/CODING_STANDARD.md`.
 
-Every phase is checked in Release and Debug in headless Chromium. Phase 2 reloads the page to see
-the autosave come back, and phase 3 downloads a file and imports it again.
+Every phase is checked in Release and Debug in headless Chromium. Phase 2 edits a scene, reloads
+the page and checks that the edit came back. Phase 3 writes a broken save and a save with a newer
+version, and checks that the app starts from the built-in scene and keeps the `.bad` file.
