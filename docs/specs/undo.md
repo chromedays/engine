@@ -1,6 +1,6 @@
 # Undo and redo spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -42,7 +42,8 @@ while they are being typed in (Dear ImGui's); the finished edit is then one step
 | History | In memory, 128 steps; the oldest is dropped when full. It is not saved: a reload starts with no history. The state after an undo is autosaved as usual |
 | Step size | Before and after are at most 1 KB each (a node is about 120 bytes); a scope that does not fit is not recorded and asserts in Debug |
 | Keys | Ctrl+Z undo; Ctrl+Shift+Z and Ctrl+Y redo (Cmd counts as Ctrl on macOS). Not while a text field is being edited |
-| UI | A row above the panel's tabs: **Undo** and **Redo**, each labeled with what it would change ("Undo: character Position"), disabled when there is nothing to do or the stress scene is shown |
+| UI | A row above the panel's tabs: **Undo** and **Redo**, each labeled with what it would change ("Undo: character Position"), disabled when there is nothing to do or the stress scene is shown. Redo moves to its own line when the row is too narrow (phones). The buttons only ask; the undo happens at the frame's end, after the edit in progress (if any) has become a step |
+| Tests | Debug builds expose `Module._app_debug_undo_steps()` and `Module._app_debug_undo_done()` |
 | Labels | Taken from the first field that differs: Position, Rotation, Scale, Name, Color, Joint, Field of view, Light color, Intensity, Clip, Speed, Fade, Blend, Root motion, Turn, Look at, Sword, Planet orbit, Show bones |
 | Third-party | None |
 

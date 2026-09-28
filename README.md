@@ -23,7 +23,7 @@ engine/src/          implementation (anim.cpp wraps ozz-animation; everything el
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor panel (node tree, inspector, view settings, stress workloads). It
-                     autosaves the showcase to the browser (IndexedDB)
+                     autosaves the showcase to the browser (IndexedDB) and has undo and redo
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts

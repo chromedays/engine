@@ -23,6 +23,7 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
                            anim.cpp (the ozz wrapper; our only C++ file)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
+                           undo.c (undo and redo),
                            app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -80,6 +81,12 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
   save, load, save gives the same bytes; tests call `Module._app_debug_save_round_trip()` after
   editing.
+- Undo (`docs/specs/undo.md`) needs no code at edit sites: whenever no widget, gizmo or popup is in
+  use, `app/undo.c` compares the selected node, the character and the scene settings (written by
+  `save_write_scope`) with the last commit. So a new editable value is undoable once it is saved in
+  its scope; a value the app changes every frame must be left out there (`driven_fields` in
+  `app/save.c`), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
+  and `_app_debug_undo_done()` for tests.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).

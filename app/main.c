@@ -751,6 +751,18 @@ EMSCRIPTEN_KEEPALIVE int app_debug_save_round_trip(void)
 {
     return save_round_trip_matches(&app_state);
 }
+
+// For tests: Module._app_debug_undo_steps() is the steps held, and _app_debug_undo_done() how many
+// of them are applied.
+EMSCRIPTEN_KEEPALIVE int app_debug_undo_steps(void)
+{
+    return (int)app_state.undo.count;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_undo_done(void)
+{
+    return (int)app_state.undo.done;
+}
 #endif
 
 int main(void)
