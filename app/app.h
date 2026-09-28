@@ -6,6 +6,7 @@
 // benchmark, ui.c the panel.
 
 #include <nv/anim.h>
+#include <nv/chunk.h>
 #include <nv/gltf.h>
 #include <nv/gpu.h>
 #include <nv/imgui.h>
@@ -35,6 +36,17 @@ typedef enum SceneKind {
     SCENE_STRESS,
     SCENE_COUNT,
 } SceneKind;
+
+// The orbit camera's limits.
+#define CAMERA_MIN_PITCH (-10.0f * NV_PI / 180.0f)
+#define CAMERA_MAX_PITCH (80.0f * NV_PI / 180.0f)
+#define CAMERA_MIN_DISTANCE 1.0f
+#define CAMERA_MAX_DISTANCE 100.0f
+
+// The autosave (docs/specs/save.md).
+#define SAVE_MAGIC NV_TAG('N', 'V', 'S', 'V')
+#define SAVE_VERSION 1
+#define SAVE_MAX_SIZE NV_KILOBYTES(256)
 
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
 typedef enum GizmoOperation {
@@ -203,6 +215,8 @@ typedef struct App {
     NvMeshId target_mesh;
 
     // Editor
+    bool autosave;
+    u32 scene_layout; // save_scene_layout of the showcase as built
     GizmoOperation gizmo_operation;
     bool gizmo_local; // local axes for Move and Rotate (Scale always uses them)
     bool gizmo_snap;
@@ -234,3 +248,14 @@ void stress_ui(App* app);
 
 // ui.c
 void app_build_ui(App* app, NvRect panel);
+
+// save.c
+u32 save_scene_layout(NvScene* scene); // a hash of the tree's shape and names
+// Writes the app state; returns its size, or 0 if it did not fit.
+u32 save_write(App* app, void* buffer, u32 capacity);
+// Loads a save into the app. It is checked whole first, and nothing changes unless it is good.
+// Returns NULL, or what is wrong with it.
+const char* save_load(App* app, const void* bytes, u32 size);
+// Whether saving, loading that save and saving again gives the same bytes. It loads, so it may
+// end a jump or a crossfade; Debug builds check it at start and tests call it.
+b32 save_round_trip_matches(App* app);

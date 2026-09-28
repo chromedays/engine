@@ -47,6 +47,12 @@ jobs:
           cmake --build build-release
           cmake --build build-debug
 
+      # Tests that need no browser (tests/), run under Node; Debug has NV_ASSERT on.
+      - name: Test
+        run: |
+          ctest --test-dir build-release --output-on-failure
+          ctest --test-dir build-debug --output-on-failure
+
       - name: Package
         run: |
           cmake --install build-release --prefix dist/engine-web/release --component web

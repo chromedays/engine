@@ -1,5 +1,6 @@
 add_library(nv STATIC
     src/anim.cpp
+    src/chunk.c
     src/gltf.c
     src/gpu.c
     src/imgui.c

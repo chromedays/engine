@@ -229,8 +229,12 @@ around the head), the planet's rotation (from `PLNT`), and the orbit camera's tr
 ## App changes
 
 - `app/save.c` writes and reads the whole app state with the chunk helpers. Loading reads the
-  whole file into a staging struct first; only if that succeeds does it apply the values to the
-  showcase's nodes, the character, the showcase's view and the editor settings.
+  whole file twice through the same code: a dry run that only checks it, then, if that passed, a
+  pass that applies the values to the showcase's nodes, the character, the showcase's view and the
+  editor settings. Both passes read the same fields, so the second cannot fail halfway.
+- A load leaves a rotation that is already of unit length as it is (renormalizing would change its
+  last bits), so saving, loading and saving again gives the same bytes. Debug builds check that at
+  start, and tests call `Module._app_debug_save_round_trip()` after editing.
 - The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section
   with the save viewer.
 - The showcase's layout number, computed after it is built.
@@ -244,13 +248,14 @@ around the head), the planet's rotation (from `PLNT`), and the orbit camera's tr
   Debug write the same format, so either reads the other's save.
 - Browsers may still clear it: iOS Safari after 7 days without a visit, and private windows when
   they close. Autosave is a convenience, not an archive.
-- A save is at most 4 MB (checked when writing); the showcase is a few kilobytes.
+- A save is at most 256 KB (`SAVE_MAX_SIZE`, checked when writing); the showcase is about 2 KB.
 
 ## Phases
 
 1. **Format:** `nv/chunk.h`, and saving and loading the whole state to bytes in memory. A round
-   trip is checked: save, load, save again, and compare the bytes. A native test also covers the
-   reader's bounds checks: truncated chunks, sizes past the end, wrong field sizes.
+   trip is checked: save, load, save again, and compare the bytes. `tests/chunk_test.c`, built for
+   Node and run by `ctest` (also in CI), covers the reader's bounds checks: every truncation, every
+   flipped bit, chunks that claim too much, wrong field sizes, and a writer that runs out of room.
 2. **Autosave:** IDBFS, `nv_storage_*`, the timer and the page-hidden save, loading on start, the
    View tab's Autosave section, and removing `#stress`.
 3. **Failure cases, viewer and docs:** bad, damaged and newer-version saves, storage that is

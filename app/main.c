@@ -393,10 +393,6 @@ internal void update_look_target(App* app)
     target->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 2.0f);
 }
 
-#define CAMERA_MIN_PITCH (-10.0f * NV_PI / 180.0f)
-#define CAMERA_MAX_PITCH (80.0f * NV_PI / 180.0f)
-#define CAMERA_MIN_DISTANCE 1.0f
-#define CAMERA_MAX_DISTANCE 100.0f
 #define ORBIT_RADIANS_PER_PIXEL 0.008f
 
 // Mouse and touch input on the viewport: drags orbit and pan, the wheel and pinches zoom.
@@ -757,6 +753,14 @@ internal void frame(void* userdata)
     stress_after_frame(app);
 }
 
+#if !defined(NDEBUG)
+// For tests: Module._app_debug_save_round_trip() checks the save round trip at any moment.
+EMSCRIPTEN_KEEPALIVE int app_debug_save_round_trip(void)
+{
+    return save_round_trip_matches(&app_state);
+}
+#endif
+
 int main(void)
 {
     App* app = &app_state;
@@ -799,9 +803,14 @@ int main(void)
     app->show_sword = true;
     app->views[SCENE_SHOWCASE].selected = app->character.root;
     app->views[SCENE_SHOWCASE].focus = app->character.root;
+    app->autosave = true;
+    // Taken before anything can rename or move nodes: saves apply to nodes by their place in this
+    // tree, and only while it is the same tree.
+    app->scene_layout = save_scene_layout(app->scene);
     app->window_start = nv_time_seconds();
     app_show_scene(app, js_hash_is_stress() ? SCENE_STRESS : SCENE_SHOWCASE);
     app_play(app, app_find_clip(app, "Idle_Loop"));
+    NV_ASSERT(save_round_trip_matches(app));
     app->last_time = nv_time_seconds();
     nv_window_run(&app->window, frame, app);
     return 0;
