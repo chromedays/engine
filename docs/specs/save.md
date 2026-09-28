@@ -52,7 +52,9 @@ u8  payload[size]
   `SHOW`). A reader finds fields by tag.
 - **Unknown tags are skipped** by their size, so an older build reads a newer save and ignores what
   it does not know.
-- **Missing fields read as zero (ZII)**, except the node defaults for scale and rotation.
+- **A missing field keeps the value the app starts with**, so a save from an older build loads
+  what it has and leaves the rest as on a first visit (the "Missing" columns below). The reader
+  itself reads a missing field as zero (ZII) and reports it as missing.
 - **A field whose size is wrong** for its type (a `POS ` that is not 12 bytes) makes the save bad
   (see below): it can only come from corruption or a bug.
 - **Version.** The header's version rises only when the meaning of an existing tag changes. Adding a
@@ -67,47 +69,140 @@ Header (16 bytes)
   u32 size      bytes after the header
   u32 checksum  CRC-32 of the bytes after the header
 Chunks
-  'EDIT'  editor
-          'SHWN' u32 scene on screen (0 showcase, 1 stress)
-          'AUTO' u32 autosave on
-          'GZOP' u32 gizmo operation   'GZLC' u32 local   'GZSN' u32 snap
-  'SHOW'  showcase
-          'VIEW' camera: 'YAW ' f32  'PTCH' f32  'DIST' f32  'FOLW' u32  'ORBT' f32[3]  'PAN ' f32[3]
-                 'SELN' string (the selected node's name)
-          'APP ' 'ORBS' f32 orbit speed  'CLIP' string  'RMOT' u32  'LOOK' u32  'SWRD' u32
-          'NODE' (repeated, in tree order)
-                 'NAME' string        'PRNT' u32 (1-based index of an earlier NODE; 0 = top level)
-                 'POS ' f32[3]  'ROT ' f32[4]  'SCL ' f32[3]
-                 'MESH' string (built-in mesh)   'MODL' string (glTF asset path)   'COLR' f32[4]
-                 'ATCH' string (joint name)
-                 'LGHT' 'TYPE' u32  'COLR' f32[3]  'INTS' f32  'RANG' f32  'CONE' f32[2]
-                 'CAMR' 'PROJ' u32  'FOV ' f32  'ORTH' f32  'NEAR' f32  'FAR ' f32
-  'STRS'  stress
-          'VIEW' as above
-          'WORK' 'GRID' u32[2] (on, count)  'COLS' u32[2]  'CHAN' u32[2]  'CRWD' u32[2]
-                 'CHRN' u32[2]  'BONE' u32
+  'EDIT'  editor settings
+  'SHOW'  the showcase scene
+  'STRS'  the stress scene
 ```
 
-The checksum and the size catch a save that was cut short or damaged. The tags above are the
-starting set; each lives in one place in `app/save.c`.
+The checksum and the size catch a save that was cut short or damaged. Every tag lives in one place
+in `app/save.c`.
 
-### What the save holds
+## What is saved
 
-- **Nodes** are saved in tree order, so a parent always comes before its children.
-- **Meshes** are saved as names, never as geometry: a built-in mesh (`cube`, `sword`, `ground`,
-  `target`), or the node's glTF model (`MODL`, an asset path). A model's own child nodes are
-  created again when it is loaded, so they are not saved one by one.
-- **Colors** are saved per node. Loading creates one material per distinct color, up to
-  `NV_MAX_MATERIALS`.
-- **Joint attachments** are saved by joint name (joint indices depend on the asset).
-- **Cameras and lights** are saved with their fields. The orbit camera is saved through `VIEW`, so
-  its transform is not saved.
-- **App references.** The showcase's own nodes (`planet`, `moon`, `sword`, `character`,
-  `look target`) are found again by name after a load. A node that is missing turns off what it
-  drives (the moon's orbit, the look target).
-- **The stress scene** is saved as its settings and camera; it is rebuilt from them. A scene that
-  was never opened is still saved from its settings, so opening it later starts where it was left.
-  A running benchmark is not saved.
+The save holds everything the user can change and would expect to find again, and nothing that
+is rebuilt, measured or momentary. The tables list every tag. "Missing" is what a load does when
+the tag is absent (an older save): the value the app starts with today.
+
+### How showcase nodes are saved
+
+The editor can edit nodes but cannot add or remove them, and the showcase is always built the same
+way. So a load **builds the showcase as today and then applies the saved values to its nodes**;
+nodes are never created from the save.
+
+- A node is identified by its **path**: the index of each node among its siblings, from the top
+  level down (`[3]` is the fourth top-level node, `[5, 0]` the first child of the sixth). Names
+  are not used because the Inspector can rename nodes.
+- `SHOW` also saves a **layout number**: a hash of the default tree's names and shape, taken right
+  after the showcase is built. If a later build changes the showcase so the number differs, the
+  saved nodes are skipped (their paths might point at other nodes) and the rest still loads.
+- A saved path that does not exist is skipped.
+
+This keeps the app's references (`app->planet`, `app->moon`, `app->sword`, the character) valid,
+since loading never replaces nodes. When the editor learns to add and remove nodes, new tags will
+describe created nodes; older builds will skip them.
+
+### `EDIT`: editor settings
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `SHWN` | u32 | `app->shown`: 0 showcase, 1 stress | 0 |
+| `AUTO` | u32 | autosave on (the View tab checkbox) | 1 |
+| `GZOP` | u32 | `app->gizmo_operation`: 0 move, 1 rotate, 2 scale | 0 |
+| `GZLC` | u32 | `app->gizmo_local` | 0 |
+| `GZSN` | u32 | `app->gizmo_snap` | 0 |
+
+### `VIEW`: a scene's camera and selection (in `SHOW` and in `STRS`)
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `YAW ` | f32 | `SceneView.camera_yaw`, radians | the scene's start value |
+| `PTCH` | f32 | `camera_pitch`, radians, clamped to -10°..80° on load | start value |
+| `DIST` | f32 | `camera_distance`, meters, clamped to 1..100 on load | start value |
+| `FOLW` | u32 | `follow_selection` | 1 |
+| `ORBT` | f32[3] | `orbit_point` (where the camera looks while not following) | (0, 0, 0) |
+| `PAN ` | f32[3] | `pan` (offset from the followed selection) | (0, 0, 0) |
+| `SELN` | u32[] | the selected node's path; empty = nothing selected | the start selection |
+
+`pan` is restored as belonging to the restored selection (`panned_for`). The view's `focus` and
+`camera` are fixed by the build and not saved. In the stress scene, `SELN` is not saved (its nodes
+are rebuilt, so a path would not last).
+
+### `SHOW`: the showcase
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `LAYT` | u32 | the layout number (above) | nodes are skipped |
+| `VIEW` | container | the showcase's view | start view |
+| `PLNT` | f32[2] | `orbit_speed` (rad/s) and `orbit_angle` (rad): the planet's spin, which rewrites the planet's rotation every frame | 0.7, 0 |
+| `BONE` | u32 | `app->show_bones` | 0 |
+| `CHAR` | container | the character (below) | as built |
+| `NODE` | container, repeated | one per node, in tree order (below) | as built |
+
+**`CHAR`: the character's playback and controls**
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `CLIP` | string | the name of the clip playing on layer 0, without its root-motion copy (`app_regular_clip`). During a jump, the clip the jump returns to | `Idle_Loop` |
+| `CTIM` | f32 | layer 0's time into that clip, seconds | 0 |
+| `SPED` | f32 | layer 0's speed | 1 |
+| `FADE` | f32 | `fade_seconds` | 0.3 |
+| `BLND` | string | the blend clip's name (`clips[blend_clip]`) | the first clip |
+| `BLDW` | f32 | `blend_weight` | 0 |
+| `RMOT` | u32 | `root_motion` | 0 |
+| `TURN` | f32 | `turn_rate`, rad/s | 0.6 |
+| `LOOK` | u32 | `look_at` | as built |
+| `SWRD` | u32 | `show_sword` | 1 |
+
+On load the clip starts with `app_play` (so root motion picks its copy) at `CTIM`, with no fade.
+A clip name the build does not have falls back to `Idle_Loop`.
+
+**`NODE`: one node's editable values**
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `PATH` | u32[] | the node's path | the node is skipped |
+| `NAME` | string | `NvNode.name` (up to 31 bytes) | as built |
+| `POS ` | f32[3] | `position` | as built |
+| `ROT ` | f32[4] | `rotation` (x, y, z, w), normalized on load | as built |
+| `SCL ` | f32[3] | `scale` | as built |
+| `COLR` | f32[4] | the base color of the node's material, for nodes with a mesh | as built |
+| `ATCH` | string | the joint the node follows, by name, for attached nodes | as built |
+| `CFOV` | f32 | `camera.fov_y`, radians, for camera nodes | as built |
+| `LCOL` | f32[3] | `light.color`, for light nodes | as built |
+| `LINT` | f32 | `light.intensity`, for light nodes | as built |
+
+Every node is saved, including the character's mesh nodes and the look target. Values the app
+rewrites every frame are saved but have no lasting effect: the look target's transform (it sweeps
+around the head), the planet's rotation (from `PLNT`), and the orbit camera's transform (from
+`VIEW`). A joint name the skeleton does not have leaves the attachment as built.
+
+### `STRS`: the stress scene
+
+| Tag | Type | Saved from | Missing |
+|---|---|---|---|
+| `VIEW` | container | the stress scene's view (no `SELN`) | start view |
+| `GRID` | u32[2] | `want.grid_on`, `want.grid_count` (clamped to the slider's range on load, as are all counts) | as today |
+| `COLS` | u32[2] | `colors_on`, `color_count` | as today |
+| `CHAN` | u32[2] | `chain_on`, `chain_count` | as today |
+| `CRWD` | u32[2] | `crowd_on`, `crowd_count` | as today |
+| `CHRN` | u32[2] | `churn_on`, `churn_count` | as today |
+| `BONE` | u32 | `want.show_bones` | 0 |
+
+While a benchmark runs, the settings from before it started (`before_benchmark`) are saved, not
+the benchmark's own steps. The stress scene is built from these settings the first time it is
+shown, as today; a scene that was never opened is still saved, so opening it later starts where it
+was left.
+
+### Not saved
+
+- Edits to single nodes in the stress scene: its nodes are generated from the settings.
+- Benchmark results and a running benchmark; frame times and stats.
+- A jump in progress (the returning clip is saved), crossfades in progress, and blend layers'
+  own times.
+- The node selected in the stress scene.
+- Panel state: the open tab, scroll positions, which tree nodes are open.
+- Anything rebuilt at start: meshes, materials other than their colors, skeletons, clips, GPU and
+  ImGui resources.
 
 ## Decisions
 
@@ -115,10 +210,10 @@ starting set; each lives in one place in `app/save.c`.
 |---|---|
 | Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file, `state.nvs`, holds the whole app state |
 | When it saves | Every 10 seconds when the bytes would differ from the last save, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not. A write goes to a temporary name first and is then renamed, so a half-written save never replaces a good one |
-| On start | The save loads if there is one: both scenes, the scene that was on screen, and the editor settings. Otherwise the app starts as today, on the showcase |
+| On start | The app builds the showcase as today, then loads the save if there is one, before the first frame: both scenes, the scene that was on screen, and the editor settings. Otherwise it starts as today, on the showcase |
 | A bad save | A wrong magic, size or checksum, a field of the wrong size, or a newer version: the file is renamed to `state.nvs.bad` and the app starts as on a first visit. A message in the View tab says so. Loading is all or nothing: the whole file is checked before anything in the app changes |
 | `#stress` | Removed. The address no longer names the scene; the save remembers it |
-| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved), when the state was last saved, **Save now**, **Reset** (rebuilds everything as on a first visit and overwrites the save), and **Show save** (below) |
+| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved), when the state was last saved, **Save now**, **Reset** (deletes the save and reloads the page, which starts as on a first visit; animators cannot be removed, so rebuilding in place would leak them), and **Show save** (below) |
 | Save viewer | **Show save** opens a tree of the save's chunks: tags, sizes, and values (numbers, strings, hex for tags it does not know). It reads the file as the loader does, so it also shows where a bad save goes wrong |
 | Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
 | Third-party | None |
@@ -148,13 +243,13 @@ starting set; each lives in one place in `app/save.c`.
 
 ## App changes
 
-- `app/save.c` writes and reads the whole app state with the chunk helpers. Loading checks the
-  whole file first (a dry run through the reader), then rebuilds the showcase from its nodes,
-  applies the stress settings, restores the editor settings, and shows the saved scene.
+- `app/save.c` writes and reads the whole app state with the chunk helpers. Loading reads the
+  whole file into a staging struct first; only if that succeeds does it apply the values to the
+  showcase's nodes, the character, the views, the stress settings and the editor settings, and
+  show the saved scene.
 - The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section
   with the save viewer.
-- Built-in meshes get names in the app (`cube`, `sword`, `ground`, `target`), so they can be saved
-  as names.
+- The showcase's layout number, computed after it is built.
 - `#stress` goes: `js_hash_is_stress`, `js_set_hash`, and its mentions in `AGENTS.md`, README and
   `docs/specs/stress.md`.
 
