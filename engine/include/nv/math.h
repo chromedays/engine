@@ -51,6 +51,36 @@ static inline NvQuat nv_quat_mul(NvQuat a, NvQuat b)
     };
 }
 
+// Euler angles in radians: x = pitch, y = yaw, z = roll, applied yaw first in the parent's frame
+// (q = Y * X * Z). Yaw and roll are in (-pi, pi], pitch in [-pi/2, pi/2].
+static inline NvQuat nv_quat_from_euler(NvVec3 e)
+{
+    return nv_quat_mul(nv_quat_mul(nv_quat_axis_angle((NvVec3){0, 1, 0}, e.y), nv_quat_axis_angle((NvVec3){1, 0, 0}, e.x)),
+                       nv_quat_axis_angle((NvVec3){0, 0, 1}, e.z));
+}
+
+static inline NvVec3 nv_quat_to_euler(NvQuat q)
+{
+    // The rotation matrix entries the angles come from (row, column).
+    f32 m11 = 1.0f - 2.0f * (q.y * q.y + q.z * q.z);
+    f32 m13 = 2.0f * (q.x * q.z + q.y * q.w);
+    f32 m21 = 2.0f * (q.x * q.y + q.z * q.w);
+    f32 m22 = 1.0f - 2.0f * (q.x * q.x + q.z * q.z);
+    f32 m23 = 2.0f * (q.y * q.z - q.x * q.w);
+    f32 m31 = 2.0f * (q.x * q.z - q.y * q.w);
+    f32 m33 = 1.0f - 2.0f * (q.x * q.x + q.y * q.y);
+    f32 s = m23 < -1.0f ? -1.0f : (m23 > 1.0f ? 1.0f : m23);
+    NvVec3 e = {asinf(-s), 0.0f, 0.0f};
+    if (fabsf(s) < 0.9999f) {
+        e.y = atan2f(m13, m33);
+        e.z = atan2f(m21, m22);
+    } else {
+        // Looking straight up or down, yaw and roll turn about the same axis; all of it goes to yaw.
+        e.y = atan2f(-m31, m11);
+    }
+    return e;
+}
+
 static inline NvMat4 nv_mat4_identity(void)
 {
     NvMat4 m = {0};

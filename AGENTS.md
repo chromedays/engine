@@ -61,6 +61,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
   with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the
   panel; the one exception is the build label in the viewport's top-left corner.
+- Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
+  `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
+  (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
+  CDP `Input.dispatchTouchEvent` for multi-touch.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).

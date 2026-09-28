@@ -136,6 +136,13 @@ internal void inspector_tab(App* app)
     NvNode* node = nv_scene_get(view->scene, view->selected);
     igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
     igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
+    // Rotation as pitch (X), yaw (Y) and roll (Z) in degrees; the quaternion is only rewritten when
+    // edited, so looking at a node never changes it.
+    NvVec3 euler = nv_quat_to_euler(node->rotation);
+    // Adding 0 turns -0 into 0, which would otherwise show as "-0.0".
+    f32 degrees[3] = {euler.x * 180.0f / NV_PI + 0.0f, euler.y * 180.0f / NV_PI + 0.0f, euler.z * 180.0f / NV_PI + 0.0f};
+    if (igDragFloat3("Rotation", degrees, 0.5f, 0.0f, 0.0f, "%.1f", 0))
+        node->rotation = nv_quat_from_euler(nv_vec3(degrees[0] * NV_PI / 180.0f, degrees[1] * NV_PI / 180.0f, degrees[2] * NV_PI / 180.0f));
     igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
     if (node->mesh.index) {

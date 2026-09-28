@@ -1,6 +1,6 @@
 # Viewport interaction spec
 
-Status: agreed, in progress (2026-09-28). Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
