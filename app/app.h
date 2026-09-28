@@ -53,6 +53,43 @@ typedef enum SceneKind {
 #define SAVE_BAD_FILE "state.nvs.bad" // a save that could not be loaded, kept for a look
 #define AUTOSAVE_SECONDS 10.0
 
+// Undo and redo (docs/specs/undo.md): steps hold a scope's bytes before and after one edit.
+#define UNDO_MAX_STEPS 128
+#define UNDO_MAX_BYTES 1024
+#define UNDO_LABEL_MAX 64
+
+// Parts of the showcase that undo snapshots separately (docs/specs/undo.md).
+typedef enum SaveScope {
+    SAVE_SCOPE_NODE,      // one node
+    SAVE_SCOPE_CHARACTER, // the character's playback and controls
+    SAVE_SCOPE_SCENE,     // planet orbit speed, show bones
+    SAVE_SCOPE_COUNT,
+} SaveScope;
+
+typedef struct UndoStep {
+    SaveScope scope;
+    NvNodeId node; // SAVE_SCOPE_NODE
+    u32 before_size;
+    u32 after_size;
+    u8 before[UNDO_MAX_BYTES];
+    u8 after[UNDO_MAX_BYTES];
+    char label[UNDO_LABEL_MAX]; // "moon Position"
+} UndoStep;
+
+typedef struct Undo {
+    UndoStep* steps; // a ring of UNDO_MAX_STEPS
+    u32 first;       // the oldest step's slot
+    u32 count;       // steps held
+    u32 done;        // how many of them are applied: undo takes step done - 1, redo step done
+    s32 request;     // -1 undo, +1 redo, asked by the buttons; done at the frame's end
+    // Each scope as last committed; an idle frame that finds it changed takes a step.
+    u8 committed[SAVE_SCOPE_COUNT][UNDO_MAX_BYTES];
+    u32 committed_size[SAVE_SCOPE_COUNT];
+    NvNodeId committed_node; // the node SAVE_SCOPE_NODE's bytes are of
+    u32 committed_driven;    // its driven fields then
+    u8 current[UNDO_MAX_BYTES];
+} Undo;
+
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
 typedef enum GizmoOperation {
     GIZMO_MOVE,
@@ -219,6 +256,8 @@ typedef struct App {
     NvNodeId target;
     NvMeshId target_mesh;
 
+    Undo undo;
+
     // Autosave (save.c)
     bool autosave;
     u32 scene_layout; // save_scene_layout of the showcase as built
@@ -275,6 +314,21 @@ u32 save_write(App* app, void* buffer, u32 capacity);
 // Loads a save into the app. It is checked whole first, and nothing changes unless it is good.
 // Returns NULL, or what is wrong with it.
 const char* save_load(App* app, const void* bytes, u32 size);
+// Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
+// (docs/specs/undo.md). Values the app drives every frame are left out.
+// Returns the size written, or 0 if it did not fit.
+u32 save_write_scope(App* app, SaveScope scope, u32 node, void* buffer, u32 capacity);
+// Applies the fields present. Returns 0, changing nothing, if the bytes are malformed.
+b32 save_apply_scope(App* app, SaveScope scope, u32 node, const void* bytes, u32 size);
+// Which parts of a node's transform the app drives (bit 0 position, bit 1 rotation).
+u32 save_driven_fields(App* app, u32 node);
+const char* save_field_label(u32 tag); // "Position", "Clip", ...
+
+// undo.c
+void undo_init(App* app);   // after the save is loaded
+void undo_update(App* app); // every frame, after every edit (the gizmo's included)
+void undo_ui(App* app);     // the Undo/Redo row
+
 // Mounts browser storage and loads the save, if there is one. Call once the showcase is built.
 void save_init(App* app);
 // Autosaves every AUTOSAVE_SECONDS while autosave is on. Call every frame.

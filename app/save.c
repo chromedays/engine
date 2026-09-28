@@ -20,6 +20,7 @@
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
 #define TAG_PLNT NV_TAG('P', 'L', 'N', 'T')
+#define TAG_ORBS NV_TAG('O', 'R', 'B', 'S') // undo only: the orbit speed without the angle
 #define TAG_BONE NV_TAG('B', 'O', 'N', 'E')
 #define TAG_CHAR NV_TAG('C', 'H', 'A', 'R')
 #define TAG_NODE NV_TAG('N', 'O', 'D', 'E')
@@ -147,7 +148,8 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     nv_chunk_end(w);
 }
 
-internal void write_character(NvChunkWriter* w, App* app)
+// The character's fields. `undo` leaves out the clip's time, which moves every frame.
+internal void write_character_fields(NvChunkWriter* w, App* app, b32 undo)
 {
     NvAnimator* animator = nv_anim_get(app->animator);
     NvAnimLayer* layer = &animator->layers[0];
@@ -155,10 +157,10 @@ internal void write_character(NvChunkWriter* w, App* app)
     NvClipId clip = app->jump != JUMP_NONE ? app->jump_return : layer->clip;
     f32 time = app->jump != JUMP_NONE ? 0.0f : layer->time;
 
-    nv_chunk_begin(w, TAG_CHAR);
     if (clip.index)
         nv_chunk_string(w, TAG_CLIP, nv_anim_clip_name(app_regular_clip(app, clip)));
-    nv_chunk_f32(w, TAG_CTIM, time);
+    if (!undo)
+        nv_chunk_f32(w, TAG_CTIM, time);
     nv_chunk_f32(w, TAG_SPED, layer->speed);
     nv_chunk_f32(w, TAG_FADE, app->fade_seconds);
     if (app->blend_clip >= 0 && (u32)app->blend_clip < app->clip_count)
@@ -168,22 +170,41 @@ internal void write_character(NvChunkWriter* w, App* app)
     nv_chunk_f32(w, TAG_TURN, app->turn_rate);
     nv_chunk_u32(w, TAG_LOOK, app->look_at);
     nv_chunk_u32(w, TAG_SWRD, app->show_sword);
+}
+
+internal void write_character(NvChunkWriter* w, App* app)
+{
+    nv_chunk_begin(w, TAG_CHAR);
+    write_character_fields(w, app, 0);
     nv_chunk_end(w);
 }
 
-internal void write_node(NvChunkWriter* w, App* app, u32 index)
+#define DRIVEN_POSITION (1u << 0)
+#define DRIVEN_ROTATION (1u << 1)
+
+// Which of a showcase node's transform the app rewrites every frame. Undo leaves these out, or
+// every frame would look like an edit.
+internal u32 driven_fields(App* app, u32 index)
 {
-    NvScene* scene = app->scene;
-    NvNode* node = &scene->nodes[index];
-    u32 path[SAVE_MAX_PATH];
-    u32 length = path_of(scene, index, path);
-    if (!length)
-        return;
-    nv_chunk_begin(w, TAG_NODE);
-    nv_chunk_u32s(w, TAG_PATH, path, length);
+    if (index == app->views[SCENE_SHOWCASE].camera.index || index == app->target.index)
+        return DRIVEN_POSITION | DRIVEN_ROTATION;
+    if (index == app->planet.index || index == app->moon.index) // they spin
+        return DRIVEN_ROTATION;
+    if (index == app->character.root.index && app->root_motion) // it walks
+        return DRIVEN_POSITION | DRIVEN_ROTATION;
+    return 0;
+}
+
+// A node's fields. `undo` leaves out what the app drives.
+internal void write_node_fields(NvChunkWriter* w, App* app, u32 index, b32 undo)
+{
+    NvNode* node = &app->scene->nodes[index];
+    u32 driven = undo ? driven_fields(app, index) : 0;
     nv_chunk_string(w, TAG_NAME, node->name);
-    nv_chunk_f32s(w, TAG_POS, &node->position.x, 3);
-    nv_chunk_f32s(w, TAG_ROT, &node->rotation.x, 4);
+    if (!(driven & DRIVEN_POSITION))
+        nv_chunk_f32s(w, TAG_POS, &node->position.x, 3);
+    if (!(driven & DRIVEN_ROTATION))
+        nv_chunk_f32s(w, TAG_ROT, &node->rotation.x, 4);
     nv_chunk_f32s(w, TAG_SCL, &node->scale.x, 3);
     if (node->material.index)
         nv_chunk_f32s(w, TAG_COLR, app->renderer.materials[node->material.index].desc.base_color, 4);
@@ -197,6 +218,17 @@ internal void write_node(NvChunkWriter* w, App* app, u32 index)
         nv_chunk_f32s(w, TAG_LCOL, &node->light.color.x, 3);
         nv_chunk_f32(w, TAG_LINT, node->light.intensity);
     }
+}
+
+internal void write_node(NvChunkWriter* w, App* app, u32 index)
+{
+    u32 path[SAVE_MAX_PATH];
+    u32 length = path_of(app->scene, index, path);
+    if (!length)
+        return;
+    nv_chunk_begin(w, TAG_NODE);
+    nv_chunk_u32s(w, TAG_PATH, path, length);
+    write_node_fields(w, app, index, 0);
     nv_chunk_end(w);
 }
 
@@ -301,20 +333,18 @@ internal NvClipId clip_named(App* app, const char* name)
     return (NvClipId){0};
 }
 
-internal void read_character(NvChunkReader* r, NvChunk parent, App* app, b32 apply)
+// Applies only the fields present, so it also restores an undo snapshot (which has no time).
+internal void read_character_fields(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
 {
-    NvChunk chunk = nv_chunk_find(r, parent, TAG_CHAR);
-    if (!chunk.data)
-        return;
     NvAnimator* animator = nv_anim_get(app->animator);
     char clip_name[SAVE_MAX_CLIP_NAME] = "Idle_Loop";
     char blend_name[SAVE_MAX_CLIP_NAME] = "";
-    f32 time = 0.0f;
+    f32 time = animator->layers[0].time;
     f32 speed = animator->layers[0].speed;
     f32 fade = app->fade_seconds, blend_weight = app->blend_weight, turn = app->turn_rate;
     bool root_motion = app->root_motion, look_at = app->look_at, sword = app->show_sword;
-    nv_chunk_read_string(r, chunk, TAG_CLIP, clip_name, sizeof(clip_name));
-    nv_chunk_read_f32s(r, chunk, TAG_CTIM, &time, 1);
+    b32 has_clip = nv_chunk_read_string(r, chunk, TAG_CLIP, clip_name, sizeof(clip_name));
+    b32 has_time = nv_chunk_read_f32s(r, chunk, TAG_CTIM, &time, 1);
     nv_chunk_read_f32s(r, chunk, TAG_SPED, &speed, 1);
     nv_chunk_read_f32s(r, chunk, TAG_FADE, &fade, 1);
     nv_chunk_read_string(r, chunk, TAG_BLND, blend_name, sizeof(blend_name));
@@ -335,25 +365,32 @@ internal void read_character(NvChunkReader* r, NvChunk parent, App* app, b32 app
         if (strcmp(nv_anim_clip_name(app->clips[i]), blend_name) == 0)
             app->blend_clip = (s32)i;
     }
-    NvClipId clip = clip_named(app, clip_name);
-    if (!clip.index)
-        clip = clip_named(app, "Idle_Loop");
-    // Straight into the clip, without a crossfade from whatever played before.
-    app->fade_seconds = 0.0f;
-    app_play(app, clip);
+    if (has_clip) {
+        NvClipId clip = clip_named(app, clip_name);
+        if (!clip.index)
+            clip = clip_named(app, "Idle_Loop");
+        // Straight into the clip, without a crossfade from whatever played before. The same clip
+        // keeps playing where it is; root motion on or off picks its copy.
+        app->fade_seconds = 0.0f;
+        app_play(app, clip);
+    }
     app->fade_seconds = clamp(fade, 0.0f, 1.0f);
-    animator->layers[0].time = time;
+    if (has_time)
+        animator->layers[0].time = time;
     animator->layers[0].speed = speed;
 }
 
-internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
+internal void read_character(NvChunkReader* r, NvChunk parent, App* app, b32 apply)
+{
+    NvChunk chunk = nv_chunk_find(r, parent, TAG_CHAR);
+    if (chunk.data)
+        read_character_fields(r, chunk, app, apply);
+}
+
+// Applies only the fields present to node `index` (0: only checks them).
+internal void read_node_fields(NvChunkReader* r, NvChunk chunk, App* app, u32 index, b32 apply)
 {
     NvScene* scene = app->scene;
-    u32 path[SAVE_MAX_PATH];
-    u32 length = 0;
-    if (!nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH, &length) || !length)
-        return;
-    u32 index = node_at(scene, path, length);
     NvNode none = {.rotation = nv_quat_identity(), .scale = nv_vec3(1, 1, 1)};
     NvNode* node = index ? &scene->nodes[index] : &none; // a missing node is still read, to check it
     NvNode n = *node;
@@ -397,6 +434,15 @@ internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
         node->light.color = n.light.color;
         node->light.intensity = n.light.intensity;
     }
+}
+
+internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
+{
+    u32 path[SAVE_MAX_PATH];
+    u32 length = 0;
+    if (!nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH, &length) || !length)
+        return;
+    read_node_fields(r, chunk, app, node_at(app->scene, path, length), apply);
 }
 
 internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply)
@@ -466,6 +512,105 @@ b32 save_round_trip_matches(App* app)
     matches = matches && second_size == first_size && memcmp(first, second, first_size) == 0;
     scratch->used = mark;
     return matches;
+}
+
+//
+// Undo scopes (docs/specs/undo.md): the undoable fields of one part of the showcase, as bare
+// chunks without a file header, written and read with the same code as the save.
+//
+
+u32 save_driven_fields(App* app, u32 node)
+{
+    return driven_fields(app, node);
+}
+
+u32 save_write_scope(App* app, SaveScope scope, u32 node, void* buffer, u32 capacity)
+{
+    NvChunkWriter w;
+    nv_chunk_writer_init(&w, buffer, capacity);
+    switch (scope) {
+    case SAVE_SCOPE_NODE:
+        write_node_fields(&w, app, node, 1);
+        break;
+    case SAVE_SCOPE_CHARACTER:
+        write_character_fields(&w, app, 1);
+        break;
+    case SAVE_SCOPE_SCENE:
+        nv_chunk_f32(&w, TAG_ORBS, app->orbit_speed);
+        nv_chunk_u32(&w, TAG_BONE, app->show_bones);
+        break;
+    case SAVE_SCOPE_COUNT:
+        NV_INVALID_CODE_PATH;
+        break;
+    }
+    return w.overflow ? 0 : w.size;
+}
+
+internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, u32 node, b32 apply)
+{
+    NvChunkReader r = {0};
+    switch (scope) {
+    case SAVE_SCOPE_NODE:
+        read_node_fields(&r, chunk, app, node, apply);
+        break;
+    case SAVE_SCOPE_CHARACTER:
+        read_character_fields(&r, chunk, app, apply);
+        break;
+    case SAVE_SCOPE_SCENE: {
+        f32 speed = app->orbit_speed;
+        bool bones = app->show_bones;
+        nv_chunk_read_f32s(&r, chunk, TAG_ORBS, &speed, 1);
+        read_bool(&r, chunk, TAG_BONE, &bones);
+        if (apply) {
+            app->orbit_speed = speed;
+            app->show_bones = bones;
+        }
+    } break;
+    case SAVE_SCOPE_COUNT:
+        NV_INVALID_CODE_PATH;
+        break;
+    }
+    // Every chunk must be whole, not only the ones read.
+    NvChunk child = {0};
+    while (nv_chunk_next(&r, chunk, &child)) {
+    }
+    return !r.failed;
+}
+
+b32 save_apply_scope(App* app, SaveScope scope, u32 node, const void* bytes, u32 size)
+{
+    NvChunk chunk = {.size = size, .data = bytes};
+    if (!read_scope(chunk, app, scope, node, 0))
+        return 0;
+    read_scope(chunk, app, scope, node, 1);
+    return 1;
+}
+
+const char* save_field_label(u32 tag)
+{
+    switch (tag) {
+    case TAG_NAME: return "Name";
+    case TAG_POS: return "Position";
+    case TAG_ROT: return "Rotation";
+    case TAG_SCL: return "Scale";
+    case TAG_COLR: return "Color";
+    case TAG_ATCH: return "Joint";
+    case TAG_CFOV: return "Field of view";
+    case TAG_LCOL: return "Light color";
+    case TAG_LINT: return "Intensity";
+    case TAG_CLIP: return "Clip";
+    case TAG_SPED: return "Speed";
+    case TAG_FADE: return "Fade";
+    case TAG_BLND: return "Blend";
+    case TAG_BLDW: return "Blend weight";
+    case TAG_RMOT: return "Root motion";
+    case TAG_TURN: return "Turn";
+    case TAG_LOOK: return "Look at";
+    case TAG_SWRD: return "Sword";
+    case TAG_ORBS: return "Planet orbit";
+    case TAG_BONE: return "Show bones";
+    }
+    return "Edit";
 }
 
 //

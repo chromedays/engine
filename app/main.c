@@ -718,6 +718,7 @@ internal void frame(void* userdata)
     pick(app, layout.viewport);
     update_camera(app, layout.viewport);
     draw_gizmo(app, layout.viewport);
+    undo_update(app);
     draw_selection(app);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
         draw_bones(app);
@@ -803,6 +804,7 @@ int main(void)
     app_play(app, app_find_clip(app, "Idle_Loop"));
     NV_ASSERT(save_round_trip_matches(app));
     save_init(app);
+    undo_init(app);
     app->last_time = nv_time_seconds();
     nv_window_run(&app->window, frame, app);
     return 0;

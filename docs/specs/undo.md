@@ -23,9 +23,9 @@ undoable (Undo and Redo are off while it is shown).
 
 | Scope | Holds (the save's fields) | Left out, because the app drives them |
 |---|---|---|
-| **Node** (the selected node) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform; the look target's transform; the planet's rotation (its spin); the character root's position and rotation while root motion is on |
+| **Node** (the selected node) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform; the look target's transform; the planet's and the moon's rotations (they spin); the character root's position and rotation while root motion is on |
 | **Character** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | `CTIM` (the clip's time); mid-jump, `CLIP` already names the clip the jump returns to |
-| **Scene settings** | orbit speed, show bones | the orbit angle |
+| **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones | the orbit angle |
 
 Not undoable: the camera view (yaw, pitch, distance, pan, follow), the selection, the editor
 settings (gizmo mode, autosave), anything in the stress scene. Text fields keep their own undo
@@ -36,7 +36,7 @@ while they are being typed in (Dear ImGui's); the finished edit is then one step
 | Topic | Decision |
 |---|---|
 | When a step is taken | At the first frame that is idle after a change: no ImGui item active, no gizmo in use, no popup open. The scopes' bytes are compared with the committed ones; each scope that differs becomes a step (committed bytes before, current bytes after), then becomes the committed bytes |
-| Selection | Selecting another node commits its bytes as they are, without a step. Only the selected node is compared, since only it can be edited |
+| Selection | Selecting another node commits its bytes as they are, without a step. Only the selected node is compared, since only it can be edited. So does a change in which of its fields are driven (root motion turned on or off), so that change is not mistaken for an edit |
 | Undo / redo | Undo applies the step's before-bytes through the save reader, which only touches the fields present; redo applies the after-bytes. The applied bytes become the committed ones, so an undo is not recorded as a new edit. A new step after an undo drops the steps that could have been redone |
 | Undo shows what it changed | A node step selects its node, so the Inspector (and a following camera) show the change |
 | History | In memory, 128 steps; the oldest is dropped when full. It is not saved: a reload starts with no history. The state after an undo is autosaved as usual |

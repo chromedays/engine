@@ -249,7 +249,10 @@ internal void build_label(void)
 void app_build_ui(App* app, NvRect panel)
 {
     build_label();
-    if (nv_imgui_begin_panel(&app->imgui, "Editor", panel) && igBeginTabBar("tabs", 0)) {
+    b32 panel_open = nv_imgui_begin_panel(&app->imgui, "Editor", panel);
+    if (panel_open)
+        undo_ui(app);
+    if (panel_open && igBeginTabBar("tabs", 0)) {
         if (igBeginTabItem("Scene", NULL, 0)) {
             scene_tab(app);
             igEndTabItem();
