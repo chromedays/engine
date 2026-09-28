@@ -20,7 +20,7 @@ touch. Rotation becomes editable in the inspector.
 | Characters | Picking a skinned mesh selects its parent, the character root |
 | Selection outline | The picked node's mesh boxes, drawn as debug lines |
 | Rotation | Inspector edits it as Euler angles in degrees (yaw, pitch, roll) |
-| Gizmo | Not now; ImGuizmo (with cimguizmo, MIT) is the candidate for a later step |
+| Gizmo | A later step: see `gizmo.md` |
 | Third-party | None |
 
 ## Engine changes

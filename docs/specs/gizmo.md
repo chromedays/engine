@@ -1,6 +1,6 @@
 # Transform gizmo spec
 
-Status: agreed (2026-09-28); being implemented. Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -32,7 +32,8 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 | Write-back | Our own `nv_mat4_decompose` (translation, quaternion, scale), not ImGuizmo's Euler-degree decomposition. Shear from non-uniform scale under a rotated parent is dropped |
 | Camera follow | While the gizmo drags, the camera holds still even when it follows the selection; following the dragged node would move the pointer's ray with it and the drag would run away |
 | Viewport UI | The gizmo draws in the viewport; it is the second exception to "editor UI stays in the panel", after the build label |
-| Touch | Handle sizes scale with `NvImgui.ui_scale` |
+| Size | About 64 CSS pixels long, times `NvImgui.ui_scale` (96 on touch screens), set in pixels every frame. ImGuizmo's own size is a fraction of the viewport width, which left it about 20 pixels long on a phone, and it hits handles within fixed pixel distances (12 for arrows, 8 for rings). Line widths also scale with `ui_scale` |
+| Controls row | Wraps on a narrow panel instead of running off its edge |
 | Undo | Not now |
 
 ## Engine changes

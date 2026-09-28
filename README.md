@@ -3,7 +3,9 @@
 nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
 WebAssembly with [Emscripten](https://emscripten.org/); WebGPU calls go to the browser through
 Emscripten's `emdawnwebgpu` port, and the engine draws into a `<canvas>`. Tool UI uses
-[Dear ImGui](https://github.com/ocornut/imgui) through [cimgui](https://github.com/cimgui/cimgui);
+[Dear ImGui](https://github.com/ocornut/imgui) through [cimgui](https://github.com/cimgui/cimgui),
+with [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) (through
+[cimguizmo](https://github.com/cimgui/cimguizmo)) for the transform gizmo;
 models load with [cgltf](https://github.com/jkuhlmann/cgltf) and skeletal animation runs on
 [ozz-animation](https://github.com/guillaumeblanc/ozz-animation). The character and animations
 are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`).

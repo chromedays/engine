@@ -16,7 +16,7 @@ There is no native build.
 
 ```
 engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
-                           imgui.h (Dear ImGui), renderer.h (meshes, materials, skinning, debug lines),
+                           imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
                            gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation)
 engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c,
                            anim.cpp (the ozz wrapper; our only C++ file)
@@ -60,11 +60,17 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - The app uses the editor layout: `nv_editor_layout` splits the canvas into the
   scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
   with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the
-  panel; the one exception is the build label in the viewport's top-left corner.
+  panel. The exceptions are the build label in the viewport's top-left corner and the transform
+  gizmo on the selection.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
   (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
   CDP `Input.dispatchTouchEvent` for multi-touch.
+- The transform gizmo is ImGuizmo through cimguizmo (`#include <cimguizmo.h>`, `ImGuizmo_*`).
+  A press on its handle reaches ImGui through `NvImgui.view_grab`: a left press or one-finger touch
+  in the viewport waits two frames before the hook decides. Tests must hold the press longer than
+  that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
+  stays behind the panel.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).

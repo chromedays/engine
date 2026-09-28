@@ -71,6 +71,9 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 - Dear ImGui, through cimgui (its C API), for debug and tool UI: writing an immediate-mode UI
   library is not the point of this project. Its platform and renderer backends are ours
   (`engine/src/imgui.c`), in C.
+- ImGuizmo, through cimguizmo (its C API), for the transform gizmo in the viewport: it draws with
+  ImGui's draw lists, so it needs no renderer work, and its C API keeps `anim.cpp` our only C++
+  file. It is built into the cimgui library so both share one ImGui context.
 - cgltf, a single-header C glTF parser, for loading models and animations: glTF is the asset
   format, and parsing it (JSON included) is not the point of this project.
 - ozz-animation for skeletal animation at runtime (sampling, blending, skinning matrices): a

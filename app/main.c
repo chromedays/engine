@@ -562,6 +562,11 @@ internal void draw_gizmo(App* app, NvRect viewport)
     f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
     ImGuizmo_SetRect((f32)viewport.x / ratio, (f32)viewport.y / ratio, (f32)viewport.width / ratio, (f32)viewport.height / ratio);
     ImGuizmo_SetOrthographic(nv_scene_get(scene, scene->active_camera)->camera.projection == NV_PROJECTION_ORTHOGRAPHIC);
+    // NOTE: ImGuizmo sizes the gizmo as a fraction of the viewport width, which leaves it tiny on a
+    // phone. Its handles are hit within fixed pixel distances, so it is sized in pixels instead:
+    // about 64 CSS pixels long, larger for fingers.
+    f32 length = 64.0f * app->imgui.ui_scale;
+    ImGuizmo_SetGizmoSizeClipSpace(length / ((f32)viewport.width / ratio * 0.5f));
     app->gizmo_shown = 1;
 
     // W, E and R pick the operation while the pointer is over the viewport, as in most editors.
@@ -769,6 +774,17 @@ int main(void)
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
+    // Thicker gizmo lines on touch screens, like the rest of the UI.
+    Style* gizmo_style = ImGuizmo_GetStyle();
+    f32 ui_scale = app->imgui.ui_scale;
+    gizmo_style->TranslationLineThickness *= ui_scale;
+    gizmo_style->TranslationLineArrowSize *= ui_scale;
+    gizmo_style->RotationLineThickness *= ui_scale;
+    gizmo_style->RotationOuterLineThickness *= ui_scale;
+    gizmo_style->ScaleLineThickness *= ui_scale;
+    gizmo_style->ScaleLineCircleSize *= ui_scale;
+    gizmo_style->HatchedAxisLineThickness *= ui_scale;
+    gizmo_style->CenterCircleSize *= ui_scale;
     nv_anim_init(&app->anim_memory);
 
     build_world(app);

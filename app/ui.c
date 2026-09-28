@@ -126,6 +126,17 @@ internal void attach_section(App* app, NvNode* node)
         igCheckbox("Visible", &app->show_sword);
 }
 
+// Keeps the next checkbox or radio button labeled `label` on this line when it fits, so a row
+// of them wraps on a narrow (phone) panel instead of running off its edge.
+internal void same_line_if_fits(const char* label)
+{
+    igSameLine(0.0f, -1.0f);
+    ImVec2_c available = igGetContentRegionAvail();
+    ImVec2_c text = igCalcTextSize(label, NULL, true, -1.0f);
+    if (available.x < igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x + text.x)
+        igNewLine();
+}
+
 internal void inspector_tab(App* app)
 {
     SceneView* view = app_view(app);
@@ -139,15 +150,15 @@ internal void inspector_tab(App* app)
         // The gizmo in the viewport; W, E and R switch the operation there too.
         s32* operation = (s32*)&app->gizmo_operation;
         igRadioButton_IntPtr("Move", operation, GIZMO_MOVE);
-        igSameLine(0.0f, -1.0f);
+        same_line_if_fits("Rotate");
         igRadioButton_IntPtr("Rotate", operation, GIZMO_ROTATE);
-        igSameLine(0.0f, -1.0f);
+        same_line_if_fits("Scale");
         igRadioButton_IntPtr("Scale", operation, GIZMO_SCALE);
-        igSameLine(0.0f, -1.0f);
+        same_line_if_fits("Local");
         igBeginDisabled(app->gizmo_operation == GIZMO_SCALE);
         igCheckbox("Local", &app->gizmo_local);
         igEndDisabled();
-        igSameLine(0.0f, -1.0f);
+        same_line_if_fits("Snap");
         igCheckbox("Snap", &app->gizmo_snap);
     }
     igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
