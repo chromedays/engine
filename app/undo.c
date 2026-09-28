@@ -227,6 +227,9 @@ void undo_ui(App* app)
     if (igButton(label, (ImVec2_c){0.0f, 0.0f}))
         undo->request = 1;
     igEndDisabled();
-    if (on && app->playing)
-        igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, "Playing: edits made now are lost on Stop.");
+    if (on && app->playing) {
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f});
+        igTextWrapped("Playing: edits are lost on Stop.");
+        igPopStyleColor(1);
+    }
 }

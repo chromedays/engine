@@ -1,6 +1,6 @@
 # Edit and Play modes spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -50,14 +50,15 @@ planet from its authored rotation.
 | Topic | Decision |
 |---|---|
 | Controls | A **Play** / **Stop** button at the start of the row above the panel's tabs, before Undo and Redo. No keyboard shortcut for now (Ctrl+P prints in browsers) |
-| Showing the mode | While playing, the panel is tinted and the build label in the viewport reads "... · Playing"; a line under the row says edits are lost on Stop |
+| Showing the mode | While playing, the panel is tinted and the build label in the viewport reads "... · Playing"; a line under the row ("Playing: edits are lost on Stop.", wrapped on phones) says edits are lost on Stop. The line pushes the tabs down one line while playing |
+| Tests | Debug builds expose `Module._app_debug_save_crc()`, a CRC-32 of the save the state would write now; equal values before Play and after Stop mean Stop restored the scene |
 | Play | Takes a snapshot: the save bytes of the scene (`save_write`). Play time starts at 0 |
 | Stop | Restores the scene part of the snapshot (nodes, character settings, scene settings) with the save reader, so a jump, a crossfade or a walk in progress ends with the scene as it was. The camera view and the selection are not restored: they are not scene content |
 | Edits while playing | Allowed (the gizmo and the Inspector work), and lost on Stop, as in Unity |
 | Undo while playing | Off: its history belongs to the edit state. After Stop the scene equals the last commit again, so no step appears |
 | Autosave while playing | Writes the snapshot, never the running scene; a reload always starts in Edit mode with the edit state |
 | Leaving the showcase while playing | The showcase stays in Play mode but pauses, as it does today while the stress scene is shown |
-| Save format | The edit state has no running time, so the save stops writing the clip time (`CTIM`) and the planet's orbit angle (`PLNT` keeps its layout with the angle written as 0). Older saves still load; the values are ignored |
+| Save format | The edit state has no running time, so the save stops writing the clip time (`CTIM`) and the planet's orbit angle (`PLNT` keeps its layout with the angle written as 0). Older saves still load; the values have no lasting effect, since Play starts both from 0. This moved into phase 1: before-Play and after-Stop saves can only be compared once the preview's clip time is out of them |
 | Undo | Only the orbit camera stays a driven node (it follows the view). The planet, the moon, the look target and a root-motion character become undoable like any node |
 | Third-party | None |
 

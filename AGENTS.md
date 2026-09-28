@@ -81,11 +81,18 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
   save, load, save gives the same bytes; tests call `Module._app_debug_save_round_trip()` after
   editing.
+- The showcase has Edit and Play modes (`docs/specs/play.md`). In Edit mode nothing may move the
+  scene by itself: anything time-driven (spins, walking, sweeps, jumps) goes in the
+  `app->playing` branch of `update_showcase`, and the animation only previews in place. Play
+  snapshots the showcase in the save format and Stop loads it back (`SAVE_PART_SCENE`), so
+  anything Stop must restore has to be in the save. The autosave writes that snapshot while
+  playing, and undo is off. Debug builds expose `Module._app_debug_save_crc()` to compare the
+  state before Play and after Stop.
 - Undo (`docs/specs/undo.md`) needs no code at edit sites: whenever no widget, gizmo or popup is in
   use, `app/undo.c` compares the selected node, the character and the scene settings (written by
   `save_write_scope`) with the last commit. So a new editable value is undoable once it is saved in
-  its scope; a value the app changes every frame must be left out there (`driven_fields` in
-  `app/save.c`), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
+  its scope; a value the app changes every frame in Edit mode must be left out there
+  (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
