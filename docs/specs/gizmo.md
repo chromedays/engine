@@ -1,6 +1,6 @@
 # Transform gizmo spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: agreed (2026-09-28); being implemented. Changes to this spec are agreed first.
 
 ## Goal
 
@@ -30,6 +30,7 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 | Which nodes | The selected node, unless it is the active camera (the orbit camera owns it). Characters work: root motion keeps adding to the moved position |
 | Parents and joints | The gizmo edits the world matrix. The result goes back to `local` through the inverse of parent world × `attach.joint_model` |
 | Write-back | Our own `nv_mat4_decompose` (translation, quaternion, scale), not ImGuizmo's Euler-degree decomposition. Shear from non-uniform scale under a rotated parent is dropped |
+| Camera follow | While the gizmo drags, the camera holds still even when it follows the selection; following the dragged node would move the pointer's ray with it and the drag would run away |
 | Viewport UI | The gizmo draws in the viewport; it is the second exception to "editor UI stays in the panel", after the build label |
 | Touch | Handle sizes scale with `NvImgui.ui_scale` |
 | Undo | Not now |
@@ -38,15 +39,19 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 
 - **Input routing (`nv/imgui.h`).** Today every press that starts in `view_rect` goes to
   `NvImgui.view`, so ImGui never sees it. A new hook, `NvImgui.view_grab`, is a function that the
-  app sets. On mouse down or touch start in the viewport, the engine moves ImGui's mouse there and
-  asks the hook whether that point is on a gizmo handle (the app calls ImGuizmo's `IsOver`).
-  - When the hook says yes, the press goes to ImGui as a plain left button: no orbit, no pick, and
-    for touch no scroll-or-press wait. It stays with ImGui until it is released.
-  - Otherwise the press goes to `NvImgui.view` as today.
-- **Math (`nv/math.h`).**
-  - `nv_mat4_decompose` returns translation, rotation (quaternion) and scale.
-  - `nv_mat4_inverse` returns the general inverse, unless the renderer already has one to move
-    here.
+  app sets.
+  - A left press or a one-finger touch in the viewport moves ImGui's mouse there and waits two
+    frames. Touch has no hover, so ImGuizmo only knows what is under the finger after a frame has
+    run with the mouse there. Meanwhile the view gathers the press's input without applying it.
+  - Then the hook decides (the app calls ImGuizmo's `IsOver`). Yes: the press becomes an ImGui
+    left button from where it went down, and what the view gathered is dropped. No: the view
+    applies it, including a tap that was released while waiting.
+  - A second finger always keeps the press in the view (pinch and pan).
+- **Renderer (`nv/renderer.h`).** `nv_renderer_camera_matrices` gives the active camera's view and
+  projection matrices, as `nv_renderer_draw` uses them.
+- **Math (`nv/math.h`).** `nv_mat4_decompose` and `nv_mat4_inverse` already exist.
+  `nv_mat4_decompose` now normalizes its quaternion. Otherwise splitting and rebuilding the node
+  every frame of a drag drifts: the rotation and scale shrank a little more each frame.
 - **Build.** cimguizmo is fetched like cimgui and built into the `cimgui` library, so it shares
   that library's ImGui context.
 
@@ -55,9 +60,11 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 - After `update_camera`, the app passes the camera's view and projection matrices and the
   viewport rect (in ImGui coordinates) to ImGuizmo, then calls `Manipulate` on the selected node's
   world matrix. When the gizmo reports a change, the app writes it back to `local`.
-- `pick` skips a tap that the gizmo used.
-- Risk: our projection maps depth to 0..1 (WebGPU), while ImGuizmo expects OpenGL's -1..1. Only
-  depth differs, and the gizmo uses x and y; phase 1 checks this.
+- A press the gizmo takes never reaches `NvImgui.view`, so it neither orbits nor picks.
+- `ImGuizmo_BeginFrame` runs before the panel is built, so ImGuizmo's full-screen window is
+  created first and stays behind the panel.
+- Our projection maps depth to 0..1 (WebGPU), not OpenGL's -1..1. ImGuizmo unprojects at depth 0
+  and 1 and picks the end nearer the camera, so this works.
 
 ## Phases
 

@@ -36,6 +36,13 @@ typedef enum SceneKind {
     SCENE_COUNT,
 } SceneKind;
 
+// What the transform gizmo on the selection does (docs/specs/gizmo.md).
+typedef enum GizmoOperation {
+    GIZMO_MOVE,
+    GIZMO_ROTATE,
+    GIZMO_SCALE,
+} GizmoOperation;
+
 // What the editor shows of one scene: its camera orbit and its selection.
 typedef struct SceneView {
     NvScene* scene;
@@ -196,6 +203,10 @@ typedef struct App {
     NvMeshId target_mesh;
 
     // Editor
+    GizmoOperation gizmo_operation;
+    bool gizmo_local; // local axes for Move and Rotate (Scale always uses them)
+    bool gizmo_snap;
+    b32 gizmo_shown;  // drawn last frame, so ImGuizmo's hit test is current
     b32 open_inspector; // switch to the Inspector tab on the next frame
     b32 open_stress;    // switch to the Stress tab on the next frame
     bool show_bones;

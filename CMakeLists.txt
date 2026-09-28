@@ -100,6 +100,19 @@ target_compile_definitions(cimgui
     INTERFACE CIMGUI_DEFINE_ENUMS_AND_STRUCTS) # C users get plain structs; cimgui.cpp must not
 target_compile_options(cimgui PRIVATE -w)
 
+# ImGuizmo (transform gizmos) through cimguizmo, its C API. Built into the cimgui library so it
+# shares ImGui's context.
+FetchContent_Declare(cimguizmo
+    GIT_REPOSITORY https://github.com/cimgui/cimguizmo.git
+    GIT_TAG        eaf7d7b0bcb5f62374305a21f69af55fca4b1ee7 # ImGuizmo dc25afb
+    GIT_SUBMODULES ImGuizmo
+    SOURCE_SUBDIR  no-cmake)
+FetchContent_MakeAvailable(cimguizmo)
+target_sources(cimgui PRIVATE
+    ${cimguizmo_SOURCE_DIR}/cimguizmo.cpp
+    ${cimguizmo_SOURCE_DIR}/ImGuizmo/src/ImGuizmo.cpp)
+target_include_directories(cimgui SYSTEM PUBLIC ${cimguizmo_SOURCE_DIR})
+
 # cgltf: single-header glTF parser. The implementation gets its own translation unit so its
 # warnings stay off.
 FetchContent_Declare(cgltf

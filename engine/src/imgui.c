@@ -316,6 +316,11 @@ internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEve
         imgui->view_moved = 0;
         imgui->view_press_x = imgui->view_mouse_x = x;
         imgui->view_press_y = imgui->view_mouse_y = y;
+        if (imgui->view_grab && event->button == 0) {
+            imgui->view_grab_wait = 2;
+            imgui->view_tap_held = 0;
+            imgui->view_grab_touch = 0;
+        }
         return 1;
     }
     if (!imgui->view_mouse_button)
@@ -337,8 +342,12 @@ internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEve
         return 1;
     }
     if (event_type == EMSCRIPTEN_EVENT_MOUSEUP && event->button + 1 == imgui->view_mouse_button) {
-        if (!imgui->view_moved && imgui->view_mouse_button == 1)
-            view_tap(imgui, x, y);
+        if (!imgui->view_moved && imgui->view_mouse_button == 1) {
+            if (imgui->view_grab_wait)
+                imgui->view_tap_held = 1;
+            else
+                view_tap(imgui, x, y);
+        }
         imgui->view_mouse_button = 0;
         return 1;
     }
@@ -427,6 +436,13 @@ internal b32 view_touch(NvImgui* imgui, int event_type, const EmscriptenTouchEve
             imgui->view_moved = 0;
             imgui->view_press_x = (f32)first->clientX;
             imgui->view_press_y = (f32)first->clientY;
+            if (imgui->view_grab) {
+                // ImGui learns where the finger is, so the app can tell what is under it.
+                ImGuiIO_AddMousePosEvent(igGetIO_Nil(), imgui->view_press_x, imgui->view_press_y);
+                imgui->view_grab_wait = 2;
+                imgui->view_tap_held = 0;
+                imgui->view_grab_touch = 1;
+            }
         } else if (imgui->touch_gesture != NV_TOUCH_VIEW) {
             return 0;
         }
@@ -490,9 +506,16 @@ internal b32 view_touch(NvImgui* imgui, int event_type, const EmscriptenTouchEve
         }
     }
     if (imgui->view_touch_count == 0) {
-        if (event_type == EMSCRIPTEN_EVENT_TOUCHEND && !imgui->view_moved && !imgui->view_touch_multi)
-            view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+        if (event_type == EMSCRIPTEN_EVENT_TOUCHEND && !imgui->view_moved && !imgui->view_touch_multi) {
+            if (imgui->view_grab_wait)
+                imgui->view_tap_held = 1;
+            else
+                view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+        }
         imgui->touch_gesture = NV_TOUCH_NONE;
+        // A lifted finger points at nothing; while a press waits, ImGui still needs to see it.
+        if (!imgui->view_grab_wait)
+            ImGuiIO_AddMousePosEvent(igGetIO_Nil(), -FLT_MAX, -FLT_MAX);
     }
     return 1;
 }
@@ -777,6 +800,38 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     imgui->sampler = wgpuDeviceCreateSampler(device, &sampler_desc);
 }
 
+// Decides a press that has waited for `view_grab` (see NvImgui). A grabbed press becomes an ImGui
+// left button from where it went down; what the view gathered from it meanwhile is dropped.
+internal void decide_view_press(NvImgui* imgui)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    b32 touch = imgui->view_grab_touch;
+    b32 down = touch ? imgui->touch_gesture == NV_TOUCH_VIEW && imgui->view_touch_count > 0 : imgui->view_mouse_button == 1;
+    b32 multi = touch && imgui->view_touch_multi;
+    b32 grab = !multi && imgui->view_grab(imgui->view_grab_data);
+    if (grab) {
+        imgui->view_pending = (NvViewInput){0};
+        if (down && touch) {
+            imgui->touch_start_x = imgui->view_press_x;
+            imgui->touch_start_y = imgui->view_press_y;
+            imgui->touch_x = imgui->view_touch_x[0];
+            imgui->touch_y = imgui->view_touch_y[0];
+            imgui->view_touch_count = 0;
+            touch_press(imgui);
+        } else if (down) {
+            imgui->view_mouse_button = 0;
+            ImGuiIO_AddMousePosEvent(io, imgui->view_press_x, imgui->view_press_y);
+            ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+            ImGuiIO_AddMousePosEvent(io, imgui->view_mouse_x, imgui->view_mouse_y);
+        }
+    } else if (imgui->view_tap_held) {
+        view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+    }
+    imgui->view_tap_held = 0;
+    if (!down && touch)
+        ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
+}
+
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
 {
     ImGuiIO* io = igGetIO_Nil();
@@ -797,8 +852,15 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
         touch_press(imgui);
     imgui->touch_scroll = imgui->touch_scroll_pending;
     imgui->touch_scroll_pending = 0.0f;
-    imgui->view = imgui->view_pending;
-    imgui->view_pending = (NvViewInput){0};
+    // A press waiting for view_grab keeps what it gathers until it is decided.
+    if (imgui->view_grab_wait && --imgui->view_grab_wait == 0)
+        decide_view_press(imgui);
+    if (imgui->view_grab_wait) {
+        imgui->view = (NvViewInput){0};
+    } else {
+        imgui->view = imgui->view_pending;
+        imgui->view_pending = (NvViewInput){0};
+    }
 
     igNewFrame();
 }

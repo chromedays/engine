@@ -518,7 +518,7 @@ internal void update_depth_buffer(NvRenderer* renderer)
     renderer->depth_height = gpu->height;
 }
 
-internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
+internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)
 {
     NvCamera* camera = &camera_node->camera;
     NvMat4 proj = nv_mat4_identity();
@@ -532,7 +532,20 @@ internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
     default:
         NV_INVALID_CODE_PATH;
     }
-    return nv_mat4_mul(proj, nv_mat4_inverse(camera_node->world));
+    return proj;
+}
+
+internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
+{
+    return nv_mat4_mul(camera_projection(camera_node, aspect), nv_mat4_inverse(camera_node->world));
+}
+
+void nv_renderer_camera_matrices(NvScene* scene, NvRect viewport, NvMat4* view, NvMat4* projection)
+{
+    NV_ASSERT(viewport.width && viewport.height);
+    NvNode* camera = nv_scene_get(scene, scene->active_camera);
+    *view = nv_mat4_inverse(camera->world);
+    *projection = camera_projection(camera, (f32)viewport.width / (f32)viewport.height);
 }
 
 // A point through a projective matrix, with the perspective divide.

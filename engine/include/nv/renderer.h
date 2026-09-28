@@ -169,6 +169,10 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
 // Changes a material's base color (linear RGBA); the default material (id 0) included.
 void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const f32 base_color[4]);
 
+// The scene's active camera as nv_renderer_draw sees it in `viewport`: world to view, and view to
+// clip space (depth 0 to 1).
+void nv_renderer_camera_matrices(NvScene* scene, NvRect viewport, NvMat4* view, NvMat4* projection);
+
 // The world ray through (x, y) of `viewport` (framebuffer pixels of the target, as passed to
 // nv_renderer_draw), seen by the scene's active camera.
 NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y);

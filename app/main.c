@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include <cimguizmo.h>
 #include <emscripten/emscripten.h>
 
 #include <math.h>
@@ -499,7 +500,9 @@ internal void update_camera(App* app, NvRect viewport)
     // Following, the camera orbits the selection (or the view's focus). Not following, it stays
     // where it was and only moves by panning, whatever gets selected.
     NvVec3 point = view->orbit_point;
-    if (view->follow_selection) {
+    // NOTE: While the gizmo drags the selection, the camera holds still: following it would move
+    // the pointer's ray with the node, and the drag would run away.
+    if (view->follow_selection && !ImGuizmo_IsUsingAny()) {
         NvNodeId focus = view->selected;
         if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
             focus = view->focus;
@@ -521,6 +524,62 @@ internal void update_camera(App* app, NvRect viewport)
                                    nv_quat_axis_angle(nv_vec3(1, 0, 0), -view->camera_pitch));
     // The camera is a top-level node and nv_scene_update already ran this frame.
     camera->world = nv_mat4_trs(camera->position, camera->rotation, camera->scale);
+}
+
+internal OPERATION gizmo_imguizmo_operation(App* app)
+{
+    switch (app->gizmo_operation) {
+    case GIZMO_MOVE: return TRANSLATE;
+    case GIZMO_ROTATE: return ROTATE_X | ROTATE_Y | ROTATE_Z; // no screen-space ring
+    case GIZMO_SCALE: return SCALE;
+    }
+    NV_INVALID_CODE_PATH;
+    return TRANSLATE;
+}
+
+// NvImgui.view_grab: a press on a gizmo handle drags the gizmo instead of the camera.
+internal b32 gizmo_grab(void* data)
+{
+    App* app = data;
+    return app->gizmo_shown && ImGuizmo_IsOver_OPERATION(gizmo_imguizmo_operation(app));
+}
+
+// The transform gizmo on the selected node. ImGuizmo edits the world matrix; the result goes back
+// to the node's position, rotation and scale, which nv_scene_update turns into `world` next frame.
+internal void draw_gizmo(App* app, NvRect viewport)
+{
+    SceneView* view = app_view(app);
+    NvScene* scene = view->scene;
+    app->gizmo_shown = 0;
+    // The active camera is the orbit camera's to move.
+    if (!view->selected.index || view->selected.index == scene->active_camera.index)
+        return;
+    NvNode* node = nv_scene_get(scene, view->selected);
+
+    NvMat4 view_matrix, projection;
+    nv_renderer_camera_matrices(scene, viewport, &view_matrix, &projection);
+    // ImGui works in CSS pixels; the viewport is in framebuffer pixels.
+    f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
+    ImGuizmo_SetRect((f32)viewport.x / ratio, (f32)viewport.y / ratio, (f32)viewport.width / ratio, (f32)viewport.height / ratio);
+    ImGuizmo_SetOrthographic(nv_scene_get(scene, scene->active_camera)->camera.projection == NV_PROJECTION_ORTHOGRAPHIC);
+    app->gizmo_shown = 1;
+
+    NvMat4 world = node->world;
+    MODE mode = (app->gizmo_local || app->gizmo_operation == GIZMO_SCALE) ? LOCAL : WORLD;
+    if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, world.e, NULL, NULL, NULL, NULL))
+        return;
+
+    // world = parent world * joint (for attached nodes) * local, as in nv_scene_update.
+    NvMat4 parent = node->parent ? scene->nodes[node->parent].world : nv_mat4_identity();
+    if (node->attach.animator.index)
+        parent = nv_mat4_mul(parent, node->attach.joint_model);
+    NvMat4 local = nv_mat4_mul(nv_mat4_inverse(parent), world);
+    NvVec3 position, scale;
+    NvQuat rotation;
+    nv_mat4_decompose(local, &position, &rotation, &scale);
+    node->position = position;
+    node->rotation = rotation;
+    node->scale = scale;
 }
 
 internal void draw_bones(App* app)
@@ -617,6 +676,9 @@ internal void frame(void* userdata)
     NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
     app->imgui.view_rect = layout.viewport;
     nv_imgui_new_frame(&app->imgui, dt);
+    // IMPORTANT: Before the panel, so ImGuizmo's full-screen window (created on the first frame)
+    // stays behind the panel.
+    ImGuizmo_BeginFrame();
     app_build_ui(app, layout.panel);
     times->ui = now_ms() - t;
 
@@ -634,6 +696,7 @@ internal void frame(void* userdata)
     times->scene = now_ms() - t;
     pick(app, layout.viewport);
     update_camera(app, layout.viewport);
+    draw_gizmo(app, layout.viewport);
     draw_selection(app);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
         draw_bones(app);
@@ -674,6 +737,8 @@ int main(void)
     }
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
+    app->imgui.view_grab = gizmo_grab;
+    app->imgui.view_grab_data = app;
     nv_anim_init(&app->anim_memory);
 
     build_world(app);

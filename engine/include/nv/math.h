@@ -292,5 +292,8 @@ static inline void nv_mat4_decompose(NvMat4 m, NvVec3* translation, NvQuat* rota
         f32 k = sqrtf(1.0f + m22 - m00 - m11) * 2.0f;
         q = (NvQuat){(m02 + m20) / k, (m12 + m21) / k, 0.25f * k, (m10 - m01) / k};
     }
-    *rotation = q;
+    // IMPORTANT: Normalized, so a matrix rebuilt from the parts and split again (as the gizmo does
+    // every frame) cannot drift: a quaternion slightly off unit length skews nv_mat4_trs.
+    f32 length = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
+    *rotation = (NvQuat){q.x / length, q.y / length, q.z / length, q.w / length};
 }

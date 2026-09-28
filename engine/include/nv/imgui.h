@@ -87,6 +87,16 @@ typedef struct NvImgui {
     s32 view_touch_id[NV_VIEW_MAX_TOUCHES];
     f32 view_touch_x[NV_VIEW_MAX_TOUCHES];
     f32 view_touch_y[NV_VIEW_MAX_TOUCHES];
+
+    // Lets the app take a press in the view for something it draws there (a gizmo handle). A left
+    // press or a one-finger touch waits two frames, so ImGui has seen the pointer where it went
+    // down, then `view_grab` decides: true hands the press to ImGui as a left button, false keeps
+    // it in `view`. NULL keeps every press in the view without waiting.
+    b32 (*view_grab)(void* data);
+    void* view_grab_data;
+    u32 view_grab_wait; // frames until the pending press is decided; 0 = none pending
+    b32 view_tap_held;  // the pending press was released as a tap before it was decided
+    b32 view_grab_touch; // the pending press is a touch
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for
