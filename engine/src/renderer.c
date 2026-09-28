@@ -487,12 +487,12 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->skin_buffer = create_buffer(gpu, WGPUBufferUsage_Storage, NULL, NV_MAX_SKIN_MATRICES * sizeof(NvMat4));
 
     if (gpu->has_timestamps) {
-        WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = 2};
+        WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = 4}; // scene, shadow
         renderer->timestamp_queries = wgpuDeviceCreateQuerySet(gpu->device, &query_desc);
-        renderer->timestamp_resolve = create_buffer(gpu, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, NULL, 2 * sizeof(u64));
+        renderer->timestamp_resolve = create_buffer(gpu, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, NULL, 4 * sizeof(u64));
         WGPUBufferDescriptor readback_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
         readback_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-        readback_desc.size = 2 * sizeof(u64);
+        readback_desc.size = 4 * sizeof(u64);
         renderer->timestamp_readback = wgpuDeviceCreateBuffer(gpu->device, &readback_desc);
     }
     renderer->debug_buffer = create_buffer(gpu, WGPUBufferUsage_Vertex, NULL, NV_MAX_DEBUG_LINES * 2 * sizeof(NvDebugVertex));
@@ -977,6 +977,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     // Shadow pass: every mesh's depth from the light, into the map the scene pass then samples.
     // WebGPU orders the two passes, so the scene pass sees what this one wrote.
     u32 shadow_draws = 0;
+    renderer->timestamp_copied = renderer->timestamp_queries && !renderer->timestamp_mapping;
     if (shadows) {
         WGPURenderPassDepthStencilAttachment shadow_depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
         shadow_depth.view = renderer->shadow_view;
@@ -986,6 +987,13 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         WGPURenderPassDescriptor shadow_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
         shadow_desc.label = (WGPUStringView){"shadow", WGPU_STRLEN};
         shadow_desc.depthStencilAttachment = &shadow_depth;
+        WGPUPassTimestampWrites shadow_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
+        if (renderer->timestamp_copied) {
+            shadow_timestamps.querySet = renderer->timestamp_queries;
+            shadow_timestamps.beginningOfPassWriteIndex = 2;
+            shadow_timestamps.endOfPassWriteIndex = 3;
+            shadow_desc.timestampWrites = &shadow_timestamps;
+        }
         WGPURenderPassEncoder shadow_pass = wgpuCommandEncoderBeginRenderPass(encoder, &shadow_desc);
         wgpuRenderPassEncoderSetBindGroup(shadow_pass, 0, renderer->shadow_frame_group, 0, NULL);
         WGPURenderPipeline bound = NULL;
@@ -1034,7 +1042,6 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     pass_desc.colorAttachments = &color;
     pass_desc.depthStencilAttachment = &depth;
     WGPUPassTimestampWrites timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-    renderer->timestamp_copied = renderer->timestamp_queries && !renderer->timestamp_mapping;
     if (renderer->timestamp_copied) {
         timestamps.querySet = renderer->timestamp_queries;
         timestamps.beginningOfPassWriteIndex = 0;
@@ -1093,8 +1100,9 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     wgpuRenderPassEncoderRelease(pass);
 
     if (renderer->timestamp_copied) {
-        wgpuCommandEncoderResolveQuerySet(encoder, renderer->timestamp_queries, 0, 2, renderer->timestamp_resolve, 0);
-        wgpuCommandEncoderCopyBufferToBuffer(encoder, renderer->timestamp_resolve, 0, renderer->timestamp_readback, 0, 2 * sizeof(u64));
+        // A frame without a shadow pass resolves its two queries as 0, which reads as no time.
+        wgpuCommandEncoderResolveQuerySet(encoder, renderer->timestamp_queries, 0, 4, renderer->timestamp_resolve, 0);
+        wgpuCommandEncoderCopyBufferToBuffer(encoder, renderer->timestamp_resolve, 0, renderer->timestamp_readback, 0, 4 * sizeof(u64));
     }
 }
 
@@ -1103,10 +1111,12 @@ internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView mes
     (void)message, (void)userdata2;
     NvRenderer* renderer = userdata1;
     if (status == WGPUMapAsyncStatus_Success) {
-        const u64* ticks = wgpuBufferGetConstMappedRange(renderer->timestamp_readback, 0, 2 * sizeof(u64));
+        const u64* ticks = wgpuBufferGetConstMappedRange(renderer->timestamp_readback, 0, 4 * sizeof(u64));
         // Timestamps are nanoseconds; a pass the browser could not time reads as 0 or reversed.
         if (ticks && ticks[1] > ticks[0])
             renderer->gpu_ms = (f64)(ticks[1] - ticks[0]) / 1.0e6;
+        if (ticks)
+            renderer->gpu_shadow_ms = ticks[3] > ticks[2] ? (f64)(ticks[3] - ticks[2]) / 1.0e6 : 0.0;
         wgpuBufferUnmap(renderer->timestamp_readback);
     }
     renderer->timestamp_mapping = 0;
@@ -1122,5 +1132,5 @@ void nv_renderer_end_frame(NvRenderer* renderer)
     callback.mode = WGPUCallbackMode_AllowSpontaneous;
     callback.callback = on_timestamps_mapped;
     callback.userdata1 = renderer;
-    wgpuBufferMapAsync(renderer->timestamp_readback, WGPUMapMode_Read, 0, 2 * sizeof(u64), callback);
+    wgpuBufferMapAsync(renderer->timestamp_readback, WGPUMapMode_Read, 0, 4 * sizeof(u64), callback);
 }

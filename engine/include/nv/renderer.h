@@ -177,7 +177,7 @@ typedef struct NvRenderer {
 
     NvRenderStats stats;
 
-    // GPU time of the scene pass, where the device has timestamps. Results arrive a few frames
+    // GPU time of the scene and shadow passes, where the device has timestamps. Results arrive a few frames
     // late, through a buffer that is read back while no other readback is in flight.
     WGPUQuerySet timestamp_queries;
     WGPUBuffer timestamp_resolve;
@@ -185,6 +185,7 @@ typedef struct NvRenderer {
     b32 timestamp_copied;   // this frame's timestamps are being copied to the readback buffer
     b32 timestamp_mapping;  // the readback buffer is being mapped
     f64 gpu_ms;             // latest scene pass time; 0 without timestamps
+    f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);

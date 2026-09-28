@@ -24,7 +24,8 @@ app/                 the app: a showcase scene (a planet and moon, an animated c
                      sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor panel (node tree, inspector, view settings, stress workloads). It
                      autosaves the showcase to the browser (IndexedDB), has undo and redo, and
-                     Edit and Play modes (Play runs the showcase; Stop puts it back)
+                     Edit and Play modes (Play runs the showcase; Stop puts it back). The sun
+                     casts shadows (one shadow map; size, format and filter in the View tab)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts

@@ -1,6 +1,6 @@
 # Directional shadows spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -96,6 +96,11 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
    format, compared in screenshots), the settings saved and their touch defaults.
 3. **Cost and docs:** the shadow stats and GPU time, the benchmark column, a phone-size check,
    `AGENTS.md` and README.
+
+As built, the engine side of phase 2 (the 3×3 filter, the normal offset, texel snapping, the fade
+and the light box) arrived with phase 1, since they are a few lines each in the same code; phase 2
+then added caster culling, the saved settings and the `depth16unorm` checks. At phone size the
+touch defaults (1024, Low) give visibly stepped shadow edges; High smooths them at nine lookups.
 
 Every phase is checked in Release and Debug in headless Chromium, at desktop and phone size.
 SwiftShader's timings mean nothing; real costs come from devices.

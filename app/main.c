@@ -643,7 +643,8 @@ internal f64 now_ms(void)
 f64 app_load(const FrameTimes* t)
 {
     f64 cpu = t->anim + t->scene + t->draw + t->ui;
-    f64 busy = cpu > t->gpu ? cpu : t->gpu;
+    f64 gpu = t->gpu + t->gpu_shadow;
+    f64 busy = cpu > gpu ? cpu : gpu;
     return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
 }
 
@@ -658,13 +659,15 @@ internal void accumulate_times(App* app, f64 now)
     sum->draw += t->draw;
     sum->ui += t->ui;
     sum->gpu += t->gpu;
+    sum->gpu_shadow += t->gpu_shadow;
     if (t->frame > app->window_worst_frame)
         app->window_worst_frame = t->frame;
     ++app->window_frames;
     if (now - app->window_start < 1.0)
         return;
     f64 n = (f64)app->window_frames;
-    app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n};
+    app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
+                                      sum->gpu_shadow / n};
     app->shown_worst_frame = app->window_worst_frame;
     *sum = (FrameTimes){0};
     app->window_worst_frame = 0.0;
@@ -787,6 +790,7 @@ internal void frame(void* userdata)
     nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout.viewport, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = app->renderer.gpu_ms;
+    times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
     t = now_ms();
     nv_imgui_render(&app->imgui, encoder, target);
     times->ui += now_ms() - t;

@@ -314,6 +314,7 @@ internal void start_benchmark(App* app)
 {
     Stress* stress = &app->stress;
     stress->before_benchmark = stress->want;
+    stress->benchmark_shadows = app->renderer.shadows;
     stress->benchmark_running = 1;
     stress->result_count = 0;
     start_step(app, 0, nv_time_seconds());
@@ -353,6 +354,7 @@ void stress_after_frame(App* app)
     sum->draw += t->draw;
     sum->ui += t->ui;
     sum->gpu += t->gpu;
+    sum->gpu_shadow += t->gpu_shadow;
     if (t->frame > result->worst_frame)
         result->worst_frame = t->frame;
     ++result->frames;
@@ -360,7 +362,8 @@ void stress_after_frame(App* app)
     if (elapsed < BENCHMARK_WARMUP_SECONDS + BENCHMARK_MEASURE_SECONDS)
         return;
     f64 n = (f64)result->frames;
-    *sum = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n};
+    *sum = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
+                        sum->gpu_shadow / n};
     stress->result_count = stress->benchmark_step + 1;
     if (stress->benchmark_step + 1 < stress->step_count)
         start_step(app, stress->benchmark_step + 1, now);
@@ -374,6 +377,16 @@ EM_JS(void, js_user_agent, (char* out, int size), {
     stringToUTF8(navigator.userAgent, out, size);
 });
 
+// "2048 32-bit float High", or "off": what the shadows were while measuring.
+internal void shadow_settings_text(const NvShadowSettings* s, char* out, umm size)
+{
+    if (!s->size)
+        snprintf(out, size, "off");
+    else
+        snprintf(out, size, "%u %s %s, %.0f m", s->size, s->format == NV_SHADOW_FORMAT_DEPTH16 ? "16-bit" : "32-bit float",
+                 s->filter == NV_SHADOW_FILTER_HIGH ? "High" : "Low", (f64)s->distance);
+}
+
 internal void copy_results(App* app)
 {
     Stress* stress = &app->stress;
@@ -381,15 +394,20 @@ internal void copy_results(App* app)
     js_user_agent(agent, sizeof(agent));
     char text[4096];
     umm used = 0;
+    char shadows[64];
+    shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
     used += (umm)snprintf(text + used, sizeof(text) - used,
-                          "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n\n"
-                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu\n",
-                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no");
+                          "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
+                          "shadows: %s\n\n"
+                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow\n",
+                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no",
+                          shadows);
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
-        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f\n",
+        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f\n",
                               stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, app_load(&r->average),
-                              r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu);
+                              r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
+                              r->average.gpu_shadow);
     }
     igSetClipboardText(text);
 }
@@ -422,9 +440,10 @@ internal void stats_section(App* app)
     stat("Worst frame", "%.2f", app->shown_worst_frame);
     if (app->gpu.has_timestamps) {
         stat("GPU scene pass", "%.2f", a->gpu);
+        stat("GPU shadow pass", "%.2f", a->gpu_shadow);
     } else {
         igTableNextColumn();
-        igTextUnformatted("GPU scene pass", NULL);
+        igTextUnformatted("GPU passes", NULL);
         igTableNextColumn();
         igTextDisabled("no timestamps");
     }
@@ -441,6 +460,7 @@ internal void stats_section(App* app)
     stat("Pipeline changes", "%.0f", (f64)r->pipeline_changes);
     stat("Material changes", "%.0f", (f64)r->material_changes);
     stat("Mesh changes", "%.0f", (f64)r->mesh_changes);
+    stat("Shadow draws", "%.0f", (f64)r->shadow_draws);
     igEndTable();
 }
 
@@ -480,13 +500,16 @@ internal void benchmark_section(App* app)
     if (!stress->result_count)
         return;
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
+    char shadows[64];
+    shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
+    igText("Shadows: %s", shadows);
     if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
         igTableSetupColumn("Load %", 0, 0.0f, 0);
         igTableSetupColumn("Worst", 0, 0.0f, 0);
         igTableSetupColumn("CPU a/s/d", 0, 0.0f, 0);
-        igTableSetupColumn("GPU", 0, 0.0f, 0);
+        igTableSetupColumn("GPU sc/sh", 0, 0.0f, 0);
         igTableHeadersRow();
         for (u32 i = 0; i < stress->result_count; ++i) {
             const BenchmarkResult* r = &stress->results[i];
@@ -503,7 +526,7 @@ internal void benchmark_section(App* app)
             igText("%.2f/%.2f/%.2f", r->average.anim, r->average.scene, r->average.draw);
             igTableNextColumn();
             if (app->gpu.has_timestamps)
-                igText("%.2f", r->average.gpu);
+                igText("%.2f/%.2f", r->average.gpu, r->average.gpu_shadow);
             else
                 igTextDisabled("-");
         }

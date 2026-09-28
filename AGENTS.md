@@ -94,6 +94,11 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its scope; a value the app changes every frame in Edit mode must be left out there
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
+- The first directional light casts shadows through one shadow map fitted to the view
+  (`docs/specs/shadows.md`); the app sets `NvRenderer.shadows` and the renderer remakes the map and
+  its depth-only pipelines when the size or format changes. The shadow pass binds
+  `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
+  A new mesh vertex layout needs a matching entry point in `shadow_shader` too.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
