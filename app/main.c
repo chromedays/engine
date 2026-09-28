@@ -850,6 +850,14 @@ int main(void)
     }
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
+    // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
+    b32 touch = app->imgui.ui_scale > 1.0f;
+    app->renderer.shadows = (NvShadowSettings){
+        .size = touch ? 1024 : 2048,
+        .format = NV_SHADOW_FORMAT_DEPTH32F,
+        .filter = touch ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH,
+        .distance = 30.0f,
+    };
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
     // Thicker gizmo lines on touch screens, like the rest of the UI.

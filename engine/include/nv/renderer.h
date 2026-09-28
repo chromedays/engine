@@ -81,6 +81,26 @@ typedef struct NvSkin {
     u32 count;
 } NvSkin;
 
+typedef enum NvShadowFormat {
+    NV_SHADOW_FORMAT_DEPTH32F, // depth32float
+    NV_SHADOW_FORMAT_DEPTH16,  // depth16unorm: half the memory and bandwidth
+} NvShadowFormat;
+
+typedef enum NvShadowFilter {
+    NV_SHADOW_FILTER_LOW,  // one hardware 2x2 PCF lookup
+    NV_SHADOW_FILTER_HIGH, // 3x3 of them
+} NvShadowFilter;
+
+// How the first directional light casts shadows (docs/specs/shadows.md). One shadow map covers the
+// camera's view up to `distance`. Zeroed: no shadows.
+typedef struct NvShadowSettings {
+    u32 size; // shadow map width and height in texels; 0 = no shadows
+    NvShadowFormat format;
+    NvShadowFilter filter;
+    f32 distance; // meters from the camera; shadows fade out over the last tenth
+    b32 show_box; // draw the light's box as debug lines
+} NvShadowSettings;
+
 // What the last nv_renderer_draw did.
 typedef struct NvRenderStats {
     u32 draws;          // mesh draw calls, one per mesh node
@@ -91,6 +111,7 @@ typedef struct NvRenderStats {
     u32 mesh_changes;     // vertex and index buffer changes
     u32 skin_matrices;
     u32 debug_lines;
+    u32 shadow_draws; // draws in the shadow pass
 } NvRenderStats;
 
 // Draws an NvScene: meshes with a base color material, lit by the first directional light, seen
@@ -122,6 +143,19 @@ typedef struct NvRenderer {
     WGPUTextureView depth_view;
     u32 depth_width;
     u32 depth_height;
+
+    // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
+    // size or the format changed. While shadows are off, a 1x1 map stays bound.
+    NvShadowSettings shadows;
+    u32 shadow_size;               // of the map that exists
+    NvShadowFormat shadow_format;  // of the map and shadow_pipelines
+    WGPUTexture shadow_texture;
+    WGPUTextureView shadow_view;
+    WGPUSampler shadow_sampler;    // comparison, linear: hardware 2x2 PCF
+    WGPUBindGroupLayout shadow_frame_layout; // frame_layout without the map, for the shadow pass
+    WGPUBindGroup shadow_frame_group;
+    WGPURenderPipeline shadow_pipelines[2][2]; // [skinned][double_sided], depth only
+    NvMat4 light_view_proj;        // the last frame's, for the light box
 
     // Per-frame CPU staging, from the permanent arena.
     struct NvObjectData* objects; // [NV_MAX_NODES]

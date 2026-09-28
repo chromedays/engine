@@ -8,10 +8,50 @@
 // Layouts match the WGSL structs below.
 typedef struct FrameUniforms {
     NvMat4 view_proj;
+    NvMat4 light_view_proj; // world to the shadow map's clip space
     f32 light_dir[4];
     f32 light_color[4];
     f32 ambient[4];
+    f32 camera_pos[4];
+    f32 shadow[4];      // x: one texel in uv, y: 0 off / 1 low / 2 high, z: normal offset (m)
+    f32 shadow_fade[4]; // x, y: distances from the camera where shadows start and finish fading
 } FrameUniforms;
+
+// Shadow pass bias per format. The constant counts the format's smallest depth step, which is
+// fixed for depth16unorm but depends on each triangle's depth for depth32float, so each format has
+// its own; the slope scale is shared.
+#define SHADOW_BIAS_SLOPE 2.0f
+global const s32 shadow_bias_constant[2] = {
+    [NV_SHADOW_FORMAT_DEPTH32F] = 0,
+    [NV_SHADOW_FORMAT_DEPTH16] = 8,
+};
+#define SHADOW_PULLBACK 50.0f // meters the light's box reaches back toward the light, for casters
+
+#define FRAME_WGSL \
+    "struct Frame {\n" \
+    "    view_proj: mat4x4f,\n" \
+    "    light_view_proj: mat4x4f,\n" \
+    "    light_dir: vec4f,\n" \
+    "    light_color: vec4f,\n" \
+    "    ambient: vec4f,\n" \
+    "    camera_pos: vec4f,\n" \
+    "    shadow: vec4f,\n" \
+    "    shadow_fade: vec4f,\n" \
+    "};\n" \
+    "struct Object {\n" \
+    "    model: mat4x4f,\n" \
+    "    joint_offset: u32,\n" \
+    "};\n" \
+    "@group(0) @binding(0) var<uniform> frame: Frame;\n" \
+    "@group(0) @binding(1) var<storage, read> objects: array<Object>;\n" \
+    "@group(0) @binding(2) var<storage, read> skin: array<mat4x4f>;\n" \
+    "fn skinned_model(object: Object, joints: vec4u, weights: vec4f) -> mat4x4f {\n" \
+    "    if (object.joint_offset == 0xFFFFFFFFu) { return object.model; }\n" \
+    "    let o = object.joint_offset;\n" \
+    "    let s = skin[o + joints.x] * weights.x + skin[o + joints.y] * weights.y +\n" \
+    "            skin[o + joints.z] * weights.z + skin[o + joints.w] * weights.w;\n" \
+    "    return object.model * s;\n" \
+    "}\n"
 
 typedef struct NvObjectData {
     NvMat4 model;
@@ -25,22 +65,12 @@ typedef struct MaterialUniforms {
 
 // Every mesh node becomes one instance: the vertex shader finds its object data by instance index.
 global const char* mesh_shader =
-    "struct Frame {\n"
-    "    view_proj: mat4x4f,\n"
-    "    light_dir: vec4f,\n"
-    "    light_color: vec4f,\n"
-    "    ambient: vec4f,\n"
-    "};\n"
-    "struct Object {\n"
-    "    model: mat4x4f,\n"
-    "    joint_offset: u32,\n"
-    "};\n"
+    FRAME_WGSL
     "struct Material {\n"
     "    base_color: vec4f,\n"
     "};\n"
-    "@group(0) @binding(0) var<uniform> frame: Frame;\n"
-    "@group(0) @binding(1) var<storage, read> objects: array<Object>;\n"
-    "@group(0) @binding(2) var<storage, read> skin: array<mat4x4f>;\n"
+    "@group(0) @binding(3) var shadow_map: texture_depth_2d;\n"
+    "@group(0) @binding(4) var shadow_sampler: sampler_comparison;\n"
     "@group(1) @binding(0) var<uniform> material: Material;\n"
     "@group(1) @binding(1) var material_sampler: sampler;\n"
     "@group(1) @binding(2) var base_color_texture: texture_2d<f32>;\n"
@@ -61,13 +91,16 @@ global const char* mesh_shader =
     "    @builtin(position) clip: vec4f,\n"
     "    @location(0) normal: vec3f,\n"
     "    @location(1) uv: vec2f,\n"
+    "    @location(2) world: vec3f,\n"
     "};\n"
     "\n"
     "fn finish(model: mat4x4f, position: vec3f, normal: vec3f, uv: vec2f) -> VsOut {\n"
     "    var out: VsOut;\n"
-    "    out.clip = frame.view_proj * model * vec4f(position, 1.0);\n"
+    "    let world = model * vec4f(position, 1.0);\n"
+    "    out.clip = frame.view_proj * world;\n"
     "    out.normal = (model * vec4f(normal, 0.0)).xyz;\n"
     "    out.uv = uv;\n"
+    "    out.world = world.xyz;\n"
     "    return out;\n"
     "}\n"
     "\n"
@@ -78,15 +111,31 @@ global const char* mesh_shader =
     "\n"
     "@vertex\n"
     "fn vs_skinned(in: SkinnedIn, @builtin(instance_index) i: u32) -> VsOut {\n"
-    "    let object = objects[i];\n"
-    "    var model = object.model;\n"
-    "    if (object.joint_offset != 0xFFFFFFFFu) {\n"
-    "        let o = object.joint_offset;\n"
-    "        let s = skin[o + in.joints.x] * in.weights.x + skin[o + in.joints.y] * in.weights.y +\n"
-    "                skin[o + in.joints.z] * in.weights.z + skin[o + in.joints.w] * in.weights.w;\n"
-    "        model = model * s;\n"
+    "    return finish(skinned_model(objects[i], in.joints, in.weights), in.position, in.normal, in.uv);\n"
+    "}\n"
+    "\n"
+    // How much of the directional light reaches `world`: 1 lit, 0 in shadow. A comparison sampler
+    // with linear filtering compares the four nearest texels and blends the results (a 2x2
+    // percentage-closer filter per lookup); High averages 3x3 such lookups a texel apart.
+    "fn shadow_lit(world: vec3f, n: vec3f) -> f32 {\n"
+    "    let p = frame.light_view_proj * vec4f(world + n * frame.shadow.z, 1.0);\n"
+    "    let uv = vec2f(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);\n"
+    "    var lit = textureSampleCompareLevel(shadow_map, shadow_sampler, uv, p.z);\n"
+    "    if (frame.shadow.y > 1.5) {\n"
+    "        var sum = 0.0;\n"
+    "        for (var y = -1; y <= 1; y++) {\n"
+    "            for (var x = -1; x <= 1; x++) {\n"
+    "                let offset = vec2f(f32(x), f32(y)) * frame.shadow.x;\n"
+    "                sum += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + offset, p.z);\n"
+    "            }\n"
+    "        }\n"
+    "        lit = sum / 9.0;\n"
     "    }\n"
-    "    return finish(model, in.position, in.normal, in.uv);\n"
+    "    let inside = all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)) && p.z >= 0.0 && p.z <= 1.0;\n"
+    "    lit = select(1.0, lit, inside && frame.shadow.y > 0.5);\n"
+    "    let span = max(frame.shadow_fade.y - frame.shadow_fade.x, 0.001);\n"
+    "    let fade = clamp((distance(world, frame.camera_pos.xyz) - frame.shadow_fade.x) / span, 0.0, 1.0);\n"
+    "    return mix(lit, 1.0, fade);\n"
     "}\n"
     "\n"
     "@fragment\n"
@@ -94,9 +143,29 @@ global const char* mesh_shader =
     "    var n = normalize(in.normal);\n"
     "    if (!front) { n = -n; }\n"
     "    let base = material.base_color * textureSample(base_color_texture, material_sampler, in.uv);\n"
-    "    let diffuse = max(dot(n, -frame.light_dir.xyz), 0.0);\n"
+    "    let diffuse = max(dot(n, -frame.light_dir.xyz), 0.0) * shadow_lit(in.world, n);\n"
     "    let light = frame.ambient.rgb + frame.light_color.rgb * diffuse;\n"
     "    return vec4f(base.rgb * light, base.a);\n"
+    "}\n";
+
+// Depth only, seen from the light: the same meshes and skinning as the scene, no fragment stage.
+global const char* shadow_shader =
+    FRAME_WGSL
+    "struct StaticIn {\n"
+    "    @location(0) position: vec3f,\n"
+    "};\n"
+    "struct SkinnedIn {\n"
+    "    @location(0) position: vec3f,\n"
+    "    @location(3) joints: vec4u,\n"
+    "    @location(4) weights: vec4f,\n"
+    "};\n"
+    "@vertex\n"
+    "fn vs_static(in: StaticIn, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {\n"
+    "    return frame.light_view_proj * objects[i].model * vec4f(in.position, 1.0);\n"
+    "}\n"
+    "@vertex\n"
+    "fn vs_skinned(in: SkinnedIn, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {\n"
+    "    return frame.light_view_proj * skinned_model(objects[i], in.joints, in.weights) * vec4f(in.position, 1.0);\n"
     "}\n";
 
 global const char* debug_shader =
@@ -144,18 +213,25 @@ internal void create_layouts(NvRenderer* renderer)
 {
     WGPUDevice device = renderer->gpu->device;
 
-    WGPUBindGroupLayoutEntry frame_entries[3] = {
+    WGPUBindGroupLayoutEntry frame_entries[5] = {
         {.binding = 0, .visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
          .buffer = {.type = WGPUBufferBindingType_Uniform, .minBindingSize = sizeof(FrameUniforms)}},
         {.binding = 1, .visibility = WGPUShaderStage_Vertex,
          .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
         {.binding = 2, .visibility = WGPUShaderStage_Vertex,
          .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
+        {.binding = 3, .visibility = WGPUShaderStage_Fragment,
+         .texture = {.sampleType = WGPUTextureSampleType_Depth, .viewDimension = WGPUTextureViewDimension_2D}},
+        {.binding = 4, .visibility = WGPUShaderStage_Fragment,
+         .sampler = {.type = WGPUSamplerBindingType_Comparison}},
     };
     WGPUBindGroupLayoutDescriptor frame_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
     frame_desc.entryCount = NV_ARRAY_COUNT(frame_entries);
     frame_desc.entries = frame_entries;
     renderer->frame_layout = wgpuDeviceCreateBindGroupLayout(device, &frame_desc);
+    // IMPORTANT: The shadow pass writes the map, so its bind group must not also bind it.
+    frame_desc.entryCount = 3;
+    renderer->shadow_frame_layout = wgpuDeviceCreateBindGroupLayout(device, &frame_desc);
 
     WGPUBindGroupLayoutEntry material_entries[3] = {
         {.binding = 0, .visibility = WGPUShaderStage_Fragment,
@@ -285,6 +361,101 @@ internal void create_pipelines(NvRenderer* renderer)
     wgpuPipelineLayoutRelease(debug_layout);
 }
 
+internal WGPUTextureFormat shadow_texture_format(NvShadowFormat format)
+{
+    return format == NV_SHADOW_FORMAT_DEPTH16 ? WGPUTextureFormat_Depth16Unorm : WGPUTextureFormat_Depth32Float;
+}
+
+internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat format)
+{
+    WGPUDevice device = renderer->gpu->device;
+    for (u32 skinned = 0; skinned < 2; ++skinned) {
+        for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
+            if (renderer->shadow_pipelines[skinned][double_sided])
+                wgpuRenderPipelineRelease(renderer->shadow_pipelines[skinned][double_sided]);
+        }
+    }
+    WGPUPipelineLayout layout = create_pipeline_layout(device, &renderer->shadow_frame_layout, 1);
+    WGPUShaderModule module = create_shader(device, shadow_shader);
+    WGPUVertexAttribute static_attributes[1] = {
+        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, position), .shaderLocation = 0},
+    };
+    WGPUVertexAttribute skinned_attributes[3] = {
+        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvSkinnedVertex, position), .shaderLocation = 0},
+        {.format = WGPUVertexFormat_Uint16x4, .offset = offsetof(NvSkinnedVertex, joints), .shaderLocation = 3},
+        {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvSkinnedVertex, weights), .shaderLocation = 4},
+    };
+    WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
+    depth.format = shadow_texture_format(format);
+    depth.depthWriteEnabled = WGPUOptionalBool_True;
+    depth.depthCompare = WGPUCompareFunction_Less;
+    depth.depthBias = shadow_bias_constant[format];
+    depth.depthBiasSlopeScale = SHADOW_BIAS_SLOPE;
+    for (u32 skinned = 0; skinned < 2; ++skinned) {
+        WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
+        vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
+        vertex_layout.arrayStride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex);
+        vertex_layout.attributeCount = skinned ? NV_ARRAY_COUNT(skinned_attributes) : NV_ARRAY_COUNT(static_attributes);
+        vertex_layout.attributes = skinned ? skinned_attributes : static_attributes;
+        for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
+            WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+            desc.label = (WGPUStringView){skinned ? "skinned shadow" : "static shadow", WGPU_STRLEN};
+            desc.layout = layout;
+            desc.vertex.module = module;
+            desc.vertex.entryPoint = (WGPUStringView){skinned ? "vs_skinned" : "vs_static", WGPU_STRLEN};
+            desc.vertex.bufferCount = 1;
+            desc.vertex.buffers = &vertex_layout;
+            desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+            desc.primitive.frontFace = WGPUFrontFace_CCW;
+            desc.primitive.cullMode = double_sided ? WGPUCullMode_None : WGPUCullMode_Back;
+            desc.depthStencil = &depth;
+            renderer->shadow_pipelines[skinned][double_sided] = wgpuDeviceCreateRenderPipeline(device, &desc);
+        }
+    }
+    wgpuShaderModuleRelease(module);
+    wgpuPipelineLayoutRelease(layout);
+}
+
+// Makes the shadow map (and, for a new format, its pipelines) match the settings, and the frame
+// bind group that samples it. Off keeps a 1x1 map bound, since the bind group needs one.
+internal void update_shadow_map(NvRenderer* renderer)
+{
+    NvGpu* gpu = renderer->gpu;
+    u32 size = renderer->shadows.size ? renderer->shadows.size : 1;
+    NvShadowFormat format = renderer->shadows.format;
+    if (renderer->shadow_texture && renderer->shadow_size == size && renderer->shadow_format == format)
+        return;
+    if (!renderer->shadow_texture || renderer->shadow_format != format)
+        create_shadow_pipelines(renderer, format);
+    if (renderer->shadow_texture) {
+        wgpuTextureViewRelease(renderer->shadow_view);
+        wgpuTextureRelease(renderer->shadow_texture);
+        wgpuBindGroupRelease(renderer->frame_group);
+    }
+    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"shadow map", WGPU_STRLEN};
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    desc.size = (WGPUExtent3D){size, size, 1};
+    desc.format = shadow_texture_format(format);
+    renderer->shadow_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
+    renderer->shadow_view = wgpuTextureCreateView(renderer->shadow_texture, NULL);
+    renderer->shadow_size = size;
+    renderer->shadow_format = format;
+
+    WGPUBindGroupEntry frame_entries[5] = {
+        {.binding = 0, .buffer = renderer->frame_buffer, .size = sizeof(FrameUniforms)},
+        {.binding = 1, .buffer = renderer->object_buffer, .size = NV_MAX_NODES * sizeof(NvObjectData)},
+        {.binding = 2, .buffer = renderer->skin_buffer, .size = NV_MAX_SKIN_MATRICES * sizeof(NvMat4)},
+        {.binding = 3, .textureView = renderer->shadow_view},
+        {.binding = 4, .sampler = renderer->shadow_sampler},
+    };
+    WGPUBindGroupDescriptor frame_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    frame_desc.layout = renderer->frame_layout;
+    frame_desc.entryCount = NV_ARRAY_COUNT(frame_entries);
+    frame_desc.entries = frame_entries;
+    renderer->frame_group = wgpuDeviceCreateBindGroup(gpu->device, &frame_desc);
+}
+
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
 {
     *renderer = (NvRenderer){0};
@@ -326,16 +497,25 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     }
     renderer->debug_buffer = create_buffer(gpu, WGPUBufferUsage_Vertex, NULL, NV_MAX_DEBUG_LINES * 2 * sizeof(NvDebugVertex));
 
-    WGPUBindGroupEntry frame_entries[3] = {
+    WGPUBindGroupEntry shadow_frame_entries[3] = {
         {.binding = 0, .buffer = renderer->frame_buffer, .size = sizeof(FrameUniforms)},
         {.binding = 1, .buffer = renderer->object_buffer, .size = NV_MAX_NODES * sizeof(NvObjectData)},
         {.binding = 2, .buffer = renderer->skin_buffer, .size = NV_MAX_SKIN_MATRICES * sizeof(NvMat4)},
     };
-    WGPUBindGroupDescriptor frame_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    frame_desc.layout = renderer->frame_layout;
-    frame_desc.entryCount = NV_ARRAY_COUNT(frame_entries);
-    frame_desc.entries = frame_entries;
-    renderer->frame_group = wgpuDeviceCreateBindGroup(gpu->device, &frame_desc);
+    WGPUBindGroupDescriptor shadow_frame_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    shadow_frame_desc.layout = renderer->shadow_frame_layout;
+    shadow_frame_desc.entryCount = NV_ARRAY_COUNT(shadow_frame_entries);
+    shadow_frame_desc.entries = shadow_frame_entries;
+    renderer->shadow_frame_group = wgpuDeviceCreateBindGroup(gpu->device, &shadow_frame_desc);
+
+    WGPUSamplerDescriptor shadow_sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    shadow_sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    shadow_sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    shadow_sampler_desc.magFilter = WGPUFilterMode_Linear;
+    shadow_sampler_desc.minFilter = WGPUFilterMode_Linear;
+    shadow_sampler_desc.compare = WGPUCompareFunction_LessEqual; // 1 where the point is not behind the map's depth
+    renderer->shadow_sampler = wgpuDeviceCreateSampler(gpu->device, &shadow_sampler_desc);
+    update_shadow_map(renderer); // the frame bind group, with a 1x1 map until shadows are on
 
     // Slot 0 of each table is the default: no mesh, a 1x1 white texture, a white material.
     renderer->mesh_count = 1;
@@ -641,11 +821,84 @@ NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* sk
     return best;
 }
 
+// Fits the light's orthographic box around the camera's view up to the shadow distance
+// (docs/specs/shadows.md): the view is enclosed in a sphere, whose radius does not change as the
+// camera turns, and the sphere's center is snapped to whole shadow-map texels, so shadows neither
+// shimmer nor crawl as the camera moves. Fills the uniforms' light matrix and shadow parameters.
+internal void fit_shadow(NvRenderer* renderer, NvNode* camera, f32 aspect, NvNode* light, FrameUniforms* uniforms)
+{
+    const NvShadowSettings* settings = &renderer->shadows;
+    NvCamera* lens = &camera->camera;
+    f32 near_z = lens->near_z;
+    f32 far_z = settings->distance < lens->far_z ? settings->distance : lens->far_z;
+    if (far_z <= near_z)
+        far_z = near_z + 1.0f;
+    NvVec3 eye = nv_mat4_translation(camera->world);
+    NvVec3 forward = nv_mat4_forward(camera->world);
+
+    // Half the view's width and height at one meter, for either projection.
+    f32 tan_y = lens->projection == NV_PROJECTION_PERSPECTIVE ? tanf(lens->fov_y * 0.5f) : 0.0f;
+    f32 tan_x = tan_y * aspect;
+    f32 middle = (near_z + far_z) * 0.5f;
+    NvVec3 center = nv_vec3_add(eye, nv_vec3_scale(forward, middle));
+    f32 far_side = sqrtf(far_z * tan_x * far_z * tan_x + far_z * tan_y * far_z * tan_y);
+    f32 near_side = sqrtf(near_z * tan_x * near_z * tan_x + near_z * tan_y * near_z * tan_y);
+    f32 radius = sqrtf((far_z - middle) * (far_z - middle) + far_side * far_side);
+    f32 near_radius = sqrtf((middle - near_z) * (middle - near_z) + near_side * near_side);
+    radius = radius > near_radius ? radius : near_radius;
+    if (lens->projection == NV_PROJECTION_ORTHOGRAPHIC) {
+        f32 half_h = lens->ortho_height * 0.5f;
+        radius = sqrtf(half_h * half_h * (1.0f + aspect * aspect) + (far_z - middle) * (far_z - middle));
+    }
+
+    // The light's axes, from its node: it shines along its -Z.
+    NvVec3 right = nv_vec3_normalize(nv_vec3(light->world.e[0], light->world.e[1], light->world.e[2]));
+    NvVec3 up = nv_vec3_normalize(nv_vec3(light->world.e[4], light->world.e[5], light->world.e[6]));
+    NvVec3 back = nv_vec3_normalize(nv_vec3(light->world.e[8], light->world.e[9], light->world.e[10]));
+
+    f32 size = (f32)renderer->shadow_size;
+    f32 texel = 2.0f * radius / size;
+    f32 cx = floorf(nv_vec3_dot(center, right) / texel) * texel;
+    f32 cy = floorf(nv_vec3_dot(center, up) / texel) * texel;
+    f32 cz = nv_vec3_dot(center, back);
+    center = nv_vec3_add(nv_vec3_add(nv_vec3_scale(right, cx), nv_vec3_scale(up, cy)), nv_vec3_scale(back, cz));
+
+    NvVec3 origin = nv_vec3_add(center, nv_vec3_scale(back, radius + SHADOW_PULLBACK));
+    NvMat4 light_world = {{right.x, right.y, right.z, 0, up.x, up.y, up.z, 0, back.x, back.y, back.z, 0,
+                           origin.x, origin.y, origin.z, 1}};
+    NvMat4 projection = nv_mat4_orthographic(2.0f * radius, 1.0f, 0.0f, 2.0f * radius + SHADOW_PULLBACK);
+    renderer->light_view_proj = nv_mat4_mul(projection, nv_mat4_inverse(light_world));
+    uniforms->light_view_proj = renderer->light_view_proj;
+
+    uniforms->shadow[0] = 1.0f / size;
+    uniforms->shadow[1] = settings->filter == NV_SHADOW_FILTER_HIGH ? 2.0f : 1.0f;
+    // The lookup moves off the surface by about one and a half texels, against acne on slopes.
+    uniforms->shadow[2] = texel * 1.5f;
+    uniforms->shadow_fade[0] = settings->distance * 0.9f;
+    uniforms->shadow_fade[1] = settings->distance;
+
+    if (settings->show_box) {
+        NvMat4 to_world = nv_mat4_inverse(renderer->light_view_proj);
+        NvVec3 corners[8];
+        for (u32 c = 0; c < 8; ++c) {
+            f32 x = (c & 1) ? 1.0f : -1.0f, y = (c & 2) ? 1.0f : -1.0f, z = (c & 4) ? 1.0f : 0.0f;
+            corners[c] = nv_mat4_transform_point(to_world, nv_vec3(x, y, z));
+        }
+        for (u32 c = 0; c < 8; ++c) {
+            for (u32 bit = 1; bit < 8; bit <<= 1) {
+                if (!(c & bit))
+                    nv_renderer_debug_line(renderer, corners[c], corners[c | bit], nv_vec3(1.0f, 0.9f, 0.3f));
+            }
+        }
+    }
+}
+
 void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,
                       WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     NvGpu* gpu = renderer->gpu;
     update_depth_buffer(renderer);
+    update_shadow_map(renderer);
 
     if (!viewport.width || !viewport.height)
         viewport = (NvRect){0, 0, gpu->width, gpu->height};
@@ -655,6 +908,12 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     uniforms.view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera),
                                           (f32)viewport.width / (f32)viewport.height);
     memcpy(uniforms.ambient, renderer->ambient, sizeof(renderer->ambient));
+    NvNode* camera = nv_scene_get(scene, scene->active_camera);
+    NvVec3 eye = nv_mat4_translation(camera->world);
+    uniforms.camera_pos[0] = eye.x;
+    uniforms.camera_pos[1] = eye.y;
+    uniforms.camera_pos[2] = eye.z;
+    NvNode* sun = NULL;
 
     u32 object_count = 0;
     renderer->skin_matrix_count = 0;
@@ -676,6 +935,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
             uniforms.light_color[1] = color.y;
             uniforms.light_color[2] = color.z;
             have_light = 1;
+            sun = node;
         }
 
         if (!node->mesh.index)
@@ -701,6 +961,10 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         ++object_count;
     }
 
+    b32 shadows = renderer->shadows.size && sun && object_count;
+    if (shadows)
+        fit_shadow(renderer, camera, (f32)viewport.width / (f32)viewport.height, sun, &uniforms);
+
     WGPUQueue queue = gpu->queue;
     wgpuQueueWriteBuffer(queue, renderer->frame_buffer, 0, &uniforms, sizeof(uniforms));
     if (object_count)
@@ -709,6 +973,43 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         wgpuQueueWriteBuffer(queue, renderer->skin_buffer, 0, renderer->skin_matrices, renderer->skin_matrix_count * sizeof(NvMat4));
     if (renderer->debug_vertex_count)
         wgpuQueueWriteBuffer(queue, renderer->debug_buffer, 0, renderer->debug_vertices, renderer->debug_vertex_count * sizeof(NvDebugVertex));
+
+    // Shadow pass: every mesh's depth from the light, into the map the scene pass then samples.
+    // WebGPU orders the two passes, so the scene pass sees what this one wrote.
+    u32 shadow_draws = 0;
+    if (shadows) {
+        WGPURenderPassDepthStencilAttachment shadow_depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
+        shadow_depth.view = renderer->shadow_view;
+        shadow_depth.depthLoadOp = WGPULoadOp_Clear;
+        shadow_depth.depthStoreOp = WGPUStoreOp_Store;
+        shadow_depth.depthClearValue = 1.0f;
+        WGPURenderPassDescriptor shadow_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+        shadow_desc.label = (WGPUStringView){"shadow", WGPU_STRLEN};
+        shadow_desc.depthStencilAttachment = &shadow_depth;
+        WGPURenderPassEncoder shadow_pass = wgpuCommandEncoderBeginRenderPass(encoder, &shadow_desc);
+        wgpuRenderPassEncoderSetBindGroup(shadow_pass, 0, renderer->shadow_frame_group, 0, NULL);
+        WGPURenderPipeline bound = NULL;
+        u32 bound_mesh = 0;
+        for (u32 i = 0; i < object_count; ++i) {
+            NvNode* node = &scene->nodes[renderer->object_nodes[i]];
+            NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
+            NvRenderMaterial* material = &renderer->materials[node->material.index];
+            WGPURenderPipeline pipeline = renderer->shadow_pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
+            if (pipeline != bound) {
+                wgpuRenderPassEncoderSetPipeline(shadow_pass, pipeline);
+                bound = pipeline;
+            }
+            if (node->mesh.index != bound_mesh) {
+                wgpuRenderPassEncoderSetVertexBuffer(shadow_pass, 0, mesh->vertices, 0, WGPU_WHOLE_SIZE);
+                wgpuRenderPassEncoderSetIndexBuffer(shadow_pass, mesh->indices, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                bound_mesh = node->mesh.index;
+            }
+            wgpuRenderPassEncoderDrawIndexed(shadow_pass, mesh->index_count, 1, 0, 0, i);
+            ++shadow_draws;
+        }
+        wgpuRenderPassEncoderEnd(shadow_pass);
+        wgpuRenderPassEncoderRelease(shadow_pass);
+    }
 
     WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
     color.view = target;
@@ -745,7 +1046,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     u32 bound_material = 0xFFFFFFFFu;
     NvRenderStats* stats = &renderer->stats;
     *stats = (NvRenderStats){.draws = object_count, .skin_matrices = renderer->skin_matrix_count,
-                             .debug_lines = renderer->debug_vertex_count / 2};
+                             .debug_lines = renderer->debug_vertex_count / 2, .shadow_draws = shadow_draws};
     for (u32 i = 0; i < object_count; ++i) {
         NvNode* node = &scene->nodes[renderer->object_nodes[i]];
         NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];

@@ -139,6 +139,36 @@ internal void same_line_if_fits(const char* label)
         igNewLine();
 }
 
+// The View tab's Shadows section (docs/specs/shadows.md).
+internal void shadow_ui(App* app)
+{
+    NvShadowSettings* shadows = &app->renderer.shadows;
+    igSeparatorText("Shadows");
+    local_persist const u32 sizes[] = {0, 512, 1024, 2048};
+    local_persist const char* size_names[] = {"Off", "512", "1024", "2048"};
+    s32 size_index = 0;
+    for (u32 i = 0; i < NV_ARRAY_COUNT(sizes); ++i) {
+        if (shadows->size == sizes[i])
+            size_index = (s32)i;
+    }
+    if (igCombo_Str_arr("Map size", &size_index, size_names, (int)NV_ARRAY_COUNT(sizes), -1))
+        shadows->size = sizes[size_index];
+    igBeginDisabled(!shadows->size);
+    local_persist const char* format_names[] = {"32-bit float", "16-bit"};
+    s32 format = (s32)shadows->format;
+    if (igCombo_Str_arr("Format", &format, format_names, 2, -1))
+        shadows->format = (NvShadowFormat)format;
+    local_persist const char* filter_names[] = {"Low", "High"};
+    s32 filter = (s32)shadows->filter;
+    if (igCombo_Str_arr("Filter", &filter, filter_names, 2, -1))
+        shadows->filter = (NvShadowFilter)filter;
+    igSliderFloat("Distance##shadow", &shadows->distance, 5.0f, 100.0f, "%.0f m", 0);
+    bool show_box = shadows->show_box != 0;
+    if (igCheckbox("Show light box", &show_box))
+        shadows->show_box = show_box;
+    igEndDisabled();
+}
+
 internal void inspector_tab(App* app)
 {
     SceneView* view = app_view(app);
@@ -232,6 +262,7 @@ internal void view_tab(App* app)
         igCheckbox("Show bones", &app->show_bones);
         igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
+    shadow_ui(app);
     save_ui(app);
 }
 
