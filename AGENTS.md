@@ -17,13 +17,16 @@ There is no native build.
 ```
 engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
                            imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
-                           gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation)
-engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c,
+                           gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation),
+                           chunk.h (tagged binary files), storage.h (files kept in IndexedDB)
+engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c,
                            anim.cpp (the ozz wrapper; our only C++ file)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
-                           benchmark, picked in the View tab), ui.c (editor panel), app.h (shared state)
+                           benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
+                           app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
+tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the app with a progress bar, then
                            starts it), manifest.cmake (file sizes for that progress bar)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
@@ -71,6 +74,12 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   in the viewport waits two frames before the hook decides. Tests must hold the press longer than
   that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
   stays behind the panel.
+- The app autosaves its state (the showcase and the editor settings, not the stress scene) to
+  `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`). A new piece of editable state gets a
+  tag in `app/save.c` and a row in the spec's tables. Never change what an existing tag means
+  without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
+  save, load, save gives the same bytes; tests call `Module._app_debug_save_round_trip()` after
+  editing.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
@@ -111,3 +120,8 @@ There is no physical display in cloud sessions. Headless Chromium renders WebGPU
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
+Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
+how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
+waits for the page to close and then removes the save. The page's `FS` is a global, so tests can
+read and damage `/nv-save/state.nvs` (then `FS.syncfs(false, ...)`).

@@ -1,6 +1,6 @@
 # Autosave spec
 
-Status: draft (2026-09-28). Changes to this spec are agreed first.
+Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -198,8 +198,8 @@ around the head), the planet's rotation (from `PLNT`), and the orbit camera's tr
 | On start | The app builds the showcase as today, then loads the save if there is one, before the first frame: the showcase and the editor settings. It always starts on the showcase |
 | A bad save | A wrong magic, size or checksum, a field of the wrong size, or a newer version: the file is renamed to `state.nvs.bad` and the app starts as on a first visit. A message in the View tab says so. Loading is all or nothing: the whole file is checked before anything in the app changes |
 | `#stress` | Removed. The address no longer names the scene, and the app always starts on the showcase |
-| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved), when the state was last saved, **Save now**, **Reset** (deletes the save and reloads the page, which starts as on a first visit; animators cannot be removed, so rebuilding in place would leak them), and **Show save** (below) |
-| Save viewer | **Show save** opens a tree of the save's chunks: tags, sizes, and values (numbers, strings, hex for tags it does not know). It reads the file as the loader does, so it also shows where a bad save goes wrong |
+| UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved; turning it off writes once so the choice sticks), when the state was last saved, **Save now**, **Reset** (asks first, then deletes the save and any `.bad` file and reloads the page once IndexedDB has caught up, which starts as on a first visit; animators cannot be removed, so rebuilding in place would leak them; nothing is saved while it reloads), and **Show save** (below) |
+| Save viewer | **Show save** opens a tree of the save's chunks: the header (magic, version, size, checksum and whether it checks out), then tags, sizes and values (numbers, strings, hex for tags it does not know; nodes labeled by name). It reads the file as the loader does, and walks a damaged file as far as it goes, so it shows where a bad save breaks. It can switch to the `.bad` file |
 | Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
 | Third-party | None |
 
@@ -221,7 +221,10 @@ around the head), the planet's rotation (from `PLNT`), and the orbit camera's tr
   - `nv_storage_flush` starts a sync to IndexedDB without waiting for it. A flush asked for while
     one is running starts when that one ends.
   - `NvStorage` reports whether storage is available (private windows may refuse IndexedDB) and
-    the last sync error. Without storage the app runs as today and says autosave is off.
+    the last sync error. Without storage the app runs as today and says nothing is saved.
+    `nv_storage_init` checks for IndexedDB before mounting: Emscripten's IDBFS aborts the whole
+    runtime when it is missing.
+  - `nv_storage_flush_then_reload` reloads the page after the flush that covers the call (Reset).
 - **Window (`nv/window.h`).** `NvWindow` reports when the page becomes hidden, so the app can save
   then.
 - **Link flags.** `-lidbfs.js`.

@@ -9,6 +9,16 @@ EM_JS_DEPS(nv_storage, "$FS,$IDBFS,$UTF8ToString,$stringToUTF8");
 EM_ASYNC_JS(int, js_storage_mount, (const char* dir), {
     const path = UTF8ToString(dir);
     // IMPORTANT: The browser may clear site data under storage pressure unless it is persisted.
+    // IMPORTANT: IDBFS aborts the whole runtime when there is no IndexedDB, so check first.
+    let available = false;
+    try {
+        available = typeof indexedDB !== "undefined" && indexedDB !== null;
+    } catch (error) {
+    }
+    if (!available) {
+        console.warn("nv: browser storage is unavailable: no IndexedDB");
+        return 0;
+    }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     try {
         FS.mkdir(path);
@@ -21,14 +31,18 @@ EM_ASYNC_JS(int, js_storage_mount, (const char* dir), {
     }
 });
 
-EM_JS(void, js_storage_flush, (void), {
-    const state = Module.nvStorage || (Module.nvStorage = {busy: false, again: false, error: ""});
+// One sync runs at a time; a flush asked for meanwhile runs after it. `reload` reloads the page
+// after the sync that covers this call.
+EM_JS(void, js_storage_flush, (int reload), {
+    const state = Module.nvStorage || (Module.nvStorage = {busy: false, again: false, reload: false, error: ""});
+    if (reload) state.reload = true;
     if (state.busy) {
         state.again = true;
         return;
     }
     const run = () => {
         state.busy = true;
+        const reload_after = state.reload;
         FS.syncfs(false, (error) => {
             state.busy = false;
             state.error = error ? String(error.message || error) : "";
@@ -36,6 +50,8 @@ EM_JS(void, js_storage_flush, (void), {
             if (state.again) {
                 state.again = false;
                 run();
+            } else if (reload_after) {
+                location.reload();
             }
         });
     };
@@ -124,7 +140,27 @@ b32 nv_storage_remove(NvStorage* storage, const char* name)
 void nv_storage_flush(NvStorage* storage)
 {
     if (storage->available)
-        js_storage_flush();
+        js_storage_flush(0);
+}
+
+void nv_storage_flush_then_reload(NvStorage* storage)
+{
+    if (storage->available)
+        js_storage_flush(1);
+    else
+        emscripten_run_script("location.reload()");
+}
+
+b32 nv_storage_exists(NvStorage* storage, const char* name)
+{
+    if (!storage->available)
+        return 0;
+    char path[256];
+    full_path(storage, name, path, sizeof(path));
+    FILE* file = fopen(path, "rb");
+    if (file)
+        fclose(file);
+    return file != NULL;
 }
 
 const char* nv_storage_error(NvStorage* storage)

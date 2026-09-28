@@ -50,6 +50,7 @@ typedef enum SceneKind {
 #define SAVE_MAX_SIZE NV_KILOBYTES(256)
 #define SAVE_DIR "/nv-save"
 #define SAVE_FILE "state.nvs"
+#define SAVE_BAD_FILE "state.nvs.bad" // a save that could not be loaded, kept for a look
 #define AUTOSAVE_SECONDS 10.0
 
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
@@ -228,6 +229,11 @@ typedef struct App {
     f64 last_save_check; // nv_time_seconds
     f64 saved_at;        // nv_time_seconds of the last write this visit; 0 = none yet
     char save_notice[192]; // shown in the View tab: why the save was not loaded or written
+    b32 save_stopped;      // Reset is reloading the page; nothing may be saved meanwhile
+    bool show_save;        // the save viewer is open
+    u8* viewed;            // the file the viewer shows [SAVE_MAX_SIZE]
+    u32 viewed_size;
+    b32 viewed_bad;        // it is SAVE_BAD_FILE
 
     // Editor
     GizmoOperation gizmo_operation;

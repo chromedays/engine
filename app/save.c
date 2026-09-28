@@ -476,7 +476,7 @@ b32 save_round_trip_matches(App* app)
 
 void save_now(App* app, b32 force)
 {
-    if (!app->storage.available)
+    if (!app->storage.available || app->save_stopped)
         return;
     u32 size = save_write(app, app->next_save, SAVE_MAX_SIZE);
     if (!size) {
@@ -506,6 +506,164 @@ internal void save_on_hidden(void* userdata)
         save_now(app, 0);
 }
 
+// Starts over as on a first visit: deletes the save and reloads once IndexedDB has caught up.
+// Animators cannot be removed, so the showcase cannot be rebuilt in place.
+internal void save_reset(App* app)
+{
+    // IMPORTANT: The reload hides the page, which would otherwise save the state just deleted.
+    app->save_stopped = 1;
+    nv_storage_remove(&app->storage, SAVE_FILE);
+    nv_storage_remove(&app->storage, SAVE_BAD_FILE);
+    nv_storage_flush_then_reload(&app->storage);
+}
+
+//
+// Save viewer: the save's chunks as a tree, read the way the loader reads them.
+//
+
+typedef enum TagKind {
+    TAG_KIND_UNKNOWN,
+    TAG_KIND_CONTAINER,
+    TAG_KIND_U32,
+    TAG_KIND_F32,
+    TAG_KIND_STRING,
+} TagKind;
+
+internal TagKind tag_kind(u32 container, u32 tag)
+{
+    switch (tag) {
+    case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
+        return TAG_KIND_CONTAINER;
+    case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
+    case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
+        return TAG_KIND_U32;
+    case TAG_BONE: // a u32 in SCNE (show bones)
+        return TAG_KIND_U32;
+    case TAG_YAW: case TAG_PTCH: case TAG_DIST: case TAG_ORBT: case TAG_PAN: case TAG_PLNT: case TAG_CTIM:
+    case TAG_SPED: case TAG_FADE: case TAG_BLDW: case TAG_TURN: case TAG_POS: case TAG_ROT: case TAG_SCL:
+    case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT:
+        return TAG_KIND_F32;
+    case TAG_CLIP: case TAG_BLND: case TAG_NAME: case TAG_ATCH:
+        return TAG_KIND_STRING;
+    }
+    (void)container;
+    return TAG_KIND_UNKNOWN;
+}
+
+internal void tag_text(u32 tag, char* out)
+{
+    for (u32 i = 0; i < 4; ++i) {
+        u8 c = (u8)(tag >> (i * 8));
+        out[i] = (c >= 32 && c < 127) ? (char)c : '?';
+    }
+    out[4] = 0;
+}
+
+// One line for a field: its tag and its value, formatted by what the tag holds.
+internal void field_text(NvChunk chunk, TagKind kind, char* out, umm capacity)
+{
+    char tag[5];
+    tag_text(chunk.tag, tag);
+    int at = snprintf(out, capacity, "%s  ", tag);
+    for (u32 i = 0; i + 4 <= chunk.size && kind != TAG_KIND_STRING && kind != TAG_KIND_UNKNOWN && at < (int)capacity; i += 4) {
+        u32 bits = nv_chunk_load_u32(chunk.data + i);
+        if (kind == TAG_KIND_U32) {
+            at += snprintf(out + at, capacity - (umm)at, "%u ", bits);
+        } else {
+            f32 value;
+            memcpy(&value, &bits, 4);
+            at += snprintf(out + at, capacity - (umm)at, "%g ", (f64)value);
+        }
+    }
+    if (kind == TAG_KIND_STRING)
+        at += snprintf(out + at, capacity - (umm)at, "\"%.*s\"", (int)(chunk.size < 64 ? chunk.size : 64), chunk.data);
+    if (kind == TAG_KIND_UNKNOWN) {
+        for (u32 i = 0; i < chunk.size && i < 24 && at < (int)capacity; ++i)
+            at += snprintf(out + at, capacity - (umm)at, "%02x ", chunk.data[i]);
+        if (chunk.size > 24 && at < (int)capacity)
+            snprintf(out + at, capacity - (umm)at, "... (%u bytes, unknown tag)", chunk.size);
+        else if (at < (int)capacity)
+            snprintf(out + at, capacity - (umm)at, "(unknown tag)");
+    }
+    if ((kind == TAG_KIND_U32 || kind == TAG_KIND_F32) && chunk.size % 4 && at < (int)capacity)
+        snprintf(out + at, capacity - (umm)at, "(%u bytes: not whole numbers)", chunk.size);
+}
+
+internal void view_chunks(NvChunkReader* r, NvChunk parent, u32 parent_tag)
+{
+    NvChunk child = {0};
+    u32 count = 0;
+    while (nv_chunk_next(r, parent, &child)) {
+        TagKind kind = tag_kind(parent_tag, child.tag);
+        igPushID_Int((int)count++);
+        if (kind == TAG_KIND_CONTAINER) {
+            char tag[5];
+            tag_text(child.tag, tag);
+            // A node is easier to find by its name.
+            char name[NV_NODE_NAME_MAX] = "";
+            NvChunkReader peek = {0};
+            if (child.tag == TAG_NODE)
+                nv_chunk_read_string(&peek, child, TAG_NAME, name, sizeof(name));
+            if (igTreeNode_Ptr((void*)(umm)child.data, "%s  %u bytes  %s", tag, child.size, name)) {
+                view_chunks(r, child, child.tag);
+                igTreePop();
+            }
+        } else {
+            char line[256];
+            field_text(child, kind, line, sizeof(line));
+            igBulletText("%s", line);
+        }
+        igPopID();
+    }
+    if (r->failed)
+        igTextColored((ImVec4_c){1.0f, 0.45f, 0.35f, 1.0f}, "Malformed from here: a chunk runs past its parent.");
+}
+
+internal void load_viewed(App* app, b32 bad)
+{
+    umm mark = app->scratch.used;
+    u8* bytes = NULL;
+    u32 size = nv_storage_read(&app->storage, bad ? SAVE_BAD_FILE : SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
+    if (size)
+        memcpy(app->viewed, bytes, size);
+    app->viewed_size = size;
+    app->viewed_bad = bad;
+    app->scratch.used = mark;
+}
+
+internal void save_viewer(App* app)
+{
+    b32 has_bad = nv_storage_exists(&app->storage, SAVE_BAD_FILE);
+    if (igButton("Reload", (ImVec2_c){0.0f, 0.0f}))
+        load_viewed(app, app->viewed_bad);
+    if (has_bad) {
+        igSameLine(0.0f, -1.0f);
+        if (igButton(app->viewed_bad ? "Show " SAVE_FILE : "Show " SAVE_BAD_FILE, (ImVec2_c){0.0f, 0.0f}))
+            load_viewed(app, !app->viewed_bad);
+    }
+    const char* file = app->viewed_bad ? SAVE_BAD_FILE : SAVE_FILE;
+    if (!app->viewed_size) {
+        igTextDisabled("%s is missing or empty.", file);
+        return;
+    }
+    u32 version = 0;
+    NvChunk root;
+    NvChunkFileStatus status = nv_chunk_file_open(app->viewed, app->viewed_size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
+    igText("%s: %u bytes, %s", file, app->viewed_size, nv_chunk_file_status_name(status));
+    if (app->viewed_size < NV_CHUNK_FILE_HEADER_SIZE)
+        return;
+    u32 magic = nv_chunk_load_u32(app->viewed);
+    char magic_text[5];
+    tag_text(magic, magic_text);
+    igText("Header: %s, version %u, %u bytes after it, checksum %08x", magic_text, nv_chunk_load_u32(app->viewed + 4),
+           nv_chunk_load_u32(app->viewed + 8), nv_chunk_load_u32(app->viewed + 12));
+    // A damaged file is still walked as far as it goes, to show where it breaks.
+    if (status != NV_CHUNK_FILE_OK)
+        root = (NvChunk){.size = app->viewed_size - NV_CHUNK_FILE_HEADER_SIZE, .data = app->viewed + NV_CHUNK_FILE_HEADER_SIZE};
+    NvChunkReader r = {0};
+    view_chunks(&r, root, 0);
+}
+
 void save_init(App* app)
 {
     app->saved = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
@@ -517,12 +675,22 @@ void save_init(App* app)
     umm mark = app->scratch.used;
     u8* bytes = NULL;
     u32 size = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
-    if (size) {
-        const char* problem = save_load(app, bytes, size);
-        if (problem)
-            snprintf(app->save_notice, sizeof(app->save_notice), "The save was not loaded: %s.", problem);
-    }
+    const char* problem = NULL;
+    if (size)
+        problem = save_load(app, bytes, size);
+    else if (nv_storage_exists(&app->storage, SAVE_FILE))
+        problem = "empty, unreadable or too large";
     app->scratch.used = mark;
+    if (problem) {
+        // The app starts as on a first visit. The file is set aside rather than deleted, so it can
+        // be looked at (Show save), and the next autosave does not overwrite it.
+        nv_storage_rename(&app->storage, SAVE_FILE, SAVE_BAD_FILE);
+        nv_storage_flush(&app->storage);
+        snprintf(app->save_notice, sizeof(app->save_notice),
+                 "The save could not be loaded: %s. The app started fresh and kept it as %s.", problem,
+                 SAVE_BAD_FILE);
+    }
+    app->viewed = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
 
     // What is on screen now counts as saved, so an unchanged state is not written again.
     app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE);
@@ -560,5 +728,27 @@ void save_ui(App* app)
     if (error[0])
         igTextWrapped("Browser storage: %s", error);
     if (app->save_notice[0])
-        igTextWrapped("%s", app->save_notice);
+        igTextColored((ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f}, "%s", app->save_notice);
+
+    if (igButton("Reset", (ImVec2_c){0.0f, 0.0f}))
+        igOpenPopup_Str("Reset everything?", 0);
+    if (igBeginPopupModal("Reset everything?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        igText("Delete the save and start over as on a first visit?");
+        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f})) {
+            save_reset(app);
+            igCloseCurrentPopup();
+        }
+        igSameLine(0.0f, -1.0f);
+        if (igButton("Cancel", (ImVec2_c){0.0f, 0.0f}))
+            igCloseCurrentPopup();
+        igEndPopup();
+    }
+    igSameLine(0.0f, -1.0f);
+    if (igCheckbox("Show save", &app->show_save) && app->show_save) {
+        if (app->autosave)
+            save_now(app, 0); // so the viewer shows the current state
+        load_viewed(app, 0);
+    }
+    if (app->show_save)
+        save_viewer(app);
 }

@@ -22,13 +22,19 @@ b32 nv_storage_write(NvStorage* storage, const char* name, const void* bytes, u3
 // larger than `max_size`); `bytes` points at it.
 u32 nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size, u8** bytes);
 
-// Renames or deletes a file in the directory. Return 0 on failure.
+b32 nv_storage_exists(NvStorage* storage, const char* name);
+
+// Renames (replacing `to`) or deletes a file in the directory. Return 0 on failure.
 b32 nv_storage_rename(NvStorage* storage, const char* from, const char* to);
 b32 nv_storage_remove(NvStorage* storage, const char* name);
 
 // Starts copying the directory to IndexedDB and returns without waiting. A flush asked for while
 // one runs starts when that one ends.
 void nv_storage_flush(NvStorage* storage);
+
+// Flushes, then reloads the page once IndexedDB has the directory as it is now. For starting over:
+// delete the files, then call this.
+void nv_storage_flush_then_reload(NvStorage* storage);
 
 // The last flush's error, or "" (for display).
 const char* nv_storage_error(NvStorage* storage);

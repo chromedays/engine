@@ -18,12 +18,14 @@ Live:
 
 ```
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h
+                     gltf.h, anim.h, chunk.h, storage.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
-                     editor panel (node tree, inspector, view settings, stress workloads)
+                     editor panel (node tree, inspector, view settings, stress workloads). It
+                     autosaves the showcase to the browser (IndexedDB)
 assets/              binary assets (Git LFS)
+tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts
 web/                 HTML page template
 docs/                coding standard and feature specs
@@ -41,6 +43,7 @@ Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloa
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 python3 -m http.server -d build/app 8000   # open http://localhost:8000/
+ctest --test-dir build --output-on-failure # tests/, run under Node
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
