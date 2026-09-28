@@ -182,15 +182,13 @@ internal void write_character(NvChunkWriter* w, App* app)
 #define DRIVEN_POSITION (1u << 0)
 #define DRIVEN_ROTATION (1u << 1)
 
-// Which of a showcase node's transform the app rewrites every frame. Undo leaves these out, or
-// every frame would look like an edit.
+// Which of a showcase node's transform the app rewrites every frame in Edit mode. Undo leaves these
+// out, or every frame would look like an edit. Only the orbit camera is left: everything else that
+// moves by itself (spins, the walk, the look target's sweep) only moves while playing
+// (docs/specs/play.md), and undo is off then.
 internal u32 driven_fields(App* app, u32 index)
 {
-    if (index == app->views[SCENE_SHOWCASE].camera.index || index == app->target.index)
-        return DRIVEN_POSITION | DRIVEN_ROTATION;
-    if (index == app->planet.index || index == app->moon.index) // they spin
-        return DRIVEN_ROTATION;
-    if (index == app->character.root.index && app->root_motion) // it walks
+    if (index == app->views[SCENE_SHOWCASE].camera.index)
         return DRIVEN_POSITION | DRIVEN_ROTATION;
     return 0;
 }
@@ -630,7 +628,14 @@ void save_now(App* app, b32 force)
 {
     if (!app->storage.available || app->save_stopped)
         return;
-    u32 size = save_write(app, app->next_save, SAVE_MAX_SIZE);
+    // While playing, the edit state is the snapshot taken at Play; the running scene is never saved.
+    u32 size = 0;
+    if (app->playing) {
+        size = app->play_snapshot_size;
+        memcpy(app->next_save, app->play_snapshot, size);
+    } else {
+        size = save_write(app, app->next_save, SAVE_MAX_SIZE);
+    }
     if (!size) {
         snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: the state is larger than %u KB.",
                  (u32)(SAVE_MAX_SIZE / 1024));

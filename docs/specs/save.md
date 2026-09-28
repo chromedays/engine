@@ -135,7 +135,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 |---|---|---|---|
 | `LAYT` | u32 | the layout number (above) | nodes are skipped |
 | `VIEW` | container | the showcase's view | start view |
-| `PLNT` | f32[2] | `orbit_speed` (rad/s) and `orbit_angle` (rad): the planet's spin, which rewrites the planet's rotation every frame | 0.7, 0 |
+| `PLNT` | f32[2] | `orbit_speed` (rad/s) and `orbit_angle` (rad). Since Edit and Play modes (`play.md`) the angle is written as 0: the spin only runs while playing, from 0, on top of the planet's authored rotation | 0.7, 0 |
 | `BONE` | u32 | `app->show_bones` | 0 |
 | `CHAR` | container | the character (below) | as built |
 | `NODE` | container, repeated | one per node, in tree order (below) | as built |
@@ -145,7 +145,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
 | `CLIP` | string | the name of the clip playing on layer 0, without its root-motion copy (`app_regular_clip`). During a jump, the clip the jump returns to | `Idle_Loop` |
-| `CTIM` | f32 | layer 0's time into that clip, seconds | 0 |
+| `CTIM` | f32 | layer 0's time into that clip, seconds. No longer written since Edit and Play modes (`play.md`): a run starts every clip from its start. Older saves that have it still load | 0 |
 | `SPED` | f32 | layer 0's speed | 1 |
 | `FADE` | f32 | `fade_seconds` | 0.3 |
 | `BLND` | string | the blend clip's name (`clips[blend_clip]`) | the first clip |
@@ -173,10 +173,10 @@ A clip name the build does not have falls back to `Idle_Loop`.
 | `LCOL` | f32[3] | `light.color`, for light nodes | as built |
 | `LINT` | f32 | `light.intensity`, for light nodes | as built |
 
-Every node is saved, including the character's mesh nodes and the look target. Values the app
-rewrites every frame are saved but have no lasting effect: the look target's transform (it sweeps
-around the head), the planet's rotation (from `PLNT`), and the orbit camera's transform (from
-`VIEW`). A joint name the skeleton does not have leaves the attachment as built.
+Every node is saved, including the character's mesh nodes and the look target. The save always
+holds the edit state (`play.md`): while playing, the autosave writes the snapshot taken at Play.
+The orbit camera's transform is saved but has no lasting effect (it comes from `VIEW`). A joint
+name the skeleton does not have leaves the attachment as built.
 
 ### Not saved
 

@@ -23,9 +23,10 @@ undoable (Undo and Redo are off while it is shown).
 
 | Scope | Holds (the save's fields) | Left out, because the app drives them |
 |---|---|---|
-| **Node** (the selected node) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform; the look target's transform; the planet's and the moon's rotations (they spin); the character root's position and rotation while root motion is on |
-| **Character** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | `CTIM` (the clip's time); mid-jump, `CLIP` already names the clip the jump returns to |
-| **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones | the orbit angle |
+| **Node** (the selected node) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform. (Until Edit and Play modes, `play.md`, also the look target's transform, the planet's and the moon's spin, and a walking character's transform; in Edit mode those no longer move by themselves, so they are undoable like any node) |
+| **Character** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | the clip's time, which the save no longer writes either |
+| **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones | the orbit angle (it only runs while playing) |
+| While playing | Nothing: undo is off, and Stop puts the scene back to the last commit | |
 
 Not undoable: the camera view (yaw, pitch, distance, pan, follow), the selection, the editor
 settings (gizmo mode, autosave), anything in the stress scene. Text fields keep their own undo

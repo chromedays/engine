@@ -162,7 +162,8 @@ void undo_update(App* app)
     Undo* undo = &app->undo;
     s32 request = undo->request;
     undo->request = 0;
-    if (app->shown != SCENE_SHOWCASE)
+    // Undo's history is the edit state's; while playing, edits are lost on Stop anyway.
+    if (app->shown != SCENE_SHOWCASE || app->playing)
         return;
     // Idle: nothing is being dragged, typed or picked from a popup, so an edit in progress is done.
     b32 idle = !igIsAnyItemActive() && !ImGuizmo_IsUsingAny() &&
@@ -201,7 +202,7 @@ void undo_ui(App* app)
         igSameLine(0.0f, -1.0f);
     }
 
-    b32 can_undo = on && undo->done > 0;
+    b32 can_undo = on && !app->playing && undo->done > 0;
     if (can_undo)
         snprintf(label, sizeof(label), "Undo: %s###undo", step_at(undo, undo->done - 1)->label);
     else
@@ -211,7 +212,7 @@ void undo_ui(App* app)
         undo->request = -1;
     igEndDisabled();
 
-    b32 can_redo = on && undo->done < undo->count;
+    b32 can_redo = on && !app->playing && undo->done < undo->count;
     if (can_redo)
         snprintf(label, sizeof(label), "Redo: %s###redo", step_at(undo, undo->done)->label);
     else
@@ -226,4 +227,6 @@ void undo_ui(App* app)
     if (igButton(label, (ImVec2_c){0.0f, 0.0f}))
         undo->request = 1;
     igEndDisabled();
+    if (on && app->playing)
+        igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, "Playing: edits made now are lost on Stop.");
 }

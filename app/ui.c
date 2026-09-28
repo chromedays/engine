@@ -236,10 +236,11 @@ internal void view_tab(App* app)
 }
 
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
-internal void build_label(void)
+internal void build_label(App* app)
 {
-    char text[64];
-    snprintf(text, sizeof(text), "%s build %s", NV_BUILD_NAME, NV_GIT_COMMIT);
+    char text[80];
+    snprintf(text, sizeof(text), "%s build %s%s", NV_BUILD_NAME, NV_GIT_COMMIT,
+             app->playing && app->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
     ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
     ImVec2_c pos = {6.0f, 6.0f};
@@ -250,8 +251,15 @@ internal void build_label(void)
 
 void app_build_ui(App* app, NvRect panel)
 {
-    build_label();
+    build_label(app);
+    // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
+    // edits that stay.
+    b32 tint = app->playing && app->shown == SCENE_SHOWCASE;
+    if (tint)
+        igPushStyleColor_Vec4(ImGuiCol_WindowBg, (ImVec4_c){0.05f, 0.12f, 0.20f, 1.0f});
     b32 panel_open = nv_imgui_begin_panel(&app->imgui, "Editor", panel);
+    if (tint)
+        igPopStyleColor(1);
     if (panel_open)
         undo_ui(app);
     if (panel_open && igBeginTabBar("tabs", 0)) {
