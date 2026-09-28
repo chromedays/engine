@@ -6,6 +6,8 @@
 typedef struct NvWindow {
     const char* canvas_selector; // CSS selector of the <canvas> element, e.g. "#canvas"
     f32 pixel_ratio;             // device pixels per CSS pixel, updated by nv_window_framebuffer_size
+    void (*on_hidden)(void* userdata);
+    void* on_hidden_data;
 } NvWindow;
 
 void nv_window_create(NvWindow* window, const char* title);
@@ -15,6 +17,10 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 
 // Seconds since the page loaded.
 f64 nv_time_seconds(void);
+
+// Calls `hidden` when the page is hidden: another tab, the app switcher, the screen turning off,
+// or the page closing. Frames stop while it is hidden, so this is the last moment to save.
+void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void* userdata);
 
 typedef void (*NvFrameFn)(void* userdata);
 

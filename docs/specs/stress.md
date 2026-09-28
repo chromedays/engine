@@ -15,7 +15,7 @@ uploaded every frame. None of that has been measured yet.
 
 | Topic | Decision |
 |---|---|
-| Where | A second scene in the same app. The View tab switches between Showcase and Stress; `#stress` in the URL opens it directly |
+| Where | A second scene in the same app. The View tab switches between Showcase and Stress. (`#stress` in the URL opened it directly until the autosave spec removed it; the app now always starts on the showcase) |
 | Limits | Raised after the first phone results, where every step still ran at 60 fps: `NV_MAX_NODES` 16384 (was 4096), `NV_MAX_ANIMATORS` 256 (was 64), `NV_MAX_DEBUG_LINES` 16384 (was 8192); `NV_MAX_MATERIALS` stays 256 |
 | Benchmark | A button runs fixed steps and shows a table that can be copied |
 | Timing | Measured in the app with `emscripten_get_now`; GPU time only where the browser offers `timestamp-query` |
@@ -62,9 +62,8 @@ thousands of rows every frame and distort the measurements.
     selection and camera.
   - The stress scene is built the first time it is shown.
 - **Switching:**
-  - A combo box in the View tab switches scenes and updates the URL hash with
-    `history.replaceState`.
-  - The hash is read once at startup.
+  - A combo box in the View tab switches scenes. (It also set a `#stress` URL hash, read at
+    startup, until `save.md` removed it.)
 - **Stress tab** (shown while the stress scene is):
   - the workload toggles and sliders;
   - live stats: FPS; frame time (average and max over the last second); CPU time for animation

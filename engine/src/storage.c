@@ -1,0 +1,137 @@
+#include "nv/storage.h"
+
+#include <emscripten/emscripten.h>
+
+#include <stdio.h>
+
+EM_JS_DEPS(nv_storage, "$FS,$IDBFS,$UTF8ToString,$stringToUTF8");
+
+EM_ASYNC_JS(int, js_storage_mount, (const char* dir), {
+    const path = UTF8ToString(dir);
+    // IMPORTANT: The browser may clear site data under storage pressure unless it is persisted.
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    try {
+        FS.mkdir(path);
+        FS.mount(IDBFS, {}, path);
+        await new Promise((resolve, reject) => FS.syncfs(true, (error) => error ? reject(error) : resolve()));
+        return 1;
+    } catch (error) {
+        console.warn("nv: browser storage is unavailable:", error);
+        return 0;
+    }
+});
+
+EM_JS(void, js_storage_flush, (void), {
+    const state = Module.nvStorage || (Module.nvStorage = {busy: false, again: false, error: ""});
+    if (state.busy) {
+        state.again = true;
+        return;
+    }
+    const run = () => {
+        state.busy = true;
+        FS.syncfs(false, (error) => {
+            state.busy = false;
+            state.error = error ? String(error.message || error) : "";
+            if (error) console.warn("nv: saving to browser storage failed:", error);
+            if (state.again) {
+                state.again = false;
+                run();
+            }
+        });
+    };
+    run();
+});
+
+EM_JS(void, js_storage_error, (char* out, int capacity), {
+    const state = Module.nvStorage;
+    stringToUTF8(state ? state.error : "", out, capacity);
+});
+
+internal void full_path(NvStorage* storage, const char* name, char* out, umm capacity)
+{
+    snprintf(out, capacity, "%s/%s", storage->dir, name);
+}
+
+void nv_storage_init(NvStorage* storage, const char* dir)
+{
+    storage->dir = dir;
+    storage->available = js_storage_mount(dir);
+}
+
+b32 nv_storage_write(NvStorage* storage, const char* name, const void* bytes, u32 size)
+{
+    if (!storage->available)
+        return 0;
+    char path[256], temporary[256];
+    full_path(storage, name, path, sizeof(path));
+    snprintf(temporary, sizeof(temporary), "%s.tmp", path);
+    FILE* file = fopen(temporary, "wb");
+    if (!file)
+        return 0;
+    b32 written = fwrite(bytes, 1, size, file) == size;
+    written = (fclose(file) == 0) && written;
+    if (!written || rename(temporary, path) != 0) {
+        remove(temporary);
+        return 0;
+    }
+    return 1;
+}
+
+u32 nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size, u8** bytes)
+{
+    *bytes = NULL;
+    if (!storage->available)
+        return 0;
+    char path[256];
+    full_path(storage, name, path, sizeof(path));
+    FILE* file = fopen(path, "rb");
+    if (!file)
+        return 0;
+    u32 size = 0;
+    if (fseek(file, 0, SEEK_END) == 0) {
+        long end = ftell(file);
+        if (end > 0 && (u64)end <= max_size && fseek(file, 0, SEEK_SET) == 0) {
+            u8* data = NV_PUSH_ARRAY(arena, (umm)end, u8);
+            if (fread(data, 1, (umm)end, file) == (umm)end) {
+                *bytes = data;
+                size = (u32)end;
+            }
+        }
+    }
+    fclose(file);
+    return size;
+}
+
+b32 nv_storage_rename(NvStorage* storage, const char* from, const char* to)
+{
+    if (!storage->available)
+        return 0;
+    char from_path[256], to_path[256];
+    full_path(storage, from, from_path, sizeof(from_path));
+    full_path(storage, to, to_path, sizeof(to_path));
+    return rename(from_path, to_path) == 0;
+}
+
+b32 nv_storage_remove(NvStorage* storage, const char* name)
+{
+    if (!storage->available)
+        return 0;
+    char path[256];
+    full_path(storage, name, path, sizeof(path));
+    return remove(path) == 0;
+}
+
+void nv_storage_flush(NvStorage* storage)
+{
+    if (storage->available)
+        js_storage_flush();
+}
+
+const char* nv_storage_error(NvStorage* storage)
+{
+    local_persist char error[160];
+    error[0] = 0;
+    if (storage->available)
+        js_storage_error(error, (int)sizeof(error));
+    return error;
+}

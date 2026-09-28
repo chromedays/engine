@@ -36,6 +36,22 @@ f64 nv_time_seconds(void)
     return emscripten_get_now() / 1000.0;
 }
 
+internal bool on_visibility(int event_type, const EmscriptenVisibilityChangeEvent* event, void* userdata)
+{
+    (void)event_type;
+    NvWindow* window = userdata;
+    if (event->hidden && window->on_hidden)
+        window->on_hidden(window->on_hidden_data);
+    return 0;
+}
+
+void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void* userdata)
+{
+    window->on_hidden = hidden;
+    window->on_hidden_data = userdata;
+    emscripten_set_visibilitychange_callback(window, 1, on_visibility);
+}
+
 // Tells the page that loading is over, so it can take down its progress screen.
 EM_JS(void, js_notify_running, (void), {
     if (Module["nvRunning"]) Module["nvRunning"]();

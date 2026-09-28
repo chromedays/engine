@@ -21,7 +21,7 @@ engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui
                      gltf.h, anim.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
-                     sword), a stress scene with a benchmark (open it with #stress), and an
+                     sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor panel (node tree, inspector, view settings, stress workloads)
 assets/              binary assets (Git LFS)
 tools/               offline asset scripts

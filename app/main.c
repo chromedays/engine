@@ -338,15 +338,6 @@ SceneView* app_view(App* app)
     return &app->views[app->shown];
 }
 
-// The URL hash names the shown scene, so a link or a reload opens the same one.
-EM_JS(int, js_hash_is_stress, (void), {
-    return location.hash === "#stress" ? 1 : 0;
-});
-
-EM_JS(void, js_set_hash, (int stress), {
-    history.replaceState(null, "", stress ? "#stress" : location.pathname + location.search);
-});
-
 void app_show_scene(App* app, SceneKind kind)
 {
     if (kind == SCENE_STRESS && !app->stress.built)
@@ -354,7 +345,6 @@ void app_show_scene(App* app, SceneKind kind)
     if (kind == SCENE_STRESS && app->shown != SCENE_STRESS)
         app->open_stress = 1;
     app->shown = kind;
-    js_set_hash(kind == SCENE_STRESS);
 }
 
 void app_back_to_center(App* app)
@@ -751,6 +741,7 @@ internal void frame(void* userdata)
 
     accumulate_times(app, now);
     stress_after_frame(app);
+    save_update(app);
 }
 
 #if !defined(NDEBUG)
@@ -808,9 +799,10 @@ int main(void)
     // tree, and only while it is the same tree.
     app->scene_layout = save_scene_layout(app->scene);
     app->window_start = nv_time_seconds();
-    app_show_scene(app, js_hash_is_stress() ? SCENE_STRESS : SCENE_SHOWCASE);
+    app_show_scene(app, SCENE_SHOWCASE);
     app_play(app, app_find_clip(app, "Idle_Loop"));
     NV_ASSERT(save_round_trip_matches(app));
+    save_init(app);
     app->last_time = nv_time_seconds();
     nv_window_run(&app->window, frame, app);
     return 0;

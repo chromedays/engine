@@ -467,3 +467,98 @@ b32 save_round_trip_matches(App* app)
     scratch->used = mark;
     return matches;
 }
+
+//
+// Autosave
+//
+
+#include <stdio.h>
+
+void save_now(App* app, b32 force)
+{
+    if (!app->storage.available)
+        return;
+    u32 size = save_write(app, app->next_save, SAVE_MAX_SIZE);
+    if (!size) {
+        snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: the state is larger than %u KB.",
+                 (u32)(SAVE_MAX_SIZE / 1024));
+        return;
+    }
+    if (!force && size == app->saved_size && memcmp(app->next_save, app->saved, size) == 0)
+        return;
+    if (!nv_storage_write(&app->storage, SAVE_FILE, app->next_save, size)) {
+        snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: writing %s failed.", SAVE_FILE);
+        return;
+    }
+    nv_storage_flush(&app->storage);
+    u8* swap = app->saved;
+    app->saved = app->next_save;
+    app->next_save = swap;
+    app->saved_size = size;
+    app->saved_at = nv_time_seconds();
+}
+
+// Frames stop while the page is hidden, and it may be closing: save now.
+internal void save_on_hidden(void* userdata)
+{
+    App* app = userdata;
+    if (app->autosave)
+        save_now(app, 0);
+}
+
+void save_init(App* app)
+{
+    app->saved = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
+    app->next_save = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
+    nv_storage_init(&app->storage, SAVE_DIR);
+    if (!app->storage.available)
+        return;
+
+    umm mark = app->scratch.used;
+    u8* bytes = NULL;
+    u32 size = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
+    if (size) {
+        const char* problem = save_load(app, bytes, size);
+        if (problem)
+            snprintf(app->save_notice, sizeof(app->save_notice), "The save was not loaded: %s.", problem);
+    }
+    app->scratch.used = mark;
+
+    // What is on screen now counts as saved, so an unchanged state is not written again.
+    app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE);
+    app->last_save_check = nv_time_seconds();
+    nv_window_on_hidden(&app->window, save_on_hidden, app);
+}
+
+void save_update(App* app)
+{
+    f64 now = nv_time_seconds();
+    if (!app->autosave || now - app->last_save_check < AUTOSAVE_SECONDS)
+        return;
+    app->last_save_check = now;
+    save_now(app, 0);
+}
+
+void save_ui(App* app)
+{
+    igSeparatorText("Autosave");
+    if (!app->storage.available) {
+        igTextWrapped("Browser storage is unavailable here (a private window may refuse it), so nothing is saved.");
+        return;
+    }
+    // The setting is part of the save, so turning autosave off is saved too.
+    if (igCheckbox("Autosave", &app->autosave))
+        save_now(app, 1);
+    igSameLine(0.0f, -1.0f);
+    if (igButton("Save now", (ImVec2_c){0.0f, 0.0f}))
+        save_now(app, 1);
+    if (app->saved_at > 0.0)
+        igText("Saved %.0f s ago (%u bytes)", nv_time_seconds() - app->saved_at, app->saved_size);
+    else
+        igTextDisabled("Not saved yet this visit.");
+    const char* error = nv_storage_error(&app->storage);
+    if (error[0])
+        igTextWrapped("Browser storage: %s", error);
+    if (app->save_notice[0])
+        igTextWrapped("%s", app->save_notice);
+}

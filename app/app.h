@@ -12,6 +12,7 @@
 #include <nv/imgui.h>
 #include <nv/renderer.h>
 #include <nv/scene.h>
+#include <nv/storage.h>
 #include <nv/window.h>
 
 // Set by app/CMakeLists.txt; shown in the View tab and in benchmark reports.
@@ -47,6 +48,9 @@ typedef enum SceneKind {
 #define SAVE_MAGIC NV_TAG('N', 'V', 'S', 'V')
 #define SAVE_VERSION 1
 #define SAVE_MAX_SIZE NV_KILOBYTES(256)
+#define SAVE_DIR "/nv-save"
+#define SAVE_FILE "state.nvs"
+#define AUTOSAVE_SECONDS 10.0
 
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
 typedef enum GizmoOperation {
@@ -214,9 +218,18 @@ typedef struct App {
     NvNodeId target;
     NvMeshId target_mesh;
 
-    // Editor
+    // Autosave (save.c)
     bool autosave;
     u32 scene_layout; // save_scene_layout of the showcase as built
+    NvStorage storage;
+    u8* saved;       // the bytes last written [SAVE_MAX_SIZE], to skip writing an unchanged save
+    u32 saved_size;
+    u8* next_save;   // [SAVE_MAX_SIZE]
+    f64 last_save_check; // nv_time_seconds
+    f64 saved_at;        // nv_time_seconds of the last write this visit; 0 = none yet
+    char save_notice[192]; // shown in the View tab: why the save was not loaded or written
+
+    // Editor
     GizmoOperation gizmo_operation;
     bool gizmo_local; // local axes for Move and Rotate (Scale always uses them)
     bool gizmo_snap;
@@ -256,6 +269,13 @@ u32 save_write(App* app, void* buffer, u32 capacity);
 // Loads a save into the app. It is checked whole first, and nothing changes unless it is good.
 // Returns NULL, or what is wrong with it.
 const char* save_load(App* app, const void* bytes, u32 size);
+// Mounts browser storage and loads the save, if there is one. Call once the showcase is built.
+void save_init(App* app);
+// Autosaves every AUTOSAVE_SECONDS while autosave is on. Call every frame.
+void save_update(App* app);
+// Writes the save now if it changed since the last write, or even if not when `force` is set.
+void save_now(App* app, b32 force);
+void save_ui(App* app); // the View tab's Autosave section
 // Whether saving, loading that save and saving again gives the same bytes. It loads, so it may
 // end a jump or a crossfade; Debug builds check it at start and tests call it.
 b32 save_round_trip_matches(App* app);

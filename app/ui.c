@@ -230,6 +230,7 @@ internal void view_tab(App* app)
         igCheckbox("Show bones", &app->show_bones);
         igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
+    save_ui(app);
 }
 
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
