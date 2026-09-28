@@ -43,26 +43,24 @@ Recommendation: one map fitted to the view, with the code shaped so cascades can
 
 ## Notes on the GPU side
 
-The user preferences ask for Mesa's RADV (the open-source AMD Vulkan driver) as the reference for
-driver behavior. Browsers reach Vulkan on Linux and Android, so these apply there; other APIs
-behave similarly.
+These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
 
-- **A depth-only pass is cheap.** The shadow pipelines have no fragment shader and no discard, so
-  the driver can run the pass with early depth testing and no pixel shading at all (RADV then
-  configures the hardware without a pixel shader).
-- **Hardware PCF.** A comparison sampler with linear filtering becomes a compare-and-filter texture
-  instruction (the `image_sample_c` family on AMD): the texture unit does the 2×2 comparison
-  and the bilinear weighting for the cost of one fetch. The 3×3 High filter is nine of those.
-- **Depth bias units depend on the format.** The pipeline's constant `depthBias` is in the depth
-  format's smallest step. For `depth16unorm` that step is fixed (1/65536); for `depth32float` it
-  depends on the triangle's own depth values, as the Vulkan specification defines for floating
-  point depth. So bias values tuned for one format do not carry to the other; they are tuned for
-  `depth32float` only.
-- **Sampling a depth texture after rendering it.** AMD hardware compresses depth (HTILE). RADV
-  keeps a depth image readable by shaders while compressed ("TC-compatible HTILE") when it is
-  created with sampled usage, so the scene pass reads the map without a decompression pass; on
-  older generations this path has format limits, and 32-bit float depth is the safe choice. This
-  is one reason for `depth32float` over `depth16unorm`, which would halve the map's bandwidth.
+- **A depth-only pass is cheap.** The shadow pipelines have no fragment stage and never discard,
+  so the pass writes depth only and does no pixel shading.
+- **Hardware PCF.** A sampler with a comparison function and linear filtering makes one
+  `textureSampleCompare` compare the four nearest texels and blend the results: a 2×2
+  percentage-closer filter for the cost of one lookup. The High filter is nine such lookups.
+- **Why `depth32float`.** It needs no depth range tuning, and every WebGPU implementation can
+  render to it and sample it with a comparison sampler. `depth16unorm` would halve the map's
+  memory and bandwidth (8 MB instead of 16 MB at 2048²): a candidate if phones prove
+  bandwidth-bound, measured with the Stress tab's shadow pass time.
+- **Depth bias depends on the format.** The pipeline's constant `depthBias` counts the depth
+  format's smallest step. That step is fixed for a normalized format like `depth16unorm`, but for
+  `depth32float` it depends on the triangle's own depth. So the bias values are tuned for
+  `depth32float`, and would have to be tuned again if the format changes.
+- **One pass reads what the other wrote.** The shadow map is written in the shadow pass and
+  sampled in the scene pass of the same command buffer; WebGPU orders the two passes, so no
+  explicit barrier is needed.
 
 ## Engine changes
 
