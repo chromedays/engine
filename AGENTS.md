@@ -99,6 +99,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its depth-only pipelines when the size or format changes. The shadow pass binds
   `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
   A new mesh vertex layout needs a matching entry point in `shadow_shader` too.
+- The scene pass uses reverse Z: a `depth32float` buffer cleared to 0, compare `Greater`, and clip z
+  turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
+  camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay
+  standard 0..1. The shadow map keeps standard depth, since its projection is orthographic.
 - In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).

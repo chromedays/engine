@@ -286,9 +286,9 @@ internal void create_pipelines(NvRenderer* renderer)
     fragment.targets = &color_target;
 
     WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    depth.format = WGPUTextureFormat_Depth24Plus;
+    depth.format = WGPUTextureFormat_Depth32Float;
     depth.depthWriteEnabled = WGPUOptionalBool_True;
-    depth.depthCompare = WGPUCompareFunction_Less;
+    depth.depthCompare = WGPUCompareFunction_Greater; // reverse Z: near is 1, far is 0
 
     for (u32 skinned = 0; skinned < 2; ++skinned) {
         WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
@@ -342,7 +342,7 @@ internal void create_pipelines(NvRenderer* renderer)
     debug_fragment.targets = &debug_target;
 
     WGPUDepthStencilState debug_depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    debug_depth.format = WGPUTextureFormat_Depth24Plus;
+    debug_depth.format = WGPUTextureFormat_Depth32Float;
     debug_depth.depthWriteEnabled = WGPUOptionalBool_False;
     debug_depth.depthCompare = WGPUCompareFunction_Always;
 
@@ -691,7 +691,7 @@ internal void update_depth_buffer(NvRenderer* renderer)
     WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
     desc.usage = WGPUTextureUsage_RenderAttachment;
     desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
-    desc.format = WGPUTextureFormat_Depth24Plus;
+    desc.format = WGPUTextureFormat_Depth32Float;
     renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
     renderer->depth_width = gpu->width;
@@ -715,9 +715,18 @@ internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)
     return proj;
 }
 
+// Reverse Z for drawing: clip z becomes w - z, so depth runs 1 (near) to 0 (far). A float depth
+// buffer keeps its precision near 0, where the far range is, instead of wasting it near the camera.
+internal NvMat4 reverse_depth(NvMat4 m)
+{
+    for (u32 column = 0; column < 4; ++column)
+        m.e[column * 4 + 2] = m.e[column * 4 + 3] - m.e[column * 4 + 2];
+    return m;
+}
+
 internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
 {
-    return nv_mat4_mul(camera_projection(camera_node, aspect), nv_mat4_inverse(camera_node->world));
+    return nv_mat4_mul(reverse_depth(camera_projection(camera_node, aspect)), nv_mat4_inverse(camera_node->world));
 }
 
 void nv_renderer_camera_matrices(NvScene* scene, NvRect viewport, NvMat4* view, NvMat4* projection)
@@ -739,7 +748,8 @@ internal NvVec3 project(NvMat4 m, f32 x, f32 y, f32 z)
 NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y)
 {
     NV_ASSERT(viewport.width && viewport.height);
-    NvMat4 view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera), (f32)viewport.width / (f32)viewport.height);
+    NvNode* camera = nv_scene_get(scene, scene->active_camera);
+    NvMat4 view_proj = nv_mat4_mul(camera_projection(camera, (f32)viewport.width / (f32)viewport.height), nv_mat4_inverse(camera->world));
     NvMat4 to_world = nv_mat4_inverse(view_proj);
     f32 ndc_x = ((x - (f32)viewport.x) / (f32)viewport.width) * 2.0f - 1.0f;
     f32 ndc_y = 1.0f - ((y - (f32)viewport.y) / (f32)viewport.height) * 2.0f;
@@ -1035,7 +1045,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     depth.view = renderer->depth_view;
     depth.depthLoadOp = WGPULoadOp_Clear;
     depth.depthStoreOp = WGPUStoreOp_Discard;
-    depth.depthClearValue = 1.0f;
+    depth.depthClearValue = 0.0f; // reverse Z: far is 0
     WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
     pass_desc.label = (WGPUStringView){"scene", WGPU_STRLEN};
     pass_desc.colorAttachmentCount = 1;
