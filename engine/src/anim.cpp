@@ -25,6 +25,7 @@
 
 extern "C" {
 #include "nv/anim.h"
+#include "nv/log.h"
 }
 
 #include <cmath>
@@ -272,7 +273,7 @@ NvClipId nv_anim_create_clip(NvSkeletonId skeleton_id, const char* name, f32 dur
         }
     }
     if (!raw.Validate()) {
-        fprintf(stderr, "[nv] clip %s has invalid keyframes\n", name);
+        nv_log(NV_LOG_ERROR, "nv", "clip %s has invalid keyframes", name);
         return NvClipId{0};
     }
 
@@ -295,7 +296,7 @@ NvClipId nv_anim_create_clip(NvSkeletonId skeleton_id, const char* name, f32 dur
             raw = extracted;
             clip->motion = oo::TrackBuilder()(motion_position).release();
         } else {
-            fprintf(stderr, "[nv] root motion extraction failed for %s\n", name);
+            nv_log(NV_LOG_WARNING, "nv", "root motion extraction failed for %s", name);
         }
     }
 

@@ -665,12 +665,14 @@ void save_now(App* app, b32 force)
     if (!size) {
         snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: the state is larger than %u KB.",
                  (u32)(SAVE_MAX_SIZE / 1024));
+        nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
         return;
     }
     if (!force && size == app->saved_size && memcmp(app->next_save, app->saved, size) == 0)
         return;
     if (!nv_storage_write(&app->storage, SAVE_FILE, app->next_save, size)) {
         snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: writing %s failed.", SAVE_FILE);
+        nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
         return;
     }
     nv_storage_flush(&app->storage);
@@ -872,6 +874,7 @@ void save_init(App* app)
         snprintf(app->save_notice, sizeof(app->save_notice),
                  "The save could not be loaded: %s. The app started fresh and kept it as %s.", problem,
                  SAVE_BAD_FILE);
+        nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
     }
     app->viewed = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
 

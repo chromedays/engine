@@ -4,6 +4,7 @@ add_library(nv STATIC
     src/gltf.c
     src/gpu.c
     src/imgui.c
+    src/log.c
     src/renderer.c
     src/scene.c
     src/storage.c

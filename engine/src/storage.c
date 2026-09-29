@@ -16,7 +16,7 @@ EM_ASYNC_JS(int, js_storage_mount, (const char* dir), {
     } catch (error) {
     }
     if (!available) {
-        console.warn("nv: browser storage is unavailable: no IndexedDB");
+        Module.nvLog(1, "nv", "browser storage is unavailable: no IndexedDB");
         return 0;
     }
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
@@ -26,7 +26,7 @@ EM_ASYNC_JS(int, js_storage_mount, (const char* dir), {
         await new Promise((resolve, reject) => FS.syncfs(true, (error) => error ? reject(error) : resolve()));
         return 1;
     } catch (error) {
-        console.warn("nv: browser storage is unavailable:", error);
+        Module.nvLog(1, "nv", "browser storage is unavailable: " + (error && error.message || error));
         return 0;
     }
 });
@@ -46,7 +46,7 @@ EM_JS(void, js_storage_flush, (int reload), {
         FS.syncfs(false, (error) => {
             state.busy = false;
             state.error = error ? String(error.message || error) : "";
-            if (error) console.warn("nv: saving to browser storage failed:", error);
+            if (error) Module.nvLog(1, "nv", "saving to browser storage failed: " + state.error);
             if (state.again) {
                 state.again = false;
                 run();

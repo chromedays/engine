@@ -10,6 +10,7 @@
 #include <nv/gltf.h>
 #include <nv/gpu.h>
 #include <nv/imgui.h>
+#include <nv/log.h>
 #include <nv/renderer.h>
 #include <nv/scene.h>
 #include <nv/storage.h>

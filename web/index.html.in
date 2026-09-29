@@ -61,8 +61,29 @@
         if (navigator.clipboard) navigator.clipboard.writeText(message.textContent + "\n" + navigator.userAgent + "\n" + text).catch(() => {});
       };
     };
-    window.addEventListener("error", (event) => crash(event.error || event.message));
-    window.addEventListener("unhandledrejection", (event) => crash(event.reason));
+    // The log (docs/specs/console.md). Messages from the page and from the engine's JavaScript are
+    // queued here, and nv_log_pump moves them into the engine's ring at the start of a frame.
+    // Nothing in this file calls into WebAssembly: printErr runs inside WebAssembly calls, where a
+    // re-entrant call could land in an Asyncify wait. Levels: 0 info, 1 warning, 2 error.
+    const logQueueMax = 512;
+    const queueLog = (level, source, text) => {
+      if (typeof Module === "undefined") return; // before the page has its Module
+      const queue = Module.nvLogQueue;
+      if (queue.length >= logQueueMax) {
+        queue.shift();
+        Module.nvLogDropped += 1;
+      }
+      queue.push({level, source, text: String(text), time: performance.now() / 1000});
+    };
+    const errorText = (error) => String(error && error.stack ? error.stack : error);
+    window.addEventListener("error", (event) => {
+      queueLog(2, "js", event.error ? errorText(event.error) : event.message);
+      crash(event.error || event.message);
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      queueLog(2, "js", errorText(event.reason));
+      crash(event.reason);
+    });
     const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
 
     // Right-dragging in the viewport pans the camera; keep the browser's context menu out of it.
@@ -70,8 +91,24 @@
 
     var Module = {
       canvas: document.getElementById("canvas"),
-      print: (text) => console.log(text),
-      printErr: (text) => console.error(text),
+      nvLogQueue: [],
+      nvLogDropped: 0,
+      // For the engine's JavaScript (EM_JS): the console and the queue.
+      nvLog: (level, source, text) => {
+        const line = "[" + source + "] " + text;
+        if (level >= 2) console.error(line);
+        else if (level == 1) console.warn(line);
+        else console.log(line);
+        queueLog(level, source, text);
+      },
+      print: (text) => {
+        console.log(text);
+        queueLog(0, "stdout", text);
+      },
+      printErr: (text) => {
+        console.error(text);
+        queueLog(2, "stderr", text);
+      },
       onAbort: (what) => fail("The engine stopped: " + what),
       // Called by nv_window_run once loading is over.
       nvRunning: () => status.classList.add("hidden"),

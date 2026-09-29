@@ -1,4 +1,5 @@
 #include "nv/gltf.h"
+#include "nv/log.h"
 
 #include <cgltf.h>
 #include <emscripten/emscripten.h>
@@ -28,7 +29,7 @@ internal cgltf_data* parse_file(const char* path, NvArena* scratch)
     if (cgltf_parse_file(&options, path, &data) != cgltf_result_success ||
         cgltf_load_buffers(&options, data, path) != cgltf_result_success ||
         cgltf_validate(data) != cgltf_result_success) {
-        fprintf(stderr, "[nv] failed to load %s\n", path);
+        nv_log(NV_LOG_ERROR, "nv", "failed to load %s", path);
         return NULL;
     }
     return data;
@@ -51,7 +52,7 @@ EM_ASYNC_JS(int, js_decode_image, (const u8* data, int size, const char* mime, i
         HEAP32[height >> 2] = bitmap.height;
         return 1;
     } catch (error) {
-        console.error("[nv] image decode failed:", error);
+        Module.nvLog(2, "nv", "image decode failed: " + (error && error.message || error));
         return 0;
     }
 });
@@ -65,7 +66,7 @@ internal NvTextureId load_texture(const cgltf_image* image, NvRenderer* renderer
 {
     if (!image || !image->buffer_view) {
         // TODO: Images referenced by URI; the shipped assets embed theirs in .glb files.
-        fprintf(stderr, "[nv] skipping image without an embedded buffer\n");
+        nv_log(NV_LOG_WARNING, "nv", "skipping image without an embedded buffer");
         return (NvTextureId){0};
     }
     const u8* bytes = cgltf_buffer_view_data(image->buffer_view);

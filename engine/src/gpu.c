@@ -1,4 +1,5 @@
 #include "nv/gpu.h"
+#include "nv/log.h"
 #include "nv/window.h"
 
 #include <stdio.h>
@@ -24,7 +25,7 @@ internal void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, W
     if (status == WGPURequestAdapterStatus_Success)
         request->adapter = adapter;
     else
-        fprintf(stderr, "[wgpu] request adapter failed: " SV_FMT "\n", SV_ARG(message));
+        nv_log(NV_LOG_ERROR, "wgpu", "request adapter failed: " SV_FMT, SV_ARG(message));
 }
 
 internal void on_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message,
@@ -35,7 +36,7 @@ internal void on_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUS
     if (status == WGPURequestDeviceStatus_Success)
         request->device = device;
     else
-        fprintf(stderr, "[wgpu] request device failed: " SV_FMT "\n", SV_ARG(message));
+        nv_log(NV_LOG_ERROR, "wgpu", "request device failed: " SV_FMT, SV_ARG(message));
 }
 
 internal void on_device_lost(WGPUDevice const* device, WGPUDeviceLostReason reason, WGPUStringView message,
@@ -43,14 +44,14 @@ internal void on_device_lost(WGPUDevice const* device, WGPUDeviceLostReason reas
 {
     (void)device, (void)userdata1, (void)userdata2;
     if (reason != WGPUDeviceLostReason_Destroyed && reason != WGPUDeviceLostReason_CallbackCancelled)
-        fprintf(stderr, "[wgpu] device lost (%d): " SV_FMT "\n", (int)reason, SV_ARG(message));
+        nv_log(NV_LOG_ERROR, "wgpu", "device lost (%d): " SV_FMT, (int)reason, SV_ARG(message));
 }
 
 internal void on_uncaptured_error(WGPUDevice const* device, WGPUErrorType type, WGPUStringView message,
                                   void* userdata1, void* userdata2)
 {
     (void)device, (void)userdata1, (void)userdata2;
-    fprintf(stderr, "[wgpu] error (%d): " SV_FMT "\n", (int)type, SV_ARG(message));
+    nv_log(NV_LOG_ERROR, "wgpu", "error (%d): " SV_FMT, (int)type, SV_ARG(message));
 }
 
 // NOTE: The browser resolves requests on its own event loop. wgpuInstanceWaitAny yields to it
@@ -158,7 +159,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     instance_desc.requiredFeatures = instance_features;
     gpu->instance = wgpuCreateInstance(&instance_desc);
     if (!gpu->instance) {
-        fprintf(stderr, "[nv] wgpuCreateInstance failed\n");
+        nv_log(NV_LOG_ERROR, "nv", "wgpuCreateInstance failed");
         goto fail;
     }
 
@@ -168,7 +169,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     surface_desc.nextInChain = &canvas.chain;
     gpu->surface = wgpuInstanceCreateSurface(gpu->instance, &surface_desc);
     if (!gpu->surface) {
-        fprintf(stderr, "[nv] failed to create canvas surface\n");
+        nv_log(NV_LOG_ERROR, "nv", "failed to create canvas surface");
         goto fail;
     }
 
@@ -184,7 +185,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(gpu->surface, gpu->adapter, &caps);
     if (caps.formatCount == 0) {
-        fprintf(stderr, "[nv] canvas reports no supported formats\n");
+        nv_log(NV_LOG_ERROR, "nv", "canvas reports no supported formats");
         wgpuSurfaceCapabilitiesFreeMembers(caps);
         goto fail;
     }
@@ -232,7 +233,7 @@ WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
         configure_surface(gpu);
         return NULL;
     default:
-        fprintf(stderr, "[nv] wgpuSurfaceGetCurrentTexture failed (%d)\n", (int)surface_texture.status);
+        nv_log(NV_LOG_ERROR, "nv", "wgpuSurfaceGetCurrentTexture failed (%d)", (int)surface_texture.status);
         return NULL;
     }
 

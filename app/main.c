@@ -743,6 +743,7 @@ void app_stop_playing(App* app)
 internal void frame(void* userdata)
 {
     App* app = userdata;
+    nv_log_pump();
     f64 now = nv_time_seconds();
     f32 dt = (f32)(now - app->last_time);
     app->last_time = now;
@@ -850,7 +851,7 @@ int main(void)
 
     nv_window_create(&app->window, "nv");
     if (!nv_gpu_create(&app->gpu, &app->window)) {
-        fprintf(stderr, "fatal: failed to initialize WebGPU\n");
+        nv_log(NV_LOG_ERROR, "app", "fatal: failed to initialize WebGPU");
         return 1;
     }
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
@@ -880,7 +881,7 @@ int main(void)
 
     build_world(app);
     if (!build_character(app)) {
-        fprintf(stderr, "fatal: failed to load the character\n");
+        nv_log(NV_LOG_ERROR, "app", "fatal: failed to load the character");
         return 1;
     }
 
