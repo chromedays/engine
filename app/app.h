@@ -91,6 +91,38 @@ typedef struct Undo {
     u8 current[UNDO_MAX_BYTES];
 } Undo;
 
+// The Console tab (docs/specs/console.md): what it shows of the log, and what it has seen of it.
+typedef enum ConsoleRect {
+    CONSOLE_RECT_TAB, // the tab's label, in the panel's tab bar
+    CONSOLE_RECT_LEVEL, // three: info, warning, error
+    CONSOLE_RECT_CLEAR = CONSOLE_RECT_LEVEL + NV_LOG_LEVEL_COUNT,
+    CONSOLE_RECT_COPY,
+    CONSOLE_RECT_AUTO_SCROLL,
+    CONSOLE_RECT_FILTER,
+    CONSOLE_RECT_LIST,
+    CONSOLE_RECT_FIRST_ROW, // the first row drawn
+    CONSOLE_RECT_COPY_MESSAGE,
+    CONSOLE_RECT_DETAIL,
+    CONSOLE_RECT_COUNT,
+} ConsoleRect;
+
+typedef struct Console {
+    bool hidden[NV_LOG_LEVEL_COUNT]; // levels the checkboxes hide; zero = shown
+    bool auto_scroll;                // follow new messages while at the bottom
+    ImGuiTextFilter filter;          // matches "source text"
+    u64 selected;                    // number (nv_log_number) of the selected message + 1; 0 = none
+    u64 detail_number;               // the number + 1 of the message `detail` holds
+    char detail[NV_LOG_MAX_MESSAGE_SIZE + 1]; // its text, for the read-only field
+    u64 seen[NV_LOG_LEVEL_COUNT];    // NvLog.arrived when the tab was last shown
+    b32 shown_now;                   // the tab was drawn this frame
+    b32 shown_last;                  // ... and last frame: then nothing counts as unseen
+    // Where things were drawn last frame, in CSS pixels (x0, y0, x1, y1), for tests to click.
+    f32 rects[CONSOLE_RECT_COUNT][4];
+    u32 rows;         // rows the filters let through
+    f32 scroll_y;     // the list's scroll, and its end
+    f32 scroll_max;
+} Console;
+
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
 typedef enum GizmoOperation {
     GIZMO_MOVE,
@@ -260,6 +292,7 @@ typedef struct App {
     NvMeshId target_mesh;
 
     Undo undo;
+    Console console;
 
     // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the showcase by itself;
     // Play runs it, and Stop restores it from the snapshot taken at Play.
@@ -293,6 +326,10 @@ typedef struct App {
     b32 gizmo_shown;  // drawn last frame, so ImGuizmo's hit test is current
     b32 open_inspector; // switch to the Inspector tab on the next frame
     b32 open_stress;    // switch to the Stress tab on the next frame
+    b32 open_console;   // switch to the Console tab on the next frame
+    // The build label's box while it carries a badge, in CSS pixels (x0, y0, x1, y1), grown to a
+    // size a finger can hit; a tap inside opens the Console tab. Zero width = no badge.
+    f32 badge_box[4];
     bool show_bones;
 } App;
 
@@ -320,6 +357,17 @@ void stress_ui(App* app);
 
 // ui.c
 void app_build_ui(App* app, NvRect panel);
+// Keeps the next checkbox or button on this line when `width` fits, else starts a new one.
+void ui_same_line_if_fits(f32 width);
+
+// console.c
+// Warnings and errors that arrived since the Console tab was last shown (0 while it is shown), and
+// the worst level among them.
+u32 console_unseen(App* app, NvLogLevel* worst);
+void console_tab(App* app); // the Console tab's contents
+ImU32 console_level_color(NvLogLevel level);
+b32 console_is_compact(void); // the panel is too narrow (a phone) for the full layout
+void console_record(Console* console, ConsoleRect id); // the last item's rect, for tests
 
 // save.c
 u32 save_scene_layout(NvScene* scene); // a hash of the tree's shape and names

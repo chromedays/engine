@@ -119,5 +119,10 @@ NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction);
 // it. Like igBegin, always pair it with igEnd.
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect);
 
+// Applies this frame's touch scroll to the current window if the finger is on it. The panel does
+// this itself; call it right after igBeginChild_Str for a child window that scrolls on its own, since
+// the finger counts as on the child, not on the panel around it.
+void nv_imgui_touch_scroll(NvImgui* imgui);
+
 // Finishes the ImGui frame and records a render pass that draws it over `target`.
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target);

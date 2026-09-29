@@ -887,10 +887,15 @@ bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoBringToFrontOnFocus;
     bool open = igBegin(name, NULL, flags);
-    // ImGui has no touch scrolling; on_touch collects it for the panel under the finger.
+    nv_imgui_touch_scroll(imgui);
+    return open;
+}
+
+void nv_imgui_touch_scroll(NvImgui* imgui)
+{
+    // ImGui has no touch scrolling; on_touch collects it for the window under the finger.
     if (imgui->touch_scroll != 0.0f && igIsWindowHovered(0))
         igSetScrollY_Float(igGetScrollY() - imgui->touch_scroll);
-    return open;
 }
 
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)

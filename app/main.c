@@ -431,6 +431,13 @@ internal void pick(App* app, NvRect viewport)
     const NvViewInput* in = &app->imgui.view;
     if (!in->tapped)
         return;
+    // A tap on the build label's badge opens the Console tab and leaves the selection alone.
+    const f32* badge = app->badge_box;
+    if (badge[2] > badge[0] && in->tap_x >= badge[0] && in->tap_x < badge[2] && in->tap_y >= badge[1] &&
+        in->tap_y < badge[3]) {
+        app->open_console = 1;
+        return;
+    }
     SceneView* view = app_view(app);
     f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
     NvRay ray = nv_renderer_view_ray(view->scene, viewport, in->tap_x * pixel_ratio, in->tap_y * pixel_ratio);
@@ -827,6 +834,99 @@ EMSCRIPTEN_KEEPALIVE int app_debug_undo_done(void)
     return (int)app_state.undo.done;
 }
 
+// For tests, the Console tab (docs/specs/console.md). Module._app_debug_log(level, n) adds an "app"
+// message "test message n", and _app_debug_log_lines(level, n) one of three lines; strings from the page
+// go through Module.nvLog. _app_debug_wgpu_error() makes WebGPU report a validation error.
+EMSCRIPTEN_KEEPALIVE void app_debug_log(int level, int number)
+{
+    nv_log((NvLogLevel)level, "app", "test message %d", number);
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_log_lines(int level, int number)
+{
+    nv_log((NvLogLevel)level, "app", "first line %d\nsecond line\nthird line", number);
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_wgpu_error(void)
+{
+    WGPUBufferDescriptor descriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
+    descriptor.size = 16; // no usage: not a valid buffer
+    WGPUBuffer buffer = wgpuDeviceCreateBuffer(app_state.gpu.device, &descriptor);
+    if (buffer)
+        wgpuBufferRelease(buffer);
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_log_count(void)
+{
+    return (int)nv_log_ring.count;
+}
+
+// The i-th message held (0 = the oldest): its repeat count, and its level.
+EMSCRIPTEN_KEEPALIVE int app_debug_log_repeat(int i)
+{
+    return (int)nv_log_message((u32)i)->repeat;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_log_level(int i)
+{
+    return (int)nv_log_message((u32)i)->level;
+}
+
+// The build label's tap box (component 0..3 is x0, y0, x1, y1), all zero when it has no badge.
+EMSCRIPTEN_KEEPALIVE float app_debug_badge_box(int component)
+{
+    return app_state.badge_box[component];
+}
+
+// The average CPU time of building and recording the UI, in milliseconds.
+EMSCRIPTEN_KEEPALIVE float app_debug_ui_ms(void)
+{
+    return (float)app_state.shown_average.ui;
+}
+
+// The shown scene's camera yaw, in radians.
+EMSCRIPTEN_KEEPALIVE float app_debug_camera_yaw(void)
+{
+    return app_view(&app_state)->camera_yaw;
+}
+
+// Warnings and errors not yet seen (0 while the Console tab is shown).
+EMSCRIPTEN_KEEPALIVE int app_debug_console_unseen(void)
+{
+    return (int)console_unseen(&app_state, NULL);
+}
+
+// Rows the Console tab's filters let through.
+EMSCRIPTEN_KEEPALIVE int app_debug_console_rows(void)
+{
+    return (int)app_state.console.rows;
+}
+
+// Where an item of the Console tab was drawn last frame, in CSS pixels: id is a ConsoleRect,
+// component 0..3 is x0, y0, x1, y1.
+EMSCRIPTEN_KEEPALIVE float app_debug_console_rect(int id, int component)
+{
+    return app_state.console.rects[id][component];
+}
+
+// The message list's scroll (0) and the end of its range (1).
+EMSCRIPTEN_KEEPALIVE float app_debug_console_scroll(int which)
+{
+    return which ? app_state.console.scroll_max : app_state.console.scroll_y;
+}
+
+// The number of the selected message + 1; 0 = none.
+EMSCRIPTEN_KEEPALIVE int app_debug_console_selected(void)
+{
+    return (int)app_state.console.selected;
+}
+
+// The selected node's index in the shown scene; 0 = none.
+EMSCRIPTEN_KEEPALIVE int app_debug_selected_node(void)
+{
+    return (int)app_view(&app_state)->selected.index;
+}
+
 // For tests: Module._app_debug_save_crc() is a CRC-32 of the save the state would write now, so a
 // test can compare the state at two moments (before Play and after Stop).
 EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
@@ -892,6 +992,7 @@ int main(void)
     app->views[SCENE_SHOWCASE].selected = app->character.root;
     app->views[SCENE_SHOWCASE].focus = app->character.root;
     app->autosave = true;
+    app->console.auto_scroll = true;
     app->play_snapshot = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
     // Taken before anything can rename or move nodes: saves apply to nodes by their place in this
     // tree, and only while it is the same tree.

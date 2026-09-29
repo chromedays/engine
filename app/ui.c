@@ -128,15 +128,20 @@ internal void attach_section(App* app, NvNode* node)
         igCheckbox("Visible", &app->show_sword);
 }
 
-// Keeps the next checkbox or radio button labeled `label` on this line when it fits, so a row
-// of them wraps on a narrow (phone) panel instead of running off its edge.
-internal void same_line_if_fits(const char* label)
+// Keeps the next item, `width` wide, on this line when it fits, so a row of them wraps on a
+// narrow (phone) panel instead of running off its edge.
+void ui_same_line_if_fits(f32 width)
 {
     igSameLine(0.0f, -1.0f);
-    ImVec2_c available = igGetContentRegionAvail();
-    ImVec2_c text = igCalcTextSize(label, NULL, true, -1.0f);
-    if (available.x < igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x + text.x)
+    if (igGetContentRegionAvail().x < width)
         igNewLine();
+}
+
+// The same for the next checkbox or radio button labeled `label`.
+internal void same_line_if_fits(const char* label)
+{
+    ImVec2_c text = igCalcTextSize(label, NULL, true, -1.0f);
+    ui_same_line_if_fits(igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x + text.x);
 }
 
 // The View tab's Shadows section (docs/specs/shadows.md).
@@ -266,22 +271,71 @@ internal void view_tab(App* app)
     save_ui(app);
 }
 
+// The number of warnings and errors not yet seen, for the Console tab's label and the badge.
+internal void format_unseen(u32 unseen, char* out, umm capacity)
+{
+    if (unseen > 99)
+        snprintf(out, capacity, "99+");
+    else
+        snprintf(out, capacity, "%u", unseen);
+}
+
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
+// Warnings and errors that arrived while the Console tab was not shown add a badge, a dot and a
+// count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
 internal void build_label(App* app)
 {
     char text[80];
     snprintf(text, sizeof(text), "%s build %s%s", NV_BUILD_NAME, NV_GIT_COMMIT,
              app->playing && app->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
+    NvLogLevel worst;
+    u32 unseen = console_unseen(app, &worst);
+    char count[8];
+    format_unseen(unseen, count, sizeof(count));
+
     ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
     ImVec2_c pos = {6.0f, 6.0f};
-    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, pos.y - 2.0f}, (ImVec2_c){pos.x + size.x + 4.0f, pos.y + size.y + 2.0f},
-                             0x99000000u, 3.0f, 0);
+    f32 radius = igGetFontSize() * 0.3f;
+    f32 badge_width = 0.0f;
+    if (unseen)
+        badge_width = 8.0f + radius * 2.0f + 4.0f + igCalcTextSize(count, NULL, false, -1.0f).x;
+    ImVec2_c min = {pos.x - 4.0f, pos.y - 2.0f};
+    ImVec2_c max = {pos.x + size.x + badge_width + 4.0f, pos.y + size.y + 2.0f};
+    ImDrawList_AddRectFilled(draw, min, max, 0x99000000u, 3.0f, 0);
     ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
+    if (unseen) {
+        ImU32 color = console_level_color(worst);
+        f32 x = pos.x + size.x + 8.0f;
+        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, pos.y + size.y * 0.5f}, radius, color, 12);
+        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, pos.y}, color, count, NULL);
+    }
+
+    // The box a tap counts in: the label, grown to a size a finger can hit.
+    f32* box = app->badge_box;
+    if (!unseen) {
+        box[0] = box[1] = box[2] = box[3] = 0.0f;
+        return;
+    }
+    f32 minimum = 32.0f * app->imgui.ui_scale;
+    box[0] = min.x;
+    box[1] = min.y;
+    box[2] = max.x;
+    box[3] = max.y;
+    for (u32 axis = 0; axis < 2; ++axis) {
+        f32 extra = minimum - (box[axis + 2] - box[axis]);
+        if (extra > 0.0f) {
+            box[axis] -= extra * 0.5f;
+            box[axis + 2] += extra * 0.5f;
+        }
+    }
 }
 
 void app_build_ui(App* app, NvRect panel)
 {
+    // The Console tab counts what arrived while it was not shown: it was shown last frame or not.
+    app->console.shown_last = app->console.shown_now;
+    app->console.shown_now = 0;
     build_label(app);
     // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
     // edits that stay.
@@ -307,6 +361,31 @@ void app_build_ui(App* app, NvRect panel)
         }
         if (igBeginTabItem("View", NULL, 0)) {
             view_tab(app);
+            igEndTabItem();
+        }
+        // NOTE: The label counts warnings and errors that arrived while the tab was not shown. Its id
+        // (###console) stays the same, so the tab keeps its place as the count changes.
+        NvLogLevel worst;
+        u32 unseen = console_unseen(app, &worst);
+        char console_label[48] = "Console###console";
+        if (unseen) {
+            // A phone's tab bar has no room for the number (the tabs would scroll): the color says
+            // it, and the badge on the build label counts.
+            if (!console_is_compact()) {
+                char count[8];
+                format_unseen(unseen, count, sizeof(count));
+                snprintf(console_label, sizeof(console_label), "Console (%s)###console", count);
+            }
+            igPushStyleColor_U32(ImGuiCol_Text, console_level_color(worst));
+        }
+        ImGuiTabItemFlags console_flags = app->open_console ? ImGuiTabItemFlags_SetSelected : 0;
+        app->open_console = 0;
+        bool console_open = igBeginTabItem(console_label, NULL, console_flags);
+        if (unseen)
+            igPopStyleColor(1);
+        console_record(&app->console, CONSOLE_RECT_TAB);
+        if (console_open) {
+            console_tab(app);
             igEndTabItem();
         }
         if (app->shown == SCENE_STRESS) {

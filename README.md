@@ -18,14 +18,15 @@ Live:
 
 ```
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h, chunk.h, storage.h
+                     gltf.h, anim.h, chunk.h, storage.h, log.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor panel (node tree, inspector, view settings, stress workloads). It
                      autosaves the showcase to the browser (IndexedDB), has undo and redo, and
                      Edit and Play modes (Play runs the showcase; Stop puts it back). The sun
-                     casts shadows (one shadow map; size, format and filter in the View tab)
+                     casts shadows (one shadow map; size, format and filter in the View tab). A
+                     Console tab lists what the engine and the page report (warnings, errors)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts

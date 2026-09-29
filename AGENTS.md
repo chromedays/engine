@@ -18,12 +18,13 @@ There is no native build.
 engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
                            imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
                            gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation),
-                           chunk.h (tagged binary files), storage.h (files kept in IndexedDB)
-engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c,
+                           chunk.h (tagged binary files), storage.h (files kept in IndexedDB),
+                           log.h (the log ring the Console tab shows)
+engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c, log.c,
                            anim.cpp (the ozz wrapper; our only C++ file)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
-                           undo.c (undo and redo),
+                           undo.c (undo and redo), console.c (the Console tab),
                            app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -64,8 +65,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - The app uses the editor layout: `nv_editor_layout` splits the canvas into the
   scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
   with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the
-  panel. The exceptions are the build label in the viewport's top-left corner and the transform
-  gizmo on the selection.
+  panel. The exceptions are the build label (with its badge) in the viewport's top-left corner and the
+  transform gizmo on the selection.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
   (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
@@ -94,6 +95,20 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its scope; a value the app changes every frame in Edit mode must be left out there
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
+- Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
+  (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
+  Console tab shows; an equal message in a row is one row with a count. The page's own output
+  (`Module.print`, `printErr`, uncaught errors, `Module.nvLog` for `EM_JS` code) is queued in
+  `web/index.html.in` and `nv_log_pump()` moves it in at the start of each frame, since a hook
+  must not call into WebAssembly. The ring is not saved and not undoable. Every `EM_JS` message goes
+  through `Module.nvLog(level, source, text)` (0 info, 1 warning, 2 error), not `console.*`. Rows
+  the Console tab lists are indices into the ring, so nothing may add or clear messages while it
+  draws (Clear is done after the list). Debug builds export `Module._app_debug_log(level, n)`,
+  `_app_debug_log_count`, `_app_debug_wgpu_error` and the `_app_debug_console_*` functions (item
+  rects, rows, scroll, selection) for tests.
+- The build label in the viewport's top-left corner gets a badge (a dot and the count of warnings and
+  errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
+  instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
 - The first directional light casts shadows through one shadow map fitted to the view
   (`docs/specs/shadows.md`); the app sets `NvRenderer.shadows` and the renderer remakes the map and
   its depth-only pipelines when the size or format changes. The shadow pass binds

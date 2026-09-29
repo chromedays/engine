@@ -1,6 +1,6 @@
 # Console spec
 
-Status: draft (2026-09-29). Changes to this spec are agreed first.
+Status: implemented (2026-09-29). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -38,18 +38,18 @@ Recommendation: write it ourselves. No third-party library.
 | Browser console | `nv_log` also writes to `console.log` / `console.warn` / `console.error` by level, as `[source] text`, so developer tools and Playwright's `page.on("console")` keep seeing everything. It does not go through `stderr`, so it is not captured twice |
 | Existing output | Every `fprintf(stderr, ...)` in `engine/` and `app/` becomes `nv_log`. `console.warn` / `console.error` in our `EM_JS` code become `Module.nvLog` (below) |
 | Output we do not write | The page's `Module.print` and `Module.printErr` (Emscripten's `stdout` and `stderr`: ozz-animation's logs, Emscripten's warnings) keep writing to the browser console and also add an Info (`stdout`) or Error (`stderr`) message. So do the page's `error` and `unhandledrejection` handlers (`js`), before the crash screen |
-| JS messages | The page defines `Module.nvLog(level, source, text)`, which writes to the console and queues the message with its time. `nv_log_pump()`, called at the start of each frame, moves the queue into the ring. Nothing calls into WebAssembly from those hooks: `printErr` runs inside a WebAssembly call, and a re-entrant call could land in an Asyncify wait |
+| JS messages | The page defines `Module.nvLog(level, source, text)`, which writes to the console and queues the message with its time. `nv_log_pump()`, called at the start of each frame, moves the queue into the ring. The queue holds 512 messages; when the page outruns a frame, the oldest are dropped and the next pump adds a warning saying how many. Nothing calls into WebAssembly from those hooks: `printErr` runs inside a WebAssembly call, and a re-entrant call could land in an Asyncify wait |
 | Time | Seconds since the page started (`performance.now`, the clock `nv_time_seconds` uses), shown as `12.345` |
 | Saved | No. The log is not in the save, and a reload starts empty. The Console tab's settings (level filters, auto-scroll) are not saved either: they are view state, like the text filter |
 | Undo | Not undoable, and touching nothing undo compares: clearing the log is not a step |
-| Tab | A **Console** tab after View in the panel's tab bar. While it is not shown, its label counts the warnings and errors that arrived since it was last shown, repeats included: `Console (3)`, red when one is an error, yellow for warnings only. Info does not count. The label's ImGui id stays fixed (`###console`), so the tab keeps its place |
+| Tab | A **Console** tab after View in the panel's tab bar. While it is not shown, its label counts the warnings and errors that arrived since it was last shown, repeats included: `Console (3)`, red when one is an error, yellow for warnings only (on a narrow panel, a phone's, only the color: the number would make the tab bar scroll, and the badge counts). Info does not count. The label's ImGui id stays fixed (`###console`), so the tab keeps its place |
 | Badge | The same count on the build label in the viewport's top-left corner (`ui.c`'s `build_label`), after its text: a dot and the number, `Release build 1a2b3c · ● 3`, red when one is an error, yellow for warnings only. No count, no badge. It is drawn on the foreground draw list like the label, so it is not an ImGui item. The build label is already an exception to "editor UI stays in the panel"; the badge adds no new one |
 | Badge tap | A tap or click that lands on the build label's box while the badge shows opens the Console tab (which clears the count) instead of picking. Input in the viewport skips ImGui (`NvImgui.view`), so the app tests `view.tap_x` / `tap_y` (CSS pixels, the coordinates the label is drawn in) against the box before `pick` runs. The box is grown to at least 32 × 32 CSS pixels times `NvImgui.ui_scale`, so a finger can hit it. Drags that start on it still orbit the camera |
-| Toolbar | Info, Warning and Error checkboxes, each with the count the ring holds ("Error 2"); a text filter (`ImGuiTextFilter`, matching the source and the text); **Clear**; **Copy** (the shown messages as text, through ImGui's clipboard, which reaches the browser's); **Auto-scroll**. Items wrap to the next line on a narrow panel (`same_line_if_fits` in `ui.c`) |
-| List | A child window filling the tab above the detail box. One row per message, one line each: time, level (colored), source, text up to its first line break, and the repeat count. Longer text ends in `...`. Rows are drawn with `ImGuiListClipper` over the indices that pass the filters (built in the scratch arena each frame), so 1024 messages cost only the visible rows |
+| Toolbar | Info, Warning and Error checkboxes, each with the count the ring holds ("Error 2"; a narrow panel gets "Warn" and no counts, to keep the toolbar to two lines); a text filter (`ImGuiTextFilter`, matching the source and the text); **Clear**; **Copy** (the shown messages as text, through ImGui's clipboard, which reaches the browser's); **Auto-scroll** ("Auto" on a narrow panel). Items wrap to the next line on a narrow panel (`ui_same_line_if_fits` in `ui.c`). Clear runs after the list is drawn, since the rows are indices into the ring |
+| List | A child window filling the tab above the detail box. One row per message, one line each: time, level (colored), source, the repeat count (`x3`, when more than one), and the text up to its first line break (at most 512 bytes). Longer text ends in `...`. A narrow panel (under 44 characters wide) leaves out the time; the detail shows it. Rows are drawn with `ImGuiListClipper` over the indices that pass the filters (built in the scratch arena each frame), so 1024 messages cost only the visible rows |
 | Auto-scroll | On by default. The list follows new messages while it is scrolled to the bottom; scrolling up stops following until it is back at the bottom |
-| Detail | Tapping a row selects it; the box under the list shows its full text, wrapped, in a read-only multi-line text field, so it can be selected and copied on phones too. Nothing selected: the box is hidden. A selected message that is dropped from the ring clears the selection |
-| Touch | A vertical drag scrolls the list like the panel. `nv_imgui_begin_panel` scrolls only a hovered panel, not its child windows, so the scroll it applies moves into `nv_imgui_touch_scroll`, which the panel and the list's child window both call |
+| Detail | Tapping a row selects it; the box under the list shows its full text, wrapped, in a read-only multi-line text field, so it can be selected and copied on phones too. Above the box, its level, source, time and repeat count, and a **Copy message** button (a phone has no keyboard to copy the field with). Tapping the selected row again deselects it. Nothing selected: the box is hidden. A newly picked message scrolls the panel so its detail is in view (on a phone it is below the fold); a narrow panel shows a 3-line box and at least 4 list rows, a wide one 5 and 6. A selected message that is dropped from the ring clears the selection |
+| Touch | A vertical drag scrolls the list like the panel. `nv_imgui_begin_panel` scrolls only a hovered panel, not its child windows, so the scroll it applies moves into `nv_imgui_touch_scroll`, which the panel and the list's child window both call. A frame in which a finger scrolled the list does not follow new messages to the bottom, since ImGui applies the scroll at the next `Begin` and the follow would overwrite it |
 | Tests | A Node test for the ring; Debug exports for Playwright (below) |
 | Third-party | None |
 
@@ -135,7 +135,12 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
   0; a 5 KB message is cut to 4 KB with `...`; repeats collapse; level counts follow drops and
   clears; zero is a valid empty log.
 - **Playwright**, Release and Debug, desktop mouse and phone touch sizes. Debug builds export
-  `Module._app_debug_log(level, text)` (adds an `app` message) and `Module._app_debug_log_count()`.
+  `Module._app_debug_log(level, n)` (adds the `app` message "test message n"), `_app_debug_log_lines`,
+  `_app_debug_log_count`, `_app_debug_log_repeat`, `_app_debug_wgpu_error` and the
+  `_app_debug_console_*` functions (unseen count, rows, scroll, selection, and where each item was
+  drawn, so a test can click it); strings from the page go through `Module.nvLog`. The scripts are
+  run by hand with Playwright (nothing of them is in the repo); the Release build has no exports, so
+  its run clicks by the layout recorded from the Debug run and checks through the clipboard.
   - A real WebGPU error (a Debug export that makes an invalid buffer) shows as a `wgpu` Error; one
     per frame for a second stays one row with a repeat count.
   - `Module.printErr("x")` and a thrown error in a `setTimeout` show as `stderr` and `js` Errors.
@@ -145,7 +150,7 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
     click on the label without a badge picks as before; a drag starting on the badge orbits.
   - Level checkboxes and the text filter hide rows; Copy puts the shown rows on the clipboard.
   - 2000 messages keep the newest 1024; the list stays at the bottom while auto-scrolling, and stays
-    put after scrolling up. The UI time in the Stress tab stays about the same with a full log.
+    put after scrolling up. The UI time (`shown_average.ui`) stays within a few times of an empty log's (about 0.3 ms).
   - Tapping a row shows its full text; a touch drag scrolls the list.
   - The save round trip (`_app_debug_save_round_trip`) and the undo step count are unchanged by
     anything done in the tab.
