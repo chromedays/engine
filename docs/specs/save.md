@@ -119,8 +119,8 @@ describe created nodes; older builds will skip them.
 | `YAW ` | f32 | `SceneView.camera_yaw`, radians | the scene's start value |
 | `PTCH` | f32 | `camera_pitch`, radians, clamped to -10°..80° on load | start value |
 | `DIST` | f32 | `camera_distance`, meters, clamped to 1..100 on load | start value |
-| `FOLW` | u32 | `follow_selection` | 1 |
-| `ORBT` | f32[3] | `orbit_point` (where the camera looks while not following) | (0, 0, 0) |
+| `FOLW` | u32 | `follow_selection` | 0 |
+| `ORBT` | f32[3] | `orbit_point` (where the camera looks while not following) | start value |
 | `PAN ` | f32[3] | `pan` (offset from the followed selection) | (0, 0, 0) |
 | `SELN` | u32[] | the selected node's path; empty = nothing selected | the start selection |
 

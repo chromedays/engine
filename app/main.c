@@ -227,7 +227,8 @@ internal void build_world(App* app)
         .camera_yaw = 0.35f,
         .camera_pitch = 0.12f,
         .camera_distance = 5.0f,
-        .follow_selection = true,
+        .follow_selection = false,
+        .orbit_point = {0.0f, 0.92f, 0.0f}, // the character's head height, where following would look
     };
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");

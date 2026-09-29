@@ -14,7 +14,7 @@ touch. Rotation becomes editable in the inspector.
 | Orbit | Left drag / one-finger drag |
 | Zoom | Wheel / two-finger pinch |
 | Pan | Right or middle drag / two-finger drag; moves the orbit point off the focused node |
-| Follow | The camera orbits the selection; a per-scene "Camera follows selection" checkbox in the View tab (on by default) turns it off, and then the camera stays put and panning moves its orbit point |
+| Follow | The camera orbits the selection; a per-scene "Camera follows selection" checkbox in the View tab (off by default) turns it on; while off, the camera stays put and panning moves its orbit point |
 | Select | Click / tap: a ray from the camera picks the nearest mesh node |
 | Deselect | Click / tap where no mesh is hit |
 | Characters | Picking a skinned mesh selects its parent, the character root |
