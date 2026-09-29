@@ -8,7 +8,8 @@ See what the engine and the page report, inside the app: WebGPU validation error
 failed to load, a save that could not be written, a warning from ozz-animation. Today these go to
 `fprintf(stderr, ...)` or `console.warn`, so they are only seen with the browser's developer tools
 open, which phones do not have. A **Console** tab in the editor panel lists them, with levels,
-filters and copy.
+filters and copy, and a badge on the viewport's build label says when a warning or error arrived
+while another tab is shown.
 
 Out of scope: typing commands (a REPL), logging to a file or a server, and messages after a crash
 (the page's crash screen already shows the stack).
@@ -42,6 +43,8 @@ Recommendation: write it ourselves. No third-party library.
 | Saved | No. The log is not in the save, and a reload starts empty. The Console tab's settings (level filters, auto-scroll) are not saved either: they are view state, like the text filter |
 | Undo | Not undoable, and touching nothing undo compares: clearing the log is not a step |
 | Tab | A **Console** tab after View in the panel's tab bar. While it is not shown, its label counts the warnings and errors that arrived since it was last shown, repeats included: `Console (3)`, red when one is an error, yellow for warnings only. Info does not count. The label's ImGui id stays fixed (`###console`), so the tab keeps its place |
+| Badge | The same count on the build label in the viewport's top-left corner (`ui.c`'s `build_label`), after its text: a dot and the number, `Release build 1a2b3c · ● 3`, red when one is an error, yellow for warnings only. No count, no badge. It is drawn on the foreground draw list like the label, so it is not an ImGui item. The build label is already an exception to "editor UI stays in the panel"; the badge adds no new one |
+| Badge tap | A tap or click that lands on the build label's box while the badge shows opens the Console tab (which clears the count) instead of picking. Input in the viewport skips ImGui (`NvImgui.view`), so the app tests `view.tap_x` / `tap_y` (CSS pixels, the coordinates the label is drawn in) against the box before `pick` runs. The box is grown to at least 32 × 32 CSS pixels times `NvImgui.ui_scale`, so a finger can hit it. Drags that start on it still orbit the camera |
 | Toolbar | Info, Warning and Error checkboxes, each with the count the ring holds ("Error 2"); a text filter (`ImGuiTextFilter`, matching the source and the text); **Clear**; **Copy** (the shown messages as text, through ImGui's clipboard, which reaches the browser's); **Auto-scroll**. Items wrap to the next line on a narrow panel (`same_line_if_fits` in `ui.c`) |
 | List | A child window filling the tab above the detail box. One row per message, one line each: time, level (colored), source, text up to its first line break, and the repeat count. Longer text ends in `...`. Rows are drawn with `ImGuiListClipper` over the indices that pass the filters (built in the scratch arena each frame), so 1024 messages cost only the visible rows |
 | Auto-scroll | On by default. The list follows new messages while it is scrolled to the bottom; scrolling up stops following until it is back at the bottom |
@@ -115,7 +118,11 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
   in `App`: level filters, auto-scroll, the `ImGuiTextFilter`, the selected message (by its
   number, which stays valid as the ring moves), and the `arrived` counts when the tab was
   last shown.
-- `app/ui.c`: the tab and its label; `app/main.c`: `nv_log_pump()` at the start of `frame`.
+- `app/ui.c`: the tab and its label; `build_label` draws the badge and keeps the label's box
+  (`App.build_label_box`, CSS pixels; zero while no badge shows).
+- `app/main.c`: `nv_log_pump()` at the start of `frame`; `pick` first checks the tap against
+  `build_label_box` and, on a hit, opens the Console tab (`app->open_console`, like
+  `open_inspector`) and returns without changing the selection.
 - `fprintf(stderr, ...)` in `main.c` becomes `nv_log(NV_LOG_ERROR, "app", ...)`. The save's
   notices (`app->save_notice`) stay where they are in the View tab and are also logged as warnings.
 - `web/index.html.in`: `Module.nvLog`, its queue, and the `print`, `printErr`, `error` and
@@ -132,7 +139,10 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
   - A real WebGPU error (a Debug export that makes an invalid buffer) shows as a `wgpu` Error; one
     per frame for a second stays one row with a repeat count.
   - `Module.printErr("x")` and a thrown error in a `setTimeout` show as `stderr` and `js` Errors.
-  - The tab's badge counts while another tab is shown, and clears when the Console tab is opened.
+  - The tab label and the build-label badge count while another tab is shown, and clear when the
+    Console tab is opened. Info messages show no badge.
+  - A click (desktop) and a tap (phone) on the badge open the Console tab and keep the selection; a
+    click on the label without a badge picks as before; a drag starting on the badge orbits.
   - Level checkboxes and the text filter hide rows; Copy puts the shown rows on the clipboard.
   - 2000 messages keep the newest 1024; the list stays at the bottom while auto-scrolling, and stays
     put after scrolling up. The UI time in the Stress tab stays about the same with a full log.
@@ -144,10 +154,11 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
 
 1. **Log:** `nv/log.h`, `log.c`, the Node test, and every existing `fprintf(stderr, ...)` and
    `console.*` call moved to it. Checked: the browser console shows the same messages as before.
-2. **Console tab:** the tab, toolbar, list with the clipper, detail box, badge,
-   `nv_imgui_touch_scroll`, and the page's hooks.
+2. **Console tab:** the tab, toolbar, list with the clipper, detail box, tab count, the build-label
+   badge and its tap, `nv_imgui_touch_scroll`, and the page's hooks.
 3. **Edge cases and docs:** floods (repeats, a full ring), the phone layout, the UI cost with a full
-   log; `AGENTS.md` (the log module and the Console tab) and README.
+   log; `AGENTS.md` (the log module, the Console tab, and
+   the badge in the build-label exception) and README.
 
 Every phase is checked in Release and Debug in headless Chromium, with the mouse at desktop size
 and with touch at phone size.
