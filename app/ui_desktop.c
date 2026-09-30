@@ -279,13 +279,21 @@ internal void bottom_dock(App* app)
 internal void splitter(App* app, const char* name, NvRect rect, DockSplitter which)
 {
     Docks* docks = &app->docks;
+    // NOTE: Not nv_imgui_begin_panel: its NoBringToFrontOnFocus puts a new window behind the ones
+    // before it, and the splitter has to be above the dock whose edge it covers.
+    f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
+    igSetNextWindowPos((ImVec2_c){(f32)rect.x / scale, (f32)rect.y / scale}, ImGuiCond_Always, (ImVec2_c){0.0f, 0.0f});
+    igSetNextWindowSize((ImVec2_c){(f32)rect.width / scale, (f32)rect.height / scale}, ImGuiCond_Always);
     igPushStyleVar_Vec2(ImGuiStyleVar_WindowPadding, (ImVec2_c){0.0f, 0.0f});
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    bool open = nv_imgui_begin_panel_ex(&app->imgui, name, rect, flags);
-    igPopStyleVar(1);
+    igPushStyleVar_Vec2(ImGuiStyleVar_WindowMinSize, (ImVec2_c){1.0f, 1.0f});
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBackground |
+                             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                             ImGuiWindowFlags_NoFocusOnAppearing;
+    bool open = igBegin(name, NULL, flags);
+    igPopStyleVar(2);
     if (open) {
-        f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
-        ImVec2_c size = {(f32)rect.width / ratio, (f32)rect.height / ratio};
+        ImVec2_c size = {(f32)rect.width / scale, (f32)rect.height / scale};
         igInvisibleButton(name, size, 0);
         b32 horizontal = which != SPLITTER_BOTTOM; // the border runs along y, the drag is along x
         ImVec2_c mouse = igGetIO_Nil()->MousePos;
@@ -295,9 +303,10 @@ internal void splitter(App* app, const char* name, NvRect rect, DockSplitter whi
         if (igIsItemActivated()) {
             docks->dragging = which;
             docks->drag_start_mouse = along;
-            docks->drag_start_size = which == SPLITTER_LEFT ? docks->left_width
-                                     : which == SPLITTER_RIGHT ? docks->right_width
-                                                               : docks->bottom_height;
+            // From the size shown, which the window's size may have cut below the wanted one.
+            docks->drag_start_size = which == SPLITTER_LEFT ? (f32)app->layout.left.width / scale
+                                     : which == SPLITTER_RIGHT ? (f32)app->layout.right.width / scale
+                                                               : (f32)app->layout.bottom.height / scale;
         }
         if (igIsItemActive() && docks->dragging == (s32)which) {
             f32 moved = along - docks->drag_start_mouse;

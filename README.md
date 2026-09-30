@@ -22,7 +22,9 @@ engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
-                     editor panel (node tree, inspector, view settings, stress workloads). It
+                     editor (node tree, inspector, view settings, stress workloads), with a
+                     desktop UI (docks around the viewport) and a phone UI (one tabbed panel),
+                     Play / Stop at the top center of both. It
                      autosaves the showcase to the browser (IndexedDB), has undo and redo, and
                      Edit and Play modes (Play runs the showcase; Stop puts it back). The sun
                      casts shadows (one shadow map; size, format and filter in the View tab). A

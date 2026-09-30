@@ -783,8 +783,10 @@ internal void frame(void* userdata)
     const Layout* layout = &app->layout;
     app->imgui.view_rect = layout->viewport;
     NvRect* logged = &app->logged_viewport;
-    if (logged->width != layout->viewport.width || logged->height != layout->viewport.height ||
-        logged->x != layout->viewport.x || logged->y != layout->viewport.y) {
+    // Not on every frame of a splitter drag: it would fill the log ring with viewport sizes.
+    b32 moved = logged->width != layout->viewport.width || logged->height != layout->viewport.height ||
+                logged->x != layout->viewport.x || logged->y != layout->viewport.y;
+    if (moved && !app->docks.dragging) {
         *logged = layout->viewport;
         nv_log(NV_LOG_INFO, "app", "%s UI: scene viewport %ux%u at (%u, %u) of the %ux%u color target",
                app->ui_mode == UI_PHONE ? "phone" : "desktop", layout->viewport.width, layout->viewport.height,
