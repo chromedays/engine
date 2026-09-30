@@ -230,6 +230,7 @@ internal void build_world(App* app)
         .follow_selection = false,
         .orbit_point = {0.0f, 0.92f, 0.0f}, // the character's head height, where following would look
     };
+    app_set_home(&app->views[SCENE_SHOWCASE]);
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
     NvNode* sun_node = nv_scene_get(scene, sun);
@@ -506,6 +507,14 @@ internal NvVec3 view_focus_point(SceneView* view)
     return point;
 }
 
+void app_set_home(SceneView* view)
+{
+    view->home_yaw = view->camera_yaw;
+    view->home_pitch = view->camera_pitch;
+    view->home_distance = view->camera_distance;
+    view->home_orbit = view->orbit_point;
+}
+
 void app_focus_selection(App* app)
 {
     SceneView* view = app_view(app);
@@ -584,20 +593,10 @@ internal void draw_gizmo(App* app, NvRect viewport)
     ImGuizmo_SetGizmoSizeClipSpace(length / ((f32)viewport.width / ratio * 0.5f));
     app->gizmo_shown = 1;
 
-    // W, E and R pick the operation while the pointer is over the viewport, as in most editors.
+    // (W, E and R pick the operation: desktop shortcuts, app/shortcuts.c.) Ctrl held turns the Snap
+    // box around for as long as it is held, so a drag can snap once or move freely once.
     ImGuiIO* io = igGetIO_Nil();
-    f32 px = io->MousePos.x * ratio;
-    f32 py = io->MousePos.y * ratio;
-    b32 pointer_in_view = px >= (f32)viewport.x && py >= (f32)viewport.y && px < (f32)(viewport.x + viewport.width) &&
-                          py < (f32)(viewport.y + viewport.height);
-    if (pointer_in_view && !io->WantTextInput && !ImGuizmo_IsUsingAny()) {
-        if (igIsKeyPressed_Bool(ImGuiKey_W, false))
-            app->gizmo_operation = GIZMO_MOVE;
-        if (igIsKeyPressed_Bool(ImGuiKey_E, false))
-            app->gizmo_operation = GIZMO_ROTATE;
-        if (igIsKeyPressed_Bool(ImGuiKey_R, false))
-            app->gizmo_operation = GIZMO_SCALE;
-    }
+    b32 snap_now = app->gizmo_snap != (io->KeyCtrl != 0);
 
     // Snap steps: half a meter, 15 degrees, a tenth of the scale.
     f32 snap[3] = {0.5f, 0.5f, 0.5f};
@@ -609,7 +608,7 @@ internal void draw_gizmo(App* app, NvRect viewport)
     NvMat4 world = node->world;
     MODE mode = (app->gizmo_local || app->gizmo_operation == GIZMO_SCALE) ? LOCAL : WORLD;
     if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, world.e, NULL,
-                             app->gizmo_snap ? snap : NULL, NULL, NULL))
+                             snap_now ? snap : NULL, NULL, NULL))
         return;
 
     // world = parent world * joint (for attached nodes) * local, as in nv_scene_update.
@@ -864,6 +863,34 @@ EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
     return values[component];
 }
 
+// The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
+EMSCRIPTEN_KEEPALIVE int app_debug_gizmo(int which)
+{
+    int values[3] = {(int)app_state.gizmo_operation, app_state.gizmo_local, app_state.gizmo_snap};
+    return values[which];
+}
+
+// The shown view: 0 selected node index, 1 follows selection, 2 keyboard shortcuts window open,
+// 3 to 5 the Scene, Inspector and Console docks shown.
+EMSCRIPTEN_KEEPALIVE int app_debug_state(int which)
+{
+    const App* app = &app_state;
+    int values[6] = {(int)app_view(&app_state)->selected.index, app_view(&app_state)->follow_selection, app->show_shortcuts,
+                     app->docks.show_left, app->docks.show_right, app->docks.show_bottom};
+    return values[which];
+}
+
+// The selected node's position (0 x, 1 y, 2 z).
+EMSCRIPTEN_KEEPALIVE float app_debug_selected_position(int axis)
+{
+    SceneView* view = app_view(&app_state);
+    if (!view->selected.index)
+        return 0.0f;
+    NvVec3 p = nv_scene_get(view->scene, view->selected)->position;
+    f32 values[3] = {p.x, p.y, p.z};
+    return values[axis];
+}
+
 EMSCRIPTEN_KEEPALIVE int app_debug_playing(void)
 {
     return app_state.playing;
@@ -1050,6 +1077,9 @@ int main(void)
     };
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
+    // Keys the desktop UI binds are not the browser's (Ctrl+S would open "Save page").
+    app->imgui.claims_key = shortcuts_claim;
+    app->imgui.claims_key_data = app;
     // Thicker gizmo lines on touch screens, like the rest of the UI.
     Style* gizmo_style = ImGuizmo_GetStyle();
     f32 ui_scale = app->imgui.ui_scale;

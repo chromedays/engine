@@ -172,13 +172,7 @@ void undo_update(App* app)
         return;
     take_steps(app);
 
-    ImGuiIO* io = igGetIO_Nil();
-    if (io->KeyCtrl && !io->WantTextInput) {
-        if (igIsKeyPressed_Bool(ImGuiKey_Z, true))
-            request = io->KeyShift ? 1 : -1;
-        if (igIsKeyPressed_Bool(ImGuiKey_Y, true))
-            request = 1;
-    }
+    // The keys (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y) are the desktop UI's shortcuts; they ask through `request`.
     if (request < 0)
         undo_step(app);
     else if (request > 0)
@@ -229,12 +223,12 @@ void undo_menu_items(App* app)
         snprintf(label, sizeof(label), "Undo: %s", undo_label);
     else
         snprintf(label, sizeof(label), "Undo");
-    if (igMenuItem_Bool(label, "Ctrl+Z", false, can_undo))
+    if (igMenuItem_Bool(label, shortcut_label(SC_UNDO), false, can_undo))
         undo->request = -1;
     if (can_redo)
         snprintf(label, sizeof(label), "Redo: %s", redo_label);
     else
         snprintf(label, sizeof(label), "Redo");
-    if (igMenuItem_Bool(label, "Ctrl+Y", false, can_redo))
+    if (igMenuItem_Bool(label, shortcut_label(SC_REDO), false, can_redo))
         undo->request = 1;
 }

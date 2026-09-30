@@ -68,14 +68,8 @@ here rules it out.
 - **Bottom dock.** The Console, and the Stress tab while the stress scene is shown (it selects
   itself when the stress scene is opened, as today). The Console tab's label and color still show
   unseen warnings and errors; on desktop the label has room for the count.
-- **Shortcuts** (desktop only; none of them fires while a text field or a widget holds the keyboard).
-
-| Key | Does |
-|---|---|
-| Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | Undo, redo (already there) |
-| W, E, R | Gizmo translate, rotate, scale (already there) |
-| Space | Play or Stop the showcase |
-| F | Move the orbit point to the selected node (the camera keeps its angle and distance) |
+- **Shortcuts** (desktop only): see `shortcuts.md`, which holds the table (Space plays and stops,
+  F moves the orbit point to the selection, and the rest).
 
 - **Mouse habits.** Hover tooltips name what a control does; Ctrl+click on a slider types a
   number. Both are ImGui's own behavior, so they need no code beyond a few tooltips.

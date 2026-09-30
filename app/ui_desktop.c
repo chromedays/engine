@@ -93,7 +93,7 @@ internal void file_menu(App* app, b32* open_reset)
     if (!igBeginMenu("File", true))
         return;
     b32 storage = app->storage.available;
-    if (igMenuItem_Bool("Save now", NULL, false, storage))
+    if (igMenuItem_Bool("Save now", shortcut_label(SC_SAVE), false, storage))
         save_now(app, 1);
     if (igMenuItem_Bool("Show save", NULL, app->show_save, storage)) {
         if (app->show_save) {
@@ -115,9 +115,9 @@ internal void view_menu(App* app)
     if (!igBeginMenu("View", true))
         return;
     Docks* docks = &app->docks;
-    igMenuItem_BoolPtr("Scene dock", NULL, (bool*)&docks->show_left, true);
-    igMenuItem_BoolPtr("Inspector dock", NULL, (bool*)&docks->show_right, true);
-    igMenuItem_BoolPtr("Console dock", NULL, (bool*)&docks->show_bottom, true);
+    igMenuItem_BoolPtr("Scene dock", shortcut_label(SC_DOCK_LEFT), (bool*)&docks->show_left, true);
+    igMenuItem_BoolPtr("Inspector dock", shortcut_label(SC_DOCK_RIGHT), (bool*)&docks->show_right, true);
+    igMenuItem_BoolPtr("Console dock", shortcut_label(SC_DOCK_BOTTOM), (bool*)&docks->show_bottom, true);
     igSeparator();
     local_persist const char* scenes[SCENE_COUNT] = {"Showcase scene", "Stress scene"};
     for (u32 scene = 0; scene < SCENE_COUNT; ++scene) {
@@ -143,13 +143,18 @@ internal void top_bar(App* app)
             igEndMenu();
         }
         view_menu(app);
+        if (igBeginMenu("Help", true)) {
+            if (igMenuItem_Bool("Keyboard shortcuts", shortcut_label(SC_HELP), false, true))
+                app->show_shortcuts = 1;
+            igEndMenu();
+        }
 
         // The Play button's center is the screen's center.
         f32 width = igGetWindowWidth();
         igSetCursorPosX((width - DESKTOP_PLAY_WIDTH) * 0.5f);
         ui_play_button(app, (ImVec2_c){DESKTOP_PLAY_WIDTH, 0.0f});
         if (app->play_box[2] > app->play_box[0]) {
-            igSetItemTooltip("%s", app->playing ? "Stop and restore the scene (Space)" : "Run the scene (Space)");
+            igSetItemTooltip("%s (%s)", app->playing ? "Stop and restore the scene" : "Run the scene", shortcut_label(SC_PLAY));
             if (app->playing) {
                 igSameLine(0.0f, -1.0f);
                 igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, "Playing: edits are lost on Stop.");
@@ -348,28 +353,6 @@ internal void splitters(App* app)
     }
 }
 
-//
-// Shortcuts
-//
-
-internal void shortcuts(App* app)
-{
-    ImGuiIO* io = igGetIO_Nil();
-    // Not while a field or a widget holds the keyboard, or a popup is open.
-    b32 free = !io->WantTextInput && !igIsAnyItemActive() && !io->KeyCtrl && !io->KeyAlt &&
-               !igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
-    if (!free)
-        return;
-    if (app->shown == SCENE_SHOWCASE && igIsKeyPressed_Bool(ImGuiKey_Space, false)) {
-        if (app->playing)
-            app_stop_playing(app);
-        else
-            app_start_playing(app);
-    }
-    if (igIsKeyPressed_Bool(ImGuiKey_F, false))
-        app_focus_selection(app);
-}
-
 void desktop_build_ui(App* app)
 {
     top_bar(app);
@@ -377,5 +360,6 @@ void desktop_build_ui(App* app)
     right_dock(app);
     bottom_dock(app);
     splitters(app);
-    shortcuts(app);
+    shortcuts_update(app);
+    shortcuts_help(app);
 }

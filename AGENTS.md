@@ -25,7 +25,7 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab),
-                           ui_desktop.c and ui_phone.c (the two editor UIs),
+                           ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts),
                            app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -107,6 +107,13 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its scope; a value the app changes every frame in Edit mode must be left out there
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
+- Desktop keyboard shortcuts are rows of one table in `app/shortcuts.c` (`docs/specs/shortcuts.md`):
+  add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
+  the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
+  browser, so Ctrl+S is not "Save page") stay in step. Nothing fires while a text field is being
+  edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
+  Tests press keys with Playwright and read `Module._app_debug_gizmo`, `_app_debug_state` and the
+  other debug exports.
 - Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output

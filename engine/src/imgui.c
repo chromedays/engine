@@ -259,7 +259,7 @@ internal void add_modifiers(ImGuiIO* io, const EmscriptenKeyboardEvent* event)
 // parameter types are fixed by Emscripten's html5.h.
 internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void* userdata)
 {
-    (void)userdata;
+    NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
     b32 down = (event_type == EMSCRIPTEN_EVENT_KEYDOWN);
     b32 shortcut = event->ctrlKey || event->metaKey;
@@ -290,7 +290,14 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
     if (down && !shortcut && is_single_character(event->key))
         ImGuiIO_AddInputCharactersUTF8(io, event->key);
 
-    return io->WantCaptureKeyboard;
+    // A key the app asked to keep is not the browser's either.
+    b32 claimed = 0;
+    if (imgui->claims_key && key != ImGuiKey_None) {
+        ImGuiKeyChord chord = (ImGuiKeyChord)key | (shortcut ? ImGuiMod_Ctrl : 0) | (event->shiftKey ? ImGuiMod_Shift : 0) |
+                              (event->altKey ? ImGuiMod_Alt : 0);
+        claimed = imgui->claims_key(imgui->claims_key_data, chord);
+    }
+    return io->WantCaptureKeyboard || claimed;
 }
 
 // Whether input starting at page position (x, y) belongs to the view rather than to ImGui. Open
@@ -606,8 +613,8 @@ internal bool on_focus(int event_type, const EmscriptenFocusEvent* event, void* 
 internal void hook_input(NvImgui* imgui, NvWindow* window)
 {
     const char* page = EMSCRIPTEN_EVENT_TARGET_WINDOW;
-    emscripten_set_keydown_callback(page, NULL, 1, on_key);
-    emscripten_set_keyup_callback(page, NULL, 1, on_key);
+    emscripten_set_keydown_callback(page, imgui, 1, on_key);
+    emscripten_set_keyup_callback(page, imgui, 1, on_key);
     emscripten_set_mousedown_callback(window->canvas_selector, imgui, 1, on_mouse);
     // Moves and releases are watched page-wide so a drag keeps working past the canvas edge.
     emscripten_set_mousemove_callback(page, imgui, 1, on_mouse);

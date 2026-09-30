@@ -94,6 +94,13 @@ typedef struct NvImgui {
     u32 view_grab_wait; // frames until the pending press is decided; 0 = none pending
     b32 view_tap_held;  // the pending press was released as a tap before it was decided
     b32 view_grab_touch; // the pending press is a touch
+
+    // Lets the app keep a key for itself: asked on every key event with the key and the modifiers
+    // held (an ImGuiKeyChord); true consumes the event, so the browser's own action for it (Ctrl+S
+    // opens "Save page") does not happen. NULL claims nothing. Runs inside the browser's event
+    // handler, so it must not call into WebAssembly-side ImGui frames.
+    b32 (*claims_key)(void* data, ImGuiKeyChord chord);
+    void* claims_key_data;
 } NvImgui;
 
 // Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for

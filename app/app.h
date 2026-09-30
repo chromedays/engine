@@ -65,6 +65,28 @@ typedef struct Docks {
 #define DOCK_SIDE_MAX   640.0f
 #define DOCK_BOTTOM_MAX 600.0f
 
+// The desktop shortcuts (app/shortcuts.c); the menus ask for their labels.
+typedef enum ShortcutId {
+    SC_SAVE,
+    SC_UNDO,
+    SC_REDO,
+    SC_DESELECT,
+    SC_PLAY,
+    SC_MOVE,
+    SC_ROTATE,
+    SC_SCALE,
+    SC_AXES,
+    SC_SNAP_HELD,
+    SC_FOCUS,
+    SC_FOLLOW,
+    SC_HOME,
+    SC_DOCK_LEFT,
+    SC_DOCK_RIGHT,
+    SC_DOCK_BOTTOM,
+    SC_HELP,
+    SHORTCUT_COUNT,
+} ShortcutId;
+
 typedef enum SceneKind {
     SCENE_SHOWCASE,
     SCENE_STRESS,
@@ -175,6 +197,9 @@ typedef struct SceneView {
     NvNodeId panned_for; // the selection `pan` belongs to
     bool follow_selection; // orbit the selection; otherwise stay at orbit_point
     NvVec3 orbit_point;    // where the camera looked last frame; panned directly while not following
+    // The view the scene starts with, for Home (app_set_home).
+    f32 home_yaw, home_pitch, home_distance;
+    NvVec3 home_orbit;
 } SceneView;
 
 // CPU time of the frame's stages, in milliseconds.
@@ -371,6 +396,7 @@ typedef struct App {
     Docks docks;
     b32 open_view;    // switch to the View tab on the next frame
     f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden
+    b32 show_shortcuts; // the Keyboard shortcuts window is open
 } App;
 
 // main.c
@@ -385,6 +411,7 @@ void app_stop_playing(App* app);  // Stop: restore the showcase from the snapsho
 NvAnimatorId app_node_animator(NvScene* scene, NvNodeId id);
 void app_show_scene(App* app, SceneKind kind);
 void app_focus_selection(App* app); // F: the orbit point moves to the selected node
+void app_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
 NvMeshId app_box_mesh(App* app, NvVec3 half);
 SceneView* app_view(App* app); // the shown scene's view
 
@@ -418,6 +445,12 @@ void ui_pop_play_tint(b32 pushed);
 
 // A rectangle given in CSS pixels as framebuffer pixels, rounded so neighbors share their edges.
 NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio);
+
+// shortcuts.c
+void shortcuts_update(App* app); // fires the shortcuts pressed this frame; desktop UI, after the docks
+b32 shortcuts_claim(void* data, ImGuiKeyChord chord); // NvImgui.claims_key
+const char* shortcut_label(ShortcutId id);            // "Ctrl+Shift+Z / Ctrl+Y"
+void shortcuts_help(App* app);                        // the Keyboard shortcuts window
 
 // ui_desktop.c and ui_phone.c
 void desktop_layout(App* app, f32 width, f32 height, f32 ratio);

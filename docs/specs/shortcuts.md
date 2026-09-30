@@ -1,6 +1,6 @@
 # Desktop keyboard shortcuts spec
 
-Status: proposed (2026-09-30). Changes to this spec are agreed first.
+Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -95,6 +95,20 @@ it when duplicate exists.
    `navigator.platform`), and the documents above.
 
 Every phase is checked in Release and Debug in headless Chromium at 1280×800 with a US keyboard.
+
+As built, phases 1 and 2 arrived together (the whole table and the claim hook are one piece of
+code) and phase 3's help window and Cmd labels with them; the phases then checked them. Notes:
+
+- The help window is a modal popup, not a plain window: input that starts over a plain window
+  on the viewport would become a camera drag, and the viewport already leaves open popups alone.
+  Escape and `?` close it, but not in the frame that opened it (the opening press is still that
+  frame's press).
+- Escape is never claimed from the browser (it leaves full screen); every other bound chord is, unless
+  a text field wants the keyboard.
+- Ctrl and Shift+F use the chords through ImGui's `Shortcut()` with `RouteGlobal`; Ctrl held during
+  a gizmo drag reads `io.KeyCtrl` in `draw_gizmo`, since it is a held modifier, not a chord.
+- Debug builds export `_app_debug_gizmo`, `_app_debug_state` (selection, follow, help open, docks
+  shown) and `_app_debug_selected_position`, which the tests read.
 
 ## Out of scope
 
