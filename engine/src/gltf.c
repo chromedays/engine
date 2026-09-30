@@ -79,7 +79,7 @@ internal NvTextureId load_texture(const cgltf_image* image, NvRenderer* renderer
     umm mark = scratch->used;
     u8* pixels = NV_PUSH_ARRAY(scratch, (umm)width * height * 4, u8);
     js_take_decoded_image(pixels);
-    NvTextureId texture = nv_renderer_add_texture(renderer, (u32)width, (u32)height, pixels, 1, scratch);
+    NvTextureId texture = nv_renderer_add_texture(renderer, image->name, (u32)width, (u32)height, pixels, 1, scratch);
     scratch->used = mark;
     return texture;
 }

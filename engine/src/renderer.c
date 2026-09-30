@@ -2,6 +2,7 @@
 #include "nv/log.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 #define NO_SKIN 0xFFFFFFFFu
@@ -526,7 +527,7 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->mesh_count = 1;
     local_persist const u8 white[4] = {255, 255, 255, 255};
     renderer->texture_count = 0;
-    nv_renderer_add_texture(renderer, 1, 1, white, 0, NULL);
+    nv_renderer_add_texture(renderer, "white", 1, 1, white, 0, NULL);
     renderer->material_count = 0;
     nv_renderer_add_material(renderer, &(NvMaterialDesc){.base_color = {1, 1, 1, 1}});
 }
@@ -578,7 +579,7 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
     return (NvMeshId){renderer->mesh_count++};
 }
 
-NvTextureId nv_renderer_add_texture(NvRenderer* renderer, u32 width, u32 height, const u8* rgba,
+NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 width, u32 height, const u8* rgba,
                                     b32 srgb, NvArena* scratch)
 {
     NV_ASSERT(renderer->texture_count < NV_MAX_TEXTURES);
@@ -589,7 +590,12 @@ NvTextureId nv_renderer_add_texture(NvRenderer* renderer, u32 width, u32 height,
     }
 
     NvRenderTexture* slot = &renderer->textures[renderer->texture_count];
+    if (name && name[0])
+        snprintf(slot->name, sizeof(slot->name), "%s", name);
+    else
+        snprintf(slot->name, sizeof(slot->name), "texture %u", renderer->texture_count);
     WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){slot->name, WGPU_STRLEN};
     desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     desc.size = (WGPUExtent3D){width, height, 1};
     desc.format = srgb ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
@@ -687,22 +693,27 @@ void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 col
 internal void update_depth_buffer(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    if (renderer->depth_texture && renderer->depth_width == gpu->width && renderer->depth_height == gpu->height)
+    if (renderer->depth_texture && renderer->depth_width == gpu->width && renderer->depth_height == gpu->height &&
+        renderer->depth_texture_sampled == renderer->depth_sampled)
         return;
     if (renderer->depth_texture) {
         wgpuTextureViewRelease(renderer->depth_view);
         wgpuTextureRelease(renderer->depth_texture);
     }
     WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"depth target", WGPU_STRLEN};
     desc.usage = WGPUTextureUsage_RenderAttachment;
+    if (renderer->depth_sampled)
+        desc.usage |= WGPUTextureUsage_TextureBinding;
     desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
     desc.format = WGPUTextureFormat_Depth32Float;
     renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
     renderer->depth_width = gpu->width;
     renderer->depth_height = gpu->height;
-    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s, reverse Z (cleared to 0, compare Greater)", gpu->width, gpu->height,
-           nv_gpu_format_name(WGPUTextureFormat_Depth32Float));
+    renderer->depth_texture_sampled = renderer->depth_sampled;
+    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s, reverse Z (cleared to 0, compare Greater)%s", gpu->width, gpu->height,
+           nv_gpu_format_name(WGPUTextureFormat_Depth32Float), renderer->depth_sampled ? ", samplable (texture viewer)" : "");
 }
 
 internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)

@@ -33,6 +33,33 @@ typedef struct NvGpu {
 // A texture format's name for logs ("BGRA8Unorm"), or its number when it is not one nv uses.
 const char* nv_gpu_format_name(WGPUTextureFormat format);
 
+// Bytes per texel of the formats nv uses; 0 for others.
+static inline u32 nv_gpu_format_bytes(WGPUTextureFormat format)
+{
+    switch (format) {
+    case WGPUTextureFormat_BGRA8Unorm:
+    case WGPUTextureFormat_BGRA8UnormSrgb:
+    case WGPUTextureFormat_RGBA8Unorm:
+    case WGPUTextureFormat_RGBA8UnormSrgb:
+    case WGPUTextureFormat_Depth32Float: return 4;
+    case WGPUTextureFormat_RGBA16Float:  return 8;
+    case WGPUTextureFormat_Depth16Unorm: return 2;
+    default:                             return 0;
+    }
+}
+
+// Bytes a texture takes: every mip level's texels (each level half the last, at least 1x1).
+static inline u64 nv_gpu_texture_bytes(u32 width, u32 height, u32 mip_count, WGPUTextureFormat format)
+{
+    u64 total = 0;
+    for (u32 level = 0; level < mip_count; ++level) {
+        total += (u64)width * height * nv_gpu_format_bytes(format);
+        width = width > 1 ? width / 2 : 1;
+        height = height > 1 ? height / 2 : 1;
+    }
+    return total;
+}
+
 // NOTE: Fails when the browser has no usable WebGPU adapter or device. Logs (info) the CPU, GPU,
 // display and swapchain it found; the swapchain again whenever the canvas is resized.
 b32 nv_gpu_create(NvGpu* gpu, NvWindow* window);

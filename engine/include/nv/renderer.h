@@ -59,9 +59,12 @@ typedef struct NvRay {
     NvVec3 direction; // unit length
 } NvRay;
 
+#define NV_TEXTURE_NAME_MAX 64
+
 typedef struct NvRenderTexture {
     WGPUTexture texture;
     WGPUTextureView view;
+    char name[NV_TEXTURE_NAME_MAX]; // also the WebGPU label, so browser tools show the same name
 } NvRenderTexture;
 
 typedef struct NvRenderMaterial {
@@ -143,6 +146,10 @@ typedef struct NvRenderer {
     WGPUTextureView depth_view;
     u32 depth_width;
     u32 depth_height;
+    // Set by the app: make the depth target samplable too (the texture viewer shows it). Off, it is
+    // a render attachment only, which some GPUs keep compressed better (docs/specs/textures.md).
+    b32 depth_sampled;
+    b32 depth_texture_sampled; // what the existing depth target was made with
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.
@@ -196,7 +203,8 @@ void nv_renderer_end_frame(NvRenderer* renderer);
 NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data);
 
 // `rgba` is width * height * 4 bytes. Mipmaps are generated with `scratch`, which is left as it was.
-NvTextureId nv_renderer_add_texture(NvRenderer* renderer, u32 width, u32 height, const u8* rgba,
+// `name` (NULL = "texture N") is shown by the texture viewer and given to WebGPU as the label.
+NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 width, u32 height, const u8* rgba,
                                     b32 srgb, NvArena* scratch);
 
 NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc* desc);

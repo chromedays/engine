@@ -8,6 +8,9 @@
 #define NV_IMGUI_MAX_VERTICES 131072
 #define NV_IMGUI_MAX_INDICES  262144
 #define NV_IMGUI_CLIPBOARD_SIZE 65536
+// Textures of the engine drawn in the UI (nv_imgui_preview); their ImTextureIDs follow ImGui's own.
+#define NV_IMGUI_MAX_PREVIEWS 64
+#define NV_IMGUI_PREVIEW_FRAMES 3 // frames a preview slot outlives its last use, while the GPU may draw it
 
 typedef enum NvTouchGesture {
     NV_TOUCH_NONE,
@@ -35,6 +38,43 @@ typedef struct NvImguiTexture {
     WGPUBindGroup bind_group;
 } NvImguiTexture;
 
+// How nv_imgui_preview shows a texture (docs/specs/textures.md).
+typedef enum NvImguiPreviewMode {
+    NV_IMGUI_PREVIEW_RGBA,
+    NV_IMGUI_PREVIEW_RGB, // alpha ignored
+    NV_IMGUI_PREVIEW_R,   // one channel as gray
+    NV_IMGUI_PREVIEW_G,
+    NV_IMGUI_PREVIEW_B,
+    NV_IMGUI_PREVIEW_A,
+    NV_IMGUI_PREVIEW_DEPTH, // a depth texture as gray over a range (NvImguiPreview.range_*)
+} NvImguiPreviewMode;
+
+// How a depth texture's values become the range's units.
+typedef enum NvImguiDepth {
+    NV_IMGUI_DEPTH_RAW,                  // the stored 0..1 value
+    NV_IMGUI_DEPTH_REVERSE_PERSPECTIVE,  // reverse Z, perspective: distance from the camera
+    NV_IMGUI_DEPTH_REVERSE_ORTHOGRAPHIC, // reverse Z, orthographic: distance from the camera
+} NvImguiDepth;
+
+// What to show of a texture. Zero is the whole texture's first mip level as RGBA.
+typedef struct NvImguiPreview {
+    WGPUTexture texture; // needs WGPUTextureUsage_TextureBinding
+    u32 mip;
+    NvImguiPreviewMode mode;
+    NvImguiDepth depth;
+    f32 range_min, range_max; // DEPTH: the values shown black and white
+    f32 near_z, far_z;        // DEPTH, reverse Z: the camera's planes
+} NvImguiPreview;
+
+typedef struct NvImguiPreviewSlot {
+    NvImguiPreview key;
+    WGPUTextureView view; // the key's mip level
+    WGPUBuffer params;
+    WGPUBindGroup bind_group;
+    b32 depth;       // drawn by the depth pipeline
+    u64 used_frame;  // the last frame it was asked for
+} NvImguiPreviewSlot;
+
 // Dear ImGui on the canvas: browser input in, WebGPU draw calls out. Build UI with the cimgui
 // API (ig* functions) between nv_imgui_new_frame and nv_imgui_render.
 typedef struct NvImgui {
@@ -49,6 +89,14 @@ typedef struct NvImgui {
 
     // Slot 0 is unused so that ImTextureID 0 keeps meaning "no texture".
     NvImguiTexture textures[NV_IMGUI_MAX_TEXTURES];
+
+    // Engine textures shown in the UI: ImTextureID NV_IMGUI_MAX_TEXTURES + i is previews[i]. A slot
+    // holds a reference on its texture, so a released texture cannot come back at the same address
+    // while a slot is keyed by it.
+    WGPURenderPipeline preview_pipeline; // color textures
+    WGPURenderPipeline depth_pipeline;   // depth textures, read without a sampler
+    NvImguiPreviewSlot previews[NV_IMGUI_MAX_PREVIEWS];
+    u64 frame; // counts nv_imgui_new_frame calls
 
     // CPU copies of one frame's geometry, uploaded with one write per buffer.
     ImDrawVert* vertices; // [NV_IMGUI_MAX_VERTICES]
@@ -114,6 +162,14 @@ bool nv_imgui_begin_panel_ex(NvImgui* imgui, const char* name, NvRect rect, ImGu
 // this itself; call it right after igBeginChild_Str for a child window that scrolls on its own, since
 // the finger counts as on the child, not on the panel around it.
 void nv_imgui_touch_scroll(NvImgui* imgui);
+
+// The ImTextureID that draws `preview` this frame (with igImage). Slots are kept while in use and
+// released NV_IMGUI_PREVIEW_FRAMES frames after their last one; more than NV_IMGUI_MAX_PREVIEWS in
+// use at once asserts.
+ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview);
+
+// Preview slots in use, for tests.
+u32 nv_imgui_preview_count(NvImgui* imgui);
 
 // Finishes the ImGui frame and records a render pass that draws it over `target`.
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target);

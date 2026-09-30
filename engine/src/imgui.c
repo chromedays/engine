@@ -625,10 +625,96 @@ internal void hook_input(NvImgui* imgui, NvWindow* window)
 // Rendering
 //
 
-internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format)
+// Engine textures in the UI (nv_imgui_preview). Same vertex stage; the fragment stage shows the
+// texture as the slot's Params say. Colors reach an sRGB-encoding view, so a value meant to show
+// as stored is linearized first: channels of non-sRGB textures, alpha, and depth grays.
+#define PREVIEW_COMMON \
+    "struct Uniforms {\n" \
+    "    mvp: mat4x4f,\n" \
+    "};\n" \
+    "struct Params {\n" \
+    "    range: vec4f, // min, max, near, far\n" \
+    "    mode: vec4u,  // NvImguiPreviewMode, linearize, NvImguiDepth\n" \
+    "};\n" \
+    "@group(0) @binding(0) var<uniform> u: Uniforms;\n" \
+    "@group(0) @binding(3) var<uniform> p: Params;\n" \
+    "struct VsIn {\n" \
+    "    @location(0) pos: vec2f,\n" \
+    "    @location(1) uv: vec2f,\n" \
+    "    @location(2) col: vec4f,\n" \
+    "};\n" \
+    "struct VsOut {\n" \
+    "    @builtin(position) pos: vec4f,\n" \
+    "    @location(0) uv: vec2f,\n" \
+    "    @location(1) col: vec4f,\n" \
+    "};\n" \
+    "@vertex\n" \
+    "fn vs_main(in: VsIn) -> VsOut {\n" \
+    "    var out: VsOut;\n" \
+    "    out.pos = u.mvp * vec4f(in.pos, 0.0, 1.0);\n" \
+    "    out.uv = in.uv;\n" \
+    "    out.col = vec4f(pow(in.col.rgb, vec3f(2.2)), in.col.a);\n" \
+    "    return out;\n" \
+    "}\n" \
+    "fn gray(v: f32) -> vec4f {\n" \
+    "    return vec4f(vec3f(v), 1.0);\n" \
+    "}\n"
+
+global const char* preview_color_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(1) var s: sampler;\n"
+    "@group(0) @binding(2) var t: texture_2d<f32>;\n"
+    "@fragment\n"
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
+    "    let raw = textureSample(t, s, in.uv);\n"
+    "    var c = raw;\n"
+    "    if (p.mode.y != 0u) {\n"
+    "        c = vec4f(pow(raw.rgb, vec3f(2.2)), raw.a);\n"
+    "    }\n"
+    "    var out = c;\n"
+    "    switch p.mode.x {\n"
+    "        case 1u: { out = vec4f(c.rgb, 1.0); }\n"
+    "        case 2u: { out = gray(c.r); }\n"
+    "        case 3u: { out = gray(c.g); }\n"
+    "        case 4u: { out = gray(c.b); }\n"
+    "        case 5u: { out = gray(pow(raw.a, 2.2)); }\n"
+    "        default: {}\n"
+    "    }\n"
+    "    return out * in.col;\n"
+    "}\n";
+
+// Depth cannot be filtered, so it is read texel by texel. Reverse Z turns back into distance t:
+// the standard depth s = 1 - d is far (t - near) / ((far - near) t) for a perspective camera, and
+// (t - near) / (far - near) for an orthographic one (nv_mat4_perspective, nv_mat4_orthographic).
+global const char* preview_depth_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(2) var d: texture_depth_2d;\n"
+    "@fragment\n"
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
+    "    let size = textureDimensions(d);\n"
+    "    let texel = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(size)), size - vec2u(1u));\n"
+    "    let z = textureLoad(d, texel, 0);\n"
+    "    let near = p.range.z;\n"
+    "    let far = p.range.w;\n"
+    "    var v = z;\n"
+    "    if (p.mode.z == 1u) {\n"
+    "        v = far * near / (far - (1.0 - z) * (far - near));\n"
+    "    } else if (p.mode.z == 2u) {\n"
+    "        v = near + (1.0 - z) * (far - near);\n"
+    "    }\n"
+    "    let g = clamp((v - p.range.x) / max(p.range.y - p.range.x, 1e-6), 0.0, 1.0);\n"
+    "    return vec4f(vec3f(pow(g, 2.2)), 1.0) * in.col;\n"
+    "}\n";
+
+typedef struct PreviewParams {
+    f32 range[4];
+    u32 mode[4];
+} PreviewParams;
+
+internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format, const char* code, const char* label)
 {
     WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl.code = (WGPUStringView){imgui_shader, WGPU_STRLEN};
+    wgsl.code = (WGPUStringView){code, WGPU_STRLEN};
     WGPUShaderModuleDescriptor module_desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
     module_desc.nextInChain = &wgsl.chain;
     WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
@@ -663,7 +749,7 @@ internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat
     fragment.targets = &color_target;
 
     WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"imgui", WGPU_STRLEN};
+    desc.label = (WGPUStringView){label, WGPU_STRLEN};
     desc.vertex.module = module;
     desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
     desc.vertex.bufferCount = 1;
@@ -798,7 +884,9 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     style->FontScaleMain = imgui->ui_scale;
 
     WGPUDevice device = gpu->device;
-    imgui->pipeline = create_pipeline(device, gpu->surface_format);
+    imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_shader, "imgui");
+    imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_shader, "imgui preview");
+    imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_shader, "imgui depth preview");
     imgui->uniform_buffer = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(NvMat4));
     imgui->vertex_buffer = create_buffer(device, WGPUBufferUsage_Vertex, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
     imgui->index_buffer = create_buffer(device, WGPUBufferUsage_Index, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
@@ -841,8 +929,111 @@ internal void decide_view_press(NvImgui* imgui)
         ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
 }
 
+internal void release_preview(NvImguiPreviewSlot* slot)
+{
+    wgpuBindGroupRelease(slot->bind_group);
+    wgpuBufferRelease(slot->params);
+    wgpuTextureViewRelease(slot->view);
+    wgpuTextureRelease(slot->key.texture);
+    *slot = (NvImguiPreviewSlot){0};
+}
+
+internal b32 same_preview(const NvImguiPreview* a, const NvImguiPreview* b)
+{
+    return a->texture == b->texture && a->mip == b->mip && a->mode == b->mode && a->depth == b->depth &&
+           a->range_min == b->range_min && a->range_max == b->range_max && a->near_z == b->near_z &&
+           a->far_z == b->far_z;
+}
+
+internal b32 is_depth_format(WGPUTextureFormat format)
+{
+    return format == WGPUTextureFormat_Depth16Unorm || format == WGPUTextureFormat_Depth24Plus ||
+           format == WGPUTextureFormat_Depth24PlusStencil8 || format == WGPUTextureFormat_Depth32Float ||
+           format == WGPUTextureFormat_Depth32FloatStencil8;
+}
+
+internal b32 is_srgb_format(WGPUTextureFormat format)
+{
+    return format == WGPUTextureFormat_RGBA8UnormSrgb || format == WGPUTextureFormat_BGRA8UnormSrgb;
+}
+
+ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
+{
+    NV_ASSERT(preview->texture);
+    s32 free_slot = -1;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
+        NvImguiPreviewSlot* slot = &imgui->previews[i];
+        if (!slot->key.texture) {
+            if (free_slot < 0)
+                free_slot = (s32)i;
+        } else if (same_preview(&slot->key, preview)) {
+            slot->used_frame = imgui->frame;
+            return (ImTextureID)(NV_IMGUI_MAX_TEXTURES + i);
+        }
+    }
+    NV_ASSERT(free_slot >= 0);
+    NvImguiPreviewSlot* slot = &imgui->previews[free_slot];
+    WGPUDevice device = imgui->gpu->device;
+    WGPUTextureFormat format = wgpuTextureGetFormat(preview->texture);
+    b32 depth = is_depth_format(format);
+    NV_ASSERT(depth == (preview->mode == NV_IMGUI_PREVIEW_DEPTH));
+    NV_ASSERT(preview->mip < wgpuTextureGetMipLevelCount(preview->texture));
+    NV_ASSERT(wgpuTextureGetUsage(preview->texture) & WGPUTextureUsage_TextureBinding);
+
+    slot->key = *preview;
+    slot->depth = depth;
+    slot->used_frame = imgui->frame;
+    wgpuTextureAddRef(preview->texture);
+
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.baseMipLevel = preview->mip;
+    view_desc.mipLevelCount = 1;
+    if (depth)
+        view_desc.aspect = WGPUTextureAspect_DepthOnly;
+    slot->view = wgpuTextureCreateView(preview->texture, &view_desc);
+
+    PreviewParams params = {
+        .range = {preview->range_min, preview->range_max, preview->near_z, preview->far_z},
+        .mode = {(u32)preview->mode, !depth && !is_srgb_format(format), (u32)preview->depth, 0},
+    };
+    slot->params = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(params));
+    wgpuQueueWriteBuffer(imgui->gpu->queue, slot->params, 0, &params, sizeof(params));
+
+    WGPUBindGroupEntry entries[4] = {
+        {.binding = 0, .buffer = imgui->uniform_buffer, .size = sizeof(NvMat4)},
+        {.binding = 3, .buffer = slot->params, .size = sizeof(params)},
+        {.binding = 2, .textureView = slot->view},
+        {.binding = 1, .sampler = imgui->sampler}, // left out for depth: that pipeline has no sampler
+    };
+    WGPURenderPipeline pipeline = depth ? imgui->depth_pipeline : imgui->preview_pipeline;
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    group_desc.layout = layout;
+    group_desc.entryCount = depth ? 3 : 4;
+    group_desc.entries = entries;
+    slot->bind_group = wgpuDeviceCreateBindGroup(device, &group_desc);
+    wgpuBindGroupLayoutRelease(layout);
+    return (ImTextureID)(NV_IMGUI_MAX_TEXTURES + (u32)free_slot);
+}
+
+u32 nv_imgui_preview_count(NvImgui* imgui)
+{
+    u32 count = 0;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i)
+        count += imgui->previews[i].key.texture != NULL;
+    return count;
+}
+
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
 {
+    // NOTE: WebGPU keeps what submitted work uses alive, so a slot could go as soon as it is unused;
+    // the few frames only save remaking slots that come back (a thumbnail scrolled out and in).
+    ++imgui->frame;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
+        NvImguiPreviewSlot* slot = &imgui->previews[i];
+        if (slot->key.texture && imgui->frame - slot->used_frame > NV_IMGUI_PREVIEW_FRAMES)
+            release_preview(slot);
+    }
     ImGuiIO* io = igGetIO_Nil();
     f32 scale = imgui->window->pixel_ratio > 0.0f ? imgui->window->pixel_ratio : 1.0f;
     io->DisplaySize = (ImVec2_c){(f32)imgui->gpu->width / scale, (f32)imgui->gpu->height / scale};
@@ -976,6 +1167,7 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
     pass_desc.colorAttachments = &color;
     WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
     set_render_state(imgui, pass);
+    WGPURenderPipeline bound = imgui->pipeline;
 
     u32 vertex_offset = 0;
     u32 index_offset = 0;
@@ -984,9 +1176,10 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
         for (s32 c = 0; c < list->CmdBuffer.Size; ++c) {
             ImDrawCmd* cmd = &list->CmdBuffer.Data[c];
             if (cmd->UserCallback) {
-                if (cmd->UserCallback == IMGUI_RESET_RENDER_STATE)
+                if (cmd->UserCallback == IMGUI_RESET_RENDER_STATE) {
                     set_render_state(imgui, pass);
-                else
+                    bound = imgui->pipeline;
+                } else
                     cmd->UserCallback(list, cmd);
                 continue;
             }
@@ -1004,8 +1197,23 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
             wgpuRenderPassEncoderSetScissorRect(pass, (u32)x0, (u32)y0, (u32)(x1 - x0), (u32)(y1 - y0));
 
             ImTextureID texture = ImDrawCmd_GetTexID(cmd);
-            NV_ASSERT(texture > 0 && texture < NV_IMGUI_MAX_TEXTURES && imgui->textures[texture].bind_group);
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, imgui->textures[texture].bind_group, 0, NULL);
+            WGPURenderPipeline pipeline = imgui->pipeline;
+            WGPUBindGroup group = NULL;
+            if (texture >= NV_IMGUI_MAX_TEXTURES) {
+                NV_ASSERT(texture < NV_IMGUI_MAX_TEXTURES + NV_IMGUI_MAX_PREVIEWS);
+                NvImguiPreviewSlot* slot = &imgui->previews[texture - NV_IMGUI_MAX_TEXTURES];
+                NV_ASSERT(slot->bind_group);
+                pipeline = slot->depth ? imgui->depth_pipeline : imgui->preview_pipeline;
+                group = slot->bind_group;
+            } else {
+                NV_ASSERT(texture > 0 && imgui->textures[texture].bind_group);
+                group = imgui->textures[texture].bind_group;
+            }
+            if (pipeline != bound) {
+                wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+                bound = pipeline;
+            }
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, NULL);
             wgpuRenderPassEncoderDrawIndexed(pass, cmd->ElemCount, 1, index_offset + cmd->IdxOffset,
                                              (s32)(vertex_offset + cmd->VtxOffset), 0);
         }
