@@ -862,6 +862,19 @@ EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
     return values[component];
 }
 
+EMSCRIPTEN_KEEPALIVE int app_debug_playing(void)
+{
+    return app_state.playing;
+}
+
+// The shown view: 0 yaw, 1 pitch, 2 distance, 3 to 5 orbit point x, y, z.
+EMSCRIPTEN_KEEPALIVE float app_debug_view(int which)
+{
+    const SceneView* view = app_view(&app_state);
+    f32 values[6] = {view->camera_yaw, view->camera_pitch, view->camera_distance, view->orbit_point.x, view->orbit_point.y, view->orbit_point.z};
+    return values[which];
+}
+
 EMSCRIPTEN_KEEPALIVE int app_debug_ui_mode(void)
 {
     return (int)app_state.ui_mode;

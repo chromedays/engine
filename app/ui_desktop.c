@@ -246,7 +246,8 @@ internal void bottom_dock(App* app)
         // The Hide button sits at the tab strip's right end, drawn before the tabs so they keep the cursor.
         ImVec2_c start = igGetCursorPos();
         f32 hide_width = igCalcTextSize("Hide", NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
-        igSetCursorPos((ImVec2_c){igGetWindowWidth() - hide_width - igGetStyle()->WindowPadding.x, start.y});
+        // Left of the scrollbar the stress statistics bring.
+        igSetCursorPos((ImVec2_c){igGetWindowWidth() - hide_width - igGetStyle()->WindowPadding.x - igGetStyle()->ScrollbarSize, start.y});
         if (igButton("Hide###bottom", (ImVec2_c){0.0f, 0.0f}))
             docks->bottom_open = 0;
         igSetItemTooltip("%s", "Collapse the dock to its strip");
