@@ -61,7 +61,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
-- `NvImgui.ui_scale` is 1.5 on touch screens; size ImGui windows with it.
+- `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it.
 - The app uses the editor layout: `nv_editor_layout` splits the canvas into the
   scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
   with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the

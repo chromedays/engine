@@ -783,7 +783,7 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     js_setup_text_agent(imgui->clipboard, NV_IMGUI_CLIPBOARD_SIZE);
 
     // Fingers need bigger text and hit areas than a mouse pointer.
-    imgui->ui_scale = js_touch_is_primary() ? 1.5f : 1.0f;
+    imgui->ui_scale = js_touch_is_primary() ? 1.3f : 1.0f;
     ImGuiStyle* style = igGetStyle();
     ImGuiStyle_ScaleAllSizes(style, imgui->ui_scale);
     style->FontScaleMain = imgui->ui_scale;
