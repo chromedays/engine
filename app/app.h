@@ -16,10 +16,10 @@
 #include <nv/storage.h>
 #include <nv/window.h>
 
-// Set by app/CMakeLists.txt; shown in the View tab and in benchmark reports.
-#ifndef NV_GIT_COMMIT
-#define NV_GIT_COMMIT "unknown"
-#endif
+// The commit's hash and subject line (nv_version.h, written by cmake/version.cmake on every
+// build) and the build type (set by app/CMakeLists.txt); shown on the build label, in the View tab
+// and in benchmark reports.
+#include "nv_version.h"
 #ifndef NV_BUILD_NAME
 #define NV_BUILD_NAME "unknown"
 #endif

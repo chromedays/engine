@@ -125,7 +125,11 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   draws (Clear is done after the list). Debug builds export `Module._app_debug_log(level, n)`,
   `_app_debug_log_count`, `_app_debug_wgpu_error` and the `_app_debug_console_*` functions (item
   rects, rows, scroll, selection) for tests.
-- The build label in the viewport's top-left corner gets a badge (a dot and the count of warnings and
+- The build label in the viewport's top-left corner shows the build type, the commit's short hash
+  (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
+  viewport's width. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+  `NV_GIT_SUBJECT`) on every build, through the `app_version` target, so they are never those of
+  an older configure. The label also gets a badge (a dot and the count of warnings and
   errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
   instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
 - The Textures tab (`docs/specs/textures.md`, `app/textures.c`) draws engine textures with

@@ -1,6 +1,7 @@
 #include "app.h"
 
 #include <stdio.h>
+#include <string.h>
 
 //
 // Scene tab
@@ -260,6 +261,9 @@ void ui_view_tab(App* app)
         app_show_scene(app, (SceneKind)shown);
     igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
     igTextDisabled("%s build, commit %s", NV_BUILD_NAME, NV_GIT_COMMIT);
+    igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
+    igTextWrapped("%s", NV_GIT_SUBJECT);
+    igPopStyleColor(1);
     igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
     igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
     igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
@@ -279,6 +283,37 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
         snprintf(out, capacity, "99+");
     else
         snprintf(out, capacity, "%u", unseen);
+}
+
+// Copies `text` into `out`, cut and ended with "..." if it is wider than `room` pixels. The cut
+// is the longest one that fits (a binary search over the text's UTF-8 characters), never inside a
+// character.
+internal void fit_text(const char* text, f32 room, char* out, umm capacity)
+{
+    umm length = strlen(text);
+    if (length >= capacity - 4)
+        length = capacity - 5;
+    memcpy(out, text, length);
+    out[length] = 0;
+    if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
+        return;
+    umm lo = 0, hi = length; // the longest prefix that fits is in [lo, hi)
+    while (lo + 1 < hi) {
+        umm mid = (lo + hi) / 2;
+        while (mid > lo && ((u8)text[mid] & 0xC0) == 0x80)
+            --mid; // the start of a character
+        if (mid == lo) {
+            lo = hi - 1; // no character start between: stop
+            break;
+        }
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%.*s...", (int)mid, text);
+        if (igCalcTextSize(candidate, NULL, false, -1.0f).x <= room)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    snprintf(out, capacity, "%.*s...", (int)lo, text);
 }
 
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
@@ -307,6 +342,16 @@ void ui_build_label(App* app)
     ImVec2_c max = {pos.x + size.x + badge_width + 4.0f, pos.y + size.y + 2.0f};
     ImDrawList_AddRectFilled(draw, min, max, 0x99000000u, 3.0f, 0);
     ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
+    // The commit's subject line under it, cut to the viewport's width. Not part of the tap box.
+    {
+        char subject[sizeof(NV_GIT_SUBJECT) + 4];
+        fit_text(NV_GIT_SUBJECT, (f32)app->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
+        ImVec2_c subject_size = igCalcTextSize(subject, NULL, false, -1.0f);
+        ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
+        ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
+                                 (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, 0x99000000u, 3.0f, 0);
+        ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, subject, NULL);
+    }
     if (unseen) {
         ImU32 color = console_level_color(worst);
         f32 x = pos.x + size.x + 8.0f;
