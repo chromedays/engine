@@ -123,6 +123,7 @@ void stress_build(App* app)
         .camera_distance = 28.0f,
         .follow_selection = false,
     };
+    app_set_home(&app->views[SCENE_STRESS]);
     stress->built = 1;
 }
 

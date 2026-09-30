@@ -111,6 +111,15 @@ describe created nodes; older builds will skip them.
 | `GZOP` | u32 | `app->gizmo_operation`: 0 move, 1 rotate, 2 scale | 0 |
 | `GZLC` | u32 | `app->gizmo_local` | 0 |
 | `GZSN` | u32 | `app->gizmo_snap` | 0 |
+| `SHSZ` | u32 | shadow map size: 512, 1024, 2048; anything else is off (0) | the start value (2048, 1024 on touch screens) |
+| `SHFM` | u32 | shadow map format: 0 `depth32float`, 1 `depth16unorm` | 0 |
+| `SHFL` | u32 | shadow filter: 0 Low, 1 High | the start value (High, Low on touch screens) |
+| `SHDS` | f32 | shadow distance, meters, clamped to 5..100 on load | 30 |
+| `SHBX` | u32 | show the light box | 0 |
+| `DKLW` | u32 | desktop UI: the left dock's wanted width, CSS pixels, clamped to 160..640 on load (`layout.md`) | 260 |
+| `DKRW` | u32 | the right dock's wanted width, clamped to 220..640 | 340 |
+| `DKBH` | u32 | the bottom dock's wanted height, clamped to 120..600 | 220 |
+| `DKBO` | u32 | the bottom dock shows its contents (1) or only its strip (0) | 1 |
 
 ### `VIEW`: the showcase's camera and selection
 

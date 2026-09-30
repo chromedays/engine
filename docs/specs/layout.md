@@ -1,6 +1,6 @@
 # Desktop and phone layout spec
 
-Status: proposed (2026-09-30). Changes to this spec are agreed first.
+Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -68,14 +68,8 @@ here rules it out.
 - **Bottom dock.** The Console, and the Stress tab while the stress scene is shown (it selects
   itself when the stress scene is opened, as today). The Console tab's label and color still show
   unseen warnings and errors; on desktop the label has room for the count.
-- **Shortcuts** (desktop only; none of them fires while a text field or a widget holds the keyboard).
-
-| Key | Does |
-|---|---|
-| Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y | Undo, redo (already there) |
-| W, E, R | Gizmo translate, rotate, scale (already there) |
-| Space | Play or Stop the showcase |
-| F | Move the orbit point to the selected node (the camera keeps its angle and distance) |
+- **Shortcuts** (desktop only): see `shortcuts.md`, which holds the table (Space plays and stops,
+  F moves the orbit point to the selection, and the rest).
 
 - **Mouse habits.** Hover tooltips name what a control does; Ctrl+click on a slider types a
   number. Both are ImGui's own behavior, so they need no code beyond a few tooltips.
@@ -137,6 +131,23 @@ and no splitters.
 
 Every phase is checked in Release and Debug in headless Chromium, the desktop UI with the mouse
 at 1280×800 and 1920×1080, the phone UI with touch at 390×664.
+
+As built, the menu bar, Space and F, the collapsing bottom dock, the splitters and the saved sizes
+all arrived with phase 1, since they are part of the same window code; phases 2 and 3 then
+checked them. Notes on the build:
+
+- File has Save now, Show save (it opens the save viewer in the View tab) and Reset...; Export and
+  Import are not there yet.
+- The Play button is 84 px wide on the desktop (104 on the phone); the desktop top bar is 28 px
+  high, not 32, because it is the menu bar's own height.
+- A splitter is a transparent window over the 6 px edge strip inside the dock, not inside the
+  viewport, so a press on it never becomes a camera drag. A drag starts from the size shown, which
+  the window may have cut below the wanted one.
+- Dock sizes clamp to 160..640 (left), 220..640 (right) and 120..600 (bottom), then shrink so the
+  viewport keeps 40% of the canvas width and of the height under the top bar (the right dock gives
+  way first), and never drops below 64 px. The wanted sizes are what is saved.
+- The canvas's pointer follows ImGui's cursor (`js_set_cursor` in `imgui.c`): a resize cursor over
+  a splitter, a text cursor over a field.
 
 ## Out of scope
 

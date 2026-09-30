@@ -25,6 +25,7 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
+                           ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts),
                            app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -63,11 +64,21 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it.
-- The app uses the editor layout: `nv_editor_layout` splits the canvas into the
-  scene viewport (top 60%, passed to `nv_renderer_draw`) and the editor panel (bottom 40%, filled
-  with `nv_imgui_begin_panel`, which scrolls on a vertical touch drag). Keep editor UI inside the
-  panel. The exceptions are the build label (with its badge) in the viewport's top-left corner and the
-  transform gizmo on the selection.
+- The app has two editor UIs, chosen once at start from the primary pointer (`App.ui_mode`; touch
+  gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `app_layout` fills
+  `App.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
+  bar (menus, Play / Stop), left, right and bottom docks with draggable splitters, and the viewport
+  in the middle (`app/ui_desktop.c`); the **phone** has a top bar (Undo, Play / Stop, Redo), the
+  viewport (60%) and one tabbed panel (40%) (`app/ui_phone.c`). Neither file branches on the other's
+  device; they share only the section functions in `app/ui.c` (`ui_scene_tab`, `ui_inspector_tab`,
+  `ui_view_tab`, `console_tab`, `stress_ui`). The viewport is any rectangle, not the top-left corner:
+  pass `App.layout.viewport` to the renderer, picking and the gizmo. Play / Stop is at the top center
+  in both UIs, its center on the canvas's. Each dock is a window from `nv_imgui_begin_panel`, which
+  scrolls on a vertical touch drag. Keep editor UI inside the docks and panel. The exceptions are the
+  build label (with its badge) in the viewport's top-left corner and the transform gizmo on the
+  selection. A splitter must not use `nv_imgui_begin_panel`: its NoBringToFrontOnFocus puts a new
+  window behind the earlier ones. Debug builds export `Module._app_debug_layout(region, component)`,
+  `_app_debug_ui_mode`, `_app_debug_dock`, `_app_debug_view` and `_app_debug_playing` for tests.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
   (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
@@ -96,6 +107,13 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its scope; a value the app changes every frame in Edit mode must be left out there
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
+- Desktop keyboard shortcuts are rows of one table in `app/shortcuts.c` (`docs/specs/shortcuts.md`):
+  add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
+  the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
+  browser, so Ctrl+S is not "Save page") stay in step. Nothing fires while a text field is being
+  edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
+  Tests press keys with Playwright and read `Module._app_debug_gizmo`, `_app_debug_state` and the
+  other debug exports.
 - Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output

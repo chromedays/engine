@@ -49,8 +49,8 @@ planet from its authored rotation.
 
 | Topic | Decision |
 |---|---|
-| Controls | A **Play** / **Stop** button at the start of the row above the panel's tabs, before Undo and Redo. No keyboard shortcut for now (Ctrl+P prints in browsers) |
-| Showing the mode | While playing, the panel is tinted and the build label in the viewport reads "... · Playing"; a line under the row ("Playing: edits are lost on Stop.", wrapped on phones) says edits are lost on Stop. The line pushes the tabs down one line while playing |
+| Controls | A **Play** / **Stop** button at the top center of the screen, in the top bar of both UIs (`layout.md`; originally at the start of the row above the panel's tabs). Shortcut: Space on the desktop UI, while no field holds the keyboard (Ctrl+P prints in browsers) |
+| Showing the mode | While playing, the panel is tinted and the build label in the viewport reads "... · Playing"; a note ("Playing: edits are lost on Stop.") says edits are lost on Stop: beside the Play button in the desktop top bar, and at the top of the panel on the phone (wrapped), where it pushes the tabs down one line while playing |
 | Tests | Debug builds expose `Module._app_debug_save_crc()`, a CRC-32 of the save the state would write now; equal values before Play and after Stop mean Stop restored the scene |
 | Play | Takes a snapshot: the save bytes of the scene (`save_write`). Play time starts at 0 |
 | Stop | Restores the scene part of the snapshot (nodes, character settings, scene settings) with the save reader, so a jump, a crossfade or a walk in progress ends with the scene as it was. The camera view and the selection are not restored: they are not scene content |
