@@ -185,51 +185,56 @@ void undo_update(App* app)
         redo_step(app);
 }
 
-void undo_ui(App* app)
+// Whether undo and redo are available now, and the labels of the steps they would take.
+internal void undo_state(App* app, b32* can_undo, b32* can_redo, char* undo_label, char* redo_label, umm capacity)
 {
     Undo* undo = &app->undo;
-    b32 on = app->shown == SCENE_SHOWCASE;
+    // Undo's history is the showcase's edit state: not in the stress scene, not while playing.
+    b32 on = app->shown == SCENE_SHOWCASE && !app->playing;
+    *can_undo = on && undo->done > 0;
+    *can_redo = on && undo->done < undo->count;
+    snprintf(undo_label, capacity, "%s", *can_undo ? step_at(undo, undo->done - 1)->label : "");
+    snprintf(redo_label, capacity, "%s", *can_redo ? step_at(undo, undo->done)->label : "");
+}
+
+void undo_button(App* app, s32 direction, b32 labels, ImVec2_c size)
+{
+    Undo* undo = &app->undo;
+    b32 can_undo, can_redo;
+    char undo_label[UNDO_LABEL_MAX], redo_label[UNDO_LABEL_MAX];
+    undo_state(app, &can_undo, &can_redo, undo_label, redo_label, sizeof(undo_label));
+    char label[UNDO_LABEL_MAX + 16];
+    b32 can = direction < 0 ? can_undo : can_redo;
+    const char* name = direction < 0 ? "Undo" : "Redo";
+    const char* step = direction < 0 ? undo_label : redo_label;
+    if (labels && can)
+        snprintf(label, sizeof(label), "%s: %s###%s", name, step, name);
+    else
+        snprintf(label, sizeof(label), "%s###%s", name, name);
+    igBeginDisabled(!can);
+    if (igButton(label, size))
+        undo->request = direction;
+    igEndDisabled();
+}
+
+void undo_menu_items(App* app)
+{
+    Undo* undo = &app->undo;
+    b32 can_undo, can_redo;
+    char undo_label[UNDO_LABEL_MAX], redo_label[UNDO_LABEL_MAX];
+    undo_state(app, &can_undo, &can_redo, undo_label, redo_label, sizeof(undo_label));
     char label[UNDO_LABEL_MAX + 16];
 
-    // Play and Stop lead the row: they belong to the showcase, and the stress scene always runs.
-    if (on) {
-        if (igButton(app->playing ? "Stop###play" : "Play###play", (ImVec2_c){0.0f, 0.0f})) {
-            if (app->playing)
-                app_stop_playing(app);
-            else
-                app_start_playing(app);
-        }
-        igSameLine(0.0f, -1.0f);
-    }
-
-    b32 can_undo = on && !app->playing && undo->done > 0;
     if (can_undo)
-        snprintf(label, sizeof(label), "Undo: %s###undo", step_at(undo, undo->done - 1)->label);
+        snprintf(label, sizeof(label), "Undo: %s", undo_label);
     else
-        snprintf(label, sizeof(label), "Undo###undo");
-    igBeginDisabled(!can_undo);
-    if (igButton(label, (ImVec2_c){0.0f, 0.0f}))
+        snprintf(label, sizeof(label), "Undo");
+    if (igMenuItem_Bool(label, "Ctrl+Z", false, can_undo))
         undo->request = -1;
-    igEndDisabled();
-
-    b32 can_redo = on && !app->playing && undo->done < undo->count;
     if (can_redo)
-        snprintf(label, sizeof(label), "Redo: %s###redo", step_at(undo, undo->done)->label);
+        snprintf(label, sizeof(label), "Redo: %s", redo_label);
     else
-        snprintf(label, sizeof(label), "Redo###redo");
-    // Side by side when both fit, as on a desktop; stacked on a phone.
-    ImGuiStyle* style = igGetStyle();
-    f32 width = igCalcTextSize(label, NULL, true, -1.0f).x + style->FramePadding.x * 2.0f;
-    igSameLine(0.0f, -1.0f);
-    if (igGetContentRegionAvail().x < width)
-        igNewLine();
-    igBeginDisabled(!can_redo);
-    if (igButton(label, (ImVec2_c){0.0f, 0.0f}))
+        snprintf(label, sizeof(label), "Redo");
+    if (igMenuItem_Bool(label, "Ctrl+Y", false, can_redo))
         undo->request = 1;
-    igEndDisabled();
-    if (on && app->playing) {
-        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f});
-        igTextWrapped("Playing: edits are lost on Stop.");
-        igPopStyleColor(1);
-    }
 }

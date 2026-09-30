@@ -1,0 +1,86 @@
+#include "app.h"
+
+// The phone UI (docs/specs/layout.md): a top bar with Undo, Play / Stop and Redo, the scene
+// viewport below it, and one panel of tabs under the viewport.
+
+#define PHONE_TOP_BAR 48.0f        // CSS pixels
+#define PHONE_VIEWPORT_SHARE 0.6f  // of the height under the top bar
+#define PHONE_BUTTON_HEIGHT 38.0f
+#define PHONE_SIDE_BUTTON_WIDTH 88.0f
+#define PHONE_PLAY_WIDTH 104.0f
+#define PHONE_MARGIN 8.0f
+
+void phone_layout(App* app, f32 width, f32 height, f32 ratio)
+{
+    f32 split = PHONE_TOP_BAR + (height - PHONE_TOP_BAR) * PHONE_VIEWPORT_SHARE;
+    app->layout = (Layout){
+        .top_bar = ui_rect(0.0f, 0.0f, width, PHONE_TOP_BAR, ratio),
+        .viewport = ui_rect(0.0f, PHONE_TOP_BAR, width, split, ratio),
+        .panel = ui_rect(0.0f, split, width, height, ratio),
+    };
+}
+
+internal void top_bar(App* app)
+{
+    b32 tint = ui_push_play_tint(app);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    bool open = nv_imgui_begin_panel_ex(&app->imgui, "Top bar", app->layout.top_bar, flags);
+    ui_pop_play_tint(tint);
+    if (open) {
+        f32 width = igGetWindowWidth();
+        f32 y = (PHONE_TOP_BAR - PHONE_BUTTON_HEIGHT) * 0.5f;
+        ImVec2_c side = {PHONE_SIDE_BUTTON_WIDTH, PHONE_BUTTON_HEIGHT};
+        igSetCursorPos((ImVec2_c){PHONE_MARGIN, y});
+        undo_button(app, -1, 0, side);
+        // The Play button's center is the screen's center.
+        igSetCursorPos((ImVec2_c){(width - PHONE_PLAY_WIDTH) * 0.5f, y});
+        ui_play_button(app, (ImVec2_c){PHONE_PLAY_WIDTH, PHONE_BUTTON_HEIGHT});
+        igSetCursorPos((ImVec2_c){width - PHONE_MARGIN - PHONE_SIDE_BUTTON_WIDTH, y});
+        undo_button(app, 1, 0, side);
+    }
+    igEnd();
+}
+
+void phone_build_ui(App* app)
+{
+    top_bar(app);
+
+    b32 tint = ui_push_play_tint(app);
+    b32 panel_open = nv_imgui_begin_panel(&app->imgui, "Editor", app->layout.panel);
+    ui_pop_play_tint(tint);
+    if (panel_open)
+        ui_playing_note(app);
+    if (panel_open && igBeginTabBar("tabs", 0)) {
+        if (igBeginTabItem("Scene", NULL, 0)) {
+            ui_scene_tab(app);
+            igEndTabItem();
+        }
+        // NOTE: Picking a node in the Scene tab jumps here, since that is where it is edited.
+        ImGuiTabItemFlags inspector_flags = app->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
+        app->open_inspector = 0;
+        if (igBeginTabItem("Inspector", NULL, inspector_flags)) {
+            ui_inspector_tab(app);
+            igEndTabItem();
+        }
+        ImGuiTabItemFlags view_flags = app->open_view ? ImGuiTabItemFlags_SetSelected : 0;
+        app->open_view = 0;
+        if (igBeginTabItem("View", NULL, view_flags)) {
+            ui_view_tab(app);
+            igEndTabItem();
+        }
+        if (ui_begin_console_tab(app)) {
+            console_tab(app);
+            igEndTabItem();
+        }
+        if (app->shown == SCENE_STRESS) {
+            ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
+            app->open_stress = 0;
+            if (igBeginTabItem("Stress", NULL, stress_flags)) {
+                stress_ui(app);
+                igEndTabItem();
+            }
+        }
+        igEndTabBar();
+    }
+    igEnd();
+}

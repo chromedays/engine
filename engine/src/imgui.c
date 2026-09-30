@@ -110,6 +110,15 @@ EM_JS(void, js_write_clipboard, (const char* text), {
     if (navigator.clipboard) navigator.clipboard.writeText(UTF8ToString(text)).catch(() => {});
 });
 
+// The canvas's pointer follows the cursor ImGui asks for (a resize cursor over a splitter). The
+// page sets it only when it changes.
+EM_JS(void, js_set_cursor, (const char* name), {
+    const canvas = document.getElementById("canvas");
+    const cursor = UTF8ToString(name);
+    if (canvas && canvas.style.cursor !== cursor)
+        canvas.style.cursor = cursor;
+});
+
 EM_JS(int, js_touch_is_primary, (void), {
     return matchMedia("(pointer: coarse)").matches ? 1 : 0;
 });
@@ -865,18 +874,12 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
-NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction)
+bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
 {
-    NV_ASSERT(viewport_fraction > 0.0f && viewport_fraction <= 1.0f);
-    u32 split = (u32)((f32)gpu->height * viewport_fraction);
-    NvEditorLayout layout = {
-        .viewport = {0, 0, gpu->width, split},
-        .panel = {0, split, gpu->width, gpu->height - split},
-    };
-    return layout;
+    return nv_imgui_begin_panel_ex(imgui, name, rect, 0);
 }
 
-bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
+bool nv_imgui_begin_panel_ex(NvImgui* imgui, const char* name, NvRect rect, ImGuiWindowFlags extra_flags)
 {
     // ImGui works in CSS pixels; `rect` is in framebuffer pixels.
     f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
@@ -885,7 +888,7 @@ bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
     igSetNextWindowBgAlpha(1.0f);
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                              ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
-                             ImGuiWindowFlags_NoBringToFrontOnFocus;
+                             ImGuiWindowFlags_NoBringToFrontOnFocus | extra_flags;
     bool open = igBegin(name, NULL, flags);
     nv_imgui_touch_scroll(imgui);
     return open;
@@ -898,8 +901,20 @@ void nv_imgui_touch_scroll(NvImgui* imgui)
         igSetScrollY_Float(igGetScrollY() - imgui->touch_scroll);
 }
 
+internal const char* css_cursor(ImGuiMouseCursor cursor)
+{
+    switch (cursor) {
+    case ImGuiMouseCursor_TextInput: return "text";
+    case ImGuiMouseCursor_ResizeEW: return "ew-resize";
+    case ImGuiMouseCursor_ResizeNS: return "ns-resize";
+    case ImGuiMouseCursor_Hand: return "pointer";
+    default: return "default";
+    }
+}
+
 void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)
 {
+    js_set_cursor(css_cursor(igGetMouseCursor()));
     igRender();
     ImDrawData* draw_data = igGetDrawData();
 

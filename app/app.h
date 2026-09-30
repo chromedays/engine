@@ -33,6 +33,38 @@
 #define STRESS_MAX_CHURN    256
 #define STRESS_MAX_STEPS    16
 
+// Which editor UI runs: chosen once at start from the primary pointer (docs/specs/layout.md).
+typedef enum UiMode {
+    UI_DESKTOP,
+    UI_PHONE,
+} UiMode;
+
+// Where the editor's regions are, in framebuffer pixels (app_layout, every frame). A region the
+// shown UI does not have is empty. The phone's tabbed panel is `panel`.
+typedef struct Layout {
+    NvRect viewport;
+    NvRect top_bar;
+    NvRect left, right, bottom; // desktop docks
+    NvRect panel;               // phone
+} Layout;
+
+// The desktop docks (app/ui_desktop.c). Sizes are the wanted ones, in CSS pixels; the layout
+// clamps them to the window each frame. They are saved with the editor settings.
+typedef struct Docks {
+    f32 left_width, right_width, bottom_height;
+    f32 drag_start_mouse, drag_start_size; // while a splitter is dragged
+    b32 bottom_open;                   // the bottom dock shows its contents, not just its strip
+    b32 show_left, show_right, show_bottom; // View menu; not saved
+    s32 dragging;                      // the splitter being dragged (DockSplitter), 0 = none
+} Docks;
+
+// What the desktop splitters allow, in CSS pixels (ui_desktop.c clamps again to the window).
+#define DOCK_LEFT_MIN   160.0f
+#define DOCK_RIGHT_MIN  220.0f
+#define DOCK_BOTTOM_MIN 120.0f
+#define DOCK_SIDE_MAX   640.0f
+#define DOCK_BOTTOM_MAX 600.0f
+
 typedef enum SceneKind {
     SCENE_SHOWCASE,
     SCENE_STRESS,
@@ -332,6 +364,13 @@ typedef struct App {
     // size a finger can hit; a tap inside opens the Console tab. Zero width = no badge.
     f32 badge_box[4];
     bool show_bones;
+
+    // Layout (ui.c, ui_desktop.c, ui_phone.c)
+    UiMode ui_mode;
+    Layout layout;
+    Docks docks;
+    b32 open_view;    // switch to the View tab on the next frame
+    f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden
 } App;
 
 // main.c
@@ -345,6 +384,7 @@ void app_stop_playing(App* app);  // Stop: restore the showcase from the snapsho
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
 NvAnimatorId app_node_animator(NvScene* scene, NvNodeId id);
 void app_show_scene(App* app, SceneKind kind);
+void app_focus_selection(App* app); // F: the orbit point moves to the selected node
 NvMeshId app_box_mesh(App* app, NvVec3 half);
 SceneView* app_view(App* app); // the shown scene's view
 
@@ -356,8 +396,34 @@ void stress_draw_bones(App* app);
 u32 stress_live_nodes(NvScene* scene);
 void stress_ui(App* app);
 
-// ui.c
-void app_build_ui(App* app, NvRect panel);
+// ui.c: the UI chosen at start, and the sections both UIs draw into their own windows.
+void app_layout(App* app); // fills app->layout from the canvas size; before nv_imgui_new_frame
+void app_build_ui(App* app);
+void ui_scene_tab(App* app);
+void ui_inspector_tab(App* app);
+void ui_view_tab(App* app);
+// The Play / Stop button, `size` wide and high (0 = natural), at the cursor; nothing in the stress
+// scene. Records its box in app->play_box.
+void ui_play_button(App* app, ImVec2_c size);
+// The line telling that edits are lost on Stop, while the showcase plays.
+void ui_playing_note(App* app);
+// Begins the Console tab item with its unseen count and color; if true, draw console_tab and
+// igEndTabItem.
+b32 ui_begin_console_tab(App* app);
+// The build label in the viewport's top-left corner, with its badge.
+void ui_build_label(App* app);
+// A tint for the panels while the showcase plays: push before igBegin, pop after.
+b32 ui_push_play_tint(App* app);
+void ui_pop_play_tint(b32 pushed);
+
+// A rectangle given in CSS pixels as framebuffer pixels, rounded so neighbors share their edges.
+NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio);
+
+// ui_desktop.c and ui_phone.c
+void desktop_layout(App* app, f32 width, f32 height, f32 ratio);
+void desktop_build_ui(App* app);
+void phone_layout(App* app, f32 width, f32 height, f32 ratio);
+void phone_build_ui(App* app);
 // Keeps the next checkbox or button on this line when `width` fits, else starts a new one.
 void ui_same_line_if_fits(f32 width);
 
@@ -396,7 +462,10 @@ const char* save_field_label(u32 tag); // "Position", "Clip", ...
 // undo.c
 void undo_init(App* app);   // after the save is loaded
 void undo_update(App* app); // every frame, after every edit (the gizmo's included)
-void undo_ui(App* app);     // the Undo/Redo row
+// The Undo (direction -1) or Redo (+1) button in the current window; `labels` adds the step's name.
+void undo_button(App* app, s32 direction, b32 labels, ImVec2_c size);
+// Undo and Redo as menu items with their shortcuts.
+void undo_menu_items(App* app);
 
 // Mounts browser storage and loads the save, if there is one. Call once the showcase is built.
 void save_init(App* app);
@@ -405,6 +474,8 @@ void save_update(App* app);
 // Writes the save now if it changed since the last write, or even if not when `force` is set.
 void save_now(App* app, b32 force);
 void save_ui(App* app); // the View tab's Autosave section
+void save_reset_popup(App* app); // the modal Reset asks in; call where igOpenPopup_Str("Reset everything?") ran
+void save_show_viewer(App* app); // opens the save viewer (in the View tab)
 // Whether saving, loading that save and saving again gives the same bytes. It loads, so it may
 // end a jump or a crossfade; Debug builds check it at start and tests call it.
 b32 save_round_trip_matches(App* app);

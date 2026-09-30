@@ -488,9 +488,34 @@ internal void draw_selection(App* app)
     }
 }
 
-// Orbits the selected node, or the view's focus, while the view follows the selection. Cameras and
+// Where the camera orbits when it follows: the selected node, or the view's focus. Cameras and
 // lights are not worth orbiting, so they fall back to the focus. A character's origin is at its
 // feet, so its focus is raised.
+internal NvVec3 view_focus_point(SceneView* view)
+{
+    NvScene* scene = view->scene;
+    NvNodeId focus = view->selected;
+    if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
+        focus = view->focus;
+    NvVec3 point = nv_vec3(0, 0, 0);
+    if (focus.index) {
+        point = nv_mat4_translation(nv_scene_get(scene, focus)->world);
+        if (app_node_animator(scene, focus).index)
+            point.y += 0.92f;
+    }
+    return point;
+}
+
+void app_focus_selection(App* app)
+{
+    SceneView* view = app_view(app);
+    if (!view->selected.index)
+        return;
+    // Following, the orbit point is the selection plus the pan, so an empty pan is what centers it.
+    view->pan = nv_vec3(0, 0, 0);
+    view->orbit_point = view_focus_point(view);
+}
+
 internal void update_camera(App* app, NvRect viewport)
 {
     SceneView* view = app_view(app);
@@ -502,16 +527,7 @@ internal void update_camera(App* app, NvRect viewport)
     // NOTE: While the gizmo drags the selection, the camera holds still: following it would move
     // the pointer's ray with the node, and the drag would run away.
     if (view->follow_selection && !ImGuizmo_IsUsingAny()) {
-        NvNodeId focus = view->selected;
-        if (!focus.index || nv_scene_get(scene, focus)->camera.projection || nv_scene_get(scene, focus)->light.type)
-            focus = view->focus;
-        point = nv_vec3(0, 0, 0);
-        if (focus.index) {
-            point = nv_mat4_translation(nv_scene_get(scene, focus)->world);
-            if (app_node_animator(scene, focus).index)
-                point.y += 0.92f;
-        }
-        point = nv_vec3_add(point, view->pan);
+        point = nv_vec3_add(view_focus_point(view), view->pan);
         view->orbit_point = point;
     }
 
@@ -763,20 +779,22 @@ internal void frame(void* userdata)
     FrameTimes* times = &app->times;
     times->frame = (f64)dt * 1000.0;
     f64 t = now_ms();
-    NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
-    app->imgui.view_rect = layout.viewport;
+    app_layout(app);
+    const Layout* layout = &app->layout;
+    app->imgui.view_rect = layout->viewport;
     NvRect* logged = &app->logged_viewport;
-    if (logged->width != layout.viewport.width || logged->height != layout.viewport.height || logged->y != layout.viewport.y) {
-        *logged = layout.viewport;
-        nv_log(NV_LOG_INFO, "app", "scene viewport: %ux%u at (%u, %u) of the %ux%u color target; editor panel %ux%u at (%u, %u)",
-               layout.viewport.width, layout.viewport.height, layout.viewport.x, layout.viewport.y, app->gpu.width, app->gpu.height,
-               layout.panel.width, layout.panel.height, layout.panel.x, layout.panel.y);
+    if (logged->width != layout->viewport.width || logged->height != layout->viewport.height ||
+        logged->x != layout->viewport.x || logged->y != layout->viewport.y) {
+        *logged = layout->viewport;
+        nv_log(NV_LOG_INFO, "app", "%s UI: scene viewport %ux%u at (%u, %u) of the %ux%u color target",
+               app->ui_mode == UI_PHONE ? "phone" : "desktop", layout->viewport.width, layout->viewport.height,
+               layout->viewport.x, layout->viewport.y, app->gpu.width, app->gpu.height);
     }
     nv_imgui_new_frame(&app->imgui, dt);
     // IMPORTANT: Before the panel, so ImGuizmo's full-screen window (created on the first frame)
     // stays behind the panel.
     ImGuizmo_BeginFrame();
-    app_build_ui(app, layout.panel);
+    app_build_ui(app);
     times->ui = now_ms() - t;
 
     NvScene* scene = app_view(app)->scene;
@@ -791,9 +809,9 @@ internal void frame(void* userdata)
     t = now_ms();
     nv_scene_update(scene);
     times->scene = now_ms() - t;
-    pick(app, layout.viewport);
-    update_camera(app, layout.viewport);
-    draw_gizmo(app, layout.viewport);
+    pick(app, layout->viewport);
+    update_camera(app, layout->viewport);
+    draw_gizmo(app, layout->viewport);
     undo_update(app);
     draw_selection(app);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
@@ -803,7 +821,7 @@ internal void frame(void* userdata)
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
     t = now_ms();
-    nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout.viewport, encoder, target);
+    nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout->viewport, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = app->renderer.gpu_ms;
     times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
@@ -823,6 +841,39 @@ internal void frame(void* userdata)
 }
 
 #if !defined(NDEBUG)
+// For tests: Module._app_debug_layout(region, component) is a region's rectangle in CSS pixels
+// (region 0 viewport, 1 top bar, 2 left dock, 3 right dock, 4 bottom dock, 5 phone panel, 6 the
+// Play button; component 0 x, 1 y, 2 width, 3 height). Module._app_debug_ui_mode() is 0 for the
+// desktop UI and 1 for the phone UI, and Module._app_debug_dock(n) the wanted sizes and state
+// (0 left width, 1 right width, 2 bottom height, 3 bottom open).
+EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
+{
+    App* app = &app_state;
+    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    const Layout* layout = &app->layout;
+    const NvRect* rects[] = {&layout->viewport, &layout->top_bar, &layout->left, &layout->right, &layout->bottom, &layout->panel};
+    if (region == 6) {
+        const f32* box = app->play_box;
+        f32 values[4] = {box[0], box[1], box[2] - box[0], box[3] - box[1]};
+        return values[component];
+    }
+    const NvRect* r = rects[region];
+    f32 values[4] = {(f32)r->x / ratio, (f32)r->y / ratio, (f32)r->width / ratio, (f32)r->height / ratio};
+    return values[component];
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_ui_mode(void)
+{
+    return (int)app_state.ui_mode;
+}
+
+EMSCRIPTEN_KEEPALIVE float app_debug_dock(int which)
+{
+    const Docks* docks = &app_state.docks;
+    f32 values[4] = {docks->left_width, docks->right_width, docks->bottom_height, (f32)docks->bottom_open};
+    return values[which];
+}
+
 // For tests: Module._app_debug_save_round_trip() checks the save round trip at any moment.
 EMSCRIPTEN_KEEPALIVE int app_debug_save_round_trip(void)
 {
@@ -965,6 +1016,17 @@ int main(void)
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = app->imgui.ui_scale > 1.0f;
+    // One UI per device (docs/specs/layout.md): touch gets the phone UI, everything else the desktop's.
+    app->ui_mode = touch ? UI_PHONE : UI_DESKTOP;
+    app->docks = (Docks){
+        .left_width = 260.0f,
+        .right_width = 340.0f,
+        .bottom_height = 220.0f,
+        .bottom_open = 1,
+        .show_left = 1,
+        .show_right = 1,
+        .show_bottom = 1,
+    };
     app->renderer.shadows = (NvShadowSettings){
         .size = touch ? 1024 : 2048,
         .format = NV_SHADOW_FORMAT_DEPTH32F,

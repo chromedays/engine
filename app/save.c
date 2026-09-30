@@ -21,6 +21,10 @@
 #define TAG_SHFL NV_TAG('S', 'H', 'F', 'L') // shadow filter
 #define TAG_SHDS NV_TAG('S', 'H', 'D', 'S') // shadow distance
 #define TAG_SHBX NV_TAG('S', 'H', 'B', 'X') // show the light box
+#define TAG_DKLW NV_TAG('D', 'K', 'L', 'W') // desktop: left dock width, CSS pixels
+#define TAG_DKRW NV_TAG('D', 'K', 'R', 'W') // desktop: right dock width
+#define TAG_DKBH NV_TAG('D', 'K', 'B', 'H') // desktop: bottom dock height
+#define TAG_DKBO NV_TAG('D', 'K', 'B', 'O') // desktop: bottom dock open
 // SCNE
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
@@ -252,6 +256,10 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_SHFL, (u32)shadows->filter);
     nv_chunk_f32(&w, TAG_SHDS, shadows->distance);
     nv_chunk_u32(&w, TAG_SHBX, shadows->show_box);
+    nv_chunk_u32(&w, TAG_DKLW, (u32)(app->docks.left_width + 0.5f));
+    nv_chunk_u32(&w, TAG_DKRW, (u32)(app->docks.right_width + 0.5f));
+    nv_chunk_u32(&w, TAG_DKBH, (u32)(app->docks.bottom_height + 0.5f));
+    nv_chunk_u32(&w, TAG_DKBO, app->docks.bottom_open);
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
@@ -305,6 +313,13 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_SHFL, &filter, 1);
     nv_chunk_read_f32s(r, edit, TAG_SHDS, &shadows.distance, 1);
     nv_chunk_read_u32s(r, edit, TAG_SHBX, (u32*)&shadows.show_box, 1);
+    u32 dock_left = (u32)(app->docks.left_width + 0.5f), dock_right = (u32)(app->docks.right_width + 0.5f);
+    u32 dock_bottom = (u32)(app->docks.bottom_height + 0.5f);
+    bool bottom_open = app->docks.bottom_open;
+    nv_chunk_read_u32s(r, edit, TAG_DKLW, &dock_left, 1);
+    nv_chunk_read_u32s(r, edit, TAG_DKRW, &dock_right, 1);
+    nv_chunk_read_u32s(r, edit, TAG_DKBH, &dock_bottom, 1);
+    read_bool(r, edit, TAG_DKBO, &bottom_open);
     if (!apply)
         return;
     app->autosave = autosave;
@@ -319,6 +334,11 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     shadows.distance = clamp(shadows.distance, 5.0f, 100.0f);
     shadows.show_box = shadows.show_box != 0;
     app->renderer.shadows = shadows;
+    // Docks: within what the splitters allow (ui_desktop.c clamps again to the window).
+    app->docks.left_width = clamp((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
+    app->docks.right_width = clamp((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
+    app->docks.bottom_height = clamp((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
+    app->docks.bottom_open = bottom_open;
 }
 
 internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)
@@ -719,6 +739,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
     switch (tag) {
     case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
         return TAG_KIND_CONTAINER;
+    case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
         return TAG_KIND_U32;
@@ -893,6 +914,29 @@ void save_update(App* app)
     save_now(app, 0);
 }
 
+void save_reset_popup(App* app)
+{
+    if (igBeginPopupModal("Reset everything?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        igText("Delete the save and start over as on a first visit?");
+        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f})) {
+            save_reset(app);
+            igCloseCurrentPopup();
+        }
+        igSameLine(0.0f, -1.0f);
+        if (igButton("Cancel", (ImVec2_c){0.0f, 0.0f}))
+            igCloseCurrentPopup();
+        igEndPopup();
+    }
+}
+
+void save_show_viewer(App* app)
+{
+    app->show_save = true;
+    if (app->autosave)
+        save_now(app, 0); // so the viewer shows the current state
+    load_viewed(app, 0);
+}
+
 void save_ui(App* app)
 {
     igSeparatorText("Autosave");
@@ -918,23 +962,10 @@ void save_ui(App* app)
 
     if (igButton("Reset", (ImVec2_c){0.0f, 0.0f}))
         igOpenPopup_Str("Reset everything?", 0);
-    if (igBeginPopupModal("Reset everything?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        igText("Delete the save and start over as on a first visit?");
-        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f})) {
-            save_reset(app);
-            igCloseCurrentPopup();
-        }
-        igSameLine(0.0f, -1.0f);
-        if (igButton("Cancel", (ImVec2_c){0.0f, 0.0f}))
-            igCloseCurrentPopup();
-        igEndPopup();
-    }
+    save_reset_popup(app);
     igSameLine(0.0f, -1.0f);
-    if (igCheckbox("Show save", &app->show_save) && app->show_save) {
-        if (app->autosave)
-            save_now(app, 0); // so the viewer shows the current state
-        load_viewed(app, 0);
-    }
+    if (igCheckbox("Show save", &app->show_save) && app->show_save)
+        save_show_viewer(app);
     if (app->show_save)
         save_viewer(app);
 }

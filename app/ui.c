@@ -47,7 +47,7 @@ internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
     }
 }
 
-internal void scene_tab(App* app)
+void ui_scene_tab(App* app)
 {
     SceneView* view = app_view(app);
     for (u32 root = view->scene->first_root; root; root = view->scene->nodes[root].next_sibling)
@@ -174,7 +174,7 @@ internal void shadow_ui(App* app)
     igEndDisabled();
 }
 
-internal void inspector_tab(App* app)
+void ui_inspector_tab(App* app)
 {
     SceneView* view = app_view(app);
     if (!view->selected.index) {
@@ -249,7 +249,7 @@ internal void inspector_tab(App* app)
 // View tab
 //
 
-internal void view_tab(App* app)
+void ui_view_tab(App* app)
 {
     ImGuiIO* io = igGetIO_Nil();
     SceneView* view = app_view(app);
@@ -283,7 +283,7 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
 // Warnings and errors that arrived while the Console tab was not shown add a badge, a dot and a
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
-internal void build_label(App* app)
+void ui_build_label(App* app)
 {
     char text[80];
     snprintf(text, sizeof(text), "%s build %s%s", NV_BUILD_NAME, NV_GIT_COMMIT,
@@ -295,7 +295,9 @@ internal void build_label(App* app)
 
     ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
-    ImVec2_c pos = {6.0f, 6.0f};
+    // The viewport's corner, in CSS pixels: below the phone's top bar, right of the desktop's left dock.
+    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    ImVec2_c pos = {(f32)app->layout.viewport.x / ratio + 6.0f, (f32)app->layout.viewport.y / ratio + 6.0f};
     f32 radius = igGetFontSize() * 0.3f;
     f32 badge_width = 0.0f;
     if (unseen)
@@ -331,72 +333,107 @@ internal void build_label(App* app)
     }
 }
 
-void app_build_ui(App* app, NvRect panel)
+void ui_play_button(App* app, ImVec2_c size)
+{
+    f32* box = app->play_box;
+    box[0] = box[1] = box[2] = box[3] = 0.0f;
+    // Play and Stop belong to the showcase; the stress scene always runs.
+    if (app->shown != SCENE_SHOWCASE)
+        return;
+    if (igButton(app->playing ? "Stop###play" : "Play###play", size)) {
+        if (app->playing)
+            app_stop_playing(app);
+        else
+            app_start_playing(app);
+    }
+    ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
+    box[0] = min.x;
+    box[1] = min.y;
+    box[2] = max.x;
+    box[3] = max.y;
+}
+
+void ui_playing_note(App* app)
+{
+    if (!app->playing || app->shown != SCENE_SHOWCASE)
+        return;
+    igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f});
+    igTextWrapped("Playing: edits are lost on Stop.");
+    igPopStyleColor(1);
+}
+
+b32 ui_push_play_tint(App* app)
+{
+    // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
+    // edits that stay.
+    if (!app->playing || app->shown != SCENE_SHOWCASE)
+        return 0;
+    igPushStyleColor_Vec4(ImGuiCol_WindowBg, (ImVec4_c){0.05f, 0.12f, 0.20f, 1.0f});
+    return 1;
+}
+
+void ui_pop_play_tint(b32 pushed)
+{
+    if (pushed)
+        igPopStyleColor(1);
+}
+
+b32 ui_begin_console_tab(App* app)
+{
+    // NOTE: The label counts warnings and errors that arrived while the tab was not shown. Its id
+    // (###console) stays the same, so the tab keeps its place as the count changes.
+    NvLogLevel worst;
+    u32 unseen = console_unseen(app, &worst);
+    char label[48] = "Console###console";
+    if (unseen) {
+        // A phone's tab bar has no room for the number (the tabs would scroll): the color says
+        // it, and the badge on the build label counts.
+        if (!console_is_compact()) {
+            char count[8];
+            format_unseen(unseen, count, sizeof(count));
+            snprintf(label, sizeof(label), "Console (%s)###console", count);
+        }
+        igPushStyleColor_U32(ImGuiCol_Text, console_level_color(worst));
+    }
+    ImGuiTabItemFlags flags = app->open_console ? ImGuiTabItemFlags_SetSelected : 0;
+    app->open_console = 0;
+    b32 open = igBeginTabItem(label, NULL, flags);
+    if (unseen)
+        igPopStyleColor(1);
+    console_record(&app->console, CONSOLE_RECT_TAB);
+    return open;
+}
+
+NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
+{
+    u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
+    u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
+    if (right < left)
+        right = left;
+    if (bottom < top)
+        bottom = top;
+    return (NvRect){left, top, right - left, bottom - top};
+}
+
+void app_layout(App* app)
+{
+    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 width = (f32)app->gpu.width / ratio;
+    f32 height = (f32)app->gpu.height / ratio;
+    if (app->ui_mode == UI_PHONE)
+        phone_layout(app, width, height, ratio);
+    else
+        desktop_layout(app, width, height, ratio);
+}
+
+void app_build_ui(App* app)
 {
     // The Console tab counts what arrived while it was not shown: it was shown last frame or not.
     app->console.shown_last = app->console.shown_now;
     app->console.shown_now = 0;
-    build_label(app);
-    // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
-    // edits that stay.
-    b32 tint = app->playing && app->shown == SCENE_SHOWCASE;
-    if (tint)
-        igPushStyleColor_Vec4(ImGuiCol_WindowBg, (ImVec4_c){0.05f, 0.12f, 0.20f, 1.0f});
-    b32 panel_open = nv_imgui_begin_panel(&app->imgui, "Editor", panel);
-    if (tint)
-        igPopStyleColor(1);
-    if (panel_open)
-        undo_ui(app);
-    if (panel_open && igBeginTabBar("tabs", 0)) {
-        if (igBeginTabItem("Scene", NULL, 0)) {
-            scene_tab(app);
-            igEndTabItem();
-        }
-        // NOTE: Picking a node in the Scene tab jumps here, since that is where it is edited.
-        ImGuiTabItemFlags inspector_flags = app->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
-        app->open_inspector = 0;
-        if (igBeginTabItem("Inspector", NULL, inspector_flags)) {
-            inspector_tab(app);
-            igEndTabItem();
-        }
-        if (igBeginTabItem("View", NULL, 0)) {
-            view_tab(app);
-            igEndTabItem();
-        }
-        // NOTE: The label counts warnings and errors that arrived while the tab was not shown. Its id
-        // (###console) stays the same, so the tab keeps its place as the count changes.
-        NvLogLevel worst;
-        u32 unseen = console_unseen(app, &worst);
-        char console_label[48] = "Console###console";
-        if (unseen) {
-            // A phone's tab bar has no room for the number (the tabs would scroll): the color says
-            // it, and the badge on the build label counts.
-            if (!console_is_compact()) {
-                char count[8];
-                format_unseen(unseen, count, sizeof(count));
-                snprintf(console_label, sizeof(console_label), "Console (%s)###console", count);
-            }
-            igPushStyleColor_U32(ImGuiCol_Text, console_level_color(worst));
-        }
-        ImGuiTabItemFlags console_flags = app->open_console ? ImGuiTabItemFlags_SetSelected : 0;
-        app->open_console = 0;
-        bool console_open = igBeginTabItem(console_label, NULL, console_flags);
-        if (unseen)
-            igPopStyleColor(1);
-        console_record(&app->console, CONSOLE_RECT_TAB);
-        if (console_open) {
-            console_tab(app);
-            igEndTabItem();
-        }
-        if (app->shown == SCENE_STRESS) {
-            ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
-            app->open_stress = 0;
-            if (igBeginTabItem("Stress", NULL, stress_flags)) {
-                stress_ui(app);
-                igEndTabItem();
-            }
-        }
-        igEndTabBar();
-    }
-    igEnd();
+    ui_build_label(app);
+    if (app->ui_mode == UI_PHONE)
+        phone_build_ui(app);
+    else
+        desktop_build_ui(app);
 }

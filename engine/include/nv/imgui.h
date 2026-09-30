@@ -9,9 +9,6 @@
 #define NV_IMGUI_MAX_INDICES  262144
 #define NV_IMGUI_CLIPBOARD_SIZE 65536
 
-// Share of the canvas height the scene viewport gets in the editor layout; the panel gets the rest.
-#define NV_EDITOR_VIEWPORT_FRACTION 0.6f
-
 typedef enum NvTouchGesture {
     NV_TOUCH_NONE,
     NV_TOUCH_UNDECIDED, // finger down, not yet a tap, press or scroll
@@ -105,19 +102,13 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
 
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds);
 
-// The editor screen layout: the scene viewport across the top `viewport_fraction` of the
-// canvas and the editor panel below it. Call after nv_gpu_begin_frame so the size is current.
-typedef struct NvEditorLayout {
-    NvRect viewport;
-    NvRect panel;
-} NvEditorLayout;
-
-NvEditorLayout nv_editor_layout(NvGpu* gpu, f32 viewport_fraction);
-
 // Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be
 // moved, resized or collapsed. `name` only identifies the window. A vertical touch drag scrolls
 // it. Like igBegin, always pair it with igEnd.
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect);
+
+// The same with extra ImGuiWindowFlags (a menu bar, no scrollbar, no background).
+bool nv_imgui_begin_panel_ex(NvImgui* imgui, const char* name, NvRect rect, ImGuiWindowFlags extra_flags);
 
 // Applies this frame's touch scroll to the current window if the finger is on it. The panel does
 // this itself; call it right after igBeginChild_Str for a child window that scrolls on its own, since
