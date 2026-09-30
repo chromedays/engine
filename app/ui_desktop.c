@@ -67,6 +67,8 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
 {
     Docks* docks = &app->docks;
     // A message for a tab that lives in the bottom dock shows the dock.
+    if (app->open_textures)
+        docks->show_right = 1; // the Textures tab lives in the right dock
     if (app->open_console || app->open_stress) {
         docks->show_bottom = 1;
         docks->bottom_open = 1;
@@ -213,6 +215,10 @@ internal void right_dock(App* app)
         app->open_view = 0;
         if (igBeginTabItem("View", NULL, view_flags)) {
             ui_view_tab(app);
+            igEndTabItem();
+        }
+        if (ui_begin_textures_tab(app)) {
+            textures_tab(app);
             igEndTabItem();
         }
         igEndTabBar();

@@ -155,6 +155,55 @@ typedef struct Console {
     f32 scroll_max;
 } Console;
 
+// The Textures tab (docs/specs/textures.md).
+typedef enum TextureKind {
+    TEXTURE_MATERIAL, // NvRenderer.textures
+    TEXTURE_SHADOW,
+    TEXTURE_DEPTH,
+    TEXTURE_SWAPCHAIN,
+    TEXTURE_UI,       // NvImgui.textures
+} TextureKind;
+
+typedef enum TexturesRect {
+    TEXTURES_RECT_TAB,
+    TEXTURES_RECT_IN_USE,
+    TEXTURES_RECT_FIRST_ROW,
+    TEXTURES_RECT_ZOOM,
+    TEXTURES_RECT_MIP,
+    TEXTURES_RECT_CHANNELS, // six: RGBA, RGB, R, G, B, A
+    TEXTURES_RECT_RANGE = TEXTURES_RECT_CHANNELS + 6,
+    TEXTURES_RECT_IMAGE,
+    TEXTURES_RECT_FIRST_USER,
+    TEXTURES_RECT_INSPECTOR,
+    TEXTURES_RECT_BACK,
+    TEXTURES_RECT_COUNT,
+} TexturesRect;
+
+#define TEXTURES_MAX_ROW_RECTS 32
+
+// What the Textures tab shows. Zero is valid: nothing picked, only textures in use, RGBA, zoom 1.
+// View state only: not saved, not undoable.
+typedef struct TextureViewer {
+    bool show_unused;     // the "In use only" checkbox, off
+    b32 has_selection;
+    b32 detail_open;      // a narrow panel shows the picked texture instead of the list
+    TextureKind selected_kind;
+    u32 selected_index;
+    u32 mip;
+    s32 channels;         // NvImguiPreviewMode, RGBA to A
+    bool no_checkerboard;
+    f32 zoom;             // 1 to 16; 0 = 1
+    f32 center[2];        // the zoomed window's center, 0..1 of the shown part
+    f32 depth_range;      // depth target: the distance shown white, meters; 0 = twice the camera distance
+    f32 shadow_range[2];  // shadow map: the stored depth shown black and white; equal = 0..1
+    b32 shown_now;        // the tab was drawn this frame
+    b32 shown_last;       // ... and last frame: the depth target is samplable while it is
+    u32 listed;           // rows drawn
+    // Where things were drawn last frame, in CSS pixels (x0, y0, x1, y1), for tests to click.
+    f32 rects[TEXTURES_RECT_COUNT][4];
+    f32 row_rects[TEXTURES_MAX_ROW_RECTS][4]; // the listed rows, in order; zero when not drawn
+} TextureViewer;
+
 // What the transform gizmo on the selection does (docs/specs/gizmo.md).
 typedef enum GizmoOperation {
     GIZMO_MOVE,
@@ -325,6 +374,7 @@ typedef struct App {
 
     Undo undo;
     Console console;
+    TextureViewer textures;
     NvRect logged_viewport; // the scene viewport last logged
 
     // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the showcase by itself;
@@ -360,6 +410,7 @@ typedef struct App {
     b32 open_inspector; // switch to the Inspector tab on the next frame
     b32 open_stress;    // switch to the Stress tab on the next frame
     b32 open_console;   // switch to the Console tab on the next frame
+    b32 open_textures;  // switch to the Textures tab on the next frame
     // The build label's box while it carries a badge, in CSS pixels (x0, y0, x1, y1), grown to a
     // size a finger can hit; a tap inside opens the Console tab. Zero width = no badge.
     f32 badge_box[4];
@@ -410,6 +461,7 @@ void ui_playing_note(App* app);
 // Begins the Console tab item with its unseen count and color; if true, draw console_tab and
 // igEndTabItem.
 b32 ui_begin_console_tab(App* app);
+b32 ui_begin_textures_tab(App* app); // the Textures tab item; jumps to it on app->open_textures
 // The build label in the viewport's top-left corner, with its badge.
 void ui_build_label(App* app);
 // A tint for the panels while the showcase plays: push before igBegin, pop after.
@@ -435,6 +487,11 @@ void console_tab(App* app); // the Console tab's contents
 ImU32 console_level_color(NvLogLevel level);
 b32 console_is_compact(void); // the panel is too narrow (a phone) for the full layout
 void console_record(Console* console, ConsoleRect id); // the last item's rect, for tests
+
+// textures.c
+void textures_tab(App* app);
+void textures_inspector_thumbnail(App* app, NvTextureId texture); // the Inspector's Mesh section
+void textures_record(TextureViewer* viewer, TexturesRect id);     // the last item's rect, for tests
 
 // save.c
 u32 save_scene_layout(NvScene* scene); // a hash of the tree's shape and names

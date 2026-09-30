@@ -219,8 +219,9 @@ void ui_inspector_tab(App* app)
             color[i] = app->renderer.materials[node->material.index].desc.base_color[i];
         if (igColorEdit4("Color", color, ImGuiColorEditFlags_Float))
             nv_renderer_set_material_color(&app->renderer, node->material, color);
-        if (app->renderer.materials[node->material.index].desc.base_color_texture.index)
-            igTextDisabled("Multiplied with a texture.");
+        NvTextureId texture = app->renderer.materials[node->material.index].desc.base_color_texture;
+        if (texture.index)
+            textures_inspector_thumbnail(app, texture);
     }
     if (node->camera.projection) {
         igSeparatorText("Camera");
@@ -404,6 +405,15 @@ b32 ui_begin_console_tab(App* app)
     return open;
 }
 
+b32 ui_begin_textures_tab(App* app)
+{
+    ImGuiTabItemFlags flags = app->open_textures ? ImGuiTabItemFlags_SetSelected : 0;
+    app->open_textures = 0;
+    b32 open = igBeginTabItem("Textures", NULL, flags);
+    textures_record(&app->textures, TEXTURES_RECT_TAB);
+    return open;
+}
+
 NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 {
     u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
@@ -431,6 +441,8 @@ void app_build_ui(App* app)
     // The Console tab counts what arrived while it was not shown: it was shown last frame or not.
     app->console.shown_last = app->console.shown_now;
     app->console.shown_now = 0;
+    app->textures.shown_last = app->textures.shown_now;
+    app->textures.shown_now = 0;
     ui_build_label(app);
     if (app->ui_mode == UI_PHONE)
         phone_build_ui(app);

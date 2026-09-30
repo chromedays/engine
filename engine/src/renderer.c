@@ -1062,7 +1062,8 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     WGPURenderPassDepthStencilAttachment depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
     depth.view = renderer->depth_view;
     depth.depthLoadOp = WGPULoadOp_Clear;
-    depth.depthStoreOp = WGPUStoreOp_Discard;
+    // Nothing reads the depth after the pass, unless the texture viewer shows it.
+    depth.depthStoreOp = renderer->depth_texture_sampled ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
     depth.depthClearValue = 0.0f; // reverse Z: far is 0
     WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
     pass_desc.label = (WGPUStringView){"scene", WGPU_STRLEN};

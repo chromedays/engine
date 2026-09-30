@@ -50,7 +50,8 @@ void phone_build_ui(App* app)
     ui_pop_play_tint(tint);
     if (panel_open)
         ui_playing_note(app);
-    if (panel_open && igBeginTabBar("tabs", 0)) {
+    // Shrink, not scroll: all the tabs stay in view on a narrow screen, their labels cut if need be.
+    if (panel_open && igBeginTabBar("tabs", ImGuiTabBarFlags_FittingPolicyShrink)) {
         if (igBeginTabItem("Scene", NULL, 0)) {
             ui_scene_tab(app);
             igEndTabItem();
@@ -66,6 +67,10 @@ void phone_build_ui(App* app)
         app->open_view = 0;
         if (igBeginTabItem("View", NULL, view_flags)) {
             ui_view_tab(app);
+            igEndTabItem();
+        }
+        if (ui_begin_textures_tab(app)) {
+            textures_tab(app);
             igEndTabItem();
         }
         if (ui_begin_console_tab(app)) {

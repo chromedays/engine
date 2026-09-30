@@ -1,6 +1,6 @@
 # Texture viewer spec
 
-Status: draft (2026-09-30). Changes to this spec are agreed first.
+Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -38,17 +38,18 @@ Recommendation: write it ourselves on `igImage`. No third-party library.
 
 | Topic | Decision |
 |---|---|
-| Tab | A **Textures** tab between View and Console. On a narrow panel (a phone's) the tab bar uses ImGui's shrink fitting (`ImGuiTabBarFlags_FittingPolicyShrink`), so all five tabs stay visible with their labels cut short instead of a scrolling tab bar |
+| Tab | Desktop UI (`layout.md`): a **Textures** tab in the right dock, after Inspector and View; the right dock is tall enough for a texture, where the bottom dock is not. Phone UI: a tab between View and Console, and the tab bar uses ImGui's shrink fitting (`ImGuiTabBarFlags_FittingPolicyShrink`), so all five tabs stay visible with their labels cut short instead of a scrolling tab bar |
+| List and picked texture | Where the tab is wide (700 px times `ui_scale` or more), the list and the picked texture sit side by side. Otherwise (the right dock, a phone) the tab shows one or the other: picking a row shows the texture, and **< Textures** goes back to the list |
 | Groups | Three collapsing sections: **Materials** (the renderer's textures), **Render targets** (shadow map, depth target, swapchain), **UI** (ImGui's font atlas) |
 | "In use" | A material texture is in use when a mesh node of the shown scene has a material with it as `base_color_texture`; the white default counts for materials with none. An **In use only** checkbox (on by default) hides the rest. Render targets are in use while they are drawn to (the shadow map while shadows are on) |
-| Row | A thumbnail (48 px times `ui_scale`, aspect kept, on a checkerboard so alpha shows), then name, size, format, mip levels, memory, and "used by N nodes". Rows go through `ImGuiListClipper`, so only visible rows make thumbnails |
+| Row | A thumbnail (48 px times `ui_scale`, aspect kept, on a checkerboard so alpha shows), then three short lines: the name; size and format; mip levels, memory and users ("11 mips, 5.3 MB, 1 user"). Only rows on screen make thumbnails (`igIsItemVisible`), so the preview slots stay few however long the list |
 | Memory | Width × height × bytes per texel, × 4/3 with a mip chain. The section headers show their sums, and the tab's top line the total |
 | Names | Material textures take the glTF image's name (`T_Eye_Brown`), or `image N` when it has none; the default is `white`. Also set as the WebGPU label, so browser tools show the same name |
-| Detail | Tapping a row selects it; below the list, the texture fits the panel width. **Zoom** (1× to 16×, a slider) and a sideways drag on the image pan it (a vertical drag keeps scrolling the panel). **Mip** (a slider over its levels, with that level's size). **Channels**: RGBA, RGB (alpha ignored), R, G, B, A as gray. **Checkerboard** behind, on by default. The pointer's texel coordinates and UV under the image, on hover or while pressed |
+| Detail | The texture fits the panel's width and the height left (at least 160 px times `ui_scale`). **Zoom** (1× to 16×, a slider) and a sideways drag on the image pan it (a vertical drag keeps scrolling the panel). **Mip** (a slider over its levels, with that level's size). **Channels**: RGBA, RGB (alpha ignored), R, G, B, A as gray, as a row of radio buttons (one tap each, where a combo takes two). **Checkerboard** behind, on by default. The pointer's texel coordinates and UV under the image, on hover or while pressed |
 | Used by | Under the detail, the nodes using it; tapping one selects it (and opens the Inspector, as the Scene tab does) |
 | Inspector | The Mesh section replaces "Multiplied with a texture." with the texture's thumbnail and name; tapping it opens the Textures tab with it selected |
-| Depth display | Depth is shown as gray, mapped from a **range**: the shadow map raw 0..1 (it is orthographic, so already linear); the depth target turned back into view distance with the camera's near and far planes (reverse Z: 1 is near), black near and white at the range's end (the camera's far plane by default, a slider). Mip and channel controls are hidden for depth |
-| Depth target sampling | The depth target is made with `TextureBinding` only while the Textures tab is shown (`NvRenderer.depth_sampled`, set by the app; the renderer recreates the texture when it changes). Otherwise it keeps `RenderAttachment` alone, so a shipped frame never pays for it (GPU notes below) |
+| Depth display | Depth is shown as gray, mapped from a **range**: the shadow map raw 0..1 (it is orthographic, so already linear); the depth target turned back into view distance with the camera's near and far planes (reverse Z: 1 is near), black at the camera and white at **White at** (twice the orbit camera's distance by default, a slider up to the far plane). The depth target shows the scene viewport's part of it. Mip and channel controls are hidden for depth |
+| Depth target sampling | The depth target is made with `TextureBinding` only while the Textures tab is shown (`NvRenderer.depth_sampled`, set by the app; the renderer recreates the texture when it changes). Otherwise it keeps `RenderAttachment` alone, so a shipped frame never pays for it (GPU notes below). While samplable, the scene pass also stores its depth (`WGPUStoreOp_Store`); otherwise it discards it, as nothing reads it after the pass |
 | Swapchain | Listed with size, formats and present mode, without a preview: the ImGui pass renders into it, and a pass cannot sample its own attachment. A copy to preview it would cost a full-screen copy every frame for little gain |
 | Preview slots | `imgui.c` keeps 64 preview slots beside ImGui's 16. A slot is found by (texture, mip, mode, depth range) or made (a texture view of that mip, a small uniform buffer, a bind group), and released after 3 frames unused, since the GPU may still draw with it. The slot's view holds its texture, so a texture the renderer recreates (the shadow map on a setting change) cannot come back at the same address while a slot is still keyed by it. More than 64 at once asserts: the clipper keeps the visible thumbnails far below that |
 | Preview pipeline | A second pipeline with the same vertex layout. Its fragment shader applies the slot's mode: a channel as gray, alpha forced to 1 for RGB, or depth (`texture_depth_2d` read with `textureLoad` at the pixel's texel, no sampler, then the range mapping). Color modes sample with the same linear sampler. Draw commands pick the pipeline by their texture id's range, so ImGui's own draws are unchanged |
@@ -95,6 +96,9 @@ Vulkan driver) as the reference; browsers reach Vulkan on Linux and Android.
 - **Reading depth with `textureLoad`.** Depth formats cannot be filtered in WebGPU; a load
   instruction without a sampler is what the hardware does for this anyway (an image load on AMD),
   and the shader picks the texel from the fragment's UV.
+- **Depth is stored only while it is read.** The scene pass ends with `WGPUStoreOp_Discard` for
+  depth unless the viewer samples it: a tiler (phone GPUs) then never writes depth to memory, and
+  a desktop driver may skip decompressing it at the end of the pass.
 - **Preview views are cheap.** A texture view for one mip level is a descriptor, not a copy; the
   cost of the viewer is the bind groups and the extra draw calls for visible thumbnails.
 
@@ -105,7 +109,8 @@ Vulkan driver) as the reference; browsers reach Vulkan on Linux and Android.
   texture count, the preview slots in use, the selected texture, and where rows and controls were
   drawn (as the Console tab does).
   - The showcase lists four material textures (three glTF and white), with the glTF names, sizes and
-    mip counts; "In use only" shows the ones the character uses; the stress scene shows white only.
+    mip counts; "In use only" shows the ones in use; the stress scene lists the same (its crowd uses the
+    character's textures).
   - A thumbnail's pixels match the texture (a screenshot at the thumbnail against the decoded image,
     within a tolerance); channel R of `T_Eye_Brown` shows gray.
   - The shadow map previews at each size and format, and after a format change; the depth target
@@ -123,7 +128,7 @@ Vulkan driver) as the reference; browsers reach Vulkan on Linux and Android.
 
 1. **Engine:** texture names and sizes, `nv_gpu_format_bytes`, preview slots and the preview
    pipeline (color, channels, depth), `depth_sampled`. Checked with a Debug export that draws the
-   shadow map and a material texture in a test window.
+   shadow map and a material texture in a test window (done with the tab itself instead).
 2. **Tab:** the three groups, rows with the clipper, detail with zoom, pan, mip, channels and depth
    range, "used by", the Inspector thumbnail, shrink fitting on phones.
 3. **Edge cases and docs:** shadow settings changing while previewed, a resize while the depth

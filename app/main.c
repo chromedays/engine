@@ -821,6 +821,8 @@ internal void frame(void* userdata)
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(app->gpu.device, NULL);
     t = now_ms();
+    // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
+    app->renderer.depth_sampled = app->textures.shown_now;
     nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout->viewport, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = app->renderer.gpu_ms;
@@ -990,6 +992,80 @@ EMSCRIPTEN_KEEPALIVE float app_debug_console_scroll(int which)
 EMSCRIPTEN_KEEPALIVE int app_debug_console_selected(void)
 {
     return (int)app_state.console.selected;
+}
+
+// For tests, the Textures tab (docs/specs/textures.md): where an item was drawn last frame (id is a
+// TexturesRect, component 0..3 is x0, y0, x1, y1, CSS pixels), the rows listed, the pick
+// (kind * 1000 + index, -1 = none), the preview slots in use, and whether the depth target is samplable.
+EMSCRIPTEN_KEEPALIVE float app_debug_textures_rect(int id, int component)
+{
+    return app_state.textures.rects[id][component];
+}
+
+// Where the k-th listed row was drawn last frame (component 0..3); zero when it was not.
+EMSCRIPTEN_KEEPALIVE float app_debug_textures_row(int k, int component)
+{
+    return app_state.textures.row_rects[k][component];
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_textures_listed(void)
+{
+    return (int)app_state.textures.listed;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_textures_selected(void)
+{
+    TextureViewer* viewer = &app_state.textures;
+    return viewer->has_selection ? (int)viewer->selected_kind * 1000 + (int)viewer->selected_index : -1;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_textures_mip(void)
+{
+    return (int)app_state.textures.mip;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_preview_slots(void)
+{
+    return (int)nv_imgui_preview_count(&app_state.imgui);
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_depth_sampled(void)
+{
+    return app_state.renderer.depth_texture_sampled;
+}
+
+// Changes the shadow settings (size 0 = off; format 0 depth32float, 1 depth16unorm), as the View tab does.
+EMSCRIPTEN_KEEPALIVE void app_debug_set_shadows(int size, int format)
+{
+    app_state.renderer.shadows.size = (u32)size;
+    app_state.renderer.shadows.format = (NvShadowFormat)format;
+}
+
+// Shows a scene (0 showcase, 1 stress), as the View tab's picker does.
+EMSCRIPTEN_KEEPALIVE void app_debug_show_scene(int kind)
+{
+    app_show_scene(&app_state, (SceneKind)kind);
+}
+
+// Renderer textures: how many, and the i-th's width, height and mip count (component 0, 1, 2).
+EMSCRIPTEN_KEEPALIVE int app_debug_texture_count(void)
+{
+    return (int)app_state.renderer.texture_count;
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_texture_info(int i, int component)
+{
+    WGPUTexture texture = app_state.renderer.textures[i].texture;
+    return component == 0 ? (int)wgpuTextureGetWidth(texture)
+         : component == 1 ? (int)wgpuTextureGetHeight(texture)
+                          : (int)wgpuTextureGetMipLevelCount(texture);
+}
+
+// The k-th byte of the i-th renderer texture's name; 0 past its end.
+EMSCRIPTEN_KEEPALIVE int app_debug_texture_name(int i, int k)
+{
+    const char* name = app_state.renderer.textures[i].name;
+    return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
 
 // The selected node's index in the shown scene; 0 = none.

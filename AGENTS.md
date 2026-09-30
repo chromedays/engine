@@ -24,7 +24,7 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
                            anim.cpp (the ozz wrapper; our only C++ file)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
-                           undo.c (undo and redo), console.c (the Console tab),
+                           undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
                            app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -110,6 +110,14 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - The build label in the viewport's top-left corner gets a badge (a dot and the count of warnings and
   errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
   instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
+- The Textures tab (`docs/specs/textures.md`, `app/textures.c`) draws engine textures with
+  `nv_imgui_preview` (preview slots in `imgui.c`, ImTextureIDs from `NV_IMGUI_MAX_TEXTURES` on; a
+  color pipeline for channels, a depth pipeline reading with `textureLoad`). The depth target is
+  samplable (`NvRenderer.depth_sampled`) and its depth stored only while the tab is shown. A new
+  kind of texture belongs in its list (`gather`), and a texture it shows needs
+  `WGPUTextureUsage_TextureBinding`. Renderer textures carry a name (`nv_renderer_add_texture`).
+  Debug builds export `Module._app_debug_textures_*`, `_app_debug_preview_slots` and
+  `_app_debug_depth_sampled` for tests.
 - The first directional light casts shadows through one shadow map fitted to the view
   (`docs/specs/shadows.md`); the app sets `NvRenderer.shadows` and the renderer remakes the map and
   its depth-only pipelines when the size or format changes. The shadow pass binds
