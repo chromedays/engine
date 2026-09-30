@@ -99,6 +99,7 @@ jobs:
               lease="$(git -C site rev-parse HEAD)"
             else
               git init -q site
+              git -C site remote add origin "$url"
               lease=""
             fi
             cd site
