@@ -30,7 +30,11 @@ typedef struct NvGpu {
     WGPUTextureView current_view;
 } NvGpu;
 
-// NOTE: Fails when the browser has no usable WebGPU adapter or device.
+// A texture format's name for logs ("BGRA8Unorm"), or its number when it is not one nv uses.
+const char* nv_gpu_format_name(WGPUTextureFormat format);
+
+// NOTE: Fails when the browser has no usable WebGPU adapter or device. Logs (info) the CPU, GPU,
+// display and swapchain it found; the swapchain again whenever the canvas is resized.
 b32 nv_gpu_create(NvGpu* gpu, NvWindow* window);
 
 // NOTE: Acquires this frame's canvas texture view. Returns NULL when the frame should be skipped.

@@ -293,6 +293,7 @@ typedef struct App {
 
     Undo undo;
     Console console;
+    NvRect logged_viewport; // the scene viewport last logged
 
     // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the showcase by itself;
     // Play runs it, and Stop restores it from the snapshot taken at Play.

@@ -2,12 +2,48 @@
 #include "nv/log.h"
 #include "nv/window.h"
 
+#include <emscripten/emscripten.h>
+
 #include <stdio.h>
 #include <string.h>
 
 // Prints a WGPUStringView, which is not necessarily NUL-terminated.
 #define SV_FMT "%.*s"
 #define SV_ARG(sv) (int)((sv).data ? ((sv).length == WGPU_STRLEN ? strlen((sv).data) : (sv).length) : 0), (sv).data
+
+EM_JS_DEPS(nv_gpu, "$stringToUTF8");
+
+// What the page can tell about the machine. The browser hides the CPU's model, so this is what a
+// script sees: logical cores, memory rounded down to a power of two and capped at 8 GB by the
+// browser (0 where navigator.deviceMemory does not exist), the screen, and the platform.
+EM_JS(void, js_system_info, (int* cores, f32* memory_gb, int* screen_width, int* screen_height, f32* pixel_ratio,
+                             char* platform, int platform_size), {
+    HEAP32[cores >> 2] = navigator.hardwareConcurrency || 0;
+    HEAPF32[memory_gb >> 2] = navigator.deviceMemory || 0;
+    HEAP32[screen_width >> 2] = screen.width;
+    HEAP32[screen_height >> 2] = screen.height;
+    HEAPF32[pixel_ratio >> 2] = window.devicePixelRatio || 1;
+    const data = navigator.userAgentData;
+    stringToUTF8((data && data.platform) || navigator.platform || "", platform, platform_size);
+});
+
+EM_JS(void, js_browser_agent, (char* out, int size), {
+    stringToUTF8(navigator.userAgent, out, size);
+});
+
+const char* nv_gpu_format_name(WGPUTextureFormat format)
+{
+    switch (format) {
+    case WGPUTextureFormat_BGRA8Unorm:     return "BGRA8Unorm";
+    case WGPUTextureFormat_BGRA8UnormSrgb: return "BGRA8UnormSrgb";
+    case WGPUTextureFormat_RGBA8Unorm:     return "RGBA8Unorm";
+    case WGPUTextureFormat_RGBA8UnormSrgb: return "RGBA8UnormSrgb";
+    case WGPUTextureFormat_RGBA16Float:    return "RGBA16Float";
+    case WGPUTextureFormat_Depth16Unorm:   return "Depth16Unorm";
+    case WGPUTextureFormat_Depth32Float:   return "Depth32Float";
+    default:                               return "other format";
+    }
+}
 
 typedef struct AdapterRequest {
     WGPUAdapter adapter;
@@ -131,6 +167,80 @@ internal void configure_surface(NvGpu* gpu)
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
     config.presentMode = WGPUPresentMode_Fifo;
     wgpuSurfaceConfigure(gpu->surface, &config);
+    // The scene and the UI draw straight into the swapchain's view: there is no offscreen color buffer.
+    nv_log(NV_LOG_INFO, "nv", "swapchain and color target: %ux%u, canvas format %s, render view %s, present mode Fifo (vsync)",
+           gpu->width, gpu->height, nv_gpu_format_name(gpu->config_format), nv_gpu_format_name(gpu->surface_format));
+}
+
+internal const char* backend_name(WGPUBackendType type)
+{
+    switch (type) {
+    case WGPUBackendType_WebGPU:  return "WebGPU";
+    case WGPUBackendType_D3D11:   return "D3D11";
+    case WGPUBackendType_D3D12:   return "D3D12";
+    case WGPUBackendType_Metal:   return "Metal";
+    case WGPUBackendType_Vulkan:  return "Vulkan";
+    case WGPUBackendType_OpenGL:  return "OpenGL";
+    case WGPUBackendType_OpenGLES: return "OpenGLES";
+    default:                      return "unknown backend";
+    }
+}
+
+internal const char* adapter_type_name(WGPUAdapterType type)
+{
+    switch (type) {
+    case WGPUAdapterType_DiscreteGPU:   return "discrete GPU";
+    case WGPUAdapterType_IntegratedGPU: return "integrated GPU";
+    case WGPUAdapterType_CPU:           return "software (CPU)";
+    default:                            return "unknown type";
+    }
+}
+
+// A string the browser may have left empty (it hides some details), for a log line.
+internal int sv_length(WGPUStringView view)
+{
+    return view.data ? (int)(view.length == WGPU_STRLEN ? strlen(view.data) : view.length) : 0;
+}
+
+// The machine, as far as the browser tells: CPU, GPU and display.
+internal void log_system(NvGpu* gpu)
+{
+    int cores = 0;
+    f32 memory_gb = 0.0f;
+    int screen_width = 0;
+    int screen_height = 0;
+    f32 pixel_ratio = 1.0f;
+    char platform[64];
+    js_system_info(&cores, &memory_gb, &screen_width, &screen_height, &pixel_ratio, platform, (int)sizeof(platform));
+    char agent[256];
+    js_browser_agent(agent, (int)sizeof(agent));
+
+    nv_log(NV_LOG_INFO, "nv", "CPU: %d logical cores, memory %s%.0f GB (browser-rounded), platform %s, WebAssembly 32-bit; the browser hides the CPU model",
+           cores, memory_gb > 0.0f ? "" : "unknown ", memory_gb, platform[0] ? platform : "unknown");
+    nv_log(NV_LOG_INFO, "nv", "browser: %s", agent);
+
+    WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
+    if (wgpuAdapterGetInfo(gpu->adapter, &info) == WGPUStatus_Success) {
+        // The browser leaves out what it considers fingerprinting; say so instead of printing blanks.
+        nv_log(NV_LOG_INFO, "nv", "GPU: vendor %.*s, architecture %.*s, device %.*s, description %.*s (%s, %s), vendor id 0x%04x, device id 0x%04x",
+               sv_length(info.vendor) ? sv_length(info.vendor) : 7, sv_length(info.vendor) ? info.vendor.data : "unknown",
+               sv_length(info.architecture) ? sv_length(info.architecture) : 7, sv_length(info.architecture) ? info.architecture.data : "unknown",
+               sv_length(info.device) ? sv_length(info.device) : 7, sv_length(info.device) ? info.device.data : "unknown",
+               sv_length(info.description) ? sv_length(info.description) : 7, sv_length(info.description) ? info.description.data : "unknown",
+               backend_name(info.backendType), adapter_type_name(info.adapterType), info.vendorID, info.deviceID);
+        wgpuAdapterInfoFreeMembers(info);
+    }
+    WGPULimits limits = WGPU_LIMITS_INIT;
+    if (wgpuAdapterGetLimits(gpu->adapter, &limits) == WGPUStatus_Success) {
+        nv_log(NV_LOG_INFO, "nv", "GPU limits: texture size up to %u, buffer size up to %llu bytes, pass timing (timestamp queries) %s",
+               limits.maxTextureDimension2D, (unsigned long long)limits.maxBufferSize, gpu->has_timestamps ? "available" : "not available");
+    }
+
+    NvWindow* window = gpu->window;
+    f32 ratio = window->pixel_ratio > 0.0f ? window->pixel_ratio : pixel_ratio;
+    nv_log(NV_LOG_INFO, "nv", "display: screen %dx%d, canvas %ux%u CSS pixels, device pixel ratio %.2f, framebuffer %ux%u pixels",
+           screen_width, screen_height, (u32)((f32)gpu->width / ratio + 0.5f), (u32)((f32)gpu->height / ratio + 0.5f), (f64)ratio,
+           gpu->width, gpu->height);
 }
 
 internal void release_gpu(NvGpu* gpu)
@@ -196,6 +306,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     wgpuSurfaceCapabilitiesFreeMembers(caps);
 
     nv_window_framebuffer_size(window, &gpu->width, &gpu->height);
+    log_system(gpu);
     configure_surface(gpu);
     return 1;
 
