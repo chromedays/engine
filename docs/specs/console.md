@@ -52,6 +52,7 @@ Recommendation: write it ourselves. No third-party library.
 | Touch | A vertical drag scrolls the list like the panel. `nv_imgui_begin_panel` scrolls only a hovered panel, not its child windows, so the scroll it applies moves into `nv_imgui_touch_scroll`, which the panel and the list's child window both call. A frame in which a finger scrolled the list does not follow new messages to the bottom, since ImGui applies the scroll at the next `Begin` and the follow would overwrite it |
 | Tests | A Node test for the ring; Debug exports for Playwright (below) |
 | Third-party | None |
+| Startup info | Info messages say what the engine runs on: **CPU** (logical cores, memory, platform; the browser hides the model), the **browser** user agent, the **GPU** (vendor, architecture, device, description, backend and type, ids; the browser leaves some empty, shown as "unknown") and its limits, the **display** (screen, canvas in CSS pixels, device pixel ratio, framebuffer), the **swapchain and color target** (size, canvas and render view formats, present mode; the scene and the UI draw straight into the swapchain view, there is no offscreen color buffer), the **depth target** (size, format) and the **shadow map**, and the **scene viewport** with the editor panel. The swapchain, depth target and viewport lines come again whenever a resize changes them. Written by `nv_gpu_create`, `configure_surface`, the renderer and `frame`. Info does not count toward the badge |
 
 ## Engine API
 

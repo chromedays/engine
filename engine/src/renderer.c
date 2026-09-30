@@ -1,4 +1,5 @@
 #include "nv/renderer.h"
+#include "nv/log.h"
 
 #include <math.h>
 #include <string.h>
@@ -441,6 +442,10 @@ internal void update_shadow_map(NvRenderer* renderer)
     renderer->shadow_view = wgpuTextureCreateView(renderer->shadow_texture, NULL);
     renderer->shadow_size = size;
     renderer->shadow_format = format;
+    if (renderer->shadows.size)
+        nv_log(NV_LOG_INFO, "nv", "shadow map: %ux%u %s", size, size, nv_gpu_format_name(shadow_texture_format(format)));
+    else
+        nv_log(NV_LOG_INFO, "nv", "shadow map: off (a 1x1 %s placeholder stays bound)", nv_gpu_format_name(shadow_texture_format(format)));
 
     WGPUBindGroupEntry frame_entries[5] = {
         {.binding = 0, .buffer = renderer->frame_buffer, .size = sizeof(FrameUniforms)},
@@ -696,6 +701,8 @@ internal void update_depth_buffer(NvRenderer* renderer)
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
     renderer->depth_width = gpu->width;
     renderer->depth_height = gpu->height;
+    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s, reverse Z (cleared to 0, compare Greater)", gpu->width, gpu->height,
+           nv_gpu_format_name(WGPUTextureFormat_Depth32Float));
 }
 
 internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)

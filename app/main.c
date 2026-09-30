@@ -765,6 +765,13 @@ internal void frame(void* userdata)
     f64 t = now_ms();
     NvEditorLayout layout = nv_editor_layout(&app->gpu, NV_EDITOR_VIEWPORT_FRACTION);
     app->imgui.view_rect = layout.viewport;
+    NvRect* logged = &app->logged_viewport;
+    if (logged->width != layout.viewport.width || logged->height != layout.viewport.height || logged->y != layout.viewport.y) {
+        *logged = layout.viewport;
+        nv_log(NV_LOG_INFO, "app", "scene viewport: %ux%u at (%u, %u) of the %ux%u color target; editor panel %ux%u at (%u, %u)",
+               layout.viewport.width, layout.viewport.height, layout.viewport.x, layout.viewport.y, app->gpu.width, app->gpu.height,
+               layout.panel.width, layout.panel.height, layout.panel.x, layout.panel.y);
+    }
     nv_imgui_new_frame(&app->imgui, dt);
     // IMPORTANT: Before the panel, so ImGuizmo's full-screen window (created on the first frame)
     // stays behind the panel.
