@@ -64,26 +64,63 @@ jobs:
           path: dist/engine-web
           if-no-files-found: error
 
-      - uses: actions/upload-pages-artifact@v3
-        if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-        with:
-          path: dist/engine-web
-
-  # Publishes the web build to GitHub Pages on pushes to the default branch. Needs Pages enabled
-  # (Settings > Pages > Source: GitHub Actions).
-  pages:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+  # Pages serves the gh-pages branch (deployed by pages.yml): the default branch's builds at
+  # <pages>/release/ and <pages>/debug/, and every other branch's Debug build at <pages>/<branch>/
+  # ("/" in a branch name becomes "-"). Each push replaces only its own folders, in a one-commit
+  # history, so the branch does not grow with every build.
+  stage:
+    if: github.event_name == 'push' && github.ref_type == 'branch'
     needs: web
     runs-on: ubuntu-24.04
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-web
+          path: build
+
+      - name: Update the gh-pages branch
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          folder="${GITHUB_REF_NAME//\//-}"
+          if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ] && { [ "$folder" = release ] || [ "$folder" = debug ]; }; then
+            echo "::warning::A branch named $folder would replace the default branch's build; not published."
+            exit 0
+          fi
+          url="https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Other pushes may update the branch meanwhile: retry on a stale lease.
+          for attempt in 1 2 3 4 5; do
+            rm -rf site
+            if git clone -q --depth 1 --branch gh-pages "$url" site; then
+              lease="$(git -C site rev-parse HEAD)"
+            else
+              git init -q site
+              lease=""
+            fi
+            cd site
+            if [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
+              rm -rf release debug
+              cp -r ../build/release ../build/debug .
+            else
+              rm -rf "$folder"
+              cp -r ../build/debug "$folder"
+            fi
+            touch .nojekyll
+            git checkout -q --orphan next
+            git add -A
+            git commit -q -m "Pages: $GITHUB_REF_NAME at $GITHUB_SHA"
+            if git push -q --force-with-lease="gh-pages:${lease}" origin next:gh-pages; then
+              exit 0
+            fi
+            cd ..
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not update gh-pages"
+          exit 1
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

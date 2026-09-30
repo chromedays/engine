@@ -33,7 +33,8 @@ web/                       index.html.in (the page: downloads the app with a pro
                            starts it), manifest.cmake (file sizes for that progress bar)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
-.github/workflows/build.yml  CI: Release and Debug web builds + GitHub Pages deploy
+.github/workflows/build.yml  CI: Release and Debug web builds, staged for Pages in the gh-pages branch
+.github/workflows/pages.yml  deploys gh-pages to GitHub Pages after each build
 ```
 
 ## Build and run
@@ -130,7 +131,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - There is one executable, `app`. Its assets are packaged with
   `nv_setup_executable(app ROOT ASSETS <dir>)` and read from `/assets/...` with `fopen`. CI installs
   the Release build to `release/` and the Debug build to `debug/` on Pages (the site root has
-  nothing). Debug builds keep their DWARF in `app.debug.wasm`, which only browser developer tools
+  nothing); every other pushed branch publishes only its Debug build to `<branch>/` (`/` becomes
+  `-`). Builds are staged in the `gh-pages` branch (one commit, rewritten by CI) and deployed by
+  `.github/workflows/pages.yml`. Debug builds keep their DWARF in `app.debug.wasm`, which only browser developer tools
   download.
 
 ## Assets

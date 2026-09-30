@@ -1,0 +1,44 @@
+name: pages
+
+# Deploys the gh-pages branch (filled by build.yml's stage job) to GitHub Pages after each build of a
+# pushed branch. A workflow_run runs as the default branch, which the github-pages environment
+# allows to deploy; so branch builds get published too. Needs Pages enabled with
+# Settings > Pages > Source: GitHub Actions.
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; a deploy always takes the newest gh-pages, so a skipped one loses nothing.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      # A site without the default branch's builds would take release/ and debug/ down.
+      - name: Check the site
+        run: test -f release/index.html && test -f debug/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
