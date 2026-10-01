@@ -1169,6 +1169,85 @@ EMSCRIPTEN_KEEPALIVE int app_debug_texture_name(int i, int k)
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
 
+// For tests, search (docs/specs/search.md).
+// A buffer the test writes a query into (stringToUTF8), then _app_debug_search_set(panel) copies it
+// to a panel's box (0 to 4) or, for 5, to the palette.
+EMSCRIPTEN_KEEPALIVE char* app_debug_search_buffer(void)
+{
+    return app_state.search.debug_buffer;
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_search_set(int panel)
+{
+    Search* s = &app_state.search;
+    if (panel == SEARCH_PANEL_COUNT) {
+        snprintf(s->palette_query, SEARCH_QUERY_MAX, "%s", s->debug_buffer);
+        s->highlight = 0;
+    } else {
+        search_set_query(&app_state, (SearchPanel)panel, s->debug_buffer);
+    }
+}
+
+// Rows a panel drew last frame.
+EMSCRIPTEN_KEEPALIVE int app_debug_search_rows(int panel)
+{
+    return (int)app_state.search.rows[panel];
+}
+
+// The palette: 0 open, 1 result count, 2 highlighted index, 3 kind of the highlighted row (-1 none),
+// 4 settings collected, 5 recent actions held.
+EMSCRIPTEN_KEEPALIVE int app_debug_palette(int which)
+{
+    const Search* s = &app_state.search;
+    switch (which) {
+    case 0: return s->palette_open;
+    case 1: return (int)s->result_count;
+    case 2: return s->highlight;
+    case 3: return s->result_count ? (int)s->results[s->highlight].kind : -1;
+    case 4: return (int)s->setting_count;
+    default: return (int)s->recent_count;
+    }
+}
+
+// The k-th byte of a panel's search query; 0 past its end.
+EMSCRIPTEN_KEEPALIVE int app_debug_search_query(int panel, int k)
+{
+    const char* q = app_state.search.queries[panel];
+    return k < (int)strlen(q) ? (u8)q[k] : 0;
+}
+
+// The k-th byte of the palette's query; 0 past its end.
+EMSCRIPTEN_KEEPALIVE int app_debug_palette_query(int k)
+{
+    const char* q = app_state.search.palette_query;
+    return k < (int)strlen(q) ? (u8)q[k] : 0;
+}
+
+// Result i's kind (0 action, 1 setting, 2 node, 3 more) and what it names: component 0 kind, 1 the
+// k-th byte of its name.
+EMSCRIPTEN_KEEPALIVE int app_debug_palette_result(int i, int k)
+{
+    const Search* s = &app_state.search;
+    if (i < 0 || i >= (int)s->result_count)
+        return -1;
+    const PaletteResult* r = &s->results[i];
+    if (k < 0)
+        return r->kind;
+    const char* name = r->kind == PALETTE_ACTION ? command_name(r->index)
+                       : r->kind == PALETTE_SETTING ? s->settings[r->index].label
+                       : r->kind == PALETTE_NODE ? app_state.views[app_state.shown].scene->nodes[r->index].name
+                                                 : "";
+    return k < (int)strlen(name) ? (u8)name[k] : 0;
+}
+
+// Turns the stress scene's deep chain on with `links` links (0 = off).
+EMSCRIPTEN_KEEPALIVE void app_debug_set_chain(int links)
+{
+    app_state.stress.want.chain_on = links > 0;
+    if (links > 0)
+        app_state.stress.want.chain_count = links;
+}
+
 // The selected node's index in the shown scene; 0 = none.
 EMSCRIPTEN_KEEPALIVE int app_debug_selected_node(void)
 {

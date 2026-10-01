@@ -975,33 +975,41 @@ void save_show_viewer(App* app)
 
 void save_ui(App* app)
 {
-    igSeparatorText("Autosave");
+    search_section(app, "Autosave");
     if (!app->storage.available) {
-        igTextWrapped("Browser storage is unavailable here (a private window may refuse it), so nothing is saved.");
+        if (search_group(app, "Autosave", "save storage unavailable"))
+            igTextWrapped("Browser storage is unavailable here (a private window may refuse it), so nothing is saved.");
         return;
     }
     // The setting is part of the save, so turning autosave off is saved too.
-    if (igCheckbox("Autosave", &app->autosave))
-        save_now(app, 1);
-    igSameLine(0.0f, -1.0f);
-    if (igButton("Save now", (ImVec2_c){0.0f, 0.0f}))
-        save_now(app, 1);
-    if (app->saved_at > 0.0)
-        igText("Saved %.0f s ago (%u bytes)", nv_time_seconds() - app->saved_at, app->saved_size);
-    else
-        igTextDisabled("Not saved yet this visit.");
-    const char* error = nv_storage_error(&app->storage);
-    if (error[0])
-        igTextWrapped("Browser storage: %s", error);
-    if (app->save_notice[0])
-        igTextColored((ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f}, "%s", app->save_notice);
+    if (search_group(app, "Autosave", "save now storage")) {
+        if (igCheckbox("Autosave", &app->autosave))
+            save_now(app, 1);
+        igSameLine(0.0f, -1.0f);
+        if (igButton("Save now", (ImVec2_c){0.0f, 0.0f}))
+            save_now(app, 1);
+    }
+    // What the save did is no setting: shown only without a search.
+    if (search_plain(app)) {
+        if (app->saved_at > 0.0)
+            igText("Saved %.0f s ago (%u bytes)", nv_time_seconds() - app->saved_at, app->saved_size);
+        else
+            igTextDisabled("Not saved yet this visit.");
+        const char* error = nv_storage_error(&app->storage);
+        if (error[0])
+            igTextWrapped("Browser storage: %s", error);
+        if (app->save_notice[0])
+            igTextColored((ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f}, "%s", app->save_notice);
+    }
 
-    if (igButton("Reset", (ImVec2_c){0.0f, 0.0f}))
-        igOpenPopup_Str("Reset everything?", 0);
-    save_reset_popup(app);
-    igSameLine(0.0f, -1.0f);
-    if (igCheckbox("Show save", &app->show_save) && app->show_save)
-        save_show_viewer(app);
-    if (app->show_save)
-        save_viewer(app);
+    if (search_group(app, "Reset", "show save viewer delete start over")) {
+        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f}))
+            igOpenPopup_Str("Reset everything?", 0);
+        save_reset_popup(app);
+        igSameLine(0.0f, -1.0f);
+        if (igCheckbox("Show save", &app->show_save) && app->show_save)
+            save_show_viewer(app);
+        if (app->show_save)
+            save_viewer(app);
+    }
 }

@@ -439,62 +439,85 @@ internal void copy_results(App* app)
 // Stress tab
 //
 
-// One label and value pair in the stats table.
-internal void stat(const char* label, const char* format, f64 value)
+// One label and value pair of the stats table: the value is `text`, or `format` with `value`.
+typedef struct Stat {
+    const char* label;
+    const char* format;
+    f64 value;
+    const char* text;
+    b32 visible;
+} Stat;
+
+internal void stat(Stat* stats, u32* count, const char* label, const char* format, f64 value)
 {
-    igTableNextColumn();
-    igTextUnformatted(label, NULL);
-    igTableNextColumn();
-    igText(format, value);
+    stats[(*count)++] = (Stat){.label = label, .format = format, .value = value};
+}
+
+internal void stat_text(Stat* stats, u32* count, const char* label, const char* text)
+{
+    stats[(*count)++] = (Stat){.label = label, .text = text};
 }
 
 internal void stats_section(App* app)
 {
     const FrameTimes* a = &app->shown_average;
     const NvRenderStats* r = &app->renderer.stats;
-    igSeparatorText("Frame (1 s average, ms)");
+    search_section(app, "Frame (1 s average, ms)");
+    Stat stats[40];
+    u32 count = 0;
+    stat(stats, &count, "Frame", "%.2f", a->frame);
+    stat(stats, &count, "Load %", "%.0f", app_load(a));
+    stat(stats, &count, "FPS", "%.0f", a->frame > 0.0 ? 1000.0 / a->frame : 0.0);
+    stat(stats, &count, "Worst frame", "%.2f", app->shown_worst_frame);
+    if (app->gpu.has_timestamps) {
+        stat(stats, &count, "GPU scene pass", "%.2f", a->gpu);
+        stat(stats, &count, "GPU shadow pass", "%.2f", a->gpu_shadow);
+        stat(stats, &count, "GPU upscale pass", "%.2f", a->gpu_upscale);
+    } else {
+        stat_text(stats, &count, "GPU passes", "no timestamps");
+    }
+    stat(stats, &count, "CPU anim", "%.2f", a->anim);
+    stat(stats, &count, "CPU scene", "%.2f", a->scene);
+    stat(stats, &count, "CPU draw", "%.2f", a->draw);
+    stat(stats, &count, "CPU ui", "%.2f", a->ui);
+    stat(stats, &count, "Nodes", "%.0f", (f64)stress_live_nodes(app->stress.scene));
+    stat(stats, &count, "Draws", "%.0f", (f64)r->draws);
+    stat(stats, &count, "Triangles", "%.0f", (f64)r->triangles);
+    stat(stats, &count, "Skinned draws", "%.0f", (f64)r->skinned_draws);
+    stat(stats, &count, "Skin matrices", "%.0f", (f64)r->skin_matrices);
+    stat(stats, &count, "Debug lines", "%.0f", (f64)r->debug_lines);
+    stat(stats, &count, "Pipeline changes", "%.0f", (f64)r->pipeline_changes);
+    stat(stats, &count, "Material changes", "%.0f", (f64)r->material_changes);
+    stat(stats, &count, "Mesh changes", "%.0f", (f64)r->mesh_changes);
+    stat(stats, &count, "Shadow draws", "%.0f", (f64)r->shadow_draws);
+    stat_text(stats, &count, "Anti-aliasing", app->renderer.scene_samples > 1 ? "MSAA 4x" : "off");
+    char resolution[64];
+    resolution_text(app, resolution, sizeof(resolution));
+    stat_text(stats, &count, "Resolution", resolution);
+
+    // The search decides which rows show before the table starts, so the heading is not drawn in a cell.
+    u32 visible = 0;
+    for (u32 i = 0; i < count; ++i) {
+        stats[i].visible = search_row(app, stats[i].label, NULL);
+        visible += stats[i].visible;
+    }
+    if (!visible)
+        return;
     // Label and value pairs: two per row where the panel is wide, one on phones.
     int columns = igGetContentRegionAvail().x > 520.0f * app->imgui.ui_scale ? 4 : 2;
     if (!igBeginTable("stats", columns, ImGuiTableFlags_SizingStretchProp, (ImVec2_c){0, 0}, 0.0f))
         return;
-    stat("Frame", "%.2f", a->frame);
-    stat("Load %", "%.0f", app_load(a));
-    stat("FPS", "%.0f", a->frame > 0.0 ? 1000.0 / a->frame : 0.0);
-    stat("Worst frame", "%.2f", app->shown_worst_frame);
-    if (app->gpu.has_timestamps) {
-        stat("GPU scene pass", "%.2f", a->gpu);
-        stat("GPU shadow pass", "%.2f", a->gpu_shadow);
-        stat("GPU upscale pass", "%.2f", a->gpu_upscale);
-    } else {
+    for (u32 i = 0; i < count; ++i) {
+        if (!stats[i].visible)
+            continue;
         igTableNextColumn();
-        igTextUnformatted("GPU passes", NULL);
+        igTextUnformatted(stats[i].label, NULL);
         igTableNextColumn();
-        igTextDisabled("no timestamps");
+        if (stats[i].text)
+            igTextUnformatted(stats[i].text, NULL);
+        else
+            igText(stats[i].format, stats[i].value);
     }
-    stat("CPU anim", "%.2f", a->anim);
-    stat("CPU scene", "%.2f", a->scene);
-    stat("CPU draw", "%.2f", a->draw);
-    stat("CPU ui", "%.2f", a->ui);
-    stat("Nodes", "%.0f", (f64)stress_live_nodes(app->stress.scene));
-    stat("Draws", "%.0f", (f64)r->draws);
-    stat("Triangles", "%.0f", (f64)r->triangles);
-    stat("Skinned draws", "%.0f", (f64)r->skinned_draws);
-    stat("Skin matrices", "%.0f", (f64)r->skin_matrices);
-    stat("Debug lines", "%.0f", (f64)r->debug_lines);
-    stat("Pipeline changes", "%.0f", (f64)r->pipeline_changes);
-    stat("Material changes", "%.0f", (f64)r->material_changes);
-    stat("Mesh changes", "%.0f", (f64)r->mesh_changes);
-    stat("Shadow draws", "%.0f", (f64)r->shadow_draws);
-    igTableNextColumn();
-    igTextUnformatted("Anti-aliasing", NULL);
-    igTableNextColumn();
-    igTextUnformatted(app->renderer.scene_samples > 1 ? "MSAA 4x" : "off", NULL);
-    char resolution[64];
-    resolution_text(app, resolution, sizeof(resolution));
-    igTableNextColumn();
-    igTextUnformatted("Resolution", NULL);
-    igTableNextColumn();
-    igTextUnformatted(resolution, NULL);
     igEndTable();
 }
 
@@ -502,26 +525,41 @@ internal void workloads_section(App* app)
 {
     Stress* stress = &app->stress;
     StressWorkloads* w = &stress->want;
-    igSeparatorText("Workloads");
-    igCheckbox("Cube grid", &w->grid_on);
-    igSliderInt("Cubes", &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
-    igCheckbox("Many colors", &w->colors_on);
-    igSliderInt("Colors", &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
-    igCheckbox("Deep chain", &w->chain_on);
-    igSliderInt("Links", &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
-    igCheckbox("Crowd", &w->crowd_on);
-    igSliderInt("Characters", &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
-    igCheckbox("Churn", &w->churn_on);
-    igSliderInt("Cubes / frame", &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
-    igCheckbox("Crowd bones", &w->show_bones);
-    igTextDisabled("Built: %u cubes, %u links, %u of %u characters", stress->grid_built, stress->chain_built,
-                   stress->crowd_active, stress->crowd_created);
+    search_section(app, "Workloads");
+    if (search_row(app, "Cube grid", "workload cubes"))
+        igCheckbox("Cube grid", &w->grid_on);
+    if (search_row(app, "Cubes", "workload grid count"))
+        igSliderInt("Cubes", &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
+    if (search_row(app, "Many colors", "workload materials"))
+        igCheckbox("Many colors", &w->colors_on);
+    if (search_row(app, "Colors", "workload materials count"))
+        igSliderInt("Colors", &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
+    if (search_row(app, "Deep chain", "workload hierarchy"))
+        igCheckbox("Deep chain", &w->chain_on);
+    if (search_row(app, "Links", "workload chain count"))
+        igSliderInt("Links", &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
+    if (search_row(app, "Crowd", "workload characters animation"))
+        igCheckbox("Crowd", &w->crowd_on);
+    if (search_row(app, "Characters", "workload crowd count"))
+        igSliderInt("Characters", &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
+    if (search_row(app, "Churn", "workload add remove nodes"))
+        igCheckbox("Churn", &w->churn_on);
+    if (search_row(app, "Cubes / frame", "workload churn count"))
+        igSliderInt("Cubes / frame", &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
+    if (search_row(app, "Crowd bones", "workload skeleton debug"))
+        igCheckbox("Crowd bones", &w->show_bones);
+    if (search_plain(app))
+        igTextDisabled("Built: %u cubes, %u links, %u of %u characters", stress->grid_built, stress->chain_built,
+                       stress->crowd_active, stress->crowd_created);
 }
 
 internal void benchmark_section(App* app)
 {
     Stress* stress = &app->stress;
-    igSeparatorText("Benchmark");
+    search_section(app, "Benchmark");
+    // One group: the buttons, the step line and the results go together.
+    if (!search_group(app, "Benchmark", "run stop copy results table"))
+        return;
     if (stress->benchmark_running) {
         f64 elapsed = nv_time_seconds() - stress->benchmark_step_start;
         igText("Step %u/%u: %s (%s)", stress->benchmark_step + 1, stress->step_count, stress->steps[stress->benchmark_step].name,
@@ -576,10 +614,12 @@ void stress_ui(App* app)
 {
     Stress* stress = &app->stress;
     StressWorkloads before = stress->want;
+    search_panel_begin(app, SEARCH_STRESS);
     stats_section(app);
     workloads_section(app);
     // Touching a workload during a run stops it and keeps what was touched.
     if (stress->benchmark_running && !same_workloads(&before, &stress->want))
         stop_benchmark(app, 0);
     benchmark_section(app);
+    search_panel_end(app);
 }

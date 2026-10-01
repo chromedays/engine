@@ -5,8 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-// The desktop UI's keyboard shortcuts (docs/specs/shortcuts.md): one table drives the keys, the
-// menus' labels and the help window.
+// The commands (docs/specs/shortcuts.md, search.md): one table drives the desktop UI's keys, the
+// menus' labels, the help window and the command palette's actions. A row without keys is
+// palette only.
 
 EM_JS(int, js_is_mac, (void), {
     return /Mac|iPhone|iPad/.test(navigator.platform) ? 1 : 0;
@@ -18,9 +19,10 @@ enum {
     WHEN_EDITING = 1 << 1,   // the showcase, not playing
     WHEN_SELECTION = 1 << 2, // a node is selected
     WHEN_STORAGE = 1 << 3,   // browser storage is available
+    WHEN_DESKTOP = 1 << 4,   // the desktop UI (docks and the help window do not exist on the phone)
 };
 
-typedef struct Shortcut {
+typedef struct Command {
     const char* group;
     const char* name;
     ImGuiKeyChord chords[2]; // 0 = none; a second chord is another way to the same action
@@ -28,7 +30,7 @@ typedef struct Shortcut {
     u32 when;
     b32 repeat; // fires again while the key is held
     void (*run)(App*);
-} Shortcut;
+} Command;
 
 internal void run_save(App* app) { save_now(app, 1); }
 internal void run_undo(App* app) { app->undo.request = -1; }
@@ -76,11 +78,33 @@ internal void run_dock_bottom(App* app)
     }
 }
 internal void run_help(App* app) { app->show_shortcuts = 1; }
+internal void run_palette(App* app) { search_open_palette(app); }
+internal void run_find(App* app) { search_focus_box(app); }
+internal void run_show_save(App* app)
+{
+    search_set_query(app, SEARCH_VIEW, ""); // the viewer is drawn under the Reset row
+    save_show_viewer(app);
+    app->docks.show_right = 1;
+    app->open_view = 1;
+}
+internal void run_reset(App* app) { app->request_reset = 1; }
+internal void run_scene_showcase(App* app) { app_show_scene(app, SCENE_SHOWCASE); }
+internal void run_scene_stress(App* app) { app_show_scene(app, SCENE_STRESS); }
+internal void run_textures(App* app)
+{
+    app->open_textures = 1;
+    app->docks.show_right = 1;
+}
+internal void run_clear_console(App* app)
+{
+    (void)app;
+    nv_log_clear();
+}
 
 #define CTRL ImGuiMod_Ctrl
 #define SHIFT ImGuiMod_Shift
 
-local_persist const Shortcut shortcuts[SHORTCUT_COUNT] = {
+local_persist const Command shortcuts[SHORTCUT_COUNT] = {
     [SC_SAVE] = {"File", "Save now", {CTRL | ImGuiKey_S}, NULL, WHEN_STORAGE, 0, run_save},
     [SC_UNDO] = {"Edit", "Undo", {CTRL | ImGuiKey_Z}, NULL, WHEN_EDITING, 1, run_undo},
     [SC_REDO] = {"Edit", "Redo", {CTRL | SHIFT | ImGuiKey_Z, CTRL | ImGuiKey_Y}, NULL, WHEN_EDITING, 1, run_redo},
@@ -94,10 +118,18 @@ local_persist const Shortcut shortcuts[SHORTCUT_COUNT] = {
     [SC_FOCUS] = {"View", "Move the orbit point to the selection", {ImGuiKey_F}, NULL, WHEN_SELECTION, 0, run_focus},
     [SC_FOLLOW] = {"View", "Camera follows selection on or off", {SHIFT | ImGuiKey_F}, NULL, 0, 0, run_follow},
     [SC_HOME] = {"View", "Back to the start view", {ImGuiKey_Home}, NULL, 0, 0, run_home},
-    [SC_DOCK_LEFT] = {"Docks", "Scene dock", {CTRL | ImGuiKey_B}, NULL, 0, 0, run_dock_left},
-    [SC_DOCK_RIGHT] = {"Docks", "Inspector dock", {CTRL | ImGuiKey_I}, NULL, 0, 0, run_dock_right},
-    [SC_DOCK_BOTTOM] = {"Docks", "Console dock", {ImGuiKey_GraveAccent}, NULL, 0, 0, run_dock_bottom},
-    [SC_HELP] = {"Help", "Keyboard shortcuts", {SHIFT | ImGuiKey_Slash}, "?", 0, 0, run_help},
+    [SC_DOCK_LEFT] = {"Docks", "Scene dock", {CTRL | ImGuiKey_B}, NULL, WHEN_DESKTOP, 0, run_dock_left},
+    [SC_DOCK_RIGHT] = {"Docks", "Inspector dock", {CTRL | ImGuiKey_I}, NULL, WHEN_DESKTOP, 0, run_dock_right},
+    [SC_DOCK_BOTTOM] = {"Docks", "Console dock", {ImGuiKey_GraveAccent}, NULL, WHEN_DESKTOP, 0, run_dock_bottom},
+    [SC_PALETTE] = {"Find", "Command palette", {CTRL | SHIFT | ImGuiKey_P, ImGuiKey_F1}, NULL, 0, 0, run_palette},
+    [SC_FIND] = {"Find", "Search the panel", {CTRL | ImGuiKey_F}, NULL, WHEN_DESKTOP, 0, run_find},
+    [SC_HELP] = {"Help", "Keyboard shortcuts", {SHIFT | ImGuiKey_Slash}, "?", WHEN_DESKTOP, 0, run_help},
+    [SC_SHOW_SAVE] = {"File", "Show save", {0}, NULL, WHEN_STORAGE, 0, run_show_save},
+    [SC_RESET] = {"File", "Reset everything...", {0}, NULL, WHEN_STORAGE, 0, run_reset},
+    [SC_SCENE_SHOWCASE] = {"View", "Show the Showcase scene", {0}, NULL, 0, 0, run_scene_showcase},
+    [SC_SCENE_STRESS] = {"View", "Show the Stress scene", {0}, NULL, 0, 0, run_scene_stress},
+    [SC_TEXTURES] = {"View", "Open the Textures tab", {0}, NULL, 0, 0, run_textures},
+    [SC_CLEAR_CONSOLE] = {"View", "Clear the console", {0}, NULL, 0, 0, run_clear_console},
 };
 
 internal b32 applies(App* app, u32 when)
@@ -110,6 +142,8 @@ internal b32 applies(App* app, u32 when)
     if ((when & WHEN_SELECTION) && !app_view(app)->selected.index)
         return 0;
     if ((when & WHEN_STORAGE) && !app->storage.available)
+        return 0;
+    if ((when & WHEN_DESKTOP) && app->ui_mode != UI_DESKTOP)
         return 0;
     return 1;
 }
@@ -128,7 +162,7 @@ void shortcuts_update(App* app)
     if (!keys_are_free())
         return;
     for (u32 i = 0; i < SHORTCUT_COUNT; ++i) {
-        const Shortcut* shortcut = &shortcuts[i];
+        const Command* shortcut = &shortcuts[i];
         if (!shortcut->run || !applies(app, shortcut->when))
             continue;
         ImGuiInputFlags flags = ImGuiInputFlags_RouteGlobal | (shortcut->repeat ? ImGuiInputFlags_Repeat : 0);
@@ -192,7 +226,7 @@ const char* shortcut_label(ShortcutId id)
 {
     local_persist char labels[SHORTCUT_COUNT][64];
     char* out = labels[id];
-    const Shortcut* shortcut = &shortcuts[id];
+    const Command* shortcut = &shortcuts[id];
     if (shortcut->keys_text) {
         if (is_mac() && strncmp(shortcut->keys_text, "Ctrl", 4) == 0)
             snprintf(out, sizeof(labels[id]), "Cmd%s", shortcut->keys_text + 4);
@@ -236,7 +270,9 @@ void shortcuts_help(App* app)
             open = false;
         const char* group = NULL;
         for (u32 i = 0; i < SHORTCUT_COUNT; ++i) {
-            const Shortcut* shortcut = &shortcuts[i];
+            const Command* shortcut = &shortcuts[i];
+            if (!shortcut->chords[0] && !shortcut->keys_text)
+                continue; // palette only
             if (!group || strcmp(group, shortcut->group) != 0) {
                 group = shortcut->group;
                 igSeparatorText(group);
@@ -258,4 +294,28 @@ void shortcuts_help(App* app)
     } else if (app->show_shortcuts) {
         app->show_shortcuts = 0;
     }
+}
+
+//
+// The command palette's actions: every row that has something to run, except the ones that open
+// the palette itself or a box.
+//
+
+b32 command_listed(u32 id)
+{
+    return shortcuts[id].run && id != SC_PALETTE && id != SC_FIND;
+}
+
+const char* command_name(u32 id) { return shortcuts[id].name; }
+const char* command_group(u32 id) { return shortcuts[id].group; }
+
+b32 command_enabled(App* app, u32 id)
+{
+    return applies(app, shortcuts[id].when);
+}
+
+void command_run(App* app, u32 id)
+{
+    if (shortcuts[id].run && applies(app, shortcuts[id].when))
+        shortcuts[id].run(app);
 }

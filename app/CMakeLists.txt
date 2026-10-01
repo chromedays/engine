@@ -1,4 +1,4 @@
-add_executable(app main.c console.c save.c shortcuts.c stress.c textures.c ui.c ui_desktop.c ui_phone.c undo.c)
+add_executable(app main.c console.c save.c search.c shortcuts.c stress.c textures.c ui.c ui_desktop.c ui_phone.c undo.c)
 target_link_libraries(app PRIVATE nv)
 nv_setup_executable(app ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets/quaternius")
 

@@ -32,7 +32,7 @@ here rules it out.
 | Separation | `app/ui_desktop.c` and `app/ui_phone.c` each own their layout, windows, toolbar, sizes and gestures. `app_build_ui` becomes a call to one of them. Neither file branches on the other's device. They share only the **sections**: functions that draw the content of one panel into the current window (`scene_tab`, `inspector_tab`, `view_tab`, `stress_ui`, `console_tab`, `undo_ui` and the save and shadow sections inside them), so editing logic exists once. A section may ask `app->ui_mode` for a size, never to change what it edits |
 | Play / Stop | Top center of the screen in both UIs: a button whose center is the canvas's horizontal center, in a **top bar** across the full width above the scene viewport. It shows Play in Edit mode and Stop while playing, as today, and is hidden while the stress scene is shown (`play.md`) |
 | Top bar, desktop | 32 px high. Left: the menu bar (File, Edit, View). Center: Play / Stop, and right after it, while playing, the note "Playing: edits are lost on Stop". Right: frame time and the shown scene's name |
-| Top bar, phone | 48 CSS pixels high (hit areas a finger can reach). Left: Undo. Center: Play / Stop. Right: Redo. Nothing else. The row of Play, Undo and Redo leaves the panel, which gets that line back |
+| Top bar, phone | 48 CSS pixels high (hit areas a finger can reach). Left: Undo, then Find (opens the command palette, `search.md`). Center: Play / Stop. Right: Redo. Nothing else. The row of Play, Undo and Redo leaves the panel, which gets that line back |
 | Desktop regions | Below the top bar: **left dock** (Scene tree, 260 px wide), **right dock** (tabs Inspector and View, 340 px wide), **bottom dock** (tabs Console and, while the stress scene is shown, Stress; 220 px high, collapsible to its tab strip), and the **scene viewport** filling what is left in the middle |
 | Phone regions | Below the top bar, as today: the viewport on the top 60% of the rest and one tabbed panel on the bottom 40% (Scene, Inspector, View, Console, and Stress while shown). Picking a node still jumps to Inspector |
 | Build label | Stays in the viewport's top-left corner in both UIs, with its badge; a tap or click on it opens the Console (the bottom dock tab on desktop, the Console tab on phone). On phone it sits just below the top bar, so it never meets the Play button |
@@ -78,7 +78,7 @@ here rules it out.
 
 ```
 +------------------------------+
-| Undo     [ Play ]      Redo  |   top bar, 48 px
+| Undo Find [ Play ]     Redo  |   top bar, 48 px
 +------------------------------+
 |  build label + badge         |
 |        scene viewport        |   60% of the rest
@@ -138,6 +138,8 @@ checked them. Notes on the build:
 
 - File has Save now, Show save (it opens the save viewer in the View tab) and Reset...; Export and
   Import are not there yet.
+- The phone's Undo and Redo buttons are 64 px wide, and Find 52 px (`search.md`), so all three fit
+  beside the centered Play button on a 360 px screen.
 - The Play button is 84 px wide on the desktop (104 on the phone); the desktop top bar is 28 px
   high, not 32, because it is the menu bar's own height.
 - A splitter is a transparent window over the 6 px edge strip inside the dock, not inside the

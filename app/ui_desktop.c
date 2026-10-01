@@ -142,6 +142,9 @@ internal void top_bar(App* app)
         file_menu(app, &open_reset);
         if (igBeginMenu("Edit", true)) {
             undo_menu_items(app);
+            igSeparator();
+            if (igMenuItem_Bool("Command palette", shortcut_label(SC_PALETTE), false, true))
+                search_open_palette(app);
             igEndMenu();
         }
         view_menu(app);
@@ -173,8 +176,9 @@ internal void top_bar(App* app)
     igPopStyleVar(1);
     // NOTE: A popup opened from inside a menu would live in the menu's ID scope; this one is opened
     // and drawn at the window's top level, where save_reset_popup looks for it.
-    if (open_reset)
+    if (open_reset || app->request_reset)
         igOpenPopup_Str("Reset everything?", 0);
+    app->request_reset = 0;
     if (open)
         save_reset_popup(app);
     igEnd();
@@ -368,4 +372,5 @@ void desktop_build_ui(App* app)
     splitters(app);
     shortcuts_update(app);
     shortcuts_help(app);
+    search_palette(app);
 }

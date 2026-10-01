@@ -25,8 +25,8 @@ engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
-                           ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts),
-                           app.h (shared state)
+                           ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
+                           palette's actions), search.c (panel search boxes, command palette), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
@@ -114,6 +114,18 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
   Tests press keys with Playwright and read `Module._app_debug_gizmo`, `_app_debug_state` and the
   other debug exports.
+- Every widget of a searchable panel (Scene, Inspector, View, Textures and Stress tabs; the Console has
+  its own filters) goes through `search_row` (one widget carrying its label), `search_group` (several
+  widgets or a button) or, for text that is no setting, `if (search_plain(app))`; sections start with
+  `search_section(app, "Heading")`, which draws the heading with its first visible row
+  (`docs/specs/search.md`). A panel's content sits between `search_panel_begin` and `search_panel_end`
+  (the box above, a scrolling child below). The same calls make the palette's list of settings: it runs
+  the panels in collect mode, where `search_row` notes the row and draws nothing. A new setting is
+  searchable and in the palette by being written that way. Commands (actions the palette lists and the
+  desktop's keys) are rows of the table in `app/shortcuts.c`; a row without keys is palette only. Debug
+  builds export `Module._app_debug_search_buffer`, `_app_debug_search_set(panel)`,
+  `_app_debug_search_rows(panel)`, `_app_debug_palette(n)`, `_app_debug_palette_result(i, k)` and
+  `_app_debug_palette_query(k)` for tests.
 - Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output

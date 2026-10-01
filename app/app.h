@@ -108,7 +108,16 @@ typedef enum ShortcutId {
     SC_DOCK_LEFT,
     SC_DOCK_RIGHT,
     SC_DOCK_BOTTOM,
+    SC_PALETTE,
+    SC_FIND,
     SC_HELP,
+    // Palette only: no keys (docs/specs/search.md).
+    SC_SHOW_SAVE,
+    SC_RESET,
+    SC_SCENE_SHOWCASE,
+    SC_SCENE_STRESS,
+    SC_TEXTURES,
+    SC_CLEAR_CONSOLE,
     SHORTCUT_COUNT,
 } ShortcutId;
 
@@ -358,6 +367,93 @@ typedef struct Stress {
     u32 result_count;
 } Stress;
 
+// Search (docs/specs/search.md): the boxes at the top of the panels and the command palette.
+typedef enum SearchPanel {
+    SEARCH_SCENE,
+    SEARCH_INSPECTOR,
+    SEARCH_VIEW,
+    SEARCH_TEXTURES,
+    SEARCH_STRESS,
+    SEARCH_PANEL_COUNT,
+} SearchPanel;
+
+#define SEARCH_QUERY_MAX     96
+#define SEARCH_MAX_WORDS     6
+#define SEARCH_WORD_MAX      32
+#define SEARCH_MAX_SETTINGS  160
+#define SEARCH_MAX_NODES     200 // node results the palette lists
+#define SEARCH_MAX_RESULTS   512
+#define SEARCH_RECENT        8
+#define SEARCH_TREE_MAX_ROWS 500
+
+// A query split into lowercase words; a candidate matches when it has every one of them.
+typedef struct SearchQuery {
+    u32 count;
+    char words[SEARCH_MAX_WORDS][SEARCH_WORD_MAX];
+} SearchQuery;
+
+// A row of a panel, noted while the palette collects settings (search_row in collect mode).
+typedef struct SearchSetting {
+    u8 panel;
+    char label[48];
+    char section[40];
+    char keywords[64];
+} SearchSetting;
+
+typedef enum PaletteKind {
+    PALETTE_ACTION,
+    PALETTE_SETTING,
+    PALETTE_NODE,
+    PALETTE_MORE, // "and N more", not selectable
+} PaletteKind;
+
+typedef struct PaletteResult {
+    u8 kind;
+    b32 enabled;
+    u32 index; // command id, setting index or node index
+    u64 key;   // sort key
+} PaletteResult;
+
+typedef struct Search {
+    char queries[SEARCH_PANEL_COUNT][SEARCH_QUERY_MAX]; // one per panel; not saved
+    SearchQuery query; // of the panel being drawn
+    SearchPanel panel;
+    b32 collecting; // search_row only notes rows (the palette's settings), draws nothing
+    char section[40];
+    b32 section_pending; // the heading waits for its first row
+    char pending_label[48];
+    b32 pending_highlight; // the last row's label gets its match marked after its widget
+    u32 rows[SEARCH_PANEL_COUNT];     // rows drawn last frame
+    u32 rows_now[SEARCH_PANEL_COUNT];
+    s32 focus_panel;   // the box to focus next frame; -1 = none
+    s32 hover_panel;   // the panel under the pointer this frame; -1 = none
+    s32 right_panel;   // the right dock's (or the phone panel's) panel this frame; -1 = none
+    // The Scene tree's matches: a byte per node (bit 0 matches, bit 1 is on the way to a match).
+    u8 tree[NV_MAX_NODES];
+    u32 tree_key;
+    s32 tree_frame;
+    u32 tree_matches;
+    u32 tree_drawn;
+    b32 tree_filtering;
+    // Settings the palette can jump to.
+    SearchSetting settings[SEARCH_MAX_SETTINGS];
+    u32 setting_count;
+    // The command palette.
+    b32 palette_request;
+    b32 palette_open;
+    b32 palette_focus;
+    s32 palette_opened_frame;
+    char palette_query[SEARCH_QUERY_MAX];
+    s32 highlight;
+    b32 scroll_to_highlight;
+    b32 scroll_to_top;
+    s32 recent[SEARCH_RECENT]; // command ids, most recent first
+    u32 recent_count;
+    PaletteResult results[SEARCH_MAX_RESULTS];
+    u32 result_count;
+    char debug_buffer[SEARCH_QUERY_MAX]; // tests write a query here (_app_debug_search_buffer)
+} Search;
+
 typedef enum JumpPhase {
     JUMP_NONE,
     JUMP_START,
@@ -479,6 +575,8 @@ typedef struct App {
     b32 open_view;    // switch to the View tab on the next frame
     f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden
     b32 show_shortcuts; // the Keyboard shortcuts window is open
+    b32 request_reset;  // open the Reset confirmation (the palette asks; the top bar draws it)
+    Search search;
 } App;
 
 // main.c
@@ -534,6 +632,31 @@ void shortcuts_update(App* app); // fires the shortcuts pressed this frame; desk
 b32 shortcuts_claim(void* data, ImGuiKeyChord chord); // NvImgui.claims_key
 const char* shortcut_label(ShortcutId id);            // "Ctrl+Shift+Z / Ctrl+Y"
 void shortcuts_help(App* app);                        // the Keyboard shortcuts window
+
+// search.c
+void search_frame(App* app); // start of the frame's UI
+// The panel's search box and, under it, the child window its content is drawn in. In collect mode
+// they draw nothing. Every widget of a searchable panel goes through search_row or search_group.
+void search_panel_begin(App* app, SearchPanel panel);
+void search_panel_end(App* app);
+void search_section(App* app, const char* heading); // the heading draws with the section's first row; NULL = no heading
+b32 search_row(App* app, const char* label, const char* keywords);   // one widget carrying `label`: draw it if true
+b32 search_group(App* app, const char* label, const char* keywords); // several widgets, or a button: same, no highlight
+b32 search_plain(App* app); // text that is no setting: only with an empty query
+b32 search_active(App* app); // the current panel has a query
+b32 search_match(App* app, const char* text);                  // whether `text` matches the current query
+void search_mark(App* app, const char* text, ImVec2_c origin, f32 height); // marks the matched parts of text drawn at origin
+void search_set_query(App* app, SearchPanel panel, const char* text);
+void search_palette(App* app); // the palette window, the top level of the frame's UI
+void search_open_palette(App* app);
+void search_focus_box(App* app); // Ctrl+F
+
+// shortcuts.c: the table's rows are the palette's actions.
+b32 command_listed(u32 id);
+const char* command_name(u32 id);
+const char* command_group(u32 id);
+b32 command_enabled(App* app, u32 id);
+void command_run(App* app, u32 id);
 
 // ui_desktop.c and ui_phone.c
 void desktop_layout(App* app, f32 width, f32 height, f32 ratio);

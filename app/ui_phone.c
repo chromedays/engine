@@ -6,7 +6,9 @@
 #define PHONE_TOP_BAR 48.0f        // CSS pixels
 #define PHONE_VIEWPORT_SHARE 0.6f  // of the height under the top bar
 #define PHONE_BUTTON_HEIGHT 38.0f
-#define PHONE_SIDE_BUTTON_WIDTH 88.0f
+#define PHONE_SIDE_BUTTON_WIDTH 64.0f
+#define PHONE_FIND_WIDTH 52.0f     // between Undo and Play (docs/specs/search.md)
+#define PHONE_BUTTON_GAP 4.0f
 #define PHONE_PLAY_WIDTH 104.0f
 #define PHONE_MARGIN 8.0f
 
@@ -32,12 +34,21 @@ internal void top_bar(App* app)
         ImVec2_c side = {PHONE_SIDE_BUTTON_WIDTH, PHONE_BUTTON_HEIGHT};
         igSetCursorPos((ImVec2_c){PHONE_MARGIN, y});
         undo_button(app, -1, 0, side);
+        igSetCursorPos((ImVec2_c){PHONE_MARGIN + PHONE_SIDE_BUTTON_WIDTH + PHONE_BUTTON_GAP, y});
+        if (igButton("Find", (ImVec2_c){PHONE_FIND_WIDTH, PHONE_BUTTON_HEIGHT}))
+            search_open_palette(app);
         // The Play button's center is the screen's center.
         igSetCursorPos((ImVec2_c){(width - PHONE_PLAY_WIDTH) * 0.5f, y});
         ui_play_button(app, (ImVec2_c){PHONE_PLAY_WIDTH, PHONE_BUTTON_HEIGHT});
         igSetCursorPos((ImVec2_c){width - PHONE_MARGIN - PHONE_SIDE_BUTTON_WIDTH, y});
         undo_button(app, 1, 0, side);
     }
+    // The palette's Reset command opens the confirmation here, at the window's top level.
+    if (open && app->request_reset)
+        igOpenPopup_Str("Reset everything?", 0);
+    app->request_reset = 0;
+    if (open)
+        save_reset_popup(app);
     igEnd();
 }
 
@@ -88,4 +99,5 @@ void phone_build_ui(App* app)
         igEndTabBar();
     }
     igEnd();
+    search_palette(app);
 }

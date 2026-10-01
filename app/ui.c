@@ -10,16 +10,107 @@
 // Deeper than this, the tree stops and says how much is hidden (the stress chain is 1000 deep).
 #define TREE_MAX_DEPTH 24
 
+// The Scene tree's filter marks (Search.tree): a node matches, or is on the way to one.
+#define TREE_SELF 1
+#define TREE_PATH 2
+// Rows listed under the "more levels" row of a path that goes deeper than the tree draws.
+#define TREE_DEEP_MAX 50
+
+// Marks the nodes the query matches and their parents; again only when the query, the scene or (every
+// half second) the names may have changed.
+internal void tree_marks(App* app, SceneView* view)
+{
+    Search* s = &app->search;
+    NvScene* scene = view->scene;
+    u32 key = 2166136261u;
+    for (const char* c = s->queries[SEARCH_SCENE]; *c; ++c)
+        key = (key ^ (u8)*c) * 16777619u;
+    key = (key ^ scene->node_count) * 16777619u;
+    key = (key ^ (u32)app->shown) * 16777619u;
+    s32 frame = igGetFrameCount();
+    if (key == s->tree_key && frame - s->tree_frame < 30)
+        return;
+    s->tree_key = key;
+    s->tree_frame = frame;
+    s->tree_matches = 0;
+    memset(s->tree, 0, scene->node_count + 1);
+    for (u32 i = 1; i <= scene->node_count; ++i) {
+        if (!(scene->nodes[i].gen & 1) || !search_match(app, scene->nodes[i].name))
+            continue;
+        s->tree[i] |= TREE_SELF;
+        ++s->tree_matches;
+        for (u32 p = i; p && !(s->tree[p] & TREE_PATH); p = scene->nodes[p].parent)
+            s->tree[p] |= TREE_PATH;
+    }
+}
+
+internal void tree_select(App* app, SceneView* view, u32 index)
+{
+    view->selected = (NvNodeId){index, view->scene->nodes[index].gen};
+    app->open_inspector = 1;
+}
+
+// Below the depth the tree draws: the matches under `index`, flat, so a match at the end of the
+// 1000-deep chain can still be picked.
+internal void tree_deep_matches(App* app, SceneView* view, u32 index)
+{
+    Search* s = &app->search;
+    NvScene* scene = view->scene;
+    u32 hidden = 0;
+    for (u32 i = index; i; i = scene->nodes[i].first_child)
+        ++hidden;
+    igTextDisabled("... %u more levels", hidden);
+    igIndent(igGetTreeNodeToLabelSpacing());
+    u32 listed = 0;
+    u32 n = index;
+    for (;;) {
+        if ((s->tree[n] & TREE_SELF) && listed < TREE_DEEP_MAX) {
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+                                       ImGuiTreeNodeFlags_SpanAvailWidth;
+            if (view->selected.index == n && view->selected.gen == scene->nodes[n].gen)
+                flags |= ImGuiTreeNodeFlags_Selected;
+            igTreeNodeEx_Ptr((void*)(umm)n, flags, "%s", scene->nodes[n].name);
+            if (igIsItemClicked(ImGuiMouseButton_Left))
+                tree_select(app, view, n);
+            ImVec2_c min = igGetItemRectMin();
+            search_mark(app, scene->nodes[n].name, (ImVec2_c){min.x + igGetTreeNodeToLabelSpacing(), min.y}, igGetFrameHeight());
+            ++listed;
+            ++s->tree_drawn;
+            ++s->rows_now[SEARCH_SCENE];
+        }
+        if (scene->nodes[n].first_child) {
+            n = scene->nodes[n].first_child;
+            continue;
+        }
+        while (n != index && !scene->nodes[n].next_sibling)
+            n = scene->nodes[n].parent;
+        if (n == index)
+            break;
+        n = scene->nodes[n].next_sibling;
+    }
+    igUnindent(igGetTreeNodeToLabelSpacing());
+}
+
 internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
 {
+    Search* s = &app->search;
     NvScene* scene = view->scene;
     NvNode* node = &scene->nodes[index];
     NvNodeId id = {index, node->gen};
+    b32 filtering = s->tree_filtering;
+    if (filtering) {
+        if (!(s->tree[index] & TREE_PATH) || s->rows_now[SEARCH_SCENE] >= SEARCH_TREE_MAX_ROWS)
+            return;
+    }
     if (depth >= TREE_MAX_DEPTH) {
-        u32 hidden = 0;
-        for (u32 i = index; i; i = scene->nodes[i].first_child)
-            ++hidden;
-        igTextDisabled("... %u more levels", hidden);
+        if (filtering) {
+            tree_deep_matches(app, view, index);
+        } else {
+            u32 hidden = 0;
+            for (u32 i = index; i; i = scene->nodes[i].first_child)
+                ++hidden;
+            igTextDisabled("... %u more levels", hidden);
+        }
         return;
     }
 
@@ -34,12 +125,27 @@ internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
     if (view->selected.index == id.index && view->selected.gen == id.gen)
         flags |= ImGuiTreeNodeFlags_Selected;
+    // While filtering, the way to a match is open, and parents that do not match are grey.
+    b32 self = !filtering || (s->tree[index] & TREE_SELF);
+    ++s->rows_now[SEARCH_SCENE];
+    if (filtering) {
+        if (self)
+            ++s->tree_drawn;
+        if (children)
+            igSetNextItemOpen(true, ImGuiCond_Always);
+        if (!self)
+            igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.55f, 0.55f, 1.0f});
+    }
 
     b32 open = children > 16 ? igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s (%u)", node->name, children)
                              : igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s", node->name);
-    if (igIsItemClicked(ImGuiMouseButton_Left) && !igIsItemToggledOpen()) {
-        view->selected = id;
-        app->open_inspector = 1;
+    if (filtering && !self)
+        igPopStyleColor(1);
+    if (igIsItemClicked(ImGuiMouseButton_Left) && !igIsItemToggledOpen())
+        tree_select(app, view, index);
+    if (filtering && self) {
+        ImVec2_c min = igGetItemRectMin();
+        search_mark(app, node->name, (ImVec2_c){min.x + igGetTreeNodeToLabelSpacing(), min.y}, igGetFrameHeight());
     }
     if (open && children) {
         for (u32 child = node->first_child; child; child = scene->nodes[child].next_sibling)
@@ -50,9 +156,21 @@ internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
 
 void ui_scene_tab(App* app)
 {
+    Search* s = &app->search;
     SceneView* view = app_view(app);
+    search_panel_begin(app, SEARCH_SCENE);
+    s->tree_filtering = search_active(app);
+    s->tree_drawn = 0;
+    if (s->tree_filtering)
+        tree_marks(app, view);
     for (u32 root = view->scene->first_root; root; root = view->scene->nodes[root].next_sibling)
         node_tree(app, view, root, 0);
+    if (s->tree_filtering && s->tree_matches > s->tree_drawn)
+        igTextDisabled("and %u more", s->tree_matches - s->tree_drawn);
+    if (s->tree_filtering && !s->tree_matches)
+        s->rows_now[SEARCH_SCENE] = 0;
+    s->tree_filtering = 0;
+    search_panel_end(app);
 }
 
 //
@@ -61,7 +179,7 @@ void ui_scene_tab(App* app)
 
 internal void animator_section(App* app, NvAnimator* animator)
 {
-    igSeparatorText("Animator");
+    search_section(app, "Animator");
 
     // Clips of this skeleton, without the root-motion copies (app_play picks those).
     NvClipId current = animator->layers[0].clip.index ? app_regular_clip(app, animator->layers[0].clip) : (NvClipId){0};
@@ -70,63 +188,85 @@ internal void animator_section(App* app, NvAnimator* animator)
         NvClipId clip = {c};
         if (nv_anim_clip_skeleton(clip).index != animator->skeleton.index || nv_anim_clip_has_root_motion(clip))
             continue;
-        if (igSelectable_Bool(nv_anim_clip_name(clip), clip.index == current.index, 0, (ImVec2_c){0, 0}))
-            app_play(app, clip);
+        if (search_group(app, nv_anim_clip_name(clip), "clip animation play")) {
+            if (igSelectable_Bool(nv_anim_clip_name(clip), clip.index == current.index, 0, (ImVec2_c){0, 0}))
+                app_play(app, clip);
+        }
     }
     igBeginDisabled(!app->playing); // a jump is something that happens while playing
-    if (igButton("Jump", (ImVec2_c){-1.0f, 0.0f}))
-        app_jump(app);
+    if (search_group(app, "Jump", "play")) {
+        if (igButton("Jump", (ImVec2_c){-1.0f, 0.0f}))
+            app_jump(app);
+    }
     igEndDisabled();
 
-    igSliderFloat("Speed", &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
-    igSliderFloat("Fade", &app->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
-    const char* names[APP_MAX_CLIPS];
-    for (u32 i = 0; i < app->clip_count; ++i)
-        names[i] = nv_anim_clip_name(app->clips[i]);
-    igCombo_Str_arr("Blend", &app->blend_clip, names, (int)app->clip_count, -1);
-    igSliderFloat("Weight", &app->blend_weight, 0.0f, 1.0f, "%.2f", 0);
-
-    f32 total = 0.0f;
-    for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-        if (animator->layers[l].clip.index)
-            total += animator->layers[l].weight;
+    if (search_row(app, "Speed", "playback"))
+        igSliderFloat("Speed", &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
+    if (search_row(app, "Fade", "crossfade blend"))
+        igSliderFloat("Fade", &app->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
+    if (search_row(app, "Blend", "clip")) {
+        const char* names[APP_MAX_CLIPS];
+        for (u32 i = 0; i < app->clip_count; ++i)
+            names[i] = nv_anim_clip_name(app->clips[i]);
+        igCombo_Str_arr("Blend", &app->blend_clip, names, (int)app->clip_count, -1);
     }
-    for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-        NvAnimLayer* layer = &animator->layers[l];
-        if (!layer->clip.index)
-            continue;
-        char overlay[64];
-        snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
-        igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
+    if (search_row(app, "Weight", "blend"))
+        igSliderFloat("Weight", &app->blend_weight, 0.0f, 1.0f, "%.2f", 0);
+
+    // What the layers play now is no setting: shown only without a search.
+    if (search_plain(app)) {
+        f32 total = 0.0f;
+        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
+            if (animator->layers[l].clip.index)
+                total += animator->layers[l].weight;
+        }
+        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
+            NvAnimLayer* layer = &animator->layers[l];
+            if (!layer->clip.index)
+                continue;
+            char overlay[64];
+            snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
+            igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
+        }
     }
 
-    if (igCheckbox("Root motion", &app->root_motion) && app->jump == JUMP_NONE)
-        app_play(app, app_regular_clip(app, animator->layers[0].clip));
+    if (search_row(app, "Root motion", "walk")) {
+        if (igCheckbox("Root motion", &app->root_motion) && app->jump == JUMP_NONE)
+            app_play(app, app_regular_clip(app, animator->layers[0].clip));
+    }
     igBeginDisabled(!app->root_motion);
-    igSliderFloat("Turn", &app->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
-    if (igButton("Back to center", (ImVec2_c){-1.0f, 0.0f}))
-        app_back_to_center(app);
+    if (search_row(app, "Turn", "root motion"))
+        igSliderFloat("Turn", &app->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
+    if (search_group(app, "Back to center", "root motion")) {
+        if (igButton("Back to center", (ImVec2_c){-1.0f, 0.0f}))
+            app_back_to_center(app);
+    }
     igEndDisabled();
-    igCheckbox("Look at target", &app->look_at);
+    if (search_row(app, "Look at target", "head ik aim"))
+        igCheckbox("Look at target", &app->look_at);
 }
 
 internal void attach_section(App* app, NvNode* node)
 {
-    igSeparatorText("Attach");
+    search_section(app, "Attach");
     NvAnimator* animator = nv_anim_get(node->attach.animator);
     const NvJointDesc* joints = nv_anim_joints(animator->skeleton);
-    if (igBeginCombo("Joint", joints[node->attach.joint].name, 0)) {
-        for (u32 j = 0; j < animator->joint_count; ++j) {
-            bool current = j == node->attach.joint;
-            if (igSelectable_Bool(joints[j].name, current, 0, (ImVec2_c){0, 0}))
-                node->attach.joint = j;
-            if (current)
-                igSetItemDefaultFocus();
+    if (search_row(app, "Joint", "bone attach")) {
+        if (igBeginCombo("Joint", joints[node->attach.joint].name, 0)) {
+            for (u32 j = 0; j < animator->joint_count; ++j) {
+                bool current = j == node->attach.joint;
+                if (igSelectable_Bool(joints[j].name, current, 0, (ImVec2_c){0, 0}))
+                    node->attach.joint = j;
+                if (current)
+                    igSetItemDefaultFocus();
+            }
+            igEndCombo();
         }
-        igEndCombo();
     }
-    if (app->shown == SCENE_SHOWCASE && node == nv_scene_get(app->scene, app->sword))
-        igCheckbox("Visible", &app->show_sword);
+    if (app->shown == SCENE_SHOWCASE && node == nv_scene_get(app->scene, app->sword)) {
+        if (search_row(app, "Visible", "sword"))
+            igCheckbox("Visible", &app->show_sword);
+    }
 }
 
 // Keeps the next item, `width` wide, on this line when it fits, so a row of them wraps on a
@@ -148,11 +288,13 @@ internal void same_line_if_fits(const char* label)
 // The View tab's Anti-aliasing section (docs/specs/msaa.md).
 internal void msaa_ui(App* app)
 {
-    igSeparatorText("Anti-aliasing");
+    search_section(app, "Anti-aliasing");
     local_persist const char* names[] = {"Off", "MSAA 4x"};
     s32 index = app->renderer.msaa == 4 ? 1 : 0;
-    if (igCombo_Str_arr("Edges", &index, names, 2, -1))
-        app->renderer.msaa = index ? 4 : 1;
+    if (search_row(app, "Edges", "msaa multisample samples smooth")) {
+        if (igCombo_Str_arr("Edges", &index, names, 2, -1))
+            app->renderer.msaa = index ? 4 : 1;
+    }
 }
 
 internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
@@ -164,17 +306,21 @@ internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
 internal void resolution_ui(App* app)
 {
     Resolution* resolution = &app->resolution;
-    igSeparatorText("Resolution");
+    search_section(app, "Resolution");
     local_persist const char* modes[] = {"Scale", "Fixed size"};
     s32 mode = (s32)resolution->mode;
-    if (igCombo_Str_arr("Mode", &mode, modes, 2, -1))
-        resolution->mode = mode == 1 ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    if (search_row(app, "Mode", "scale fixed size")) {
+        if (igCombo_Str_arr("Mode", &mode, modes, 2, -1))
+            resolution->mode = mode == 1 ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    }
 
     if (resolution->mode == RESOLUTION_SCALE) {
         local_persist const char* divisors[] = {"1/1 (full)", "1/2", "1/3", "1/4"};
         s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
-        if (igCombo_Str_arr("Scale", &index, divisors, 4, -1))
-            resolution->divisor = (u32)index + 1;
+        if (search_row(app, "Scale", "divisor lower resolution pixel")) {
+            if (igCombo_Str_arr("Scale", &index, divisors, 4, -1))
+                resolution->divisor = (u32)index + 1;
+        }
     } else {
         // Presets, and Custom for any other size (also while it is being typed).
         local_persist const u32 sizes[][2] = {{640, 360}, {1280, 720}, {1920, 1080}, {360, 640}, {720, 1280}};
@@ -187,25 +333,36 @@ internal void resolution_ui(App* app)
         }
         if (want_custom)
             index = (s32)NV_ARRAY_COUNT(sizes);
-        if (igCombo_Str_arr("Size", &index, names, (int)NV_ARRAY_COUNT(names), -1)) {
-            want_custom = index == (s32)NV_ARRAY_COUNT(sizes);
-            if (!want_custom) {
-                resolution->fixed_width = sizes[index][0];
-                resolution->fixed_height = sizes[index][1];
+        if (search_row(app, "Size", "resolution fixed preset 720p 1080p portrait")) {
+            if (igCombo_Str_arr("Size", &index, names, (int)NV_ARRAY_COUNT(names), -1)) {
+                want_custom = index == (s32)NV_ARRAY_COUNT(sizes);
+                if (!want_custom) {
+                    resolution->fixed_width = sizes[index][0];
+                    resolution->fixed_height = sizes[index][1];
+                }
             }
         }
         local_persist const char* fits[] = {"Whole multiples", "Fit to viewport", "Stretch to viewport"};
         s32 fit = (s32)resolution->fixed_fit;
-        if (igCombo_Str_arr("Fit", &fit, fits, 3, -1))
-            resolution->fixed_fit = (FixedFit)fit;
+        if (search_row(app, "Fit", "whole multiples stretch letterbox bars")) {
+            if (igCombo_Str_arr("Fit", &fit, fits, 3, -1))
+                resolution->fixed_fit = (FixedFit)fit;
+        }
         if (index == (s32)NV_ARRAY_COUNT(sizes)) {
             int width = (int)resolution->fixed_width, height = (int)resolution->fixed_height;
-            if (igInputInt("Width", &width, 16, 128, 0))
-                resolution->fixed_width = clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
-            if (igInputInt("Height", &height, 16, 128, 0))
-                resolution->fixed_height = clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
+            if (search_row(app, "Width", "custom size")) {
+                if (igInputInt("Width", &width, 16, 128, 0))
+                    resolution->fixed_width = clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
+            }
+            if (search_row(app, "Height", "custom size")) {
+                if (igInputInt("Height", &height, 16, 128, 0))
+                    resolution->fixed_height = clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
+            }
         }
     }
+    // What the settings come to is no setting: shown only without a search.
+    if (!search_plain(app))
+        return;
 
     // What that comes to: the scene's pixels, and how big each one shows.
     const NvSceneOutput* scene = &app->layout.scene;
@@ -239,7 +396,7 @@ internal void resolution_ui(App* app)
 internal void shadow_ui(App* app)
 {
     NvShadowSettings* shadows = &app->renderer.shadows;
-    igSeparatorText("Shadows");
+    search_section(app, "Shadows");
     local_persist const u32 sizes[] = {0, 512, 1024, 2048};
     local_persist const char* size_names[] = {"Off", "512", "1024", "2048"};
     s32 size_index = 0;
@@ -247,81 +404,105 @@ internal void shadow_ui(App* app)
         if (shadows->size == sizes[i])
             size_index = (s32)i;
     }
-    if (igCombo_Str_arr("Map size", &size_index, size_names, (int)NV_ARRAY_COUNT(sizes), -1))
-        shadows->size = sizes[size_index];
+    if (search_row(app, "Map size", "shadow resolution off")) {
+        if (igCombo_Str_arr("Map size", &size_index, size_names, (int)NV_ARRAY_COUNT(sizes), -1))
+            shadows->size = sizes[size_index];
+    }
     igBeginDisabled(!shadows->size);
     local_persist const char* format_names[] = {"32-bit float", "16-bit"};
     s32 format = (s32)shadows->format;
-    if (igCombo_Str_arr("Format", &format, format_names, 2, -1))
-        shadows->format = (NvShadowFormat)format;
+    if (search_row(app, "Format", "shadow depth")) {
+        if (igCombo_Str_arr("Format", &format, format_names, 2, -1))
+            shadows->format = (NvShadowFormat)format;
+    }
     local_persist const char* filter_names[] = {"Low", "High"};
     s32 filter = (s32)shadows->filter;
-    if (igCombo_Str_arr("Filter", &filter, filter_names, 2, -1))
-        shadows->filter = (NvShadowFilter)filter;
-    igSliderFloat("Distance##shadow", &shadows->distance, 5.0f, 100.0f, "%.0f m", 0);
+    if (search_row(app, "Filter", "shadow soft pcf")) {
+        if (igCombo_Str_arr("Filter", &filter, filter_names, 2, -1))
+            shadows->filter = (NvShadowFilter)filter;
+    }
+    if (search_row(app, "Distance##shadow", "shadow fade"))
+        igSliderFloat("Distance##shadow", &shadows->distance, 5.0f, 100.0f, "%.0f m", 0);
     bool show_box = shadows->show_box != 0;
-    if (igCheckbox("Show light box", &show_box))
-        shadows->show_box = show_box;
+    if (search_row(app, "Show light box", "shadow frustum debug")) {
+        if (igCheckbox("Show light box", &show_box))
+            shadows->show_box = show_box;
+    }
     igEndDisabled();
 }
 
 void ui_inspector_tab(App* app)
 {
     SceneView* view = app_view(app);
+    search_panel_begin(app, SEARCH_INSPECTOR);
     if (!view->selected.index) {
-        igTextDisabled("Select a node in the Scene tab.");
+        if (search_plain(app))
+            igTextDisabled("Select a node in the Scene tab.");
+        search_panel_end(app);
         return;
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
-    igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
+    if (search_row(app, "Name", "node rename"))
+        igInputText("Name", node->name, sizeof(node->name), 0, NULL, NULL);
     if (view->selected.index != view->scene->active_camera.index) {
         // The gizmo in the viewport; W, E and R switch the operation there too.
-        s32* operation = (s32*)&app->gizmo_operation;
-        igRadioButton_IntPtr("Move", operation, GIZMO_MOVE);
-        same_line_if_fits("Rotate");
-        igRadioButton_IntPtr("Rotate", operation, GIZMO_ROTATE);
-        same_line_if_fits("Scale");
-        igRadioButton_IntPtr("Scale", operation, GIZMO_SCALE);
-        same_line_if_fits("Local");
-        igBeginDisabled(app->gizmo_operation == GIZMO_SCALE);
-        igCheckbox("Local", &app->gizmo_local);
-        igEndDisabled();
-        same_line_if_fits("Snap");
-        igCheckbox("Snap", &app->gizmo_snap);
+        if (search_group(app, "Gizmo", "move rotate scale local snap transform")) {
+            s32* operation = (s32*)&app->gizmo_operation;
+            igRadioButton_IntPtr("Move", operation, GIZMO_MOVE);
+            same_line_if_fits("Rotate");
+            igRadioButton_IntPtr("Rotate", operation, GIZMO_ROTATE);
+            same_line_if_fits("Scale");
+            igRadioButton_IntPtr("Scale", operation, GIZMO_SCALE);
+            same_line_if_fits("Local");
+            igBeginDisabled(app->gizmo_operation == GIZMO_SCALE);
+            igCheckbox("Local", &app->gizmo_local);
+            igEndDisabled();
+            same_line_if_fits("Snap");
+            igCheckbox("Snap", &app->gizmo_snap);
+        }
     }
-    igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
+    if (search_row(app, "Position", "transform move translate"))
+        igDragFloat3("Position", &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
     // Rotation as pitch (X), yaw (Y) and roll (Z) in degrees; the quaternion is only rewritten when
     // edited, so looking at a node never changes it.
-    NvVec3 euler = nv_quat_to_euler(node->rotation);
-    f32 degrees[3] = {euler.x * 180.0f / NV_PI, euler.y * 180.0f / NV_PI, euler.z * 180.0f / NV_PI};
-    // Tiny negatives (float noise, -0) would show as "-0.0".
-    for (u32 i = 0; i < 3; ++i) {
-        if (fabsf(degrees[i]) < 0.05f)
-            degrees[i] = 0.0f;
+    if (search_row(app, "Rotation", "transform euler pitch yaw roll")) {
+        NvVec3 euler = nv_quat_to_euler(node->rotation);
+        f32 degrees[3] = {euler.x * 180.0f / NV_PI, euler.y * 180.0f / NV_PI, euler.z * 180.0f / NV_PI};
+        // Tiny negatives (float noise, -0) would show as "-0.0".
+        for (u32 i = 0; i < 3; ++i) {
+            if (fabsf(degrees[i]) < 0.05f)
+                degrees[i] = 0.0f;
+        }
+        if (igDragFloat3("Rotation", degrees, 0.5f, 0.0f, 0.0f, "%.1f", 0))
+            node->rotation = nv_quat_from_euler(nv_vec3(degrees[0] * NV_PI / 180.0f, degrees[1] * NV_PI / 180.0f, degrees[2] * NV_PI / 180.0f));
     }
-    if (igDragFloat3("Rotation", degrees, 0.5f, 0.0f, 0.0f, "%.1f", 0))
-        node->rotation = nv_quat_from_euler(nv_vec3(degrees[0] * NV_PI / 180.0f, degrees[1] * NV_PI / 180.0f, degrees[2] * NV_PI / 180.0f));
-    igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
+    if (search_row(app, "Scale", "transform size"))
+        igDragFloat3("Scale", &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
     if (node->mesh.index) {
-        igSeparatorText("Mesh");
-        f32 color[4];
-        for (u32 i = 0; i < 4; ++i)
-            color[i] = app->renderer.materials[node->material.index].desc.base_color[i];
-        if (igColorEdit4("Color", color, ImGuiColorEditFlags_Float))
-            nv_renderer_set_material_color(&app->renderer, node->material, color);
+        search_section(app, "Mesh");
+        if (search_row(app, "Color", "material base color")) {
+            f32 color[4];
+            for (u32 i = 0; i < 4; ++i)
+                color[i] = app->renderer.materials[node->material.index].desc.base_color[i];
+            if (igColorEdit4("Color", color, ImGuiColorEditFlags_Float))
+                nv_renderer_set_material_color(&app->renderer, node->material, color);
+        }
         NvTextureId texture = app->renderer.materials[node->material.index].desc.base_color_texture;
-        if (texture.index)
+        if (texture.index && search_group(app, "Texture", "material base color image"))
             textures_inspector_thumbnail(app, texture);
     }
     if (node->camera.projection) {
-        igSeparatorText("Camera");
-        igSliderAngle("Field of view", &node->camera.fov_y, 20.0f, 100.0f, "%.0f deg", 0);
+        search_section(app, "Camera");
+        if (search_row(app, "Field of view", "fov camera lens"))
+            igSliderAngle("Field of view", &node->camera.fov_y, 20.0f, 100.0f, "%.0f deg", 0);
     }
     if (node->light.type) {
-        igSeparatorText("Light");
-        igColorEdit3("Color##light", &node->light.color.x, ImGuiColorEditFlags_Float);
-        igSliderFloat("Intensity", &node->light.intensity, 0.0f, 3.0f, "%.2f", 0);
+        search_section(app, "Light");
+        if (search_row(app, "Color##light", "light"))
+            igColorEdit3("Color##light", &node->light.color.x, ImGuiColorEditFlags_Float);
+        if (search_row(app, "Intensity", "light brightness"))
+            igSliderFloat("Intensity", &node->light.intensity, 0.0f, 3.0f, "%.2f", 0);
     }
     if (node->attach.animator.index)
         attach_section(app, node);
@@ -330,11 +511,12 @@ void ui_inspector_tab(App* app)
     if (animator.index == app->animator.index) {
         animator_section(app, nv_anim_get(animator));
     } else if (animator.index) {
-        igSeparatorText("Animator");
+        search_section(app, "Animator");
         NvAnimLayer* layer = &nv_anim_get(animator)->layers[0];
-        if (layer->clip.index)
+        if (layer->clip.index && search_group(app, "Playing", "animation clip"))
             igText("%s  %.2f / %.2f s", nv_anim_clip_name(layer->clip), layer->time, nv_anim_clip_duration(layer->clip));
     }
+    search_panel_end(app);
 }
 
 //
@@ -345,27 +527,39 @@ void ui_view_tab(App* app)
 {
     ImGuiIO* io = igGetIO_Nil();
     SceneView* view = app_view(app);
+    search_panel_begin(app, SEARCH_VIEW);
     local_persist const char* scenes[SCENE_COUNT] = {"Showcase", "Stress"};
     int shown = (int)app->shown;
-    if (igCombo_Str_arr("Scene", &shown, scenes, SCENE_COUNT, -1))
-        app_show_scene(app, (SceneKind)shown);
-    igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
-    igTextDisabled("%s build, commit %s", NV_BUILD_NAME, NV_GIT_COMMIT);
-    igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
-    igTextWrapped("%s", NV_GIT_SUBJECT);
-    igPopStyleColor(1);
-    igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
-    igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
-    igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
-    igCheckbox("Camera follows selection", &view->follow_selection);
+    if (search_row(app, "Scene", "showcase stress switch")) {
+        if (igCombo_Str_arr("Scene", &shown, scenes, SCENE_COUNT, -1))
+            app_show_scene(app, (SceneKind)shown);
+    }
+    if (search_plain(app)) {
+        igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
+        igTextDisabled("%s build, commit %s", NV_BUILD_NAME, NV_GIT_COMMIT);
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
+        igTextWrapped("%s", NV_GIT_SUBJECT);
+        igPopStyleColor(1);
+    }
+    if (search_row(app, "Camera yaw", "orbit"))
+        igSliderAngle("Camera yaw", &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
+    if (search_row(app, "Camera pitch", "orbit"))
+        igSliderAngle("Camera pitch", &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
+    if (search_row(app, "Distance", "camera zoom orbit"))
+        igSliderFloat("Distance", &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+    if (search_row(app, "Camera follows selection", "orbit follow"))
+        igCheckbox("Camera follows selection", &view->follow_selection);
     if (app->shown == SCENE_SHOWCASE) {
-        igCheckbox("Show bones", &app->show_bones);
-        igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+        if (search_row(app, "Show bones", "skeleton debug lines"))
+            igCheckbox("Show bones", &app->show_bones);
+        if (search_row(app, "Planet orbit", "speed moon spin"))
+            igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
     msaa_ui(app);
     resolution_ui(app);
     shadow_ui(app);
     save_ui(app);
+    search_panel_end(app);
 }
 
 // The number of warnings and errors not yet seen, for the Console tab's label and the badge.
@@ -413,6 +607,12 @@ internal void fit_text(const char* text, f32 room, char* out, umm capacity)
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
 void ui_build_label(App* app)
 {
+    // A popup (the command palette, the help window) is above everything but this foreground
+    // drawing, so the label waits.
+    if (igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        app->badge_box[0] = app->badge_box[1] = app->badge_box[2] = app->badge_box[3] = 0.0f;
+        return;
+    }
     char text[80];
     snprintf(text, sizeof(text), "%s build %s%s", NV_BUILD_NAME, NV_GIT_COMMIT,
              app->playing && app->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
@@ -627,6 +827,7 @@ void app_build_ui(App* app)
     app->console.shown_now = 0;
     app->textures.shown_last = app->textures.shown_now;
     app->textures.shown_now = 0;
+    search_frame(app);
     ui_build_label(app);
     if (app->ui_mode == UI_PHONE)
         phone_build_ui(app);

@@ -335,6 +335,21 @@ internal void section(App* app, const char* label, TextureKind first, TextureKin
     }
     char memory[32];
     format_bytes(bytes, memory, sizeof(memory));
+    // The search matches a texture's name and its section's: "materials" lists the whole section.
+    search_section(app, label);
+    b32 searching = search_active(app);
+    if (searching) {
+        u32 matching = 0;
+        for (u32 i = 0; i < count; ++i) {
+            const TextureEntry* entry = &entries[i];
+            if (entry->kind >= first && entry->kind <= last && (viewer->show_unused || entry->in_use) &&
+                search_match(app, entry->name))
+                ++matching;
+        }
+        if (!matching)
+            return;
+        igSetNextItemOpen(true, ImGuiCond_Always);
+    }
     char header[96];
     snprintf(header, sizeof(header), "%s (%s)###%s", label, memory, label);
     if (!igCollapsingHeader_TreeNodeFlags(header, ImGuiTreeNodeFlags_DefaultOpen))
@@ -346,6 +361,9 @@ internal void section(App* app, const char* label, TextureKind first, TextureKin
             continue;
         if (!viewer->show_unused && !entry->in_use)
             continue;
+        if (searching && !search_match(app, entry->name))
+            continue;
+        ++app->search.rows_now[SEARCH_TEXTURES];
         row(app, entry, height, (*number)++);
     }
 }
@@ -527,6 +545,16 @@ void textures_tab(App* app)
     }
     viewer->listed = 0;
 
+    // Wide (a desktop's bottom of a wide window): the list and the picked texture side by side.
+    // Narrow (a dock, a phone): one or the other, with Back from the picked one to the list.
+    ImVec2_c avail = igGetContentRegionAvail();
+    b32 side_by_side = avail.x >= SIDE_BY_SIDE_WIDTH * app->imgui.ui_scale;
+    b32 show_list = side_by_side || !picked || !viewer->detail_open;
+    b32 show_detail = side_by_side || (picked && viewer->detail_open);
+    // The search box filters the list; the picked texture alone has nothing to filter.
+    if (show_list)
+        search_panel_begin(app, SEARCH_TEXTURES);
+
     bool in_use_only = !viewer->show_unused;
     if (igCheckbox("In use only", &in_use_only))
         viewer->show_unused = !in_use_only;
@@ -541,12 +569,7 @@ void textures_tab(App* app)
     memset(viewer->row_rects, 0, sizeof(viewer->row_rects));
     memset(viewer->rects[TEXTURES_RECT_IMAGE], 0, sizeof(viewer->rects[0]));
 #endif
-    // Wide (a desktop's bottom of a wide window): the list and the picked texture side by side.
-    // Narrow (a dock, a phone): one or the other, with Back from the picked one to the list.
-    ImVec2_c avail = igGetContentRegionAvail();
-    b32 side_by_side = avail.x >= SIDE_BY_SIDE_WIDTH * app->imgui.ui_scale;
-    b32 show_list = side_by_side || !picked || !viewer->detail_open;
-    b32 show_detail = side_by_side || (picked && viewer->detail_open);
+    avail = igGetContentRegionAvail();
     if (show_list) {
         if (side_by_side)
             igBeginChild_Str("##texture list", (ImVec2_c){avail.x * 0.42f, 0.0f}, ImGuiChildFlags_Borders, 0);
@@ -578,6 +601,8 @@ void textures_tab(App* app)
         if (side_by_side)
             igEndChild();
     }
+    if (show_list)
+        search_panel_end(app);
     scratch->used = mark;
 }
 

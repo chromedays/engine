@@ -1,6 +1,6 @@
 # Search spec
 
-Status: proposed (2026-10-01). Changes to this spec are agreed first.
+Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -129,6 +129,59 @@ them all. `search_row` also records the row for the palette (below). This become
 
 Every phase is checked in Release and Debug in headless Chromium, desktop at 1280×800 with the
 mouse and keyboard, phone at 390×664 with touch.
+
+As built, the three phases arrived together (the boxes, the palette and the polish share one file),
+and the phases then checked them. Notes:
+
+- Rows go through three calls: `search_row` (one widget with its label at the right end of its
+  rectangle: the label's match is marked after the widget is drawn), `search_group` (several widgets
+  or a button: no mark) and `search_plain` (no setting: only with an empty query). `search_match`
+  tests a string without drawing, for lists (the Textures tab's entries). The section heading is part
+  of every row's text, so "shadows" shows the whole section and "autosave" both of its groups.
+- The settings are collected while the palette is open, by running the Inspector, View and (while
+  shown) Stress panels in collect mode inside an off-screen window, so a stray ImGui call could
+  not draw. The Textures tab adds none: its list rows are textures, not settings.
+- Textures: the box is above the list; "In use only" stays visible. A narrow panel that shows only
+  the picked texture has no box. Sections and entries match by name plus group, and a group
+  opens while a query is typed.
+- Stress tab: the stats go through `search_row` too; their table starts after the visible rows are
+  known, so the heading is never drawn inside a cell.
+- The Scene tree's marks are made again when the query, the node count or the scene changes, and
+  every 30 frames. A path deeper than the tree draws (24) shows "... N more levels" and then the
+  matches under it flat, at most 50, instead of "the 24 nearest levels": the chain is the only deep
+  structure, and a flat list is what a person picking a match needs. The 500-row cap counts every
+  row drawn, parents included, and "and N more" counts matches not drawn.
+- The palette ranks all three kinds together by (can run, words matched mid-word, length of the
+  name, kind, listed order), so a short setting can come before a longer action of the same words.
+  Disabled actions come last. Results are sorted each frame while it is open: the nodes are kept
+  to the best 200 as they are found, so 16 000 grid cubes cost one pass.
+- The palette closes on Escape and on a click or tap outside it. It opens from `request` flags
+  (`App.search.palette_request`, `App.request_reset`) so the shortcut, the Edit menu item and the
+  phone's Find button do the same. Reset opens its confirmation in the top bar's window on both UIs.
+- The build label draws on the foreground draw list, above popups, so it now waits while any popup is
+  open.
+- The phone's side buttons are 64 px and Find 52 px (`layout.md`). The Reset confirmation's text is
+  wider than a phone screen; it was before too.
+- Ctrl+F is taken from the browser like any bound key; while a box is being edited the engine
+  already keeps every key from the browser (`WantCaptureKeyboard`), so Ctrl+F there does nothing.
+- Typing fast (Playwright's `keyboard.type` without a delay) under SwiftShader's few frames per
+  second arrives over several frames, since ImGui trickles its input queue: tests wait for the
+  query to settle, or type with a delay.
+- Debug builds export `_app_debug_search_buffer`, `_app_debug_search_set(panel)` (panel 5 is the
+  palette), `_app_debug_search_rows(panel)`, `_app_debug_search_query(panel, k)`,
+  `_app_debug_palette(n)` (0 open, 1 results, 2 highlight, 3 kind of the highlighted row, 4 settings
+  collected, 5 recent actions), `_app_debug_palette_result(i, k)`, `_app_debug_palette_query(k)` and
+  `_app_debug_set_chain(links)`.
+- Checked in Debug (desktop at 1280×800 with keyboard and mouse, phone at 390×664 with touch) and
+  Release (no debug exports there: typed queries and screenshots only): filtered rows in each panel
+  for several queries, no-match text, Escape clearing, no gizmo or shortcut firing while typing,
+  the stress tree finding nodes inside the 1000-link chain and capped at 500 rows, the palette's
+  three kinds of result and their Enter actions (Play ran and Space stops again, a node selected,
+  Shift+Enter focusing, a setting shown with its filter), a disabled action refusing Enter, the
+  recent action first, 200 node results with the "more" row, Ctrl+Shift+P, F1 and Ctrl+F kept from
+  the browser, Ctrl+F reaching the panel under the pointer or the right dock's, the phone's Find
+  button, a tapped result, the Reset confirmation from the palette, and the panel's touch scrolling
+  under the pinned box.
 
 ## Out of scope
 

@@ -62,9 +62,19 @@ Existing ones are marked; the rest are new.
 | Docks | \` (backquote) | Show or hide the Console dock; opens it if it is collapsed | |
 | Help | ? (Shift+/) | Open the Keyboard shortcuts window | |
 
-Kept free for later work: Delete, Ctrl+D (duplicate) and F2 (rename) for scene editing;
-Ctrl+Shift+P for a command palette. Ctrl+D is the browser's bookmark key: the claim hook will take
-it when duplicate exists.
+Kept free for later work: Delete, Ctrl+D (duplicate) and F2 (rename) for scene editing. Ctrl+D is
+the browser's bookmark key: the claim hook will take it when duplicate exists.
+
+Added by `search.md`:
+
+| Group | Keys | Does | When |
+|---|---|---|---|
+| Find | Ctrl+Shift+P, F1 | Open the command palette (Firefox keeps Ctrl+Shift+P for its private window, so F1 is the way there) | |
+| Find | Ctrl+F | Focus the search box of the panel under the pointer, else of the right dock's current tab | |
+
+The rows without keys in the table (Show save, Reset everything..., Show the Showcase / Stress
+scene, Open the Textures tab, Clear the console) are palette only: the palette lists every row
+that has something to run, and the help window only the rows that have keys.
 
 ## Changes
 
@@ -114,5 +124,5 @@ code) and phase 3's help window and Cmd labels with them; the phases then checke
 
 - Remapping keys, and saving custom bindings.
 - Shortcuts on the phone UI, and for a tablet with a keyboard (it gets the phone UI).
-- Actions that do not exist yet (duplicate, delete, rename, a command palette); their keys are
+- Actions that do not exist yet (duplicate, delete, rename); their keys are
   kept free above.

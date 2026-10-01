@@ -37,7 +37,8 @@ workloads together stay under `NV_MAX_NODES`.
 
 The stress scene also has a camera, a sun and a ground. Big workloads sit under group nodes
 ("grid", "chain", "crowd") that start collapsed in the Scene tab. Otherwise the tree would draw
-thousands of rows every frame and distort the measurements.
+thousands of rows every frame and distort the measurements. The Scene tab's search box lists a
+match inside them anyway (at most 500 rows; `search.md`).
 
 ## Engine changes
 
@@ -66,6 +67,8 @@ thousands of rows every frame and distort the measurements.
     startup, until `save.md` removed it.)
 - **Stress tab** (shown while the stress scene is):
   - the workload toggles and sliders;
+  - a search box above them (`search.md`): the stats, the workload rows and the benchmark group are
+    rows it filters, and the palette finds them too;
   - live stats: FPS; frame time (average and max over the last second); CPU time for animation
     update, scene update, draw recording and ImGui; node, draw, triangle and skinned counts;
     GPU time when available.
