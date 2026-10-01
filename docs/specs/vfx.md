@@ -43,11 +43,12 @@
 
 | 접근법 | 무엇인가 | 맞음 | 장단점 |
 |---|---|---|---|
-| **상태 없는 GPU 파티클** (추천) | CPU는 파티클이 생길 때 생성 기록 (위치, 속도, 생성 시각, 수명, 효과, 시드)을 한 번만 올린다. 정점 셰이더가 매 프레임 그 기록과 현재 시각으로 위치를 닫힌 식으로 계산한다: 중력, 공기 저항 (지수 감쇠), 지면 높이에서 멈춤, 크기와 색의 시간 곡선 | compute 패스가 없고, 프레임마다 올리는 데이터는 새 파티클뿐이다. 시간을 멈추거나 느리게 하면 그대로 따라간다. 폭발, 불꽃, 연기, 파편에는 충분하다 | 상태에 따른 힘 (끌어당김, 충돌 후 튕김, 다른 것과의 상호작용)은 표현할 수 없다 |
+| **상태 없는 GPU 파티클, 버스트 단위 기록** (추천) | 효과를 터뜨릴 때 CPU는 이미터마다 버스트 기록 하나 (이미터, 위치, 방향, 배율, 생성 시각, 시드, 첫 슬롯, 수; 64바이트)만 올리고, 그 버스트가 받은 파티클 슬롯마다 버스트 번호 (4바이트)를 쓴다. 정점 셰이더는 슬롯에서 버스트를 찾고, 버스트 안의 순번과 시드로 해시 난수를 만들어 파티클의 초기값 (속도, 수명, 크기)을 정한 뒤, 현재 시각으로 위치를 닫힌 식으로 계산한다: 중력, 공기 저항 (지수 감쇠), 지면 높이에서 멈춤, 크기와 색의 시간 곡선 | compute 패스가 없다. 파티클 하나의 GPU 메모리와 업로드가 4바이트라서 100만 개에 4 MB다. 시간을 멈추거나 느리게 하면 그대로 따라간다. 폭발, 불꽃, 연기, 파편에는 충분하다 | 상태에 따른 힘 (끌어당김, 충돌 후 튕김, 다른 것과의 상호작용)은 표현할 수 없다 |
+| 상태 없는 GPU 파티클, 파티클마다 생성 기록 (이전 초안) | CPU가 파티클마다 48바이트 기록 (위치, 속도, 수명, ...)을 만들어 올린다 | 셰이더가 조금 단순하다 | 100만 개에 48 MB, 그리고 초당 수십만 개의 기록을 CPU가 난수로 만든다. 백만 단위에서는 버스트 단위가 낫다 |
 | compute 셰이더 시뮬레이션 | 파티클 상태 버퍼를 compute 패스가 매 프레임 적분한다. 생성과 소멸은 atomic 카운터와 빈 목록으로 관리한다 | 어떤 힘이든 가능하다 | compute 패스, 간접 그리기, atomic, 빈 목록 관리. 엔진의 첫 compute 코드다. 오토배틀러의 효과에는 필요한 기능을 넘는다 |
-| CPU 시뮬레이션 | wasm에서 적분하고 매 프레임 전체를 올린다 | 가장 단순 | 5만 개면 프레임마다 약 1.6 MB 업로드와 CPU 시간. 폰에서 시뮬레이션 코어와 CPU를 다툰다 |
+| CPU 시뮬레이션 | wasm에서 적분하고 매 프레임 전체를 올린다 | 가장 단순 | 100만 개면 프레임마다 약 32 MB 업로드와 큰 CPU 시간. 백만 단위에서는 불가능하다 |
 
-추천: 상태 없는 GPU 파티클. compute 시뮬레이션은 상태에 따른 효과가 필요해질 때 이 설계 옆에 더한다 (생성 기록과 효과 표는 그대로 쓸 수 있다). `autobattler.md`의 "GPU 파티클 (compute shader)"은 이 결정으로 바뀐다.
+추천: 버스트 단위 기록의 상태 없는 GPU 파티클. compute 시뮬레이션은 상태에 따른 효과가 필요해질 때 이 설계 옆에 더한다 (버스트 기록과 효과 표는 그대로 쓸 수 있다). `autobattler.md`의 "GPU 파티클 (compute shader)"은 이 결정으로 바뀐다.
 
 ### 결정
 
@@ -57,7 +58,7 @@
 |---|---|
 | 모듈 | `nv/vfx.h`, `engine/src/vfx.c`: 효과 표, 파티클, 선분 (궤적과 빔), 데칼. 렌더러는 `NvRenderer.vfx`가 있으면 씬 패스 안에서 그것을 그린다. HDR, 톤 매핑, bloom은 렌더러에 들어간다 (`renderer.c`) |
 | 시각 | `nv_vfx_update(vfx, dt)`가 효과의 시각을 진행한다. 앱은 게임 시각의 dt를 넘기므로, 일시정지는 효과를 멈추고 슬로 모션은 효과를 느리게 한다 (`autobattler.md`의 9번) |
-| 효과 정의 | 효과는 `NvVfxEffectDesc` 표의 행이다 (최대 64개): 한 번에 나오는 수, 수명 범위, 속도 범위와 원뿔, 중력, 공기 저항, 크기 시작과 끝, 색 세 점 (시작, 중간, 끝; HDR 값 허용), 모양, 블렌드 모드, 속도 방향 늘이기, 지면 높이. 앱이 시작할 때 등록한다. 데이터 파일은 `autobattler.md`의 4번 (데이터 기반 정의)에서 다룬다 |
+| 효과와 이미터 | 효과는 이미터 최대 8개의 묶음이다 (폭발 = 섬광 + 불꽃 + 연기 + 파편). 이미터는 파티클 흐름 하나로, `NvVfxEmitterDesc`의 행이다: 한 번에 나오는 수, 수명 범위, 속도 범위와 원뿔, 중력, 공기 저항, 크기 시작과 끝, 색 세 점 (시작, 중간, 끝; HDR 값 허용), 모양, 블렌드 모드, 속도 방향 늘이기, 지면 높이, 효과 안에서의 시작 지연. 효과 최대 1,024개 (`NV_VFX_MAX_EFFECTS`), 이미터 최대 4,096개 (`NV_VFX_MAX_EMITTERS`). 이미터 표는 GPU의 스토리지 버퍼 하나 (이미터당 약 128바이트, 최대 512 KB)라서 수를 늘리는 비용이 작다. 앱이 시작할 때 등록한다. 데이터 파일은 `autobattler.md`의 4번 (데이터 기반 정의)에서 다룬다 |
 | 호출 | `nv_vfx_burst(vfx, effect, position, direction, scale)`: 한 번에 터뜨리기. `nv_vfx_emit(vfx, effect, from, to, count)`: 이번 틱에 움직인 구간을 따라 고르게 내보내기 (미사일 연기 궤적). 핸들도 해제도 없다: 모든 것은 수명이 끝나면 사라진다 |
 | 그리기 순서 | 씬 패스 안에서: 불투명 메시 → 데칼 → 디버그 라인 → 선분 → 알파 파티클 → 가산 파티클. 모두 깊이 테스트를 하고 깊이를 쓰지 않는다 |
 | 정렬 | 하지 않는다. 가산 블렌딩은 순서와 무관하다. 알파 블렌딩 (연기)은 낮은 불투명도로 써서 순서 오류가 눈에 띄지 않게 한다. 순서와 무관한 투명도 (OIT)는 범위 밖 |
@@ -69,9 +70,12 @@
 
 | 주제 | 결정 |
 |---|---|
-| 용량 | 파티클 65,536개 (`NV_VFX_MAX_PARTICLES`), 블렌드 모드별 링 두 개로 나눈다 (알파 16,384, 가산 49,152). 생성 기록은 48바이트라서 GPU 버퍼는 3 MB |
-| 할당 | 링: CPU가 다음 슬롯에 쓰고, 가득 차면 가장 오래된 파티클을 덮어쓴다. atomic도 GPU 읽어 오기도 없다. 프레임마다 새 기록만 `wgpuQueueWriteBuffer`로 올린다 (링이 돌면 두 번) |
-| 살아 있는 구간 | CPU는 슬롯마다 생성 시각만 보관한다. 링은 시간 순서로 채워지므로, "지금 − 그 링의 최대 수명"보다 늦게 생긴 첫 슬롯을 이진 탐색으로 찾고 그 구간만 인스턴스로 그린다. 구간 안에서 수명이 끝난 파티클은 정점 셰이더가 크기 0으로 버린다 |
+| 용량 | 동시에 살아 있는 파티클 수, 모든 효과의 합계. 고정 상수가 아니라 앱이 `nv_vfx_init`에 넘긴다: 기본값은 데스크톱 2,097,152 (2M), 폰 262,144. 상한은 기기의 `maxStorageBufferBindingSize` (WebGPU 기본 128 MiB)인데, 파티클 하나가 4바이트라 3,300만 개까지 들어간다. 그래서 실제 한계는 메모리가 아니라 그리기 비용이다 (아래) |
+| 할당 | 블렌드 모드별 링 두 개, 비율은 앱이 정한다 (기본 가산 3/4, 알파 1/4). 효과를 터뜨리면 이미터마다 링에서 연속된 슬롯 구간을 받는다; 가득 차면 가장 오래된 파티클을 덮어쓴다. atomic도 GPU 읽어 오기도 없다. 버스트 기록도 자체 링 (최대 65,536개, 4 MB)에 둔다 |
+| 업로드 | 프레임마다 새 버스트 기록과 새 슬롯의 버스트 번호만 `wgpuQueueWriteBuffer`로 올린다 (링이 돌면 두 번). 100만 개가 2초마다 모두 바뀌어도 프레임당 약 35 KB |
+| 살아 있는 구간 | CPU는 버스트마다 생성 시각과 가장 긴 수명을 보관한다. 아직 살아 있는 가장 오래된 버스트의 첫 슬롯부터 링의 앞까지를 그린다. 그 안에서 수명이 끝난 파티클은 정점 셰이더가 크기 0으로 버린다. 수명이 긴 연기가 그 뒤의 짧은 불꽃까지 구간에 붙잡아 두면 죽은 파티클의 정점 비용이 는다: 측정해서 필요하면 수명 등급별로 링을 나눈다 |
+| 그리기 방식 | 인스턴싱 대신 vertex pulling: 구간의 파티클 N개를 `Draw(6N)` 한 번으로 그리고, 정점 셰이더가 `vertex_index / 6`으로 슬롯을 찾는다. 정점 4–6개짜리 작은 인스턴스는 GPU의 정점 웨이브를 덜 채울 수 있어서, 파티클에서 흔히 쓰는 방식이다 |
+| 그리기 비용 | 정점 셰이더가 구간의 모든 파티클을 매 프레임 계산하고 (100만 개 = 정점 600만 개), 겹쳐 그린 픽셀이 fill rate를 쓴다. 보통 큰 가산 파티클의 겹침이 먼저 한계가 된다. 데스크톱 GPU에서는 수백만 개를 예상하고, 폰에서는 수십만 개 언저리를 예상한다. 둘 다 스트레스 씬으로 잰다 (아래) |
 | 모양 | 첫 단계는 텍스처 없이 셰이더가 그린다: 부드러운 원, 고리 (충격파), 속도로 늘인 줄 (불꽃), 노이즈 덩어리 (연기). 스프라이트 아틀라스는 나중에 같은 모양 번호 자리에 더한다 |
 | 카메라 정렬 | 사각형은 카메라를 향한다. 늘이기가 켜진 효과는 화면 공간의 속도 방향으로 늘인다 (속도는 닫힌 식의 미분으로 구한다) |
 | 지면 | 효과마다 지면 높이를 둘 수 있다: 그보다 아래로는 내려가지 않고 그 자리에 머문다 (파편이 땅에 떨어진다). 튕김은 범위 밖 |
@@ -80,7 +84,7 @@
 
 | 주제 | 결정 |
 |---|---|
-| 형태 | 둘 다 카메라를 향한 선분 인스턴스다: 끝점 둘, 폭, 색, 생성 시각, 수명. 용량 32,768 (`NV_VFX_MAX_SEGMENTS`), 같은 링 방식 |
+| 형태 | 둘 다 카메라를 향한 선분 인스턴스다: 끝점 둘, 폭, 색, 생성 시각, 수명. 용량은 앱이 정한다 (기본 262,144; 선분 하나 48바이트, 12 MB), 같은 링 방식 |
 | 궤적 | `nv_vfx_trail(vfx, style, from, to)`: 앱이 미사일의 이번 틱 이동 구간마다 부른다. 구간마다 선분 하나가 생기고 수명 동안 가늘어지며 흐려진다. 연기 궤적은 같은 구간에 `nv_vfx_emit`을 함께 쓴다 |
 | 빔 | `nv_vfx_beam(vfx, style, from, to, seconds)`: 레이저처럼 두 점 사이에 일정 시간 유지되는 선분. 셰이더가 결을 흐르게 하고 깜박이게 한다. 움직이는 유닛을 따라가야 하면 앱이 매 틱 짧은 수명으로 다시 부른다 |
 
@@ -88,7 +92,7 @@
 
 | 주제 | 결정 |
 |---|---|
-| 형태 | 지면 평면 위의 사각형 인스턴스: 위치, 회전, 크기, 모양, 색, 생성 시각, 수명 (끝에서 흐려짐). 용량 2,048 (`NV_VFX_MAX_DECALS`), 같은 링 방식 |
+| 형태 | 지면 평면 위의 사각형 인스턴스: 위치, 회전, 크기, 모양, 색, 생성 시각, 수명 (끝에서 흐려짐). 용량은 앱이 정한다 (기본 16,384), 같은 링 방식 |
 | 범위 | 평평한 지면 위에만 놓는다 (`autobattler.md`: 전장이 평평하다). 메시나 울퉁불퉁한 지형에 투영하는 데칼은 범위 밖: 깊이 버퍼를 읽어야 하는데, 다중 샘플 깊이는 같은 패스에서 읽을 수 없다 |
 | 깊이 | 지면과 겹치므로 깊이 바이어스로 지면 위에 그린다. reverse Z이므로 바이어스 부호가 표준과 반대다 |
 
@@ -112,23 +116,22 @@
 | 저장 | 새 `EDIT` 태그: `TONE` (u32: 0 Clamp, 1 PBR Neutral, 2 ACES), `EXPO` (f32), `BLOM` (u32), `BLMI` (f32). 살아 있는 효과는 저장하지 않는다 |
 | Edit와 Play | 시험 버튼은 Edit 모드에서도 동작한다: 애니메이션 미리보기처럼 사용자가 누른 일회성 미리보기다. 계속 나오는 효과 (쇼케이스의 장식 효과가 생긴다면)는 `app->playing` 가지에만 둔다. Play와 Stop은 살아 있는 효과를 모두 지운다 |
 | Undo | 효과는 undo 대상이 아니다. Post-processing 설정은 다른 에디터 설정처럼 undo되지 않는다 |
-| 스트레스 씬 | **Effects** 워크로드: 초당 폭발 수 (0–200), 날아다니는 미사일 수 (궤적과 연기, 0–2,000), 빔 수 (0–500), 데칼 수. 통계: 살아 있는 파티클, 선분, 데칼, bloom GPU 시간. 벤치마크에 효과 단계를 더한다 |
+| 스트레스 씬 | **Effects** 워크로드: 살아 있는 파티클 목표 (0–4M, 그 수를 유지하도록 폭발을 터뜨림), 초당 폭발 수 (0–200), 날아다니는 미사일 수 (궤적과 연기, 0–2,000), 빔 수 (0–500), 데칼 수. 통계: 살아 있는 파티클, 선분, 데칼, bloom GPU 시간. 벤치마크에 효과 단계를 더한다 |
 | Debug export | `_app_debug_vfx(n)` (0 파티클, 1 선분, 2 데칼, 3 효과 수), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
 
 ### 엔진 API (초안)
 
 ```c
-#define NV_VFX_MAX_EFFECTS   64
-#define NV_VFX_MAX_PARTICLES 65536
-#define NV_VFX_MAX_SEGMENTS  32768
-#define NV_VFX_MAX_DECALS    2048
+#define NV_VFX_MAX_EFFECTS            1024
+#define NV_VFX_MAX_EMITTERS           4096
+#define NV_VFX_MAX_EMITTERS_PER_EFFECT 8
 
 typedef enum NvVfxBlend { NV_VFX_BLEND_ADD, NV_VFX_BLEND_ALPHA } NvVfxBlend;
 typedef enum NvVfxShape { NV_VFX_SHAPE_DISC, NV_VFX_SHAPE_RING, NV_VFX_SHAPE_STREAK, NV_VFX_SHAPE_PUFF } NvVfxShape;
 
-typedef struct NvVfxEffectDesc {
-    char name[32];
+typedef struct NvVfxEmitterDesc { // one stream of particles
     u32 count;                  // particles per burst
+    f32 delay;                  // seconds after the effect fires
     f32 life_min, life_max;     // seconds
     f32 speed_min, speed_max;   // m/s
     f32 cone;                   // radians around the direction; pi = every direction
@@ -140,11 +143,23 @@ typedef struct NvVfxEffectDesc {
     f32 stretch;                // 0 = square, else length per m/s of screen velocity
     NvVfxShape shape;
     NvVfxBlend blend;
+} NvVfxEmitterDesc;
+
+typedef struct NvVfxEffectDesc {
+    char name[32];
+    u32 emitter_count;
+    NvVfxEmitterDesc emitters[NV_VFX_MAX_EMITTERS_PER_EFFECT];
 } NvVfxEffectDesc;
+
+typedef struct NvVfxCapacity { // chosen by the app per device; zero fields take the defaults
+    u32 particles;             // alive at once, all effects combined
+    f32 additive_share;        // of `particles`, for the additive ring
+    u32 bursts, segments, decals;
+} NvVfxCapacity;
 
 typedef struct NvVfxEffectId { u32 index; } NvVfxEffectId; // 0 = none
 
-void          nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvArena* arena);
+void          nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena);
 NvVfxEffectId nv_vfx_add_effect(NvVfx* vfx, const NvVfxEffectDesc* desc);
 void nv_vfx_update(NvVfx* vfx, f32 dt);  // game time: pauses and slow motion follow it
 void nv_vfx_burst(NvVfx* vfx, NvVfxEffectId effect, NvVec3 position, NvVec3 direction, f32 scale);
@@ -164,10 +179,11 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 2. **스프라이트:** 첫 단계는 셰이더가 그리는 모양 (추천, 에셋 없음) 또는 Kenney Particle Pack (CC0) 같은 텍스처 아틀라스.
 3. **톤 매핑 기본값:** PBR Neutral (추천: 지금 쇼케이스의 모습을 거의 유지하면서 밝은 효과를 부드럽게 누른다) 또는 Clamp (지금과 같은 모습) 또는 ACES.
 4. **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 (추천) 또는 따로.
+5. **기본 용량:** 동시에 살아 있는 파티클 데스크톱 2M, 폰 256K (추천; 스트레스 씬의 측정으로 다시 정한다).
 
 ### 변경
 
-- **엔진.** `nv/vfx.h`, `engine/src/vfx.c` (효과 표, 링, 생성 기록, 세 파이프라인 묶음, 그리기), `nv/renderer.h`와
+- **엔진.** `nv/vfx.h`, `engine/src/vfx.c` (효과와 이미터 표, 링, 버스트 기록, 세 파이프라인 묶음, 그리기), `nv/renderer.h`와
   `renderer.c` (`RGBA16Float` 씬 타깃, `NvPostSettings`, 업스케일 패스의 노출과 톤 매핑과 bloom 합성, bloom 체인과 그 패스,
   타임스탬프 8개), `engine/src/imgui.c` (float 텍스처 미리보기 확인).
 - **앱.** View 탭의 Post-processing과 Effects 섹션 (`app/ui.c`), 쇼케이스의 시험 효과 정의 (`app/main.c`), 저장 태그
@@ -184,9 +200,9 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
    타깃을 보여 준다; 크기 조절과 해상도 모드 전환에서 WebGPU 오류 없음.
 2. **bloom:** 체인, 패스, 합성, 설정, 타임스탬프. 확인: 밝은 (HDR) 시험 물체 둘레에 번짐이 생기고 끄면 사라진다; 1/1부터 1/4까지와
    Fixed 모드에서 동작; 체인이 매 프레임 다시 만들어지지 않는다 (로그).
-3. **파티클:** 효과 표, 링, 상태 없는 셰이더, 두 블렌드 모드, 셰이더 모양, 늘이기, 지면, 시험 버튼, 일시정지 (dt 0)에서 멈춤.
+3. **파티클:** 효과와 이미터 표, 버스트 기록, 링, 상태 없는 셰이더, 두 블렌드 모드, 셰이더 모양, 늘이기, 지면, 시험 버튼, 일시정지 (dt 0)에서 멈춤.
    확인: 각 시험 효과의 스크린샷; 용량을 넘는 생성이 가장 오래된 것을 덮어쓴다 (Debug export의 수); 프레임마다 올리는 바이트가
-   새 파티클 수에 비례한다.
+   새 버스트와 새 파티클 수에 비례한다; 스트레스 씬에서 100만 개와 그 이상을 데스크톱과 폰 크기에서 띄우고 프레임 시간을 기록한다.
 4. **궤적, 빔, 데칼:** 선분과 데칼 링, 시험 버튼 (Missile, Laser, Scorch). 확인: 스크린샷, 수명 끝의 흐려짐, 데칼이 지면에서
    깜박이지 않음 (z-fighting).
 5. **비용과 문서:** 스트레스 워크로드, 통계, 벤치마크, 폰 크기 확인, 위의 문서들.
@@ -247,12 +263,13 @@ Recommendation: write it ourselves. Tone mapping and bloom follow published tech
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
-| **Stateless GPU particles** (recommended) | The CPU uploads a spawn record (position, velocity, birth time, lifetime, effect, seed) once, when a particle is born. Every frame the vertex shader computes its position in closed form from that record and the current time: gravity, drag (exponential decay), stopping at a ground height, size and color curves over time | No compute pass, and the only per-frame upload is new particles. Pausing or slowing time follows directly. Enough for explosions, sparks, smoke and debris | Forces that depend on state (attraction, bouncing after a collision, interacting with other things) cannot be expressed |
+| **Stateless GPU particles, one record per burst** (recommended) | When an effect fires, the CPU uploads one burst record per emitter (emitter, position, direction, scale, birth time, seed, first slot, count; 64 bytes) and writes the burst's number (4 bytes) into each particle slot it got. The vertex shader finds the burst from the slot, makes hash random numbers from the particle's index in the burst and the seed for its starting values (velocity, lifetime, size), then computes its position in closed form from the current time: gravity, drag (exponential decay), stopping at a ground height, size and color curves over time | No compute pass. A particle costs 4 bytes of GPU memory and upload, so a million cost 4 MB. Pausing or slowing time follows directly. Enough for explosions, sparks, smoke and debris | Forces that depend on state (attraction, bouncing after a collision, interacting with other things) cannot be expressed |
+| Stateless GPU particles, a spawn record per particle (the earlier draft) | The CPU makes and uploads a 48-byte record (position, velocity, lifetime, ...) per particle | A slightly simpler shader | 48 MB for a million, and the CPU makes hundreds of thousands of records a second with random numbers. At millions, one record per burst is better |
 | Compute shader simulation | A compute pass integrates a particle state buffer every frame; spawning and dying use an atomic counter and a free list | Any force is possible | A compute pass, indirect draws, atomics and free-list management: the engine's first compute code, beyond what an auto-battler's effects need |
-| CPU simulation | Integrate in wasm and upload everything every frame | Simplest | At 50,000 particles, about 1.6 MB uploaded per frame plus the CPU time; on a phone it competes with the simulation core for the CPU |
+| CPU simulation | Integrate in wasm and upload everything every frame | Simplest | At a million particles, about 32 MB uploaded per frame plus a large CPU time. Not possible at millions |
 
-Recommendation: stateless GPU particles. A compute simulation is added beside this design when a state-dependent effect is
-needed (the spawn records and the effect table carry over). This decision changes "GPU particles (compute shaders)" in
+Recommendation: stateless GPU particles with one record per burst. A compute simulation is added beside this design when a
+state-dependent effect is needed (the burst records and the effect table carry over). This decision changes "GPU particles (compute shaders)" in
 `autobattler.md`.
 
 ### Decisions
@@ -263,7 +280,7 @@ needed (the spawn records and the effect table carry over). This decision change
 |---|---|
 | Module | `nv/vfx.h`, `engine/src/vfx.c`: the effect table, particles, segments (trails and beams), decals. The renderer draws it inside the scene pass when `NvRenderer.vfx` is set. HDR, tone mapping and bloom go in the renderer (`renderer.c`) |
 | Time | `nv_vfx_update(vfx, dt)` advances the effects' clock. The app passes the game clock's dt, so a pause freezes effects and slow motion slows them (item 9 of `autobattler.md`) |
-| Effect definitions | An effect is a row of the `NvVfxEffectDesc` table (at most 64): the count per burst, lifetime range, speed range and cone, gravity, drag, start and end size, three colors (start, middle, end; HDR values allowed), shape, blend mode, stretching along velocity, ground height. The app registers them at start. Data files are item 4 of `autobattler.md` (data-driven definitions) |
+| Effects and emitters | An effect is a group of at most 8 emitters (an explosion = flash + sparks + smoke + debris). An emitter is one stream of particles, a row of `NvVfxEmitterDesc`: the count per burst, lifetime range, speed range and cone, gravity, drag, start and end size, three colors (start, middle, end; HDR values allowed), shape, blend mode, stretching along velocity, ground height, a start delay within the effect. At most 1,024 effects (`NV_VFX_MAX_EFFECTS`) and 4,096 emitters (`NV_VFX_MAX_EMITTERS`). The emitter table is one GPU storage buffer (about 128 bytes per emitter, 512 KB at most), so raising the counts costs little. The app registers them at start. Data files are item 4 of `autobattler.md` (data-driven definitions) |
 | Calls | `nv_vfx_burst(vfx, effect, position, direction, scale)`: one burst. `nv_vfx_emit(vfx, effect, from, to, count)`: spread evenly along the stretch moved this tick (a missile's smoke trail). No handles and nothing to free: everything disappears when its lifetime ends |
 | Draw order | Inside the scene pass: opaque meshes → decals → debug lines → segments → alpha particles → additive particles. All test depth and none write it |
 | Sorting | None. Additive blending does not depend on order. Alpha blending (smoke) is used at low opacity so order errors do not show. Order-independent transparency (OIT) is out of scope |
@@ -275,9 +292,12 @@ needed (the spawn records and the effect table carry over). This decision change
 
 | Topic | Decision |
 |---|---|
-| Capacity | 65,536 particles (`NV_VFX_MAX_PARTICLES`) in two rings, one per blend mode (alpha 16,384, additive 49,152). A spawn record is 48 bytes, so the GPU buffer is 3 MB |
-| Allocation | A ring: the CPU writes the next slot and, when full, overwrites the oldest particle. No atomics and no GPU readback. Only new records are uploaded each frame with `wgpuQueueWriteBuffer` (twice when the ring wraps) |
-| Live range | The CPU keeps only each slot's birth time. The ring fills in time order, so a binary search finds the first slot born after "now − the ring's longest lifetime", and only that range is drawn as instances. A particle inside the range whose lifetime has ended is dropped by the vertex shader (size 0) |
+| Capacity | The number of particles alive at once, all effects combined. Not a constant: the app passes it to `nv_vfx_init`, by default 2,097,152 (2M) on the desktop and 262,144 on a phone. The upper bound is the device's `maxStorageBufferBindingSize` (128 MiB by WebGPU's default); a particle is 4 bytes, so about 33 million fit. The real limit is the drawing cost (below), not memory |
+| Allocation | Two rings, one per blend mode, split as the app chooses (by default 3/4 additive, 1/4 alpha). When an effect fires, each emitter gets a contiguous range of slots from its ring; when full, the oldest particles are overwritten. No atomics and no GPU readback. Burst records sit in their own ring (at most 65,536, 4 MB) |
+| Upload | Only the new burst records and the new slots' burst numbers are uploaded each frame with `wgpuQueueWriteBuffer` (twice when a ring wraps). Even with a million particles all replaced every 2 seconds, that is about 35 KB per frame |
+| Live range | The CPU keeps each burst's birth time and longest lifetime. The range drawn runs from the first slot of the oldest burst still alive to the ring's head. A particle inside it whose lifetime has ended is dropped by the vertex shader (size 0). Long-lived smoke holding later short sparks inside the range adds the vertex cost of dead particles: if measured to matter, the rings are split by lifetime class |
+| Drawing | Vertex pulling instead of instancing: the range's N particles are one `Draw(6N)`, and the vertex shader finds the slot as `vertex_index / 6`. Small instances of 4 to 6 vertices can fill the GPU's vertex waves poorly, which is why particles are commonly drawn this way |
+| Drawing cost | The vertex shader computes every particle in the range every frame (a million = 6 million vertices), and overlapping pixels spend fill rate; the overlap of large additive particles is usually the first limit. Millions are expected on a desktop GPU and a few hundred thousand on a phone; both are measured with the stress scene (below) |
 | Shapes | The first step draws them in the shader with no texture: a soft disc, a ring (shockwave), a streak stretched by velocity (sparks), a noisy puff (smoke). A sprite atlas comes later in the same shape-number slots |
 | Facing | Quads face the camera. Effects with stretching are lengthened along their screen-space velocity (the velocity is the closed form's derivative) |
 | Ground | An effect may have a ground height: particles go no lower and stay there (debris falls to the ground). Bouncing is out of scope |
@@ -286,7 +306,7 @@ needed (the spawn records and the effect table carry over). This decision change
 
 | Topic | Decision |
 |---|---|
-| Form | Both are camera-facing segment instances: two end points, width, color, birth time, lifetime. Capacity 32,768 (`NV_VFX_MAX_SEGMENTS`), the same ring scheme |
+| Form | Both are camera-facing segment instances: two end points, width, color, birth time, lifetime. Capacity set by the app (262,144 by default; 48 bytes a segment, 12 MB), the same ring scheme |
 | Trails | `nv_vfx_trail(vfx, style, from, to)`: the app calls it for each stretch a missile moved this tick. Each stretch adds a segment that thins and fades over its lifetime. A smoke trail adds `nv_vfx_emit` on the same stretch |
 | Beams | `nv_vfx_beam(vfx, style, from, to, seconds)`: a segment held between two points for a time, like a laser; the shader scrolls and flickers it. When it must follow moving units, the app calls it again each tick with a short lifetime |
 
@@ -294,7 +314,7 @@ needed (the spawn records and the effect table carry over). This decision change
 
 | Topic | Decision |
 |---|---|
-| Form | Quad instances on the ground plane: position, rotation, size, shape, color, birth time, lifetime (fading at the end). Capacity 2,048 (`NV_VFX_MAX_DECALS`), the same ring scheme |
+| Form | Quad instances on the ground plane: position, rotation, size, shape, color, birth time, lifetime (fading at the end). Capacity set by the app (16,384 by default), the same ring scheme |
 | Scope | Flat ground only (`autobattler.md`: the battlefield is flat). Decals projected onto meshes or uneven terrain are out of scope: they need to read the depth buffer, and a multisampled depth cannot be read in the same pass |
 | Depth | They overlap the ground, so a depth bias draws them on top. With reverse Z the bias's sign is the opposite of the standard one |
 
@@ -318,23 +338,22 @@ needed (the spawn records and the effect table carry over). This decision change
 | Saved | New `EDIT` tags: `TONE` (u32: 0 Clamp, 1 PBR Neutral, 2 ACES), `EXPO` (f32), `BLOM` (u32), `BLMI` (f32). Live effects are not saved |
 | Edit and Play | Test buttons work in Edit mode too: a one-off preview the user presses, like the animation preview. Continuous effects (if the showcase gets decorative ones) go in the `app->playing` branch only. Play and Stop clear all live effects |
 | Undo | Effects are not undoable; the Post-processing settings are not undoable, like other editor settings |
-| Stress scene | An **Effects** workload: explosions per second (0 to 200), flying missiles (trails and smoke, 0 to 2,000), beams (0 to 500), decals. Stats: live particles, segments, decals, bloom GPU time. The benchmark gains effect steps |
+| Stress scene | An **Effects** workload: a target of live particles (0 to 4M, kept by firing explosions), explosions per second (0 to 200), flying missiles (trails and smoke, 0 to 2,000), beams (0 to 500), decals. Stats: live particles, segments, decals, bloom GPU time. The benchmark gains effect steps |
 | Debug exports | `_app_debug_vfx(n)` (0 particles, 1 segments, 2 decals, 3 effect count), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
 
 ### Engine API (draft)
 
 ```c
-#define NV_VFX_MAX_EFFECTS   64
-#define NV_VFX_MAX_PARTICLES 65536
-#define NV_VFX_MAX_SEGMENTS  32768
-#define NV_VFX_MAX_DECALS    2048
+#define NV_VFX_MAX_EFFECTS            1024
+#define NV_VFX_MAX_EMITTERS           4096
+#define NV_VFX_MAX_EMITTERS_PER_EFFECT 8
 
 typedef enum NvVfxBlend { NV_VFX_BLEND_ADD, NV_VFX_BLEND_ALPHA } NvVfxBlend;
 typedef enum NvVfxShape { NV_VFX_SHAPE_DISC, NV_VFX_SHAPE_RING, NV_VFX_SHAPE_STREAK, NV_VFX_SHAPE_PUFF } NvVfxShape;
 
-typedef struct NvVfxEffectDesc {
-    char name[32];
+typedef struct NvVfxEmitterDesc { // one stream of particles
     u32 count;                  // particles per burst
+    f32 delay;                  // seconds after the effect fires
     f32 life_min, life_max;     // seconds
     f32 speed_min, speed_max;   // m/s
     f32 cone;                   // radians around the direction; pi = every direction
@@ -346,11 +365,23 @@ typedef struct NvVfxEffectDesc {
     f32 stretch;                // 0 = square, else length per m/s of screen velocity
     NvVfxShape shape;
     NvVfxBlend blend;
+} NvVfxEmitterDesc;
+
+typedef struct NvVfxEffectDesc {
+    char name[32];
+    u32 emitter_count;
+    NvVfxEmitterDesc emitters[NV_VFX_MAX_EMITTERS_PER_EFFECT];
 } NvVfxEffectDesc;
+
+typedef struct NvVfxCapacity { // chosen by the app per device; zero fields take the defaults
+    u32 particles;             // alive at once, all effects combined
+    f32 additive_share;        // of `particles`, for the additive ring
+    u32 bursts, segments, decals;
+} NvVfxCapacity;
 
 typedef struct NvVfxEffectId { u32 index; } NvVfxEffectId; // 0 = none
 
-void          nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvArena* arena);
+void          nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena);
 NvVfxEffectId nv_vfx_add_effect(NvVfx* vfx, const NvVfxEffectDesc* desc);
 void nv_vfx_update(NvVfx* vfx, f32 dt);  // game time: pauses and slow motion follow it
 void nv_vfx_burst(NvVfx* vfx, NvVfxEffectId effect, NvVec3 position, NvVec3 direction, f32 scale);
@@ -373,10 +404,12 @@ by the app like `shadows`.
    effects smoothly), Clamp (exactly today's look) or ACES.
 4. **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec
    (recommended) or separately.
+5. **Default capacity:** 2M particles alive at once on the desktop, 256K on a phone (recommended; revisited with the
+   stress scene's measurements).
 
 ### Changes
 
-- **Engine.** `nv/vfx.h`, `engine/src/vfx.c` (the effect table, rings, spawn records, three sets of pipelines, drawing);
+- **Engine.** `nv/vfx.h`, `engine/src/vfx.c` (the effect and emitter tables, rings, burst records, three sets of pipelines, drawing);
   `nv/renderer.h` and `renderer.c` (`RGBA16Float` scene targets, `NvPostSettings`, exposure, tone mapping and the bloom
   composite in the upscale pass, the bloom chain and its passes, 8 timestamps); `engine/src/imgui.c` (float texture previews
   checked).
@@ -396,9 +429,10 @@ by the app like `shadows`.
 2. **Bloom:** the chain, its passes, the composite, the settings, the timestamps. Checked: a glow appears around a bright
    (HDR) test object and goes away when off; works from 1/1 to 1/4 and in Fixed mode; the chain is not remade every frame
    (the log).
-3. **Particles:** the effect table, rings, the stateless shader, both blend modes, shader shapes, stretching, ground, the
+3. **Particles:** the effect and emitter tables, burst records, rings, the stateless shader, both blend modes, shader shapes, stretching, ground, the
    test buttons, freezing when paused (dt 0). Checked: screenshots of each test effect; spawning past capacity overwrites
-   the oldest (the Debug export's counts); the bytes uploaded per frame follow the number of new particles.
+   the oldest (the Debug export's counts); the bytes uploaded per frame follow the new bursts and particles; the stress scene
+   holds a million particles and more at desktop and phone size, and the frame times are recorded.
 4. **Trails, beams and decals:** the segment and decal rings, test buttons (Missile, Laser, Scorch). Checked: screenshots,
    fading at the end of a lifetime, no flicker of decals on the ground (z-fighting).
 5. **Cost and docs:** the stress workload, stats, benchmark, a phone-size check, the documents above.
