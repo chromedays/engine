@@ -135,7 +135,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
   conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
   rows, node, clip and texture names and the benchmark's copied table stay English. Hangul that is not
-  among KS X 1001's 2,350 syllables needs `tools/subset_hangul.sh` run again. The desktop types
+  among KS X 1001's 2,350 syllables needs `tools/subset_hangul.sh` run again. Text copied into a fixed
+  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`nv/base.h`), never in the middle of a character. The desktop types
   through the text agent too (an input method composes there); a key that types no text is kept from it
   in `on_key`.
 - Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
@@ -153,7 +154,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
   viewport's width. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
   `NV_GIT_SUBJECT`) on every build, through the `app_version` target, so they are never those of
-  an older configure. The label also gets a badge (a dot and the count of warnings and
+  an older configure. Beside the build it shows what the page downloaded (`App.download_text`, from
+  the Resource Timing entries of `app.wasm`, `app.data` and `app.js`: "3.2 MB downloaded", or "from
+  cache"). The label also gets a badge (a dot and the count of warnings and
   errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
   instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
 - The Textures tab (`docs/specs/textures.md`, `app/textures.c`) draws engine textures with
