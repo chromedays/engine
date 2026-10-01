@@ -538,7 +538,7 @@ void ui_view_tab(App* app)
         igText("%.0f FPS (%.2f ms)", io->Framerate, 1000.0f / io->Framerate);
         igTextDisabled("%s build, commit %s", NV_BUILD_NAME, NV_GIT_COMMIT);
         igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
-        igTextWrapped("%s", NV_GIT_SUBJECT);
+        igTextWrapped("Commit: %s", NV_GIT_SUBJECT);
         igPopStyleColor(1);
     }
     if (search_row(app, "Camera yaw", "orbit"))
@@ -636,8 +636,8 @@ void ui_build_label(App* app)
     ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
     // The commit's subject line under it, cut to the viewport's width. Not part of the tap box.
     {
-        char subject[sizeof(NV_GIT_SUBJECT) + 4];
-        fit_text(NV_GIT_SUBJECT, (f32)app->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
+        char subject[sizeof("Commit: " NV_GIT_SUBJECT) + 4];
+        fit_text("Commit: " NV_GIT_SUBJECT, (f32)app->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
         ImVec2_c subject_size = igCalcTextSize(subject, NULL, false, -1.0f);
         ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
         ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
