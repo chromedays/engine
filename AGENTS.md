@@ -26,7 +26,8 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
-                           palette's actions), search.c (panel search boxes, command palette), app.h (shared state)
+                           palette's actions), search.c (panel search boxes, command palette), selection.c (the
+                           multiple selection), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Inter) and its Hangul fallback (from Pretendard)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -116,6 +117,20 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its scope; a value the app changes every frame in Edit mode must be left out there
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
+- The selection (`docs/specs/selection.md`) is `SceneView.selected`, the primary node (picked last: the
+  Inspector edits it, the camera follows it), plus up to 63 `others`. Change it only through
+  `app/selection.c` (`selection_set`, `selection_add`, `selection_toggle`, `selection_keep_primary`),
+  never by assigning `selected`, so the others and the Shift+click anchor stay consistent; read it with
+  `selection_count` / `selection_get` / `selection_has`. Ctrl or Shift+click (viewport and Scene tab)
+  and the phone's Multi toggle add and remove; Shift+click in the Scene tab selects a range of last
+  frame's rows. A viewport tap's modifiers are `NvViewInput.tap_mods`, the keys held at the press, not
+  the keys at the frame the tap arrives. `selection_prune` drops nodes that no longer exist each frame.
+  The gizmo moves every selected node except the active camera and nodes under a selected node,
+  around their center, applying its change since the drag started to each node's starting world
+  matrix; undo's Node scope holds every selected node, so such a drag is one step. The save keeps the
+  others as `SELO`. Debug builds export `_app_debug_selection_count`, `_app_debug_selection(i)`,
+  `_app_debug_select(index, mode)`, `_app_debug_set_multi`, `_app_debug_tree_row`,
+  `_app_debug_find_node`, `_app_debug_node` and `_app_debug_set_grid` for tests.
 - Desktop keyboard shortcuts are rows of one table in `app/shortcuts.c` (`docs/specs/shortcuts.md`):
   add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
   the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the

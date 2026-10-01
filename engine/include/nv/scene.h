@@ -97,5 +97,8 @@ void nv_scene_remove_node(NvScene* scene, NvNodeId id);
 // Asserts that `id` refers to a live node.
 NvNode* nv_scene_get(NvScene* scene, NvNodeId id);
 
+// Whether `id` refers to a live node (a zeroed or stale id does not).
+b32 nv_scene_alive(NvScene* scene, NvNodeId id);
+
 // Recomputes every node's world matrix from its local transform and its parents.
 void nv_scene_update(NvScene* scene);

@@ -548,7 +548,7 @@ internal void run_result(App* app, const PaletteResult* result, b32 shift)
         command_run(app, id);
     } else if (result->kind == PALETTE_NODE) {
         SceneView* view = app_view(app);
-        view->selected = (NvNodeId){result->index, view->scene->nodes[result->index].gen};
+        selection_set(view, (NvNodeId){result->index, view->scene->nodes[result->index].gen});
         app->open_inspector = 1;
         if (app->ui_mode == UI_DESKTOP)
             app->docks.show_right = 1;

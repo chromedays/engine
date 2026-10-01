@@ -8,6 +8,7 @@
 #define PHONE_BUTTON_HEIGHT 38.0f
 #define PHONE_SIDE_BUTTON_WIDTH 64.0f
 #define PHONE_FIND_WIDTH 52.0f     // between Undo and Play (docs/specs/search.md)
+#define PHONE_MULTI_WIDTH 52.0f    // between Play and Redo (docs/specs/selection.md)
 #define PHONE_BUTTON_GAP 4.0f
 #define PHONE_PLAY_WIDTH 104.0f
 #define PHONE_MARGIN 8.0f
@@ -40,6 +41,15 @@ internal void top_bar(App* app)
         // The Play button's center is the screen's center.
         igSetCursorPos((ImVec2_c){(width - PHONE_PLAY_WIDTH) * 0.5f, y});
         ui_play_button(app, (ImVec2_c){PHONE_PLAY_WIDTH, PHONE_BUTTON_HEIGHT});
+        // Multi: while on, every tap adds or removes a node instead of selecting only it.
+        igSetCursorPos((ImVec2_c){width - PHONE_MARGIN - PHONE_SIDE_BUTTON_WIDTH - PHONE_BUTTON_GAP - PHONE_MULTI_WIDTH, y});
+        b32 multi = app->multi_select;
+        if (multi)
+            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+        if (igButton(TL("Multi"), (ImVec2_c){PHONE_MULTI_WIDTH, PHONE_BUTTON_HEIGHT}))
+            app->multi_select = !app->multi_select;
+        if (multi)
+            igPopStyleColor(1);
         igSetCursorPos((ImVec2_c){width - PHONE_MARGIN - PHONE_SIDE_BUTTON_WIDTH, y});
         undo_button(app, 1, 0, side);
     }
