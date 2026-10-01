@@ -22,6 +22,10 @@
 #define TAG_SHDS NV_TAG('S', 'H', 'D', 'S') // shadow distance
 #define TAG_SHBX NV_TAG('S', 'H', 'B', 'X') // show the light box
 #define TAG_MSAA NV_TAG('M', 'S', 'A', 'A') // anti-aliasing: samples per pixel, 1 or 4
+#define TAG_RSMD NV_TAG('R', 'S', 'M', 'D') // resolution mode: 0 scale, 1 fixed
+#define TAG_RSCL NV_TAG('R', 'S', 'C', 'L') // scale mode's divisor: 1 to 4
+#define TAG_RSFW NV_TAG('R', 'S', 'F', 'W') // fixed mode's width
+#define TAG_RSFH NV_TAG('R', 'S', 'F', 'H') // fixed mode's height
 #define TAG_DKLW NV_TAG('D', 'K', 'L', 'W') // desktop: left dock width, CSS pixels
 #define TAG_DKRW NV_TAG('D', 'K', 'R', 'W') // desktop: right dock width
 #define TAG_DKBH NV_TAG('D', 'K', 'B', 'H') // desktop: bottom dock height
@@ -258,6 +262,10 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_f32(&w, TAG_SHDS, shadows->distance);
     nv_chunk_u32(&w, TAG_SHBX, shadows->show_box);
     nv_chunk_u32(&w, TAG_MSAA, app->renderer.msaa);
+    nv_chunk_u32(&w, TAG_RSMD, (u32)app->resolution.mode);
+    nv_chunk_u32(&w, TAG_RSCL, app->resolution.divisor);
+    nv_chunk_u32(&w, TAG_RSFW, app->resolution.fixed_width);
+    nv_chunk_u32(&w, TAG_RSFH, app->resolution.fixed_height);
     nv_chunk_u32(&w, TAG_DKLW, (u32)(app->docks.left_width + 0.5f));
     nv_chunk_u32(&w, TAG_DKRW, (u32)(app->docks.right_width + 0.5f));
     nv_chunk_u32(&w, TAG_DKBH, (u32)(app->docks.bottom_height + 0.5f));
@@ -317,6 +325,12 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_SHBX, (u32*)&shadows.show_box, 1);
     u32 msaa = app->renderer.msaa;
     nv_chunk_read_u32s(r, edit, TAG_MSAA, &msaa, 1);
+    Resolution resolution = app->resolution;
+    u32 mode = (u32)resolution.mode;
+    nv_chunk_read_u32s(r, edit, TAG_RSMD, &mode, 1);
+    nv_chunk_read_u32s(r, edit, TAG_RSCL, &resolution.divisor, 1);
+    nv_chunk_read_u32s(r, edit, TAG_RSFW, &resolution.fixed_width, 1);
+    nv_chunk_read_u32s(r, edit, TAG_RSFH, &resolution.fixed_height, 1);
     u32 dock_left = (u32)(app->docks.left_width + 0.5f), dock_right = (u32)(app->docks.right_width + 0.5f);
     u32 dock_bottom = (u32)(app->docks.bottom_height + 0.5f);
     bool bottom_open = app->docks.bottom_open;
@@ -340,6 +354,16 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     app->renderer.shadows = shadows;
     // The two counts the View tab offers; anything else is the default.
     app->renderer.msaa = msaa == 1 ? 1 : 4;
+    // The modes and counts the View tab offers; anything else is the device's default (the phone
+    // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
+    resolution.mode = mode == RESOLUTION_FIXED ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    if (resolution.divisor < 1 || resolution.divisor > 4)
+        resolution.divisor = app->ui_mode == UI_PHONE ? 2 : 1;
+    if (resolution.fixed_width < RESOLUTION_MIN || resolution.fixed_width > RESOLUTION_MAX)
+        resolution.fixed_width = 1280;
+    if (resolution.fixed_height < RESOLUTION_MIN || resolution.fixed_height > RESOLUTION_MAX)
+        resolution.fixed_height = 720;
+    app->resolution = resolution;
     // Docks: within what the splitters allow (ui_desktop.c clamps again to the window).
     app->docks.left_width = clamp((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
     app->docks.right_width = clamp((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
@@ -745,7 +769,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
     switch (tag) {
     case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
         return TAG_KIND_CONTAINER;
-    case TAG_MSAA:
+    case TAG_MSAA: case TAG_RSMD: case TAG_RSCL: case TAG_RSFW: case TAG_RSFH:
     case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:

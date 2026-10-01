@@ -1197,7 +1197,8 @@ int main(void)
     };
     // Anti-aliasing (docs/specs/msaa.md): 4x MSAA everywhere; the View tab turns it off.
     app->renderer.msaa = 4;
-    app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = 1, .fixed_width = 1280, .fixed_height = 720};
+    // The phone shows the scene at half the pixels by default: its GPU is the limit.
+    app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = touch ? 2 : 1, .fixed_width = 1280, .fixed_height = 720};
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
     // Keys the desktop UI binds are not the browser's (Ctrl+S would open "Save page").

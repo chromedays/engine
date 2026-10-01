@@ -117,6 +117,9 @@ describe created nodes; older builds will skip them.
 | `SHDS` | f32 | shadow distance, meters, clamped to 5..100 on load | 30 |
 | `SHBX` | u32 | show the light box | 0 |
 | `MSAA` | u32 | anti-aliasing: samples per pixel, 1 (off) or 4 (`msaa.md`); anything else loads as 4 | 4 |
+| `RSMD` | u32 | resolution mode: 0 scale, 1 fixed (`resolution.md`); anything else loads as 0 | 0 |
+| `RSCL` | u32 | scale mode's divisor, 1 to 4; anything else loads as the device's default | 1 on the desktop UI, 2 on the phone UI |
+| `RSFW`, `RSFH` | u32 | fixed mode's width and height, 16 to 4096 each; anything else loads as 1280 × 720 | 1280, 720 |
 | `DKLW` | u32 | desktop UI: the left dock's wanted width, CSS pixels, clamped to 160..640 on load (`layout.md`) | 260 |
 | `DKRW` | u32 | the right dock's wanted width, clamped to 220..640 | 340 |
 | `DKBH` | u32 | the bottom dock's wanted height, clamped to 120..600 | 220 |

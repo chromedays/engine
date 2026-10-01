@@ -155,6 +155,27 @@ internal void msaa_ui(App* app)
         app->renderer.msaa = index ? 4 : 1;
 }
 
+internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
+{
+    return value < lo ? lo : value > hi ? hi : value;
+}
+
+// The View tab's Resolution section (docs/specs/resolution.md).
+internal void resolution_ui(App* app)
+{
+    Resolution* resolution = &app->resolution;
+    igSeparatorText("Resolution");
+    local_persist const char* divisors[] = {"1/1 (full)", "1/2", "1/3", "1/4"};
+    s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
+    if (igCombo_Str_arr("Scale", &index, divisors, 4, -1))
+        resolution->divisor = (u32)index + 1;
+    // What that comes to: the scene's pixels, and how big each one shows.
+    const NvSceneOutput* scene = &app->layout.scene;
+    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    igTextDisabled("Renders %u x %u; a pixel shows as %.0f x %.0f screen pixels (%.1f per CSS pixel)", scene->width, scene->height,
+                   (f64)scene->pixel_size, (f64)scene->pixel_size, (f64)(scene->pixel_size / ratio));
+}
+
 // The View tab's Shadows section (docs/specs/shadows.md).
 internal void shadow_ui(App* app)
 {
@@ -283,6 +304,7 @@ void ui_view_tab(App* app)
         igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
     msaa_ui(app);
+    resolution_ui(app);
     shadow_ui(app);
     save_ui(app);
 }
@@ -479,11 +501,6 @@ NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
     if (bottom < top)
         bottom = top;
     return (NvRect){left, top, right - left, bottom - top};
-}
-
-internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
-{
-    return value < lo ? lo : value > hi ? hi : value;
 }
 
 // The scene's resolution and where its image goes in the viewport (docs/specs/resolution.md).

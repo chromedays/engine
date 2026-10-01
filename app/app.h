@@ -199,6 +199,7 @@ typedef enum TextureKind {
     TEXTURE_MATERIAL, // NvRenderer.textures
     TEXTURE_SHADOW,
     TEXTURE_DEPTH,
+    TEXTURE_SCENE,    // the scene color target, the scene's resolution (allocated a little larger)
     TEXTURE_MSAA,     // the multisampled color target the scene pass resolves into the swapchain
     TEXTURE_SWAPCHAIN,
     TEXTURE_UI,       // NvImgui.textures

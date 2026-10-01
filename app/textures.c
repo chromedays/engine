@@ -79,12 +79,12 @@ internal ImTextureID entry_image(App* app, const TextureEntry* entry, b32 full)
     return nv_imgui_preview(&app->imgui, &preview);
 }
 
-// The part of the texture shown at zoom 1: the scene's part of the depth target, else all of it.
+// The part of the texture shown at zoom 1: the scene's part of the scene's targets, else all of it.
 internal void base_uv(App* app, const TextureEntry* entry, ImVec2_c* uv0, ImVec2_c* uv1)
 {
     *uv0 = (ImVec2_c){0.0f, 0.0f};
     *uv1 = (ImVec2_c){1.0f, 1.0f};
-    if (entry->kind == TEXTURE_DEPTH && app->renderer.target_width && app->renderer.target_height) {
+    if ((entry->kind == TEXTURE_DEPTH || entry->kind == TEXTURE_SCENE) && app->renderer.target_width && app->renderer.target_height) {
         // The targets are allocated a little larger than the scene; the scene is their top-left part.
         *uv1 = (ImVec2_c){(f32)app->renderer.scene_width / (f32)app->renderer.target_width,
                           (f32)app->renderer.scene_height / (f32)app->renderer.target_height};
@@ -176,6 +176,19 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
             .in_use = 1,
             .preview = sampled,
             .note = sampled ? NULL : "Made samplable on the next frame.",
+        };
+    }
+    if (renderer->scene_color && count < capacity) {
+        entries[count++] = (TextureEntry){
+            .kind = TEXTURE_SCENE,
+            .texture = renderer->scene_color,
+            .name = "scene color",
+            .width = renderer->target_width,
+            .height = renderer->target_height,
+            .mip_count = 1,
+            .format = app->gpu.config_format,
+            .in_use = 1,
+            .preview = 1,
         };
     }
     if (renderer->msaa_color && count < capacity) {
