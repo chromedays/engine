@@ -67,3 +67,18 @@ static inline void nv_arena_reset(NvArena* arena)
 
 #define NV_PUSH_STRUCT(arena, type)       ((type*)nv_arena_push((arena), sizeof(type), _Alignof(type)))
 #define NV_PUSH_ARRAY(arena, count, type) ((type*)nv_arena_push((arena), (count) * sizeof(type), _Alignof(type)))
+
+// How many of the first `limit` bytes of the UTF-8 `text` to keep so no character is cut in the
+// middle: a name that does not fit is shortened by whole characters (a Hangul syllable is 3 bytes).
+static inline u32 nv_utf8_fit(const char* text, u32 limit)
+{
+    u32 length = 0;
+    while (length < limit && text[length])
+        ++length;
+    if (!text[length])
+        return length;
+    // `length` == limit and more follows: back up while the next byte continues a character.
+    while (length > 0 && ((u8)text[length] & 0xC0u) == 0x80u)
+        --length;
+    return length;
+}

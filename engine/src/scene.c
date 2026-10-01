@@ -48,10 +48,10 @@ NvNodeId nv_scene_add_node(NvScene* scene, NvNodeId parent, const char* name)
     node->world = nv_mat4_identity();
 
     if (name) {
-        u32 i = 0;
-        for (; name[i] && i < NV_NODE_NAME_MAX - 1; ++i)
+        u32 length = nv_utf8_fit(name, NV_NODE_NAME_MAX - 1);
+        for (u32 i = 0; i < length; ++i)
             node->name[i] = name[i];
-        node->name[i] = 0;
+        node->name[length] = 0;
     }
 
     // Append so siblings keep their creation order.

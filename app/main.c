@@ -1240,6 +1240,19 @@ EMSCRIPTEN_KEEPALIVE int app_debug_palette_result(int i, int k)
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
 
+// Renames the selected node to the text in the search buffer (as typed names arrive: cut at a character).
+EMSCRIPTEN_KEEPALIVE void app_debug_rename_selected(void)
+{
+    SceneView* view = app_view(&app_state);
+    if (!view->selected.index)
+        return;
+    NvNode* node = nv_scene_get(view->scene, view->selected);
+    const char* text = app_state.search.debug_buffer;
+    u32 length = nv_utf8_fit(text, NV_NODE_NAME_MAX - 1);
+    memcpy(node->name, text, length);
+    node->name[length] = 0;
+}
+
 // Turns the stress scene's deep chain on with `links` links (0 = off).
 EMSCRIPTEN_KEEPALIVE void app_debug_set_chain(int links)
 {
@@ -1268,17 +1281,20 @@ EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
 }
 #endif
 
-// The UI font (docs/specs/fonts.md): Inter, read from the package into permanent memory, since ImGui
-// keeps pointing at the bytes. Without it the built-in font stays.
+// The UI font (docs/specs/fonts.md, korean.md): Inter, with Pretendard's Hangul behind it, read
+// from the package into permanent memory, since ImGui keeps pointing at the bytes. Without them
+// the built-in font stays.
 #define UI_FONT_FILE "/assets/fonts/Inter-Regular.ttf"
+#define UI_FONT_HANGUL_FILE "/assets/fonts/Hangul-Subset.ttf"
 #define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
 
-internal void load_font(App* app)
+// The whole file in permanent memory; NULL (and a Console warning) if it cannot be read.
+internal void* read_asset(App* app, const char* path, u32* out_size)
 {
-    FILE* file = fopen(UI_FONT_FILE, "rb");
+    FILE* file = fopen(path, "rb");
     if (!file) {
-        nv_log(NV_LOG_WARNING, "app", "font %s is missing: using the built-in font", UI_FONT_FILE);
-        return;
+        nv_log(NV_LOG_WARNING, "app", "font %s is missing", path);
+        return NULL;
     }
     fseek(file, 0, SEEK_END);
     long size = ftell(file);
@@ -1286,8 +1302,21 @@ internal void load_font(App* app)
     void* bytes = size > 0 ? nv_arena_push(&app->permanent, (umm)size, 16) : NULL;
     b32 ok = bytes && fread(bytes, 1, (umm)size, file) == (umm)size;
     fclose(file);
-    if (!ok || !nv_imgui_set_font(&app->imgui, bytes, (u32)size, UI_FONT_SIZE))
-        nv_log(NV_LOG_WARNING, "app", "font %s could not be loaded: using the built-in font", UI_FONT_FILE);
+    if (!ok) {
+        nv_log(NV_LOG_WARNING, "app", "font %s could not be read", path);
+        return NULL;
+    }
+    *out_size = (u32)size;
+    return bytes;
+}
+
+internal void load_font(App* app)
+{
+    u32 size = 0, hangul_size = 0;
+    void* font = read_asset(app, UI_FONT_FILE, &size);
+    void* hangul = read_asset(app, UI_FONT_HANGUL_FILE, &hangul_size);
+    if (!font || !nv_imgui_set_font(&app->imgui, font, size, hangul, hangul_size, UI_FONT_SIZE))
+        nv_log(NV_LOG_WARNING, "app", "the UI font could not be loaded: using the built-in font");
 }
 
 int main(void)

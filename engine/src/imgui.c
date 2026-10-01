@@ -1085,7 +1085,7 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
-bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
+bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, void* fallback, u32 fallback_size, f32 pixel_size)
 {
     (void)imgui;
     ImGuiIO* io = igGetIO_Nil();
@@ -1096,6 +1096,14 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
     ImFontConfig_destroy(config);
     if (!font)
         return false;
+    if (fallback) {
+        // Merged into the same font: a glyph comes from the first face that has it.
+        config = ImFontConfig_ImFontConfig();
+        config->FontDataOwnedByAtlas = false;
+        config->MergeMode = true;
+        ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, fallback, (int)fallback_size, 0.0f, config, NULL);
+        ImFontConfig_destroy(config);
+    }
     io->FontDefault = font;
     igGetStyle()->FontSizeBase = pixel_size;
     return true;

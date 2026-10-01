@@ -260,6 +260,12 @@ b32 nv_chunk_read_string(NvChunkReader* reader, NvChunk parent, u32 tag, char* o
     if (!field.data)
         return 0;
     u32 length = field.size < capacity - 1 ? field.size : capacity - 1;
+    // A string cut to fit must not end inside a UTF-8 character: back up while the next byte continues one.
+    if (length < field.size) {
+        const u8* bytes = field.data;
+        while (length > 0 && (bytes[length] & 0xC0u) == 0x80u)
+            --length;
+    }
     memcpy(out, field.data, length);
     out[length] = 0;
     return 1;
