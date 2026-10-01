@@ -71,10 +71,10 @@
 
 | 주제 | 결정 |
 |---|---|
-| 용량 | 동시에 살아 있는 파티클 수, 모든 효과의 합계. 고정 상수가 아니라 앱이 `nv_vfx_init`에 넘긴다: 기본값은 데스크톱 2,097,152 (2M), 폰 262,144 |
+| 용량 | 동시에 살아 있는 파티클 수, 모든 효과의 합계. 고정 상수가 아니라 앱이 `nv_vfx_init`에 넘긴다: 기본값은 데스크톱과 폰 모두 2,097,152 (2M, GPU 메모리 약 96 MB) |
 | 파티클 상태 | 32바이트: 위치 (f32 셋), 나이 (f32), 속도와 수명 (f16 넷), 이미터 번호와 시드 (u32), 크기와 회전 (f16 둘). f16은 WGSL core의 `pack2x16float`와 `unpack2x16float`로 다루므로 `shader-f16` 기능이 필요 없다 |
 | 버퍼 | 상태; 빈 목록 (번호 스택); 살아 있는 목록 A와 B (프레임마다 번갈아); 보이는 목록 (이번 프레임에 그릴 것; 블렌드 모드별 구간 둘); 카운터와 간접 인자 (빈 번호 수, 살아 있는 수, 이번 프레임에 버려진 생성 수, `dispatchWorkgroupsIndirect`와 `drawIndirect`의 인자). 모두 GPU에만 있다. 시작할 때 빈 목록을 0..N−1로 채운다 |
-| 메모리 | 파티클 하나에 48바이트 (상태 32, 빈 목록 4, 살아 있는 목록 둘 8, 보이는 목록 4): 2M에 96 MB, 256K에 12 MB. 상태 버퍼는 바인딩 하나에 들어가야 하므로, WebGPU 기본 `maxStorageBufferBindingSize` (128 MiB)에서는 약 400만 개가 상한이다. 앱이 그보다 크게 요청하면 `gpu.c`가 어댑터가 허락하는 한도까지 올려 장치를 만든다 |
+| 메모리 | 파티클 하나에 48바이트 (상태 32, 빈 목록 4, 살아 있는 목록 둘 8, 보이는 목록 4): 2M에 96 MB. 상태 버퍼는 바인딩 하나에 들어가야 하므로, WebGPU 기본 `maxStorageBufferBindingSize` (128 MiB)에서는 약 400만 개가 상한이다. 앱이 그보다 크게 요청하면 `gpu.c`가 어댑터가 허락하는 한도까지 올려 장치를 만든다 |
 | 생성 (emit 패스) | 효과를 터뜨리면 CPU는 이미터마다 버스트 기록 하나 (이미터, 위치, 방향, 배율, 시드, 수; 48바이트)를 큐에 넣는다. 지연이 있는 이미터는 그 시각이 될 때까지 CPU 큐에 머문다. 프레임마다 CPU가 버스트들과 작업 목록 (작업 그룹마다 버스트 번호와 그 안의 시작 순번)을 올리고, 생성 수를 알므로 직접 dispatch한다. 스레드마다 빈 목록에서 번호를 꺼내 (atomic), 이미터 설정과 해시 난수로 초기 상태를 쓰고, 살아 있는 목록에 넣는다. 빈 번호가 없으면 그 생성은 버려지고 수를 센다: 가장 오래된 것을 덮어쓰지 않는다 |
 | 시뮬레이션 (simulate 패스) | 지난 프레임의 살아 있는 목록 위의 간접 dispatch. 스레드마다 나이를 dt만큼 늘리고, 수명이 끝났으면 번호를 빈 목록에 돌려놓는다; 아니면 힘을 적분하고 (반암시적 오일러) 다음 살아 있는 목록에 넣는다. 그다음 frustum culling: 파티클의 경계 구 (위치와 크기)가 씬 카메라의 frustum 여섯 평면 안에 있으면 블렌드 모드에 맞는 보이는 목록 구간에도 넣는다. 새로 생긴 파티클은 같은 프레임의 목록에 들어가므로 생긴 프레임부터 보인다 |
 | 힘 | 이미터별: 중력, 공기 저항, 난류 (curl noise; 세기와 크기), 지면 충돌 (높이, 반발 계수, 마찰; 거의 멈추면 그 자리에 머문다). 전역: 바람 (`NvVfx.wind`). 끌어당기는 점과 파티클끼리의 상호작용은 범위 밖 |
@@ -84,7 +84,7 @@
 | 시각 | dt가 0 (일시정지)이면 simulate를 건너뛰고 목록을 바꾸지 않는다. 슬로 모션은 작은 dt다. 큰 dt (탭이 숨었다 돌아옴)는 0.1초로 자른다 |
 | 그리기 | vertex pulling: 블렌드 모드마다 `drawIndirect` 한 번 (정점 수 = 6 × 보이는 수). 정점 셰이더가 `vertex_index / 6`으로 보이는 목록에서 번호를 찾는다. 정점 4–6개짜리 작은 인스턴스는 GPU의 정점 웨이브를 덜 채울 수 있어서 인스턴싱 대신 이 방식을 쓴다 |
 | 통계 | 살아 있는 수, 보이는 수, 버려진 생성 수는 GPU에만 있으므로, 타임스탬프처럼 작은 버퍼로 복사해 비동기로 읽는다 (한두 프레임 늦음). Effects 섹션과 Stress 탭이 보여 준다 |
-| 비용 | compute는 살아 있는 파티클마다 매 프레임 상태 32바이트를 읽고 쓰고, 그리기가 다시 읽는다: 2M이면 프레임당 약 190 MB, 60 fps에서 초당 약 11 GB. 데스크톱 GPU에는 감당할 만하지만 폰에는 크다 (폰의 기본값이 256K인 이유). 그다음 한계는 겹친 큰 가산 파티클의 fill rate다. compute 패스에 타임스탬프 쌍을 하나 더하고, 둘 다 스트레스 씬으로 잰다 |
+| 비용 | compute는 살아 있는 파티클마다 매 프레임 상태 32바이트를 읽고 쓰고, 그리기가 다시 읽는다: 2M이면 프레임당 약 190 MB, 60 fps에서 초당 약 11 GB. 대역폭은 용량이 아니라 실제로 살아 있는 수에 비례한다: 용량을 2M으로 잡아도 살아 있는 파티클이 적으면 메모리 96 MB만 든다. 2M이 모두 살아 있으면 데스크톱 GPU에는 감당할 만하지만 폰에는 크다. 폰에서도 같은 2M을 쓰되, 실제로 감당하는 수는 스트레스 씬으로 재고, 폰 브라우저가 96 MB 할당을 거부하거나 탭을 종료하는지 함께 확인한다. 그다음 한계는 겹친 큰 가산 파티클의 fill rate다. compute 패스에 타임스탬프 쌍을 하나 더하고, 둘 다 스트레스 씬으로 잰다 |
 | 모양 | 첫 단계는 텍스처 없이 셰이더가 그린다: 부드러운 원, 고리 (충격파), 속도로 늘인 줄 (불꽃), 노이즈 덩어리 (연기). 스프라이트 아틀라스는 나중에 같은 모양 번호 자리에 더한다 |
 | 카메라 정렬 | 사각형은 카메라를 향한다. 늘이기가 켜진 이미터는 상태의 속도를 화면 공간으로 옮긴 방향으로 늘인다 |
 | 정렬 | 알파 파티클의 목록 순서는 atomic 때문에 프레임마다 바뀌므로, 정렬 없이 겹친 연기는 깜박일 수 있다. 낮은 불투명도로 줄이고, 눈에 띄면 GPU 정렬 (bitonic 또는 radix, compute)을 다음 단계로 더한다 |
@@ -195,7 +195,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
   모양 번호 자리에 더한다.
 - **톤 매핑 기본값:** PBR Neutral.
 - **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 한다.
-- **기본 용량:** 동시에 살아 있는 파티클 데스크톱 2M, 폰 256K. 스트레스 씬의 측정으로 다시 정할 수 있다.
+- **기본 용량:** 동시에 살아 있는 최대 파티클 수는 데스크톱과 폰 모두 2M (약 96 MB). 스트레스 씬의 측정으로 다시 정할 수 있다.
 
 ### 변경
 
@@ -323,10 +323,10 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 
 | Topic | Decision |
 |---|---|
-| Capacity | The number of particles alive at once, all effects combined. Not a constant: the app passes it to `nv_vfx_init`, by default 2,097,152 (2M) on the desktop and 262,144 on a phone |
+| Capacity | The number of particles alive at once, all effects combined. Not a constant: the app passes it to `nv_vfx_init`, by default 2,097,152 (2M, about 96 MB of GPU memory) on both the desktop and a phone |
 | Particle state | 32 bytes: position (three f32), age (f32), velocity and lifetime (four f16), emitter index and seed (u32), size and rotation (two f16). The f16 values go through WGSL core's `pack2x16float` and `unpack2x16float`, so the `shader-f16` feature is not needed |
 | Buffers | The state; a free list (a stack of indices); living lists A and B (used in turn each frame); a visible list (what this frame draws, with a range per blend mode); counters and indirect arguments (free count, living counts, spawns dropped this frame, the arguments of `dispatchWorkgroupsIndirect` and `drawIndirect`). All live on the GPU only. At start the free list is filled with 0..N−1 |
-| Memory | 48 bytes per particle (state 32, free list 4, the two living lists 8, the visible list 4): 96 MB for 2M, 12 MB for 256K. The state buffer must fit one binding, so with WebGPU's default `maxStorageBufferBindingSize` (128 MiB) the bound is about 4 million. When the app asks for more, `gpu.c` creates the device with the limit raised as far as the adapter allows |
+| Memory | 48 bytes per particle (state 32, free list 4, the two living lists 8, the visible list 4): 96 MB for 2M. The state buffer must fit one binding, so with WebGPU's default `maxStorageBufferBindingSize` (128 MiB) the bound is about 4 million. When the app asks for more, `gpu.c` creates the device with the limit raised as far as the adapter allows |
 | Spawning (emit pass) | When an effect fires, the CPU queues one burst record per emitter (emitter, position, direction, scale, seed, count; 48 bytes); an emitter with a delay waits in the CPU queue until its time. Each frame the CPU uploads the bursts and a job list (per workgroup: the burst index and the starting index within it), and dispatches directly, since it knows the spawn count. Each thread pops an index from the free list (atomic), writes the starting state from the emitter's settings and hash random numbers, and appends it to the living list. With no free index left, the spawn is dropped and counted: the oldest is not overwritten |
 | Simulation (simulate pass) | An indirect dispatch over last frame's living list. Each thread adds dt to the age; past the lifetime it pushes the index back on the free list; otherwise it integrates the forces (semi-implicit Euler) and appends the particle to the next living list. Then frustum culling: when the particle's bounding sphere (position and size) is inside the scene camera's six frustum planes, it is also appended to the visible list's range for its blend mode. New particles join the same frame's list, so they show from the frame they are born |
 | Forces | Per emitter: gravity, drag, turbulence (curl noise; strength and scale), ground collision (height, restitution, friction; a particle that nearly stops stays put). Global: wind (`NvVfx.wind`). Attractors and particles interacting with each other are out of scope |
@@ -336,7 +336,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Time | With dt 0 (paused) simulate is skipped and the lists stay as they are. Slow motion is a small dt. A large dt (a tab hidden and back) is cut to 0.1 s |
 | Drawing | Vertex pulling: one `drawIndirect` per blend mode (vertex count = 6 × visible count). The vertex shader finds the index in the visible list as `vertex_index / 6`. Small instances of 4 to 6 vertices can fill the GPU's vertex waves poorly, so this is used instead of instancing |
 | Stats | The living and visible counts and dropped spawns live on the GPU, so they are copied to a small buffer and read asynchronously, like the timestamps (a frame or two late). The Effects section and the Stress tab show them |
-| Cost | Compute reads and writes 32 bytes of state per living particle every frame, and drawing reads it again: about 190 MB per frame at 2M, about 11 GB/s at 60 fps. Fine for a desktop GPU, heavy for a phone (which is why the phone's default is 256K). The next limit is the fill rate of large overlapping additive particles. A timestamp pair is added for the compute passes; both are measured with the stress scene |
+| Cost | Compute reads and writes 32 bytes of state per living particle every frame, and drawing reads it again: about 190 MB per frame at 2M, about 11 GB/s at 60 fps. Bandwidth follows the number actually alive, not the capacity: with 2M capacity and few particles alive, only the 96 MB of memory is spent. With all 2M alive it is fine for a desktop GPU and heavy for a phone. Phones use the same 2M; the count a phone really sustains is measured with the stress scene, along with whether a phone browser refuses the 96 MB or kills the tab. The next limit is the fill rate of large overlapping additive particles. A timestamp pair is added for the compute passes; both are measured with the stress scene |
 | Shapes | The first step draws them in the shader with no texture: a soft disc, a ring (shockwave), a streak stretched by velocity (sparks), a noisy puff (smoke). A sprite atlas comes later in the same shape-number slots |
 | Facing | Quads face the camera. Emitters with stretching are lengthened along the state's velocity taken to screen space |
 | Sorting | The living list's order changes every frame with the atomics, so overlapping unsorted smoke can flicker. Low opacity hides it; if it shows, GPU sorting (bitonic or radix, in compute) is the next step |
@@ -447,8 +447,8 @@ All decided on 2026-10-01.
   CC0) comes later in the same shape-number slots.
 - **Tone mapping default:** PBR Neutral.
 - **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec.
-- **Default capacity:** 2M particles alive at once on the desktop, 256K on a phone; may be revised with the stress scene's
-  measurements.
+- **Default capacity:** at most 2M particles alive at once on both the desktop and a phone (about 96 MB); may be revised
+  with the stress scene's measurements.
 
 ### Changes
 
