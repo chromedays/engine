@@ -8,7 +8,8 @@ with [ImGuizmo](https://github.com/CedricGuillemet/ImGuizmo) (through
 [cimguizmo](https://github.com/cimgui/cimguizmo)) for the transform gizmo;
 models load with [cgltf](https://github.com/jkuhlmann/cgltf) and skeletal animation runs on
 [ozz-animation](https://github.com/guillaumeblanc/ozz-animation). The character and animations
-are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`).
+are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`). The UI font is
+[Inter](https://github.com/rsms/inter) under the SIL Open Font License (`assets/fonts/Inter-LICENSE.txt`).
 
 Live:
 - Release: https://chromedays.github.io/engine/release/

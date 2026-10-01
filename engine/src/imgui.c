@@ -1085,6 +1085,22 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
+bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
+{
+    (void)imgui;
+    ImGuiIO* io = igGetIO_Nil();
+    ImFontConfig* config = ImFontConfig_ImFontConfig();
+    config->FontDataOwnedByAtlas = false; // the caller keeps the bytes
+    // Size 0: the font is dynamic, drawn at whatever size the style asks for.
+    ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, 0.0f, config, NULL);
+    ImFontConfig_destroy(config);
+    if (!font)
+        return false;
+    io->FontDefault = font;
+    igGetStyle()->FontSizeBase = pixel_size;
+    return true;
+}
+
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
 {
     return nv_imgui_begin_panel_ex(imgui, name, rect, 0);

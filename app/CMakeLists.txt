@@ -1,6 +1,6 @@
 add_executable(app main.c console.c save.c search.c shortcuts.c stress.c textures.c ui.c ui_desktop.c ui_phone.c undo.c)
 target_link_libraries(app PRIVATE nv)
-nv_setup_executable(app ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets/quaternius")
+nv_setup_executable(app ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets")
 
 # The build label and the benchmark report name the commit the build comes from: its hash and its
 # subject line. The header is rewritten on every build (cmake/version.cmake), so it is never the

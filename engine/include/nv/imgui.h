@@ -157,6 +157,11 @@ typedef struct NvImgui {
 // geometry comes from `arena`.
 void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena);
 
+// Makes the TrueType font in `ttf` (`size` bytes, which must outlive the ImGui context) the font of
+// every window, at `pixel_size` CSS pixels (before the touch scale). Call before the first frame;
+// returns false, keeping the built-in font, if the data is no font.
+bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size);
+
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds);
 
 // Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be

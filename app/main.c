@@ -281,15 +281,15 @@ internal NvVec3 joint_axis_towards(NvMat4 joint_model, NvVec3 direction)
 // from the rest pose (so before any clip plays).
 internal b32 build_character(App* app)
 {
-    if (!nv_gltf_load_model("/assets/character.glb", app->scene, &app->renderer, &app->permanent, &app->scratch, &app->character))
+    if (!nv_gltf_load_model("/assets/quaternius/character.glb", app->scene, &app->renderer, &app->permanent, &app->scratch, &app->character))
         return 0;
     NV_ASSERT(app->character.animator.index);
     NvNode* root = nv_scene_get(app->scene, app->character.root);
     snprintf(root->name, sizeof(root->name), "character");
     app->animator = app->character.animator;
     NvSkeletonId skeleton = app->character.skeleton;
-    app->clip_count = nv_gltf_load_clips("/assets/clips.glb", skeleton, NULL, &app->scratch, app->clips, APP_MAX_CLIPS);
-    app->root_motion_clip_count = nv_gltf_load_clips("/assets/clips_rm.glb", skeleton, "root", &app->scratch,
+    app->clip_count = nv_gltf_load_clips("/assets/quaternius/clips.glb", skeleton, NULL, &app->scratch, app->clips, APP_MAX_CLIPS);
+    app->root_motion_clip_count = nv_gltf_load_clips("/assets/quaternius/clips_rm.glb", skeleton, "root", &app->scratch,
                                                      app->root_motion_clips, APP_MAX_CLIPS);
     NvAnimator* animator = nv_anim_get(app->animator);
 
@@ -1268,6 +1268,28 @@ EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
 }
 #endif
 
+// The UI font (docs/specs/fonts.md): Inter, read from the package into permanent memory, since ImGui
+// keeps pointing at the bytes. Without it the built-in font stays.
+#define UI_FONT_FILE "/assets/fonts/Inter-Regular.ttf"
+#define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
+
+internal void load_font(App* app)
+{
+    FILE* file = fopen(UI_FONT_FILE, "rb");
+    if (!file) {
+        nv_log(NV_LOG_WARNING, "app", "font %s is missing: using the built-in font", UI_FONT_FILE);
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    void* bytes = size > 0 ? nv_arena_push(&app->permanent, (umm)size, 16) : NULL;
+    b32 ok = bytes && fread(bytes, 1, (umm)size, file) == (umm)size;
+    fclose(file);
+    if (!ok || !nv_imgui_set_font(&app->imgui, bytes, (u32)size, UI_FONT_SIZE))
+        nv_log(NV_LOG_WARNING, "app", "font %s could not be loaded: using the built-in font", UI_FONT_FILE);
+}
+
 int main(void)
 {
     App* app = &app_state;
@@ -1283,6 +1305,7 @@ int main(void)
     }
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
+    load_font(app);
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = app->imgui.ui_scale > 1.0f;
     // One UI per device (docs/specs/layout.md): touch gets the phone UI, everything else the desktop's.

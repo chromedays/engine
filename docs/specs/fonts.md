@@ -1,6 +1,12 @@
 # Fonts spec
 
-Status: proposed (2026-10-01). Changes to this spec are agreed first.
+Status: implemented in a smaller scope (2026-10-01). Changes to this spec are agreed first.
+
+**Scope as decided:** Inter, fixed. The editor uses Inter Regular at 14 CSS pixels (times the touch
+scale) and nothing else: no Font section, no face or size setting, no saved tags, no Korean
+fallback and no fetching. The candidate table, Decisions, Changes and Phases below are the larger
+design this replaced; they stay as the plan if choosing fonts is wanted later. What was built is
+under "As built".
 
 ## Goal
 
@@ -105,6 +111,24 @@ Recommendation:
 
 Every phase is checked in Release and Debug in headless Chromium, the desktop UI with the mouse at
 1280×800, the phone UI with touch at 390×664.
+
+## As built
+
+- `assets/fonts/Inter-Regular.ttf` (Inter 4.1, static, 411 KB, SIL Open Font License 1.1) and
+  `assets/fonts/Inter-LICENSE.txt`, stored in Git LFS (`*.ttf`).
+- The package now preloads the whole `assets/` directory as `/assets` (it was `assets/quaternius`),
+  so the glTF files are at `/assets/quaternius/*.glb` and the font at `/assets/fonts/`.
+- `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`nv/imgui.h`) adds the font from memory as a
+  dynamic font (size 0), makes it `io->FontDefault` and sets `style.FontSizeBase`; the bytes stay
+  in the app's permanent arena. `app/main.c` (`load_font`) reads the file after `nv_imgui_init` and
+  before the first frame, and logs a Console warning and keeps the built-in font if it is missing.
+- Inter 14 px has about the same line height and average width as the old 13 px face, so the
+  layout needed no changes: the docks, top bars and tabs still fit on desktop and on the phone
+  (390×664), where the Inspector tab's label no longer needs to be cut.
+- The package grows by 0.4 MB (`app.data` 1.7 MB).
+- Playwright scripts written against the old font's pixel positions (menu items, the Reset
+  dialog's buttons, rows of the Scene tree) click the wrong places and need new coordinates; the
+  app's behavior is unchanged.
 
 ## Out of scope
 

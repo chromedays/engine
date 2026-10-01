@@ -27,7 +27,8 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), app.h (shared state)
-assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh
+assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
+                           assets/fonts/ holds the UI font (Inter)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the app with a progress bar, then
@@ -63,7 +64,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
-- `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it.
+- `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Inter
+  Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`), not ImGui's built-in one.
 - The app has two editor UIs, chosen once at start from the primary pointer (`App.ui_mode`; touch
   gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `app_layout` fills
   `App.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
@@ -192,7 +194,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model; call `nv_anim_init`
   first.
 - There is one executable, `app`. Its assets are packaged with
-  `nv_setup_executable(app ROOT ASSETS <dir>)` and read from `/assets/...` with `fopen`. CI installs
+  `nv_setup_executable(app ROOT ASSETS <dir>)` (the whole `assets/` directory) and read from `/assets/...` with `fopen`. CI installs
   the Release build to `release/` and the Debug build to `debug/` on Pages (the site root has
   nothing); every other pushed branch publishes only its Debug build to `<branch>/` (`/` becomes
   `-`). Builds are staged in the `gh-pages` branch (one commit, rewritten by CI) and deployed by
