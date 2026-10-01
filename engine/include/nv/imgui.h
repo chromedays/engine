@@ -72,6 +72,7 @@ typedef struct NvImguiPreviewSlot {
     WGPUBuffer params;
     WGPUBindGroup bind_group;
     b32 depth;       // drawn by the depth pipeline
+    b32 multisampled; // a depth texture with more than one sample: the multisampled depth pipeline
     u64 used_frame;  // the last frame it was asked for
 } NvImguiPreviewSlot;
 
@@ -95,6 +96,7 @@ typedef struct NvImgui {
     // while a slot is keyed by it.
     WGPURenderPipeline preview_pipeline; // color textures
     WGPURenderPipeline depth_pipeline;   // depth textures, read without a sampler
+    WGPURenderPipeline depth_ms_pipeline; // multisampled depth textures (sample 0)
     NvImguiPreviewSlot previews[NV_IMGUI_MAX_PREVIEWS];
     u64 frame; // counts nv_imgui_new_frame calls
 

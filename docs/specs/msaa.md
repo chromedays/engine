@@ -1,6 +1,6 @@
 # MSAA spec
 
-Status: proposed (2026-10-01). Changes to this spec are agreed first.
+Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -38,7 +38,7 @@ Recommendation: MSAA 4×, with Off kept as a setting. No third-party library.
 | Pipelines | Every pipeline used in the scene pass (the meshes, static and skinned, single- and double-sided, and the debug lines) gets `multisample.count` = the setting, and is remade when it changes. The shadow pass and the ImGui pass stay single-sample: they have their own attachments |
 | Viewport | The scene pass already sets a viewport and scissor inside the canvas; the resolve writes the whole canvas, which is what the pass's clear does today, and the editor's windows draw over the rest afterwards |
 | Alpha | No change. Nothing uses alpha testing (`discard`), so alpha to coverage is not needed. The blended debug lines blend per sample |
-| Textures tab | It shows the depth target as a 4-sample texture: a second depth preview pipeline reads `texture_depth_multisampled_2d` with `textureLoad(…, sample 0)`. The 4-sample color texture is not listed (it is discarded every frame) |
+| Textures tab | It shows the depth target as a 4-sample texture: a second depth preview pipeline reads `texture_depth_multisampled_2d` with `textureLoad(…, sample 0)`. The 4-sample color texture is listed too, without a preview (it is discarded every frame), so the Render targets total counts its memory; sizes are multiplied by the sample count |
 | Picking, gizmo, shadows | Unaffected: picking is a CPU ray, the gizmo draws in the ImGui pass, the shadow map has its own pass |
 | Cost shown | The startup log's color and depth target lines give the sample count and the memory of each. The Stress tab gains an "MSAA" line, and the benchmark table records the setting it ran with |
 | Third-party | None |
@@ -88,6 +88,26 @@ canvas after the resolve; it is left for later, once the Stress tab shows whethe
 
 Every phase is checked in Release and Debug in headless Chromium, at desktop and phone size.
 SwiftShader's timings mean nothing; real costs come from devices.
+
+As built, the combo, the save tag and the Textures entries arrived in the order of the phases; the
+notes below are what the build taught:
+
+- **The color target is made like the canvas**: the canvas's own format (`BGRA8Unorm`) with the sRGB
+  render format as a view format, rendered through the sRGB view. A texture created directly in the
+  sRGB format resolved into the canvas about a stop too dark in Chromium on SwiftShader (the
+  resolve wrote linear values where the canvas expects encoded ones); made like the canvas, the 4×
+  and Off images have the same colors.
+- `NvRenderer.scene_samples` is what the pipelines and the depth target have; `NvRenderer.msaa` is
+  what the app asks for, and `update_msaa` (before `update_depth_buffer`) reconciles them each
+  frame. The engine's default is 1; the app sets 4.
+- Debug builds export `_app_debug_msaa` and `_app_debug_set_msaa`, which the tests use to switch
+  without the UI.
+- Checked: 24 distinct colors along a cube's edge with 4× against 4 without, equal colors inside
+  triangles, switching at runtime and resizing raise no WebGPU errors, the stress scene draws at
+  4×, the Textures tab previews the multisampled depth, a reload keeps the setting, an unsupported
+  count in a save loads as 4×, and a save without the tag gives 4×.
+- On SwiftShader the stress scene's GPU scene pass took about 2.5× longer with 4× than with Off
+  (144 ms against 365 ms at the default workload); it says nothing about real GPUs.
 
 ## Out of scope
 

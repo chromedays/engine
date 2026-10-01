@@ -150,6 +150,18 @@ typedef struct NvRenderer {
     // a render attachment only, which some GPUs keep compressed better (docs/specs/textures.md).
     b32 depth_sampled;
     b32 depth_texture_sampled; // what the existing depth target was made with
+    u32 depth_samples;         // its sample count (scene_samples when it was made)
+
+    // Anti-aliasing (docs/specs/msaa.md). The app sets `msaa`: 1 is off, 4 is 4x MSAA (the only
+    // counts WebGPU guarantees). nv_renderer_draw remakes the scene pipelines and the targets when it
+    // changed: the scene pass then draws into `msaa_color` and the canvas view it is given is the
+    // resolve target.
+    u32 msaa;
+    u32 scene_samples; // what the scene pipelines and the depth target have
+    WGPUTexture msaa_color;
+    WGPUTextureView msaa_color_view;
+    u32 msaa_width, msaa_height;
+    WGPUTextureFormat msaa_format;
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.

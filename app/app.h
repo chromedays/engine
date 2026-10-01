@@ -182,6 +182,7 @@ typedef enum TextureKind {
     TEXTURE_MATERIAL, // NvRenderer.textures
     TEXTURE_SHADOW,
     TEXTURE_DEPTH,
+    TEXTURE_MSAA,     // the multisampled color target the scene pass resolves into the swapchain
     TEXTURE_SWAPCHAIN,
     TEXTURE_UI,       // NvImgui.textures
 } TextureKind;
@@ -322,6 +323,7 @@ typedef struct Stress {
     f64 benchmark_step_start; // seconds
     StressWorkloads before_benchmark; // put back when a run finishes
     NvShadowSettings benchmark_shadows; // the shadow settings the last run measured with
+    u32 benchmark_msaa;                 // the sample count it measured with
     BenchmarkStep steps[STRESS_MAX_STEPS];
     BenchmarkResult results[STRESS_MAX_STEPS];
     u32 step_count;

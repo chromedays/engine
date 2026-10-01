@@ -145,6 +145,15 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its depth-only pipelines when the size or format changes. The shadow pass binds
   `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
   A new mesh vertex layout needs a matching entry point in `shadow_shader` too.
+- The scene pass is multisampled by default (`docs/specs/msaa.md`): the app sets `NvRenderer.msaa`
+  (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
+  4-sample color target (made like the canvas: its own format with the sRGB view format, rendered
+  through the sRGB view; a texture created directly in the sRGB format resolved too dark) and the
+  scene pipelines, and `update_depth_buffer` the 4-sample depth; the canvas view passed to
+  `nv_renderer_draw` is the resolve target. A pipeline used in the scene pass takes
+  `renderer->scene_samples`; the shadow and ImGui passes stay single-sample. A multisampled depth
+  texture is previewed through `depth_ms_pipeline`. Debug builds export `_app_debug_msaa` and
+  `_app_debug_set_msaa`.
 - The scene pass uses reverse Z: a `depth32float` buffer cleared to 0, compare `Greater`, and clip z
   turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
   camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay

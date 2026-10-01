@@ -316,6 +316,7 @@ internal void start_benchmark(App* app)
     Stress* stress = &app->stress;
     stress->before_benchmark = stress->want;
     stress->benchmark_shadows = app->renderer.shadows;
+    stress->benchmark_msaa = app->renderer.scene_samples;
     stress->benchmark_running = 1;
     stress->result_count = 0;
     start_step(app, 0, nv_time_seconds());
@@ -399,10 +400,10 @@ internal void copy_results(App* app)
     shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
     used += (umm)snprintf(text + used, sizeof(text) - used,
                           "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
-                          "shadows: %s\n\n"
+                          "shadows: %s\nanti-aliasing: %s\n\n"
                           "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow\n",
                           NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no",
-                          shadows);
+                          shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
         used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f\n",
@@ -462,6 +463,10 @@ internal void stats_section(App* app)
     stat("Material changes", "%.0f", (f64)r->material_changes);
     stat("Mesh changes", "%.0f", (f64)r->mesh_changes);
     stat("Shadow draws", "%.0f", (f64)r->shadow_draws);
+    igTableNextColumn();
+    igTextUnformatted("Anti-aliasing", NULL);
+    igTableNextColumn();
+    igTextUnformatted(app->renderer.scene_samples > 1 ? "MSAA 4x" : "off", NULL);
     igEndTable();
 }
 
@@ -504,6 +509,7 @@ internal void benchmark_section(App* app)
     char shadows[64];
     shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
     igText("Shadows: %s", shadows);
+    igText("Anti-aliasing: %s", stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
     if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);

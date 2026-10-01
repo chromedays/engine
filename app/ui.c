@@ -145,6 +145,16 @@ internal void same_line_if_fits(const char* label)
     ui_same_line_if_fits(igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x + text.x);
 }
 
+// The View tab's Anti-aliasing section (docs/specs/msaa.md).
+internal void msaa_ui(App* app)
+{
+    igSeparatorText("Anti-aliasing");
+    local_persist const char* names[] = {"Off", "MSAA 4x"};
+    s32 index = app->renderer.msaa == 4 ? 1 : 0;
+    if (igCombo_Str_arr("Edges", &index, names, 2, -1))
+        app->renderer.msaa = index ? 4 : 1;
+}
+
 // The View tab's Shadows section (docs/specs/shadows.md).
 internal void shadow_ui(App* app)
 {
@@ -272,6 +282,7 @@ void ui_view_tab(App* app)
         igCheckbox("Show bones", &app->show_bones);
         igSliderFloat("Planet orbit", &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
+    msaa_ui(app);
     shadow_ui(app);
     save_ui(app);
 }

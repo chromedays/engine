@@ -116,6 +116,7 @@ describe created nodes; older builds will skip them.
 | `SHFL` | u32 | shadow filter: 0 Low, 1 High | the start value (High, Low on touch screens) |
 | `SHDS` | f32 | shadow distance, meters, clamped to 5..100 on load | 30 |
 | `SHBX` | u32 | show the light box | 0 |
+| `MSAA` | u32 | anti-aliasing: samples per pixel, 1 (off) or 4 (`msaa.md`); anything else loads as 4 | 4 |
 | `DKLW` | u32 | desktop UI: the left dock's wanted width, CSS pixels, clamped to 160..640 on load (`layout.md`) | 260 |
 | `DKRW` | u32 | the right dock's wanted width, clamped to 220..640 | 340 |
 | `DKBH` | u32 | the bottom dock's wanted height, clamped to 120..600 | 220 |

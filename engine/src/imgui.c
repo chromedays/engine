@@ -693,25 +693,34 @@ global const char* preview_color_shader =
 // Depth cannot be filtered, so it is read texel by texel. Reverse Z turns back into distance t:
 // the standard depth s = 1 - d is far (t - near) / ((far - near) t) for a perspective camera, and
 // (t - near) / (far - near) for an orthographic one (nv_mat4_perspective, nv_mat4_orthographic).
+#define PREVIEW_DEPTH_FRAGMENT \
+    "@fragment\n" \
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n" \
+    "    let size = textureDimensions(d);\n" \
+    "    let texel = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(size)), size - vec2u(1u));\n" \
+    "    let z = textureLoad(d, texel, 0);\n" \
+    "    let near = p.range.z;\n" \
+    "    let far = p.range.w;\n" \
+    "    var v = z;\n" \
+    "    if (p.mode.z == 1u) {\n" \
+    "        v = far * near / (far - (1.0 - z) * (far - near));\n" \
+    "    } else if (p.mode.z == 2u) {\n" \
+    "        v = near + (1.0 - z) * (far - near);\n" \
+    "    }\n" \
+    "    let g = clamp((v - p.range.x) / max(p.range.y - p.range.x, 1e-6), 0.0, 1.0);\n" \
+    "    return vec4f(vec3f(pow(g, 2.2)), 1.0) * in.col;\n" \
+    "}\n"
+
 global const char* preview_depth_shader =
     PREVIEW_COMMON
     "@group(0) @binding(2) var d: texture_depth_2d;\n"
-    "@fragment\n"
-    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
-    "    let size = textureDimensions(d);\n"
-    "    let texel = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(size)), size - vec2u(1u));\n"
-    "    let z = textureLoad(d, texel, 0);\n"
-    "    let near = p.range.z;\n"
-    "    let far = p.range.w;\n"
-    "    var v = z;\n"
-    "    if (p.mode.z == 1u) {\n"
-    "        v = far * near / (far - (1.0 - z) * (far - near));\n"
-    "    } else if (p.mode.z == 2u) {\n"
-    "        v = near + (1.0 - z) * (far - near);\n"
-    "    }\n"
-    "    let g = clamp((v - p.range.x) / max(p.range.y - p.range.x, 1e-6), 0.0, 1.0);\n"
-    "    return vec4f(vec3f(pow(g, 2.2)), 1.0) * in.col;\n"
-    "}\n";
+    PREVIEW_DEPTH_FRAGMENT;
+
+// The same for a multisampled depth texture (the scene's with MSAA on): it shows sample 0.
+global const char* preview_depth_ms_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(2) var d: texture_depth_multisampled_2d;\n"
+    PREVIEW_DEPTH_FRAGMENT;
 
 typedef struct PreviewParams {
     f32 range[4];
@@ -894,6 +903,7 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_shader, "imgui");
     imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_shader, "imgui preview");
     imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_shader, "imgui depth preview");
+    imgui->depth_ms_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_ms_shader, "imgui multisampled depth preview");
     imgui->uniform_buffer = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(NvMat4));
     imgui->vertex_buffer = create_buffer(device, WGPUBufferUsage_Vertex, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
     imgui->index_buffer = create_buffer(device, WGPUBufferUsage_Index, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
@@ -984,11 +994,14 @@ ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
     WGPUTextureFormat format = wgpuTextureGetFormat(preview->texture);
     b32 depth = is_depth_format(format);
     NV_ASSERT(depth == (preview->mode == NV_IMGUI_PREVIEW_DEPTH));
+    b32 multisampled = wgpuTextureGetSampleCount(preview->texture) > 1;
+    NV_ASSERT(!multisampled || depth); // only depth is shown multisampled (sample 0)
     NV_ASSERT(preview->mip < wgpuTextureGetMipLevelCount(preview->texture));
     NV_ASSERT(wgpuTextureGetUsage(preview->texture) & WGPUTextureUsage_TextureBinding);
 
     slot->key = *preview;
     slot->depth = depth;
+    slot->multisampled = multisampled;
     slot->used_frame = imgui->frame;
     wgpuTextureAddRef(preview->texture);
 
@@ -1012,7 +1025,7 @@ ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
         {.binding = 2, .textureView = slot->view},
         {.binding = 1, .sampler = imgui->sampler}, // left out for depth: that pipeline has no sampler
     };
-    WGPURenderPipeline pipeline = depth ? imgui->depth_pipeline : imgui->preview_pipeline;
+    WGPURenderPipeline pipeline = depth ? (multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
     WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
     WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     group_desc.layout = layout;
@@ -1210,7 +1223,7 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
                 NV_ASSERT(texture < NV_IMGUI_MAX_TEXTURES + NV_IMGUI_MAX_PREVIEWS);
                 NvImguiPreviewSlot* slot = &imgui->previews[texture - NV_IMGUI_MAX_TEXTURES];
                 NV_ASSERT(slot->bind_group);
-                pipeline = slot->depth ? imgui->depth_pipeline : imgui->preview_pipeline;
+                pipeline = slot->depth ? (slot->multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
                 group = slot->bind_group;
             } else {
                 NV_ASSERT(texture > 0 && imgui->textures[texture].bind_group);

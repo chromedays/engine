@@ -17,6 +17,7 @@ typedef struct TextureEntry {
     WGPUTexture texture; // NULL: nothing to show (the swapchain, a map not made yet)
     const char* name;
     u32 width, height, mip_count;
+    u32 samples; // per pixel; 0 is 1
     WGPUTextureFormat format;
     u32 users;    // mesh nodes whose material uses it
     b32 in_use;
@@ -111,7 +112,7 @@ internal void format_bytes(u64 bytes, char* out, umm size)
 
 internal u64 entry_bytes(const TextureEntry* entry)
 {
-    return nv_gpu_texture_bytes(entry->width, entry->height, entry->mip_count, entry->format);
+    return nv_gpu_texture_bytes(entry->width, entry->height, entry->mip_count, entry->format) * (entry->samples ? entry->samples : 1);
 }
 
 // Every texture, grouped by kind. Returns the count; `entries` holds at most `capacity`.
@@ -170,10 +171,24 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
             .width = renderer->depth_width,
             .height = renderer->depth_height,
             .mip_count = 1,
+            .samples = renderer->depth_samples,
             .format = WGPUTextureFormat_Depth32Float,
             .in_use = 1,
             .preview = sampled,
             .note = sampled ? NULL : "Made samplable on the next frame.",
+        };
+    }
+    if (renderer->msaa_color && count < capacity) {
+        entries[count++] = (TextureEntry){
+            .kind = TEXTURE_MSAA,
+            .name = "msaa color target",
+            .width = renderer->msaa_width,
+            .height = renderer->msaa_height,
+            .mip_count = 1,
+            .samples = renderer->scene_samples,
+            .format = renderer->msaa_format,
+            .in_use = 1,
+            .note = "No preview: it is discarded after every frame; the scene pass resolves it into the swapchain.",
         };
     }
     if (count < capacity) {
@@ -233,7 +248,10 @@ internal void thumbnail(App* app, const TextureEntry* entry, f32 side)
 // "11 mips, 5.3 MB".
 internal void describe(const TextureEntry* entry, char* size_line, char* memory_line, umm size)
 {
-    snprintf(size_line, size, "%ux%u %s", entry->width, entry->height, nv_gpu_format_name(entry->format));
+    if (entry->samples > 1)
+        snprintf(size_line, size, "%ux%u %s x%u", entry->width, entry->height, nv_gpu_format_name(entry->format), entry->samples);
+    else
+        snprintf(size_line, size, "%ux%u %s", entry->width, entry->height, nv_gpu_format_name(entry->format));
     char bytes[32];
     format_bytes(entry_bytes(entry), bytes, sizeof(bytes));
     snprintf(memory_line, size, "%u mip%s, %s", entry->mip_count, entry->mip_count == 1 ? "" : "s", bytes);

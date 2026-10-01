@@ -257,6 +257,21 @@ internal WGPUPipelineLayout create_pipeline_layout(WGPUDevice device, const WGPU
     return wgpuDeviceCreatePipelineLayout(device, &desc);
 }
 
+internal void release_scene_pipelines(NvRenderer* renderer)
+{
+    for (u32 skinned = 0; skinned < 2; ++skinned) {
+        for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
+            if (renderer->pipelines[skinned][double_sided])
+                wgpuRenderPipelineRelease(renderer->pipelines[skinned][double_sided]);
+            renderer->pipelines[skinned][double_sided] = NULL;
+        }
+    }
+    if (renderer->debug_pipeline)
+        wgpuRenderPipelineRelease(renderer->debug_pipeline);
+    renderer->debug_pipeline = NULL;
+}
+
+// The pipelines the scene pass uses, for `scene_samples` samples per pixel.
 internal void create_pipelines(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
@@ -311,6 +326,7 @@ internal void create_pipelines(NvRenderer* renderer)
             desc.primitive.frontFace = WGPUFrontFace_CCW;
             desc.primitive.cullMode = double_sided ? WGPUCullMode_None : WGPUCullMode_Back;
             desc.depthStencil = &depth;
+            desc.multisample.count = renderer->scene_samples;
             desc.fragment = &fragment;
             renderer->pipelines[skinned][double_sided] = wgpuDeviceCreateRenderPipeline(device, &desc);
         }
@@ -357,6 +373,7 @@ internal void create_pipelines(NvRenderer* renderer)
     debug_desc.vertex.buffers = &debug_vertex_layout;
     debug_desc.primitive.topology = WGPUPrimitiveTopology_LineList;
     debug_desc.depthStencil = &debug_depth;
+    debug_desc.multisample.count = renderer->scene_samples;
     debug_desc.fragment = &debug_fragment;
     renderer->debug_pipeline = wgpuDeviceCreateRenderPipeline(device, &debug_desc);
     wgpuShaderModuleRelease(debug_module);
@@ -478,6 +495,8 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->clear_color[3] = 1.0f;
 
     create_layouts(renderer);
+    renderer->msaa = 1;
+    renderer->scene_samples = 1;
     create_pipelines(renderer);
 
     WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
@@ -694,7 +713,7 @@ internal void update_depth_buffer(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
     if (renderer->depth_texture && renderer->depth_width == gpu->width && renderer->depth_height == gpu->height &&
-        renderer->depth_texture_sampled == renderer->depth_sampled)
+        renderer->depth_texture_sampled == renderer->depth_sampled && renderer->depth_samples == renderer->scene_samples)
         return;
     if (renderer->depth_texture) {
         wgpuTextureViewRelease(renderer->depth_view);
@@ -707,13 +726,71 @@ internal void update_depth_buffer(NvRenderer* renderer)
         desc.usage |= WGPUTextureUsage_TextureBinding;
     desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
     desc.format = WGPUTextureFormat_Depth32Float;
+    desc.sampleCount = renderer->scene_samples;
     renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
     renderer->depth_width = gpu->width;
     renderer->depth_height = gpu->height;
     renderer->depth_texture_sampled = renderer->depth_sampled;
-    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s, reverse Z (cleared to 0, compare Greater)%s", gpu->width, gpu->height,
-           nv_gpu_format_name(WGPUTextureFormat_Depth32Float), renderer->depth_sampled ? ", samplable (texture viewer)" : "");
+    renderer->depth_samples = renderer->scene_samples;
+    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s x%u samples (%.1f MB), reverse Z (cleared to 0, compare Greater)%s", gpu->width,
+           gpu->height, nv_gpu_format_name(WGPUTextureFormat_Depth32Float), renderer->scene_samples,
+           (f64)gpu->width * (f64)gpu->height * 4.0 * (f64)renderer->scene_samples / (1024.0 * 1024.0),
+           renderer->depth_sampled ? ", samplable (texture viewer)" : "");
+}
+
+// Follows `msaa`: remakes the scene pipelines when the sample count changes, and keeps the
+// multisampled color target the scene pass resolves from (none while MSAA is off). It comes before
+// update_depth_buffer, which makes the depth target with the same sample count.
+internal void update_msaa(NvRenderer* renderer)
+{
+    NvGpu* gpu = renderer->gpu;
+    u32 samples = renderer->msaa == 4 ? 4 : 1;
+    if (samples != renderer->scene_samples) {
+        release_scene_pipelines(renderer);
+        renderer->scene_samples = samples;
+        create_pipelines(renderer);
+        nv_log(NV_LOG_INFO, "nv", "anti-aliasing: %s", samples > 1 ? "MSAA 4x" : "off");
+    }
+    if (samples == 1) {
+        if (renderer->msaa_color) {
+            wgpuTextureViewRelease(renderer->msaa_color_view);
+            wgpuTextureRelease(renderer->msaa_color);
+            renderer->msaa_color = NULL;
+            renderer->msaa_color_view = NULL;
+        }
+        return;
+    }
+    if (renderer->msaa_color && renderer->msaa_width == gpu->width && renderer->msaa_height == gpu->height &&
+        renderer->msaa_format == gpu->surface_format)
+        return;
+    if (renderer->msaa_color) {
+        wgpuTextureViewRelease(renderer->msaa_color_view);
+        wgpuTextureRelease(renderer->msaa_color);
+    }
+    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"msaa color target", WGPU_STRLEN};
+    desc.usage = WGPUTextureUsage_RenderAttachment;
+    desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
+    // Made like the canvas: the canvas's own format, with the sRGB render format as a view format,
+    // and rendered through that view, so the samples average in linear space and the resolve and
+    // the canvas agree on the encoding.
+    desc.format = gpu->config_format;
+    desc.sampleCount = samples;
+    WGPUTextureFormat view_format = gpu->surface_format;
+    if (view_format != gpu->config_format) {
+        desc.viewFormatCount = 1;
+        desc.viewFormats = &view_format;
+    }
+    renderer->msaa_color = wgpuDeviceCreateTexture(gpu->device, &desc);
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.format = gpu->surface_format;
+    renderer->msaa_color_view = wgpuTextureCreateView(renderer->msaa_color, &view_desc);
+    renderer->msaa_width = gpu->width;
+    renderer->msaa_height = gpu->height;
+    renderer->msaa_format = gpu->surface_format;
+    nv_log(NV_LOG_INFO, "nv", "msaa color target: %ux%u %s x%u samples (%.1f MB), resolved into the canvas", gpu->width, gpu->height,
+           nv_gpu_format_name(gpu->surface_format), samples, (f64)gpu->width * (f64)gpu->height * 4.0 * (f64)samples / (1024.0 * 1024.0));
 }
 
 internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)
@@ -925,6 +1002,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
                       WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     NvGpu* gpu = renderer->gpu;
+    update_msaa(renderer);
     update_depth_buffer(renderer);
     update_shadow_map(renderer);
 
@@ -1055,9 +1133,16 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     }
 
     WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-    color.view = target;
+    if (renderer->scene_samples > 1) {
+        // Draws into the multisampled target, which is resolved into the canvas and then not needed.
+        color.view = renderer->msaa_color_view;
+        color.resolveTarget = target;
+        color.storeOp = WGPUStoreOp_Discard;
+    } else {
+        color.view = target;
+        color.storeOp = WGPUStoreOp_Store;
+    }
     color.loadOp = WGPULoadOp_Clear;
-    color.storeOp = WGPUStoreOp_Store;
     color.clearValue = (WGPUColor){renderer->clear_color[0], renderer->clear_color[1], renderer->clear_color[2], renderer->clear_color[3]};
     WGPURenderPassDepthStencilAttachment depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
     depth.view = renderer->depth_view;

@@ -865,6 +865,17 @@ EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
     return values[component];
 }
 
+// The renderer's sample count (1 or 4); the setter is for tests that switch it without the UI.
+EMSCRIPTEN_KEEPALIVE int app_debug_msaa(void)
+{
+    return (int)app_state.renderer.msaa;
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_set_msaa(int samples)
+{
+    app_state.renderer.msaa = (u32)samples;
+}
+
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
 EMSCRIPTEN_KEEPALIVE int app_debug_gizmo(int which)
 {
@@ -1151,6 +1162,8 @@ int main(void)
         .filter = touch ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH,
         .distance = 30.0f,
     };
+    // Anti-aliasing (docs/specs/msaa.md): 4x MSAA everywhere; the View tab turns it off.
+    app->renderer.msaa = 4;
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
     // Keys the desktop UI binds are not the browser's (Ctrl+S would open "Save page").

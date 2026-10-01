@@ -19,7 +19,7 @@ replacing textures, and textures of past frames (no capture, as RenderDoc does n
 |---|---|---|---|---|
 | Material textures (glTF base color: `T_Hair_1_BaseColor`, `T_Eye_Brown`, `T_Superhero_Male_Dark`) and the 1×1 white default (slot 0) | `NvRenderer.textures[256]`, `nv_renderer_add_texture` | `RGBA8UnormSrgb` (white: `RGBA8Unorm`), full mip chain | `TextureBinding`, `CopyDst` | Yes, through a new bind group; but the renderer keeps no name, size, format or mip count |
 | Shadow map | `NvRenderer.shadow_texture` | `Depth32Float` or `Depth16Unorm`, 512² to 2048², or a 1×1 placeholder when off | `RenderAttachment`, `TextureBinding` | No: ImGui's shader takes `texture_2d<f32>` with a filtering sampler, and a depth format cannot be filtered |
-| Scene depth target | `NvRenderer.depth_texture` | `Depth32Float`, canvas size, reverse Z | `RenderAttachment` only | No: not created for sampling |
+| Scene depth target | `NvRenderer.depth_texture` | `Depth32Float`, canvas size, reverse Z, 4 samples with MSAA (`msaa.md`) | `RenderAttachment` only | No: not created for sampling |
 | Swapchain (the canvas) | `NvGpu.current_texture` | `BGRA8Unorm` with a `BGRA8UnormSrgb` view (per browser) | `RenderAttachment` | No, and it cannot be: the ImGui pass is drawing into it |
 | ImGui font atlas | `NvImgui.textures[16]` | `RGBA8Unorm` | `TextureBinding`, `CopyDst` | Yes (it is ImGui's own) |
 
