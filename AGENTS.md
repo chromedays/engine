@@ -6,7 +6,9 @@ Guidance for AI coding agents working in this repository.
 
 - Answer in both Korean and English in every response. Write the Korean version first, then the
   English version with the same content.
-- Commit messages, code comments and documentation stay in English.
+- Commit messages and code comments stay in English.
+- Every document is written in both Korean and English in one file: the Korean version first, then
+  the English version with the same content.
 
 ## Project
 
