@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 초안 (2026-10-01; 파티클은 compute 시뮬레이션으로 결정). 아래 "확인할 결정"이 합의되기 전에는 구현하지 않는다.
+상태: 합의됨, 구현 전 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
 
@@ -31,13 +31,13 @@
 
 | 후보 | 무엇인가 | 언어, 라이선스 | 맞음 | 장단점 |
 |---|---|---|---|---|
-| **직접 작성** (추천) | 아래 설계: compute로 시뮬레이션하는 GPU 파티클, 인스턴스 선분, 지면 데칼, bloom 체인 | C17과 WGSL | 엔진의 렌더러, 아레나, 고정 용량에 그대로 들어간다. 약 2,000줄로 추정 | 효과 편집기가 없다: 효과는 코드 안의 데이터 표로 정의한다 |
+| **직접 작성** (선택) | 아래 설계: compute로 시뮬레이션하는 GPU 파티클, 인스턴스 선분, 지면 데칼, bloom 체인 | C17과 WGSL | 엔진의 렌더러, 아레나, 고정 용량에 그대로 들어간다. 약 2,000줄로 추정 | 효과 편집기가 없다: 효과는 코드 안의 데이터 표로 정의한다 |
 | Effekseer (EffekseerForWeb) | 편집기가 딸린 완전한 파티클 효과 런타임. WebAssembly 빌드가 있고, WebGPU 백엔드는 Dawn 기반의 실험 단계다 | C++, MIT | 편집기에서 만든 효과를 그대로 재생한다 | 자체 그래픽 추상화 (LLGI)와 자체 GPU 리소스를 가진 큰 C++ 런타임이라, 우리의 패스, MSAA, 해상도, 깊이 규칙 (reverse Z)과 맞추는 래퍼가 크다. 두 번째 C++ 파일, 실험 단계 백엔드 |
 | PopcornFX | 상용 파티클 미들웨어 | C++, 상용 | | 오픈 소스가 아니다 |
 | Khronos PBR Neutral 톤 매퍼 | 공개된 톤 매핑 공식 (약 15줄) | 참조 코드 Apache-2.0 | WGSL로 직접 옮겨 쓴다. 0.76 아래의 색은 거의 그대로 둔다 | 라이브러리가 아니라 공식이다: 출처를 주석에 남긴다 |
 | Jimenez 2014 bloom (Call of Duty: Advanced Warfare, SIGGRAPH 발표) | 다운샘플/업샘플 밉 체인 bloom 기법 | 발표 자료 (코드 아님) | 표준적인 방법이고 렌더 패스만으로 된다 | 우리가 쓴다 |
 
-추천: 직접 작성한다. 톤 매핑과 bloom은 공개 기법을 따르고 출처를 주석에 남긴다. 새 라이브러리는 없다.
+결정: 직접 작성한다. 톤 매핑과 bloom은 공개 기법을 따르고 출처를 주석에 남긴다. 새 라이브러리는 없다.
 
 ### 접근법: 파티클 시뮬레이션
 
@@ -111,7 +111,7 @@
 |---|---|
 | 씬 색 | 씬 색 타깃과 4-샘플 색 타깃을 `RGBA16Float`로 바꾼다. WebGPU core에서 렌더링, 블렌딩, 다중 샘플, resolve가 모두 된다. 값이 선형으로 저장되므로 `msaa.md`의 "캔버스처럼 만들기" (sRGB 뷰)는 이 타깃에 더 이상 필요 없다 |
 | 메모리 | 색 타깃이 픽셀당 4바이트에서 8바이트가 된다. 3× 폰의 1/2 (585 × 500)에서 4-샘플 색 4.5 MB → 9 MB, 씬 색 1.1 MB → 2.3 MB |
-| 톤 매핑 | 업스케일 패스에서 한다: 노출을 곱하고, 톤 매핑하고, 캔버스의 sRGB 뷰에 쓴다. 선택지: **Clamp** (지금의 모습: 1에서 자름), **PBR Neutral** (Khronos; 0.76 아래는 거의 그대로이고 밝은 쪽만 부드럽게 누름), **ACES** (Narkowicz의 근사식; 대비가 강한 영화풍). 기본값은 확인할 결정 2 |
+| 톤 매핑 | 업스케일 패스에서 한다: 노출을 곱하고, 톤 매핑하고, 캔버스의 sRGB 뷰에 쓴다. 선택지: **Clamp** (지금의 모습: 1에서 자름), **PBR Neutral** (Khronos; 0.76 아래는 거의 그대로이고 밝은 쪽만 부드럽게 누름), **ACES** (Narkowicz의 근사식; 대비가 강한 영화풍). 기본값은 **PBR Neutral**: 지금 쇼케이스의 모습을 거의 유지하면서 밝은 효과를 부드럽게 누른다. Clamp는 지금과 같은 모습이 필요할 때 고른다 |
 | bloom | Jimenez 2014 방식: 씬 색에서 시작해 반씩 줄이는 다운샘플 6단계 (13탭 필터, 첫 단계는 반짝이는 점을 막는 Karis 평균), 그다음 텐트 필터로 올라오며 더한다. 업스케일 패스가 결과를 세기 (기본 0.04)만큼 섞는다. 임계값은 두지 않는다: HDR 값이 큰 곳만 눈에 띄게 번진다. 각 단계는 작은 렌더 패스다 (compute 없음) |
 | bloom 타깃 | `RGBA16Float` 밉 체인, 씬 해상도의 1/2부터. 씬 타깃처럼 64로 올림하고 충분히 크면 유지한다 |
 | 비용 표시 | bloom 패스들에 타임스탬프 쌍 하나를 더한다 (파티클 compute 패스의 쌍과 함께 `NV_TIMESTAMP_COUNT` 6 → 10). Stress 탭과 벤치마크가 그것을 보여 준다 |
@@ -128,7 +128,7 @@
 | 스트레스 씬 | **Effects** 워크로드: 살아 있는 파티클 목표 (0–4M, 그 수를 유지하도록 폭발을 터뜨림), 초당 폭발 수 (0–200), 날아다니는 미사일 수 (궤적과 연기, 0–2,000), 빔 수 (0–500), 데칼 수. 통계: 살아 있는 파티클, 선분, 데칼, bloom GPU 시간. 벤치마크에 효과 단계를 더한다 |
 | Debug export | `_app_debug_vfx(n)` (0 파티클, 1 선분, 2 데칼, 3 효과 수), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
 
-### 엔진 API (초안)
+### 엔진 API
 
 ```c
 #define NV_VFX_MAX_EFFECTS            1024
@@ -186,14 +186,16 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 `NvRenderer`에 `vfx` (포인터, NULL = 없음)와 `post` (`NvPostSettings`: 톤 매핑, 노출, bloom, bloom 세기)가 생기고, 앱이
 `shadows`처럼 설정한다.
 
-### 확인할 결정
+### 해결된 질문
 
-1. **스프라이트:** 첫 단계는 셰이더가 그리는 모양 (추천, 에셋 없음) 또는 Kenney Particle Pack (CC0) 같은 텍스처 아틀라스.
-2. **톤 매핑 기본값:** PBR Neutral (추천: 지금 쇼케이스의 모습을 거의 유지하면서 밝은 효과를 부드럽게 누른다) 또는 Clamp (지금과 같은 모습) 또는 ACES.
-3. **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 (추천) 또는 따로.
-4. **기본 용량:** 동시에 살아 있는 파티클 데스크톱 2M, 폰 256K (추천; 스트레스 씬의 측정으로 다시 정한다).
+모두 2026-10-01에 정했다.
 
-파티클 시뮬레이션은 compute로 정해졌다 (2026-10-01).
+- **파티클 시뮬레이션:** compute 셰이더 시뮬레이션 (상태 없는 GPU 파티클 대신).
+- **스프라이트:** 첫 단계는 셰이더가 그리는 모양이고 에셋이 없다. 텍스처 아틀라스 (예: Kenney Particle Pack, CC0)는 나중에 같은
+  모양 번호 자리에 더한다.
+- **톤 매핑 기본값:** PBR Neutral.
+- **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 한다.
+- **기본 용량:** 동시에 살아 있는 파티클 데스크톱 2M, 폰 256K. 스트레스 씬의 측정으로 다시 정할 수 있다.
 
 ### 변경
 
@@ -251,8 +253,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 ## English
 
-Status: draft (2026-10-01; particles decided as a compute simulation). Nothing is built until the "Decisions to confirm"
-below are agreed.
+Status: agreed, not yet built (2026-10-01). Changes to this spec are agreed first.
 
 ### Goal
 
@@ -282,13 +283,13 @@ deterministic.
 
 | Candidate | What it is | Language, license | Fit | Trade-offs |
 |---|---|---|---|---|
-| **Write it ourselves** (recommended) | The design below: GPU particles simulated in compute, instanced segments, ground decals, a bloom chain | C17 and WGSL | Fits the engine's renderer, arenas and fixed capacities as they are. Estimated at about 2,000 lines | No effect editor: effects are defined as a data table in code |
+| **Write it ourselves** (chosen) | The design below: GPU particles simulated in compute, instanced segments, ground decals, a bloom chain | C17 and WGSL | Fits the engine's renderer, arenas and fixed capacities as they are. Estimated at about 2,000 lines | No effect editor: effects are defined as a data table in code |
 | Effekseer (EffekseerForWeb) | A complete particle effect runtime with an editor. It has a WebAssembly build; its WebGPU backend is Dawn-based and experimental | C++, MIT | Plays effects made in its editor as they are | A large C++ runtime with its own graphics abstraction (LLGI) and its own GPU resources, so the wrapper that fits it to our passes, MSAA, resolution and depth rules (reverse Z) is large. A second C++ file, an experimental backend |
 | PopcornFX | Commercial particle middleware | C++, commercial | | Not open source |
 | Khronos PBR Neutral tone mapper | A published tone mapping formula (about 15 lines) | Reference code Apache-2.0 | Ported to WGSL by hand. Leaves colors below 0.76 nearly as they are | A formula, not a library: its source is cited in a comment |
 | Jimenez 2014 bloom (Call of Duty: Advanced Warfare, a SIGGRAPH talk) | A downsample/upsample mip chain bloom technique | A talk (no code) | The standard method, done with render passes only | Ours to write |
 
-Recommendation: write it ourselves. Tone mapping and bloom follow published techniques, cited in comments. No new library.
+Decided: write it ourselves. Tone mapping and bloom follow published techniques, cited in comments. No new library.
 
 ### Approaches: particle simulation
 
@@ -362,7 +363,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 |---|---|
 | Scene color | The scene color target and the 4-sample color target become `RGBA16Float`. WebGPU core can render, blend, multisample and resolve it. Values are stored linear, so `msaa.md`'s "made like the canvas" (the sRGB view) is no longer needed for this target |
 | Memory | Color targets go from 4 to 8 bytes per pixel. At 1/2 on a 3× phone (585 × 500), the 4-sample color goes from 4.5 MB to 9 MB, the scene color from 1.1 MB to 2.3 MB |
-| Tone mapping | Done in the upscale pass: multiply by the exposure, tone map, write to the canvas's sRGB view. Choices: **Clamp** (today's look: cut at 1), **PBR Neutral** (Khronos; nearly unchanged below 0.76, only the bright end is compressed smoothly), **ACES** (Narkowicz's fit; a contrasty film look). The default is decision 2 below |
+| Tone mapping | Done in the upscale pass: multiply by the exposure, tone map, write to the canvas's sRGB view. Choices: **Clamp** (today's look: cut at 1), **PBR Neutral** (Khronos; nearly unchanged below 0.76, only the bright end is compressed smoothly), **ACES** (Narkowicz's fit; a contrasty film look). The default is **PBR Neutral**: it keeps today's showcase nearly as it looks while compressing bright effects smoothly. Clamp is there when exactly today's look is wanted |
 | Bloom | Jimenez 2014: six downsample steps halving from the scene color (a 13-tap filter, with a Karis average on the first step against fireflies), then summed back up with a tent filter. The upscale pass mixes the result in by an intensity (0.04 by default). No threshold: only places with large HDR values spread visibly. Each step is a small render pass (no compute) |
 | Bloom targets | An `RGBA16Float` mip chain starting at 1/2 of the scene's resolution, rounded up to 64 and kept while large enough, like the scene targets |
 | Cost shown | One more timestamp pair around the bloom passes (`NV_TIMESTAMP_COUNT` 6 → 10 with the particle compute passes' pair). The Stress tab and the benchmark show it |
@@ -379,7 +380,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Stress scene | An **Effects** workload: a target of live particles (0 to 4M, kept by firing explosions), explosions per second (0 to 200), flying missiles (trails and smoke, 0 to 2,000), beams (0 to 500), decals. Stats: live particles, segments, decals, bloom GPU time. The benchmark gains effect steps |
 | Debug exports | `_app_debug_vfx(n)` (0 particles, 1 segments, 2 decals, 3 effect count), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
 
-### Engine API (draft)
+### Engine API
 
 ```c
 #define NV_VFX_MAX_EFFECTS            1024
@@ -437,18 +438,17 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 `NvRenderer` gains `vfx` (a pointer, NULL = none) and `post` (`NvPostSettings`: tone, exposure, bloom, bloom_intensity), set
 by the app like `shadows`.
 
-### Decisions to confirm
+### Resolved questions
 
-1. **Sprites:** shapes drawn by the shader in the first step (recommended, no assets) or a texture atlas such as Kenney's
-   Particle Pack (CC0).
-2. **Tone mapping default:** PBR Neutral (recommended: keeps today's showcase nearly as it looks while compressing bright
-   effects smoothly), Clamp (exactly today's look) or ACES.
-3. **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec
-   (recommended) or separately.
-4. **Default capacity:** 2M particles alive at once on the desktop, 256K on a phone (recommended; revisited with the
-   stress scene's measurements).
+All decided on 2026-10-01.
 
-The particle simulation is decided: compute (2026-10-01).
+- **Particle simulation:** a compute shader simulation (instead of stateless GPU particles).
+- **Sprites:** the first step draws shapes in the shader, with no assets. A texture atlas (for example Kenney's Particle Pack,
+  CC0) comes later in the same shape-number slots.
+- **Tone mapping default:** PBR Neutral.
+- **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec.
+- **Default capacity:** 2M particles alive at once on the desktop, 256K on a phone; may be revised with the stress scene's
+  measurements.
 
 ### Changes
 

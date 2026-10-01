@@ -52,7 +52,7 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 | 5 | AI 상대 | 배치, 구매, 업그레이드 휴리스틱; 난이도별 파라미터; 플레이어 배치에 대한 카운터 | app |
 | 6 | 대량 렌더링 | 메시별 인스턴싱 배치, frustum culling, LOD(level of detail, 거리별 세부 단계) | engine |
 | 7 | 대량 애니메이션 | 메카용 리지드(관절별 강체) 애니메이션이나 VAT(vertex animation texture, 정점 애니메이션 텍스처). 애니메이터 256개 상한을 넘기 위해 | engine |
-| 8 | VFX(visual effects, 시각 효과) | GPU 파티클(compute shader), 미사일 궤적, 빔, 가산 블렌딩, bloom, 데칼 | engine |
+| 8 | VFX(visual effects, 시각 효과) | GPU 파티클(compute shader), 미사일 궤적, 빔, 가산 블렌딩, bloom, 데칼. 스펙: `docs/specs/vfx.md` | engine |
 | 9 | 시간 조작 | 일시정지, 2배속, 4배속, 슬로 모션: 프레임당 틱 수만 바뀐다 | app |
 | 10 | 배치 UI와 게임 UI | 그리드 스냅 배치, 드래그와 회전, 상점, 카드, 체력바, 라운드 결과. ImGui 에디터와 분리된 게임 UI | engine (UI 기반), app (화면) |
 | 11 | 오디오 | Web Audio API 래퍼, 위치 사운드, 동시 재생 수 제한, 음악 | engine |
@@ -126,7 +126,7 @@ it?
 | 5 | AI opponent | Heuristics for deploying, buying and upgrading; parameters per difficulty; counters to the player's deployment | app |
 | 6 | Mass rendering | Instanced batches per mesh, frustum culling, LOD (level of detail) | engine |
 | 7 | Mass animation | Rigid per-joint animation or VAT (vertex animation textures) for mechs, past the 256-animator limit | engine |
-| 8 | VFX (visual effects) | GPU particles (compute shaders), missile trails, beams, additive blending, bloom, decals | engine |
+| 8 | VFX (visual effects) | GPU particles (compute shaders), missile trails, beams, additive blending, bloom, decals. Spec: `docs/specs/vfx.md` | engine |
 | 9 | Time controls | Pause, 2x and 4x speed, slow motion: the number of ticks per frame changes | app |
 | 10 | Deployment and game UI | Grid-snapped placement, drag and rotate, shop, cards, health bars, round results; a game UI apart from the ImGui editor | engine (UI base), app (screens) |
 | 11 | Audio | Web Audio API wrapper, positional sound, a cap on simultaneous sounds, music | engine |
