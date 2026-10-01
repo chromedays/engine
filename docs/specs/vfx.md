@@ -62,7 +62,7 @@
 | 효과와 이미터 | 효과는 이미터 최대 8개의 묶음이다 (폭발 = 섬광 + 불꽃 + 연기 + 파편). 이미터는 파티클 흐름 하나로, `NvVfxEmitterDesc`의 행이다: 한 번에 나오는 수, 수명 범위, 속도 범위와 원뿔, 중력, 공기 저항, 난류, 지면 충돌 (높이, 반발, 마찰), 크기 시작과 끝, 색 세 점 (시작, 중간, 끝; HDR 값 허용), 모양, 블렌드 모드, 속도 방향 늘이기, 효과 안에서의 시작 지연. 효과 최대 1,024개 (`NV_VFX_MAX_EFFECTS`), 이미터 최대 4,096개 (`NV_VFX_MAX_EMITTERS`). 이미터 표는 GPU의 스토리지 버퍼 하나 (이미터당 약 128바이트, 최대 512 KB)라서 수를 늘리는 비용이 작다. 앱이 시작할 때 등록한다. 데이터 파일은 `autobattler.md`의 4번 (데이터 기반 정의)에서 다룬다 |
 | 호출 | `nv_vfx_burst(vfx, effect, position, direction, scale)`: 한 번에 터뜨리기. `nv_vfx_emit(vfx, effect, from, to, count)`: 이번 틱에 움직인 구간을 따라 고르게 내보내기 (미사일 연기 궤적). 핸들도 해제도 없다: 모든 것은 수명이 끝나면 사라진다 |
 | 그리기 순서 | 씬 패스 안에서: 불투명 메시 → 데칼 → 디버그 라인 → 선분 → 알파 파티클 → 가산 파티클. 모두 깊이 테스트를 하고 깊이를 쓰지 않는다 |
-| 정렬 | 하지 않는다. 가산 블렌딩은 순서와 무관하다. 알파 블렌딩 (연기)은 낮은 불투명도로 써서 순서 오류가 눈에 띄지 않게 한다 (파티클의 "정렬" 참고). 순서와 무관한 투명도 (OIT)는 범위 밖 |
+| 정렬 | 이 스펙에서는 하지 않는다. 가산 블렌딩은 순서와 무관하다. 알파 블렌딩 (연기)의 순서 오류는 숨기지 않고 드러낸다: 정렬이 필요하다는 것이 화면에서 분명히 보이게 하여 다음 단계에서 고친다 (파티클의 "정렬" 참고). 순서와 무관한 투명도 (OIT)는 범위 밖 |
 | 조명과 그림자 | 효과는 빛을 받지 않고 (unlit) 그림자를 드리우지도 받지도 않는다. picking에 걸리지 않는다 |
 | MSAA와 해상도 | 효과는 씬 패스 안에 그리므로 씬의 해상도와 샘플 수를 따른다 (`resolution.md`, `msaa.md`) |
 | 서드파티 | 없음 |
@@ -87,7 +87,7 @@
 | 비용 | compute는 살아 있는 파티클마다 매 프레임 상태 32바이트를 읽고 쓰고, 그리기가 다시 읽는다: 2M이면 프레임당 약 190 MB, 60 fps에서 초당 약 11 GB. 대역폭은 용량이 아니라 실제로 살아 있는 수에 비례한다: 용량을 2M으로 잡아도 살아 있는 파티클이 적으면 메모리 96 MB만 든다. 2M이 모두 살아 있으면 데스크톱 GPU에는 감당할 만하지만 폰에는 크다. 폰에서도 같은 2M을 쓰되, 실제로 감당하는 수는 스트레스 씬으로 재고, 폰 브라우저가 96 MB 할당을 거부하거나 탭을 종료하는지 함께 확인한다. 그다음 한계는 겹친 큰 가산 파티클의 fill rate다. compute 패스에 타임스탬프 쌍을 하나 더하고, 둘 다 스트레스 씬으로 잰다 |
 | 모양 | 첫 단계는 텍스처 없이 셰이더가 그린다: 부드러운 원, 고리 (충격파), 속도로 늘인 줄 (불꽃), 노이즈 덩어리 (연기). 스프라이트 아틀라스는 나중에 같은 모양 번호 자리에 더한다 |
 | 카메라 정렬 | 사각형은 카메라를 향한다. 늘이기가 켜진 이미터는 상태의 속도를 화면 공간으로 옮긴 방향으로 늘인다 |
-| 정렬 | 알파 파티클의 목록 순서는 atomic 때문에 프레임마다 바뀌므로, 정렬 없이 겹친 연기는 깜박일 수 있다. 낮은 불투명도로 줄이고, 눈에 띄면 GPU 정렬 (bitonic 또는 radix, compute)을 다음 단계로 더한다 |
+| 정렬 | 알파 파티클의 목록 순서는 atomic 때문에 프레임마다 바뀌므로, 정렬 없이 겹친 연기는 깜박인다. 이 결함은 알려진 문제로 남기고 숨기지 않는다: 불투명도를 낮춰 가리지 않으며, 시험 효과 **Smoke**는 불투명도가 높고 색이 서로 다른 파티클을 겹쳐서 순서 오류가 분명히 보이게 만든다. 코드에는 `// TODO:`로 표시한다. GPU 정렬 (bitonic 또는 radix, compute)이 다음 단계다 |
 
 #### 궤적과 빔
 
@@ -314,7 +314,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Effects and emitters | An effect is a group of at most 8 emitters (an explosion = flash + sparks + smoke + debris). An emitter is one stream of particles, a row of `NvVfxEmitterDesc`: the count per burst, lifetime range, speed range and cone, gravity, drag, turbulence, ground collision (height, restitution, friction), start and end size, three colors (start, middle, end; HDR values allowed), shape, blend mode, stretching along velocity, a start delay within the effect. At most 1,024 effects (`NV_VFX_MAX_EFFECTS`) and 4,096 emitters (`NV_VFX_MAX_EMITTERS`). The emitter table is one GPU storage buffer (about 128 bytes per emitter, 512 KB at most), so raising the counts costs little. The app registers them at start. Data files are item 4 of `autobattler.md` (data-driven definitions) |
 | Calls | `nv_vfx_burst(vfx, effect, position, direction, scale)`: one burst. `nv_vfx_emit(vfx, effect, from, to, count)`: spread evenly along the stretch moved this tick (a missile's smoke trail). No handles and nothing to free: everything disappears when its lifetime ends |
 | Draw order | Inside the scene pass: opaque meshes → decals → debug lines → segments → alpha particles → additive particles. All test depth and none write it |
-| Sorting | None. Additive blending does not depend on order. Alpha blending (smoke) is used at low opacity so order errors do not show (see "Sorting" under Particles). Order-independent transparency (OIT) is out of scope |
+| Sorting | None in this spec. Additive blending does not depend on order. Order errors in alpha blending (smoke) are shown, not hidden, so the need for sorting is plain on screen and gets fixed in a next step (see "Sorting" under Particles). Order-independent transparency (OIT) is out of scope |
 | Lighting and shadows | Effects are unlit, cast and receive no shadows, and are not pickable |
 | MSAA and resolution | Effects are drawn in the scene pass, so they follow the scene's resolution and sample count (`resolution.md`, `msaa.md`) |
 | Third-party | None |
@@ -339,7 +339,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Cost | Compute reads and writes 32 bytes of state per living particle every frame, and drawing reads it again: about 190 MB per frame at 2M, about 11 GB/s at 60 fps. Bandwidth follows the number actually alive, not the capacity: with 2M capacity and few particles alive, only the 96 MB of memory is spent. With all 2M alive it is fine for a desktop GPU and heavy for a phone. Phones use the same 2M; the count a phone really sustains is measured with the stress scene, along with whether a phone browser refuses the 96 MB or kills the tab. The next limit is the fill rate of large overlapping additive particles. A timestamp pair is added for the compute passes; both are measured with the stress scene |
 | Shapes | The first step draws them in the shader with no texture: a soft disc, a ring (shockwave), a streak stretched by velocity (sparks), a noisy puff (smoke). A sprite atlas comes later in the same shape-number slots |
 | Facing | Quads face the camera. Emitters with stretching are lengthened along the state's velocity taken to screen space |
-| Sorting | The living list's order changes every frame with the atomics, so overlapping unsorted smoke can flicker. Low opacity hides it; if it shows, GPU sorting (bitonic or radix, in compute) is the next step |
+| Sorting | The living list's order changes every frame with the atomics, so overlapping unsorted smoke flickers. This defect stays a known issue and is not hidden: opacity is not lowered to mask it, and the **Smoke** test effect overlaps highly opaque particles of different colors so order errors are plain to see. The code marks it with `// TODO:`. GPU sorting (bitonic or radix, in compute) is the next step |
 
 #### Trails and beams
 
