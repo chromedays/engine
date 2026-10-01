@@ -69,6 +69,11 @@ EM_JS(void, js_setup_text_agent, (char* clipboard, int clipboard_size), {
     agent.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0;" +
                           "padding:0;font-size:16px;pointer-events:none;";
     document.body.appendChild(agent);
+    // The browser draws a composing syllable with its own highlight: keep it readable, no focus ring.
+    const css = document.createElement("style");
+    css.textContent = "#nv-text-agent{outline:none;caret-color:transparent}" +
+                      "#nv-text-agent::selection{background:#ffd54a;color:#111}";
+    document.head.appendChild(css);
 
     const reset = () => { agent.value = " "; agent.setSelectionRange(1, 1); };
     const flush = () => {
@@ -80,11 +85,36 @@ EM_JS(void, js_setup_text_agent, (char* clipboard, int clipboard_size), {
         }
         reset();
     };
+    // While an input method composes a syllable, the agent shows it at the text caret, drawn by
+    // the browser (ImGui has no pre-edit text); the method's candidate window follows it too.
     let composing = false;
+    let lineHeight = 16;
+    const showComposition = (on) => {
+        const style = agent.style;
+        style.opacity = on ? "1" : "0";
+        style.color = "#111";
+        style.background = on ? "#f2f2f2" : "transparent";
+        style.height = on ? lineHeight + "px" : "1px";
+        style.width = on ? Math.max(lineHeight, agent.value.length * lineHeight) + "px" : "1px";
+        style.fontSize = on ? Math.max(12, Math.round(lineHeight * 0.85)) + "px" : "16px";
+        style.zIndex = on ? "10" : "";
+    };
     agent.addEventListener("focus", reset);
-    agent.addEventListener("compositionstart", () => { composing = true; });
-    agent.addEventListener("compositionend", () => { composing = false; flush(); });
-    agent.addEventListener("input", () => { if (!composing) flush(); });
+    agent.addEventListener("compositionstart", () => { composing = true; showComposition(true); });
+    agent.addEventListener("compositionupdate", () => showComposition(true));
+    agent.addEventListener("compositionend", () => { composing = false; showComposition(false); flush(); });
+    agent.addEventListener("input", (event) => {
+        // A browser undo or redo on the agent's own value is not typing.
+        if (event.inputType && event.inputType.startsWith("history")) { reset(); return; }
+        if (!composing) flush();
+        else showComposition(true);
+    });
+    Module.nvImeMove = (x, y, height) => {
+        lineHeight = Math.max(10, height);
+        agent.style.left = Math.round(x) + "px";
+        agent.style.top = Math.round(y) + "px";
+        if (composing) showComposition(true);
+    };
 
     // Keyboard pastes land here; pastes into the agent (long-press menu) arrive as input instead.
     window.addEventListener("paste", (event) => {
@@ -94,6 +124,10 @@ EM_JS(void, js_setup_text_agent, (char* clipboard, int clipboard_size), {
         event.preventDefault();
         _nv_imgui_js_paste();
     });
+});
+
+EM_JS(void, js_ime_move, (float x, float y, float height), {
+    if (Module.nvImeMove) Module.nvImeMove(x, y, height);
 });
 
 EM_JS(int, js_text_agent_focused, (void), {
@@ -277,9 +311,19 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
     // While the text agent has focus, its input events carry text and Backspace; taking them
     // from keydown too would apply them twice. The agent needs the default action to see them.
     if (js_text_agent_focused()) {
+        // A key the input method takes ("Process") is the method's: not ImGui's, and its default
+        // action must stay or the composition stops.
+        if (strcmp(event->key, "Process") == 0)
+            return 0;
         if (key != ImGuiKey_None && key != ImGuiKey_Backspace)
             ImGuiIO_AddKeyEvent(io, key, down);
-        return 0;
+        // Keys that do not type text act in ImGui only: the agent's own caret must not move
+        // (arrows, Home, End) and chords must not select or undo in it. Typing, Backspace and
+        // paste stay with the agent.
+        b32 types = !shortcut && is_single_character(event->key);
+        if (shortcut)
+            return key != ImGuiKey_V;
+        return !types && key != ImGuiKey_Backspace;
     }
 
     if (key != ImGuiKey_None)
@@ -603,6 +647,15 @@ internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* 
     return 1;
 }
 
+// ImGui tells where the text caret is: the agent moves there, so a composing syllable and the input
+// method's candidate window appear at the field being edited (docs/specs/korean.md).
+internal void set_ime_data(ImGuiContext* context, ImGuiViewport* viewport, ImGuiPlatformImeData* data)
+{
+    (void)context, (void)viewport;
+    if (data->WantVisible || data->WantTextInput)
+        js_ime_move(data->InputPos.x, data->InputPos.y, data->InputLineHeight);
+}
+
 internal bool on_focus(int event_type, const EmscriptenFocusEvent* event, void* userdata)
 {
     (void)event, (void)userdata;
@@ -886,6 +939,7 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     io->BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
 
     ImGuiPlatformIO* platform_io = igGetPlatformIO_Nil();
+    platform_io->Platform_SetImeDataFn = set_ime_data;
     platform_io->Platform_ClipboardUserData = imgui;
     platform_io->Platform_GetClipboardTextFn = get_clipboard;
     platform_io->Platform_SetClipboardTextFn = set_clipboard;
@@ -1065,6 +1119,10 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
         --imgui->text_agent_grace;
     else if (!io->WantTextInput && js_text_agent_focused())
         js_focus_text_agent(0);
+    // The desktop types through the agent too, so an input method can compose (a touch screen
+    // focuses it from its tap handler instead).
+    if (io->WantTextInput && imgui->ui_scale <= 1.0f && !js_text_agent_focused())
+        js_focus_text_agent(1);
 
     // A touch held still long enough becomes a press; its scrolling is applied this frame.
     if (imgui->touch_gesture == NV_TOUCH_UNDECIDED &&

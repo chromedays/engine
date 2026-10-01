@@ -1240,6 +1240,16 @@ EMSCRIPTEN_KEEPALIVE int app_debug_palette_result(int i, int k)
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
 
+// The k-th byte of the selected node's name; 0 past its end.
+EMSCRIPTEN_KEEPALIVE int app_debug_selected_name(int k)
+{
+    SceneView* view = app_view(&app_state);
+    if (!view->selected.index)
+        return 0;
+    const char* name = nv_scene_get(view->scene, view->selected)->name;
+    return k < (int)strlen(name) ? (u8)name[k] : 0;
+}
+
 // Renames the selected node to the text in the search buffer (as typed names arrive: cut at a character).
 EMSCRIPTEN_KEEPALIVE void app_debug_rename_selected(void)
 {
