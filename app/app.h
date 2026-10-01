@@ -39,10 +39,27 @@ typedef enum UiMode {
     UI_PHONE,
 } UiMode;
 
+// How the scene is rendered and shown in the viewport (docs/specs/resolution.md): at a whole
+// fraction of the viewport's pixels filling it, or at a fixed size centered in it with black bars.
+typedef enum ResolutionMode {
+    RESOLUTION_SCALE,
+    RESOLUTION_FIXED,
+} ResolutionMode;
+
+typedef struct Resolution {
+    ResolutionMode mode;
+    u32 divisor;                    // SCALE: 1, 2, 3 or 4
+    u32 fixed_width, fixed_height;  // FIXED: RESOLUTION_MIN..RESOLUTION_MAX each
+} Resolution;
+
+#define RESOLUTION_MIN 16
+#define RESOLUTION_MAX 4096
+
 // Where the editor's regions are, in framebuffer pixels (app_layout, every frame). A region the
 // shown UI does not have is empty. The phone's tabbed panel is `panel`.
 typedef struct Layout {
     NvRect viewport;
+    NvSceneOutput scene; // the scene's resolution and where its image goes inside the viewport
     NvRect top_bar;
     NvRect left, right, bottom; // desktop docks
     NvRect panel;               // phone
@@ -446,6 +463,7 @@ typedef struct App {
     // Layout (ui.c, ui_desktop.c, ui_phone.c)
     UiMode ui_mode;
     Layout layout;
+    Resolution resolution;
     Docks docks;
     b32 open_view;    // switch to the View tab on the next frame
     f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden

@@ -84,10 +84,10 @@ internal void base_uv(App* app, const TextureEntry* entry, ImVec2_c* uv0, ImVec2
 {
     *uv0 = (ImVec2_c){0.0f, 0.0f};
     *uv1 = (ImVec2_c){1.0f, 1.0f};
-    if (entry->kind == TEXTURE_DEPTH && app->gpu.width && app->gpu.height) {
-        NvRect v = app->layout.viewport;
-        *uv0 = (ImVec2_c){(f32)v.x / (f32)app->gpu.width, (f32)v.y / (f32)app->gpu.height};
-        *uv1 = (ImVec2_c){(f32)(v.x + v.width) / (f32)app->gpu.width, (f32)(v.y + v.height) / (f32)app->gpu.height};
+    if (entry->kind == TEXTURE_DEPTH && app->renderer.target_width && app->renderer.target_height) {
+        // The targets are allocated a little larger than the scene; the scene is their top-left part.
+        *uv1 = (ImVec2_c){(f32)app->renderer.scene_width / (f32)app->renderer.target_width,
+                          (f32)app->renderer.scene_height / (f32)app->renderer.target_height};
     }
 }
 

@@ -481,6 +481,50 @@ NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
     return (NvRect){left, top, right - left, bottom - top};
 }
 
+internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
+{
+    return value < lo ? lo : value > hi ? hi : value;
+}
+
+// The scene's resolution and where its image goes in the viewport (docs/specs/resolution.md).
+internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewport)
+{
+    NvSceneOutput out = {.image = viewport, .pixel_size = 1.0f};
+    if (!viewport.width || !viewport.height) {
+        out.width = out.height = 1;
+        return out;
+    }
+    if (resolution->mode == RESOLUTION_FIXED) {
+        u32 width = clamp_u32(resolution->fixed_width, RESOLUTION_MIN, RESOLUTION_MAX);
+        u32 height = clamp_u32(resolution->fixed_height, RESOLUTION_MIN, RESOLUTION_MAX);
+        out.width = width;
+        out.height = height;
+        // The largest whole multiple that fits, so every block is the same size; shrunk to fit,
+        // keeping the aspect ratio, only when even the size itself does not.
+        u32 fit_x = viewport.width / width, fit_y = viewport.height / height;
+        u32 multiple = fit_x < fit_y ? fit_x : fit_y;
+        u32 image_width, image_height;
+        if (multiple >= 1) {
+            out.pixel_size = (f32)multiple;
+            image_width = width * multiple;
+            image_height = height * multiple;
+        } else {
+            f32 sx = (f32)viewport.width / (f32)width, sy = (f32)viewport.height / (f32)height;
+            out.pixel_size = sx < sy ? sx : sy;
+            image_width = clamp_u32((u32)((f32)width * out.pixel_size + 0.5f), 1, viewport.width);
+            image_height = clamp_u32((u32)((f32)height * out.pixel_size + 0.5f), 1, viewport.height);
+        }
+        out.image = (NvRect){viewport.x + (viewport.width - image_width) / 2, viewport.y + (viewport.height - image_height) / 2,
+                             image_width, image_height};
+        return out;
+    }
+    u32 divisor = clamp_u32(resolution->divisor, 1, 4);
+    out.width = (viewport.width + divisor - 1) / divisor;
+    out.height = (viewport.height + divisor - 1) / divisor;
+    out.pixel_size = (f32)divisor;
+    return out;
+}
+
 void app_layout(App* app)
 {
     f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
@@ -490,6 +534,7 @@ void app_layout(App* app)
         phone_layout(app, width, height, ratio);
     else
         desktop_layout(app, width, height, ratio);
+    app->layout.scene = scene_output(&app->resolution, app->layout.viewport);
 }
 
 void app_build_ui(App* app)

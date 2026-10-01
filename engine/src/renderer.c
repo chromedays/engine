@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#define NV_TIMESTAMP_COUNT 6 // scene (0, 1), shadow (2, 3), upscale (4, 5)
+
+internal void create_upscale_pipeline(NvRenderer* renderer);
+
 #define NO_SKIN 0xFFFFFFFFu
 
 // Layouts match the WGSL structs below.
@@ -498,6 +502,7 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->msaa = 1;
     renderer->scene_samples = 1;
     create_pipelines(renderer);
+    create_upscale_pipeline(renderer);
 
     WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
     sampler_desc.addressModeU = WGPUAddressMode_Repeat;
@@ -512,12 +517,12 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->skin_buffer = create_buffer(gpu, WGPUBufferUsage_Storage, NULL, NV_MAX_SKIN_MATRICES * sizeof(NvMat4));
 
     if (gpu->has_timestamps) {
-        WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = 4}; // scene, shadow
+        WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = NV_TIMESTAMP_COUNT}; // scene, shadow, upscale
         renderer->timestamp_queries = wgpuDeviceCreateQuerySet(gpu->device, &query_desc);
-        renderer->timestamp_resolve = create_buffer(gpu, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, NULL, 4 * sizeof(u64));
+        renderer->timestamp_resolve = create_buffer(gpu, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, NULL, NV_TIMESTAMP_COUNT * sizeof(u64));
         WGPUBufferDescriptor readback_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
         readback_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-        readback_desc.size = 4 * sizeof(u64);
+        readback_desc.size = NV_TIMESTAMP_COUNT * sizeof(u64);
         renderer->timestamp_readback = wgpuDeviceCreateBuffer(gpu->device, &readback_desc);
     }
     renderer->debug_buffer = create_buffer(gpu, WGPUBufferUsage_Vertex, NULL, NV_MAX_DEBUG_LINES * 2 * sizeof(NvDebugVertex));
@@ -708,12 +713,157 @@ void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 col
     renderer->debug_vertex_count += 2;
 }
 
-// Recreates the depth buffer whenever the canvas size changes.
-internal void update_depth_buffer(NvRenderer* renderer)
+internal u32 round_up_64(u32 value)
+{
+    return (value + 63u) & ~63u;
+}
+
+internal void release_texture(WGPUTexture* texture, WGPUTextureView* view)
+{
+    if (*view)
+        wgpuTextureViewRelease(*view);
+    if (*texture)
+        wgpuTextureRelease(*texture);
+    *view = NULL;
+    *texture = NULL;
+}
+
+// A color texture made like the canvas: the canvas's own format with the sRGB render format as a
+// view format, and the view in that format, so what is drawn through it and what is sampled through
+// it are linear, and a resolve and the canvas agree on the encoding (a texture created directly in
+// the sRGB format resolved too dark in Chromium on SwiftShader; docs/specs/msaa.md).
+internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 height, u32 samples, WGPUTextureUsage usage,
+                                  WGPUTexture* texture, WGPUTextureView* view)
+{
+    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){label, WGPU_STRLEN};
+    desc.usage = usage;
+    desc.size = (WGPUExtent3D){width, height, 1};
+    desc.format = gpu->config_format;
+    desc.sampleCount = samples;
+    WGPUTextureFormat view_format = gpu->surface_format;
+    if (view_format != gpu->config_format) {
+        desc.viewFormatCount = 1;
+        desc.viewFormats = &view_format;
+    }
+    *texture = wgpuDeviceCreateTexture(gpu->device, &desc);
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.format = gpu->surface_format;
+    *view = wgpuTextureCreateView(*texture, &view_desc);
+}
+
+internal f64 target_megabytes(u32 width, u32 height, u32 samples)
+{
+    return (f64)width * (f64)height * 4.0 * (f64)samples / (1024.0 * 1024.0);
+}
+
+internal const char* upscale_shader =
+    "struct Params {\n"
+    "    origin: vec2f,\n"
+    "    block: f32,\n"
+    "    pad: f32,\n"
+    "    size: vec2f,\n"
+    "    pad2: vec2f,\n"
+    "}\n"
+    "@group(0) @binding(0) var<uniform> p: Params;\n"
+    "@group(0) @binding(1) var scene: texture_2d<f32>;\n"
+    "@vertex\n"
+    "fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n"
+    "@fragment\n"
+    "fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "    // Nearest: the scene pixel under this screen pixel, counted from the image's corner.\n"
+    "    let t = vec2i(floor((pos.xy - p.origin) / p.block));\n"
+    "    let c = clamp(t, vec2i(0), vec2i(p.size) - vec2i(1));\n"
+    "    return textureLoad(scene, c, 0);\n"
+    "}\n";
+
+internal void create_upscale_pipeline(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    if (renderer->depth_texture && renderer->depth_width == gpu->width && renderer->depth_height == gpu->height &&
-        renderer->depth_texture_sampled == renderer->depth_sampled && renderer->depth_samples == renderer->scene_samples)
+    WGPUShaderModule module = create_shader(gpu->device, upscale_shader);
+    WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
+    target.format = gpu->surface_format;
+    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
+    fragment.module = module;
+    fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
+    fragment.targetCount = 1;
+    fragment.targets = &target;
+    WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"upscale", WGPU_STRLEN};
+    desc.vertex.module = module;
+    desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
+    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    desc.fragment = &fragment;
+    renderer->upscale_pipeline = wgpuDeviceCreateRenderPipeline(gpu->device, &desc);
+    wgpuShaderModuleRelease(module);
+    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 32);
+}
+
+// Keeps the scene's targets: the color target the upscale pass samples, the multisampled color
+// target the scene pass resolves from (none while MSAA is off) and the depth target, all allocated
+// at the same size, the scene's resolution rounded up to 64. They are kept while they are large
+// enough and not more than twice the pixels needed, so a splitter drag does not remake them every
+// frame. Also follows `msaa`: remakes the scene pipelines when the sample count changes.
+internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
+{
+    NvGpu* gpu = renderer->gpu;
+    u32 samples = renderer->msaa == 4 ? 4 : 1;
+    if (samples != renderer->scene_samples) {
+        release_scene_pipelines(renderer);
+        renderer->scene_samples = samples;
+        create_pipelines(renderer);
+        nv_log(NV_LOG_INFO, "nv", "anti-aliasing: %s", samples > 1 ? "MSAA 4x" : "off");
+    }
+
+    u32 need_width = round_up_64(width), need_height = round_up_64(height);
+    b32 large_enough = renderer->target_width >= width && renderer->target_height >= height;
+    b32 too_large = (u64)renderer->target_width * renderer->target_height > 2ull * need_width * need_height;
+    b32 resized = !renderer->scene_color || !large_enough || too_large || renderer->msaa_format != gpu->surface_format;
+    if (resized) {
+        renderer->target_width = need_width;
+        renderer->target_height = need_height;
+        renderer->msaa_format = gpu->surface_format;
+        release_texture(&renderer->scene_color, &renderer->scene_color_view);
+        create_color_target(gpu, "scene color", need_width, need_height, 1,
+                            WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding, &renderer->scene_color,
+                            &renderer->scene_color_view);
+        if (renderer->upscale_group)
+            wgpuBindGroupRelease(renderer->upscale_group);
+        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(renderer->upscale_pipeline, 0);
+        WGPUBindGroupEntry entries[2] = {
+            {.binding = 0, .buffer = renderer->upscale_buffer, .size = 32},
+            {.binding = 1, .textureView = renderer->scene_color_view},
+        };
+        WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        group_desc.layout = layout;
+        group_desc.entryCount = 2;
+        group_desc.entries = entries;
+        renderer->upscale_group = wgpuDeviceCreateBindGroup(gpu->device, &group_desc);
+        wgpuBindGroupLayoutRelease(layout);
+        nv_log(NV_LOG_INFO, "nv", "scene color target: %ux%u %s (%.1f MB) for a scene of %ux%u, shown with the nearest filter", need_width,
+               need_height, nv_gpu_format_name(gpu->surface_format), target_megabytes(need_width, need_height, 1), width, height);
+    }
+
+    // The multisampled color target.
+    if (samples == 1) {
+        release_texture(&renderer->msaa_color, &renderer->msaa_color_view);
+    } else if (!renderer->msaa_color || resized) {
+        release_texture(&renderer->msaa_color, &renderer->msaa_color_view);
+        create_color_target(gpu, "msaa color target", renderer->target_width, renderer->target_height, samples,
+                            WGPUTextureUsage_RenderAttachment, &renderer->msaa_color, &renderer->msaa_color_view);
+        renderer->msaa_width = renderer->target_width;
+        renderer->msaa_height = renderer->target_height;
+        nv_log(NV_LOG_INFO, "nv", "msaa color target: %ux%u %s x%u samples (%.1f MB), resolved into the scene color target",
+               renderer->target_width, renderer->target_height, nv_gpu_format_name(gpu->surface_format), samples,
+               target_megabytes(renderer->target_width, renderer->target_height, samples));
+    }
+
+    // The depth target.
+    if (renderer->depth_texture && !resized && renderer->depth_texture_sampled == renderer->depth_sampled &&
+        renderer->depth_samples == samples)
         return;
     if (renderer->depth_texture) {
         wgpuTextureViewRelease(renderer->depth_view);
@@ -724,73 +874,19 @@ internal void update_depth_buffer(NvRenderer* renderer)
     desc.usage = WGPUTextureUsage_RenderAttachment;
     if (renderer->depth_sampled)
         desc.usage |= WGPUTextureUsage_TextureBinding;
-    desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
+    desc.size = (WGPUExtent3D){renderer->target_width, renderer->target_height, 1};
     desc.format = WGPUTextureFormat_Depth32Float;
-    desc.sampleCount = renderer->scene_samples;
+    desc.sampleCount = samples;
     renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
-    renderer->depth_width = gpu->width;
-    renderer->depth_height = gpu->height;
+    renderer->depth_width = renderer->target_width;
+    renderer->depth_height = renderer->target_height;
     renderer->depth_texture_sampled = renderer->depth_sampled;
-    renderer->depth_samples = renderer->scene_samples;
-    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s x%u samples (%.1f MB), reverse Z (cleared to 0, compare Greater)%s", gpu->width,
-           gpu->height, nv_gpu_format_name(WGPUTextureFormat_Depth32Float), renderer->scene_samples,
-           (f64)gpu->width * (f64)gpu->height * 4.0 * (f64)renderer->scene_samples / (1024.0 * 1024.0),
+    renderer->depth_samples = samples;
+    nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s x%u samples (%.1f MB), reverse Z (cleared to 0, compare Greater)%s",
+           renderer->target_width, renderer->target_height, nv_gpu_format_name(WGPUTextureFormat_Depth32Float), samples,
+           target_megabytes(renderer->target_width, renderer->target_height, samples),
            renderer->depth_sampled ? ", samplable (texture viewer)" : "");
-}
-
-// Follows `msaa`: remakes the scene pipelines when the sample count changes, and keeps the
-// multisampled color target the scene pass resolves from (none while MSAA is off). It comes before
-// update_depth_buffer, which makes the depth target with the same sample count.
-internal void update_msaa(NvRenderer* renderer)
-{
-    NvGpu* gpu = renderer->gpu;
-    u32 samples = renderer->msaa == 4 ? 4 : 1;
-    if (samples != renderer->scene_samples) {
-        release_scene_pipelines(renderer);
-        renderer->scene_samples = samples;
-        create_pipelines(renderer);
-        nv_log(NV_LOG_INFO, "nv", "anti-aliasing: %s", samples > 1 ? "MSAA 4x" : "off");
-    }
-    if (samples == 1) {
-        if (renderer->msaa_color) {
-            wgpuTextureViewRelease(renderer->msaa_color_view);
-            wgpuTextureRelease(renderer->msaa_color);
-            renderer->msaa_color = NULL;
-            renderer->msaa_color_view = NULL;
-        }
-        return;
-    }
-    if (renderer->msaa_color && renderer->msaa_width == gpu->width && renderer->msaa_height == gpu->height &&
-        renderer->msaa_format == gpu->surface_format)
-        return;
-    if (renderer->msaa_color) {
-        wgpuTextureViewRelease(renderer->msaa_color_view);
-        wgpuTextureRelease(renderer->msaa_color);
-    }
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"msaa color target", WGPU_STRLEN};
-    desc.usage = WGPUTextureUsage_RenderAttachment;
-    desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
-    // Made like the canvas: the canvas's own format, with the sRGB render format as a view format,
-    // and rendered through that view, so the samples average in linear space and the resolve and
-    // the canvas agree on the encoding.
-    desc.format = gpu->config_format;
-    desc.sampleCount = samples;
-    WGPUTextureFormat view_format = gpu->surface_format;
-    if (view_format != gpu->config_format) {
-        desc.viewFormatCount = 1;
-        desc.viewFormats = &view_format;
-    }
-    renderer->msaa_color = wgpuDeviceCreateTexture(gpu->device, &desc);
-    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.format = gpu->surface_format;
-    renderer->msaa_color_view = wgpuTextureCreateView(renderer->msaa_color, &view_desc);
-    renderer->msaa_width = gpu->width;
-    renderer->msaa_height = gpu->height;
-    renderer->msaa_format = gpu->surface_format;
-    nv_log(NV_LOG_INFO, "nv", "msaa color target: %ux%u %s x%u samples (%.1f MB), resolved into the canvas", gpu->width, gpu->height,
-           nv_gpu_format_name(gpu->surface_format), samples, (f64)gpu->width * (f64)gpu->height * 4.0 * (f64)samples / (1024.0 * 1024.0));
 }
 
 internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)
@@ -824,12 +920,12 @@ internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
     return nv_mat4_mul(reverse_depth(camera_projection(camera_node, aspect)), nv_mat4_inverse(camera_node->world));
 }
 
-void nv_renderer_camera_matrices(NvScene* scene, NvRect viewport, NvMat4* view, NvMat4* projection)
+void nv_renderer_camera_matrices(NvScene* scene, NvSceneOutput output, NvMat4* view, NvMat4* projection)
 {
-    NV_ASSERT(viewport.width && viewport.height);
+    NV_ASSERT(output.width && output.height);
     NvNode* camera = nv_scene_get(scene, scene->active_camera);
     *view = nv_mat4_inverse(camera->world);
-    *projection = camera_projection(camera, (f32)viewport.width / (f32)viewport.height);
+    *projection = camera_projection(camera, (f32)output.width / (f32)output.height);
 }
 
 // A point through a projective matrix, with the perspective divide.
@@ -840,14 +936,17 @@ internal NvVec3 project(NvMat4 m, f32 x, f32 y, f32 z)
     return nv_vec3_scale(p, 1.0f / w);
 }
 
-NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y)
+NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y)
 {
-    NV_ASSERT(viewport.width && viewport.height);
+    NV_ASSERT(output.width && output.height && output.pixel_size > 0.0f);
     NvNode* camera = nv_scene_get(scene, scene->active_camera);
-    NvMat4 view_proj = nv_mat4_mul(camera_projection(camera, (f32)viewport.width / (f32)viewport.height), nv_mat4_inverse(camera->world));
+    NvMat4 view_proj = nv_mat4_mul(camera_projection(camera, (f32)output.width / (f32)output.height), nv_mat4_inverse(camera->world));
     NvMat4 to_world = nv_mat4_inverse(view_proj);
-    f32 ndc_x = ((x - (f32)viewport.x) / (f32)viewport.width) * 2.0f - 1.0f;
-    f32 ndc_y = 1.0f - ((y - (f32)viewport.y) / (f32)viewport.height) * 2.0f;
+    // Canvas pixels to scene pixels: from the image's corner, `pixel_size` screen pixels each.
+    f32 scene_x = (x - (f32)output.image.x) / output.pixel_size;
+    f32 scene_y = (y - (f32)output.image.y) / output.pixel_size;
+    f32 ndc_x = scene_x / (f32)output.width * 2.0f - 1.0f;
+    f32 ndc_y = 1.0f - scene_y / (f32)output.height * 2.0f;
     NvVec3 near_point = project(to_world, ndc_x, ndc_y, 0.0f); // depth runs 0 (near) to 1 (far)
     NvVec3 far_point = project(to_world, ndc_x, ndc_y, 1.0f);
     return (NvRay){near_point, nv_vec3_normalize(nv_vec3_sub(far_point, near_point))};
@@ -998,17 +1097,19 @@ internal void fit_shadow(NvRenderer* renderer, NvNode* camera, f32 aspect, NvNod
     }
 }
 
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output,
                       WGPUCommandEncoder encoder, WGPUTextureView target)
 {
     NvGpu* gpu = renderer->gpu;
-    update_msaa(renderer);
-    update_depth_buffer(renderer);
+    if (!output.width || !output.height)
+        output = (NvSceneOutput){gpu->width, gpu->height, {0, 0, gpu->width, gpu->height}, 1.0f};
+    NV_ASSERT(output.image.x + output.image.width <= gpu->width && output.image.y + output.image.height <= gpu->height);
+    update_scene_targets(renderer, output.width, output.height);
     update_shadow_map(renderer);
-
-    if (!viewport.width || !viewport.height)
-        viewport = (NvRect){0, 0, gpu->width, gpu->height};
-    NV_ASSERT(viewport.x + viewport.width <= gpu->width && viewport.y + viewport.height <= gpu->height);
+    renderer->scene_width = output.width;
+    renderer->scene_height = output.height;
+    // The scene is drawn in the top-left part of its targets.
+    NvRect viewport = {0, 0, output.width, output.height};
 
     FrameUniforms uniforms = {0};
     uniforms.view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera),
@@ -1134,12 +1235,13 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
 
     WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
     if (renderer->scene_samples > 1) {
-        // Draws into the multisampled target, which is resolved into the canvas and then not needed.
+        // Draws into the multisampled target, which is resolved into the scene color target and then
+        // not needed.
         color.view = renderer->msaa_color_view;
-        color.resolveTarget = target;
+        color.resolveTarget = renderer->scene_color_view;
         color.storeOp = WGPUStoreOp_Discard;
     } else {
-        color.view = target;
+        color.view = renderer->scene_color_view;
         color.storeOp = WGPUStoreOp_Store;
     }
     color.loadOp = WGPULoadOp_Clear;
@@ -1213,10 +1315,43 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
 
+    // The upscale pass: the scene color target, shown with the nearest filter in the image's
+    // rectangle of the canvas. The canvas is cleared to black first, which is the bars around a
+    // fixed size; the docks drawn later cover the rest.
+    f32 params[8] = {(f32)output.image.x, (f32)output.image.y, output.pixel_size, 0.0f, (f32)output.width, (f32)output.height, 0.0f, 0.0f};
+    wgpuQueueWriteBuffer(queue, renderer->upscale_buffer, 0, params, sizeof(params));
+    WGPURenderPassColorAttachment upscale_color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+    upscale_color.view = target;
+    upscale_color.loadOp = WGPULoadOp_Clear;
+    upscale_color.storeOp = WGPUStoreOp_Store;
+    upscale_color.clearValue = (WGPUColor){0.0, 0.0, 0.0, 1.0};
+    WGPURenderPassDescriptor upscale_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+    upscale_desc.label = (WGPUStringView){"upscale", WGPU_STRLEN};
+    upscale_desc.colorAttachmentCount = 1;
+    upscale_desc.colorAttachments = &upscale_color;
+    WGPUPassTimestampWrites upscale_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
+    if (renderer->timestamp_copied) {
+        upscale_timestamps.querySet = renderer->timestamp_queries;
+        upscale_timestamps.beginningOfPassWriteIndex = 4;
+        upscale_timestamps.endOfPassWriteIndex = 5;
+        upscale_desc.timestampWrites = &upscale_timestamps;
+    }
+    WGPURenderPassEncoder upscale_pass = wgpuCommandEncoderBeginRenderPass(encoder, &upscale_desc);
+    if (output.image.width && output.image.height) {
+        wgpuRenderPassEncoderSetViewport(upscale_pass, (f32)output.image.x, (f32)output.image.y, (f32)output.image.width,
+                                         (f32)output.image.height, 0.0f, 1.0f);
+        wgpuRenderPassEncoderSetScissorRect(upscale_pass, output.image.x, output.image.y, output.image.width, output.image.height);
+        wgpuRenderPassEncoderSetPipeline(upscale_pass, renderer->upscale_pipeline);
+        wgpuRenderPassEncoderSetBindGroup(upscale_pass, 0, renderer->upscale_group, 0, NULL);
+        wgpuRenderPassEncoderDraw(upscale_pass, 3, 1, 0, 0);
+    }
+    wgpuRenderPassEncoderEnd(upscale_pass);
+    wgpuRenderPassEncoderRelease(upscale_pass);
+
     if (renderer->timestamp_copied) {
         // A frame without a shadow pass resolves its two queries as 0, which reads as no time.
-        wgpuCommandEncoderResolveQuerySet(encoder, renderer->timestamp_queries, 0, 4, renderer->timestamp_resolve, 0);
-        wgpuCommandEncoderCopyBufferToBuffer(encoder, renderer->timestamp_resolve, 0, renderer->timestamp_readback, 0, 4 * sizeof(u64));
+        wgpuCommandEncoderResolveQuerySet(encoder, renderer->timestamp_queries, 0, NV_TIMESTAMP_COUNT, renderer->timestamp_resolve, 0);
+        wgpuCommandEncoderCopyBufferToBuffer(encoder, renderer->timestamp_resolve, 0, renderer->timestamp_readback, 0, NV_TIMESTAMP_COUNT * sizeof(u64));
     }
 }
 
@@ -1225,12 +1360,14 @@ internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView mes
     (void)message, (void)userdata2;
     NvRenderer* renderer = userdata1;
     if (status == WGPUMapAsyncStatus_Success) {
-        const u64* ticks = wgpuBufferGetConstMappedRange(renderer->timestamp_readback, 0, 4 * sizeof(u64));
+        const u64* ticks = wgpuBufferGetConstMappedRange(renderer->timestamp_readback, 0, NV_TIMESTAMP_COUNT * sizeof(u64));
         // Timestamps are nanoseconds; a pass the browser could not time reads as 0 or reversed.
         if (ticks && ticks[1] > ticks[0])
             renderer->gpu_ms = (f64)(ticks[1] - ticks[0]) / 1.0e6;
         if (ticks)
             renderer->gpu_shadow_ms = ticks[3] > ticks[2] ? (f64)(ticks[3] - ticks[2]) / 1.0e6 : 0.0;
+        if (ticks)
+            renderer->gpu_upscale_ms = ticks[5] > ticks[4] ? (f64)(ticks[5] - ticks[4]) / 1.0e6 : 0.0;
         wgpuBufferUnmap(renderer->timestamp_readback);
     }
     renderer->timestamp_mapping = 0;
@@ -1246,5 +1383,5 @@ void nv_renderer_end_frame(NvRenderer* renderer)
     callback.mode = WGPUCallbackMode_AllowSpontaneous;
     callback.callback = on_timestamps_mapped;
     callback.userdata1 = renderer;
-    wgpuBufferMapAsync(renderer->timestamp_readback, WGPUMapMode_Read, 0, 4 * sizeof(u64), callback);
+    wgpuBufferMapAsync(renderer->timestamp_readback, WGPUMapMode_Read, 0, NV_TIMESTAMP_COUNT * sizeof(u64), callback);
 }

@@ -393,7 +393,7 @@ internal void update_look_target(App* app)
 #define ORBIT_RADIANS_PER_PIXEL 0.008f
 
 // Mouse and touch input on the viewport: drags orbit and pan, the wheel and pinches zoom.
-internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
+internal void apply_view_input(App* app, SceneView* view, const NvSceneOutput* scene_output)
 {
     const NvViewInput* in = &app->imgui.view;
     view->camera_yaw -= in->orbit_x * ORBIT_RADIANS_PER_PIXEL;
@@ -410,10 +410,11 @@ internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
     }
     if (in->pan_x != 0.0f || in->pan_y != 0.0f) {
         // Move the orbit point so the scene follows the finger: one pixel is the height the view
-        // covers at the orbit point, divided by the viewport's height in pixels.
+        // covers at the orbit point, divided by the image's height in CSS pixels (the scene's height
+        // times the screen pixels each of its pixels takes).
         NvNode* camera = nv_scene_get(view->scene, view->camera);
         f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-        f32 height = (f32)viewport.height / pixel_ratio;
+        f32 height = (f32)scene_output->height * scene_output->pixel_size / pixel_ratio;
         f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
         NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
         NvVec3 up = nv_quat_rotate(camera->rotation, nv_vec3(0, 1, 0));
@@ -426,8 +427,9 @@ internal void apply_view_input(App* app, SceneView* view, NvRect viewport)
 }
 
 // A tap in the viewport selects the mesh under it, or clears the selection. A character's meshes
-// stand for the character, so they select its root.
-internal void pick(App* app, NvRect viewport)
+// stand for the character, so they select its root. A tap on a bar around a fixed-size image
+// (docs/specs/resolution.md) does nothing.
+internal void pick(App* app, const NvSceneOutput* scene_output)
 {
     const NvViewInput* in = &app->imgui.view;
     if (!in->tapped)
@@ -441,7 +443,12 @@ internal void pick(App* app, NvRect viewport)
     }
     SceneView* view = app_view(app);
     f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    NvRay ray = nv_renderer_view_ray(view->scene, viewport, in->tap_x * pixel_ratio, in->tap_y * pixel_ratio);
+    f32 tap_x = in->tap_x * pixel_ratio, tap_y = in->tap_y * pixel_ratio;
+    const NvRect* image = &scene_output->image;
+    if (tap_x < (f32)image->x || tap_y < (f32)image->y || tap_x >= (f32)(image->x + image->width) ||
+        tap_y >= (f32)(image->y + image->height))
+        return;
+    NvRay ray = nv_renderer_view_ray(view->scene, *scene_output, tap_x, tap_y);
     NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, nv_anim_skins(), ray, NULL);
     if (hit.index) {
         NvNode* node = nv_scene_get(view->scene, hit);
@@ -525,11 +532,11 @@ void app_focus_selection(App* app)
     view->orbit_point = view_focus_point(view);
 }
 
-internal void update_camera(App* app, NvRect viewport)
+internal void update_camera(App* app, const NvSceneOutput* scene_output)
 {
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
-    apply_view_input(app, view, viewport);
+    apply_view_input(app, view, scene_output);
     // Following, the camera orbits the selection (or the view's focus). Not following, it stays
     // where it was and only moves by panning, whatever gets selected.
     NvVec3 point = view->orbit_point;
@@ -570,7 +577,7 @@ internal b32 gizmo_grab(void* data)
 
 // The transform gizmo on the selected node. ImGuizmo edits the world matrix; the result goes back
 // to the node's position, rotation and scale, which nv_scene_update turns into `world` next frame.
-internal void draw_gizmo(App* app, NvRect viewport)
+internal void draw_gizmo(App* app, const NvSceneOutput* scene_output)
 {
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
@@ -581,16 +588,19 @@ internal void draw_gizmo(App* app, NvRect viewport)
     NvNode* node = nv_scene_get(scene, view->selected);
 
     NvMat4 view_matrix, projection;
-    nv_renderer_camera_matrices(scene, viewport, &view_matrix, &projection);
-    // ImGui works in CSS pixels; the viewport is in framebuffer pixels.
+    nv_renderer_camera_matrices(scene, *scene_output, &view_matrix, &projection);
+    // ImGui works in CSS pixels; the image is in framebuffer pixels. The rectangle is the whole
+    // scene at its screen size, which may reach past the image where the last scene pixels are cut.
     f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
-    ImGuizmo_SetRect((f32)viewport.x / ratio, (f32)viewport.y / ratio, (f32)viewport.width / ratio, (f32)viewport.height / ratio);
+    f32 image_width = (f32)scene_output->width * scene_output->pixel_size / ratio;
+    f32 image_height = (f32)scene_output->height * scene_output->pixel_size / ratio;
+    ImGuizmo_SetRect((f32)scene_output->image.x / ratio, (f32)scene_output->image.y / ratio, image_width, image_height);
     ImGuizmo_SetOrthographic(nv_scene_get(scene, scene->active_camera)->camera.projection == NV_PROJECTION_ORTHOGRAPHIC);
     // NOTE: ImGuizmo sizes the gizmo as a fraction of the viewport width, which leaves it tiny on a
     // phone. Its handles are hit within fixed pixel distances, so it is sized in pixels instead:
     // about 64 CSS pixels long, larger for fingers.
     f32 length = 64.0f * app->imgui.ui_scale;
-    ImGuizmo_SetGizmoSizeClipSpace(length / ((f32)viewport.width / ratio * 0.5f));
+    ImGuizmo_SetGizmoSizeClipSpace(length / (image_width * 0.5f));
     app->gizmo_shown = 1;
 
     // (W, E and R pick the operation: desktop shortcuts, app/shortcuts.c.) Ctrl held turns the Snap
@@ -810,9 +820,9 @@ internal void frame(void* userdata)
     t = now_ms();
     nv_scene_update(scene);
     times->scene = now_ms() - t;
-    pick(app, layout->viewport);
-    update_camera(app, layout->viewport);
-    draw_gizmo(app, layout->viewport);
+    pick(app, &layout->scene);
+    update_camera(app, &layout->scene);
+    draw_gizmo(app, &layout->scene);
     undo_update(app);
     draw_selection(app);
     if (app->shown == SCENE_SHOWCASE && app->show_bones)
@@ -824,7 +834,7 @@ internal void frame(void* userdata)
     t = now_ms();
     // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
     app->renderer.depth_sampled = app->textures.shown_now;
-    nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout->viewport, encoder, target);
+    nv_renderer_draw(&app->renderer, scene, nv_anim_skins(), layout->scene, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = app->renderer.gpu_ms;
     times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
@@ -863,6 +873,29 @@ EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
     const NvRect* r = rects[region];
     f32 values[4] = {(f32)r->x / ratio, (f32)r->y / ratio, (f32)r->width / ratio, (f32)r->height / ratio};
     return values[component];
+}
+
+// The scene's resolution: 0 width, 1 height, 2 to 5 the image's x, y, width, height (framebuffer
+// pixels), 6 screen pixels per scene pixel, 7 and 8 the allocated targets' width and height.
+EMSCRIPTEN_KEEPALIVE float app_debug_scene(int which)
+{
+    const NvSceneOutput* out = &app_state.layout.scene;
+    f32 values[9] = {(f32)out->width, (f32)out->height, (f32)out->image.x, (f32)out->image.y, (f32)out->image.width,
+                     (f32)out->image.height, out->pixel_size, (f32)app_state.renderer.target_width, (f32)app_state.renderer.target_height};
+    return values[which];
+}
+
+// Sets the resolution without the UI: mode 0 Scale (a is the divisor) or 1 Fixed (a, b the size).
+EMSCRIPTEN_KEEPALIVE void app_debug_set_resolution(int mode, int a, int b)
+{
+    Resolution* res = &app_state.resolution;
+    res->mode = mode ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    if (mode) {
+        res->fixed_width = (u32)a;
+        res->fixed_height = (u32)b;
+    } else {
+        res->divisor = (u32)a;
+    }
 }
 
 // The renderer's sample count (1 or 4); the setter is for tests that switch it without the UI.
@@ -1164,6 +1197,7 @@ int main(void)
     };
     // Anti-aliasing (docs/specs/msaa.md): 4x MSAA everywhere; the View tab turns it off.
     app->renderer.msaa = 4;
+    app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = 1, .fixed_width = 1280, .fixed_height = 720};
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
     // Keys the desktop UI binds are not the browser's (Ctrl+S would open "Save page").

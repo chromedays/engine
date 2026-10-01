@@ -61,6 +61,16 @@ typedef struct NvRay {
 
 #define NV_TEXTURE_NAME_MAX 64
 
+// How a frame's scene reaches the canvas (docs/specs/resolution.md): rendered at `width` x `height`
+// pixels of its own, then shown with the nearest-pixel filter in `image`, a rectangle of the
+// canvas (framebuffer pixels), `pixel_size` screen pixels per scene pixel (a whole number, or less
+// than 1 when a fixed size is shrunk to fit). The image may cut the last, partial scene pixels off.
+typedef struct NvSceneOutput {
+    u32 width, height;
+    NvRect image;
+    f32 pixel_size;
+} NvSceneOutput;
+
 typedef struct NvRenderTexture {
     WGPUTexture texture;
     WGPUTextureView view;
@@ -152,6 +162,18 @@ typedef struct NvRenderer {
     b32 depth_texture_sampled; // what the existing depth target was made with
     u32 depth_samples;         // its sample count (scene_samples when it was made)
 
+    // The scene's own targets (docs/specs/resolution.md): the scene pass renders at the resolution
+    // nv_renderer_draw is given, into the top-left part of targets allocated at target_width x
+    // target_height (the resolution rounded up to 64 and kept while it is large enough, so a window
+    // resize does not remake them every frame). `scene_color` is what the upscale pass samples.
+    u32 target_width, target_height;
+    u32 scene_width, scene_height;    // the resolution of the last frame
+    WGPUTexture scene_color;
+    WGPUTextureView scene_color_view; // the sRGB view: rendered to and sampled through it
+    WGPURenderPipeline upscale_pipeline;
+    WGPUBuffer upscale_buffer;
+    WGPUBindGroup upscale_group;      // for the current scene_color_view
+
     // Anti-aliasing (docs/specs/msaa.md). The app sets `msaa`: 1 is off, 4 is 4x MSAA (the only
     // counts WebGPU guarantees). nv_renderer_draw remakes the scene pipelines and the targets when it
     // changed: the scene pass then draws into `msaa_color` and the canvas view it is given is the
@@ -205,6 +227,7 @@ typedef struct NvRenderer {
     b32 timestamp_mapping;  // the readback buffer is being mapped
     f64 gpu_ms;             // latest scene pass time; 0 without timestamps
     f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
+    f64 gpu_upscale_ms;     // latest upscale pass time; 0 without timestamps
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);
@@ -224,13 +247,13 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
 // Changes a material's base color (linear RGBA); the default material (id 0) included.
 void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const f32 base_color[4]);
 
-// The scene's active camera as nv_renderer_draw sees it in `viewport`: world to view, and view to
-// clip space (depth 0 to 1).
-void nv_renderer_camera_matrices(NvScene* scene, NvRect viewport, NvMat4* view, NvMat4* projection);
+// The scene's active camera as nv_renderer_draw sees it at the scene's resolution: world to view,
+// and view to clip space (depth 0 to 1).
+void nv_renderer_camera_matrices(NvScene* scene, NvSceneOutput output, NvMat4* view, NvMat4* projection);
 
-// The world ray through (x, y) of `viewport` (framebuffer pixels of the target, as passed to
-// nv_renderer_draw), seen by the scene's active camera.
-NvRay nv_renderer_view_ray(NvScene* scene, NvRect viewport, f32 x, f32 y);
+// The world ray through (x, y) of the canvas (framebuffer pixels), seen by the scene's active
+// camera as drawn with `output`.
+NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y);
 
 // A mesh's box in its node's space. A skinned mesh posed by `skin` gets the box of its current
 // pose (the union of its joint boxes moved by their skinning matrices); without a skin, the bind
@@ -245,9 +268,11 @@ NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* sk
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);
 
-// Records the scene pass. The whole target is cleared and the scene is drawn inside `viewport`,
-// whose size also sets the camera's aspect ratio; a zeroed viewport means the whole target.
+// Records the scene pass and the upscale pass. The scene is drawn at `output.width` x
+// `output.height` pixels (which set the camera's aspect ratio) into the renderer's own targets,
+// then shown in `output.image` of `target`, the canvas; the rest of the canvas is cleared to black.
+// A zeroed output means the whole target at its own resolution.
 // A skinned node is posed by `skins[node->animator.index]`; with no animator, or `skins` NULL,
 // it is drawn in its bind pose.
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRect viewport,
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output,
                       WGPUCommandEncoder encoder, WGPUTextureView target);
