@@ -39,6 +39,12 @@ docs/specs/                feature specs (read the relevant one before working o
 .github/workflows/pages.yml  deploys gh-pages to GitHub Pages after each build
 ```
 
+Where code goes: `engine/` holds what any app would need (rendering, GPU, window, scene, glTF,
+animation, chunks, storage, log, ImGui's platform glue) and never refers to `App`; `app/` holds what
+only this editor needs (its scenes, panels, search, shortcuts, saved state, undo, strings). Ask "would
+another app use this?": yes goes in the engine, no in the app. Dependencies point one way, `app` to
+`engine`.
+
 ## Build and run
 
 Requires the Emscripten SDK (tested with 6.0.10), CMake 3.30+ (ozz-animation needs it) and Git LFS. Cloud sessions may not have Git LFS;
