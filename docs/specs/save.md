@@ -119,6 +119,7 @@ describe created nodes; older builds will skip them.
 | `MSAA` | u32 | anti-aliasing: samples per pixel, 1 (off) or 4 (`msaa.md`); anything else loads as 4 | 4 |
 | `RSMD` | u32 | resolution mode: 0 scale, 1 fixed (`resolution.md`); anything else loads as 0 | 0 |
 | `RSCL` | u32 | scale mode's divisor, 1 to 4; anything else loads as the device's default | 1 on the desktop UI, 2 on the phone UI |
+| `RSFT` | u32 | fixed mode's fit: 0 whole multiples, 1 fit to the viewport, 2 stretch; anything else loads as 0 | 0 |
 | `RSFW`, `RSFH` | u32 | fixed mode's width and height, 16 to 4096 each; anything else loads as 1280 × 720 | 1280, 720 |
 | `DKLW` | u32 | desktop UI: the left dock's wanted width, CSS pixels, clamped to 160..640 on load (`layout.md`) | 260 |
 | `DKRW` | u32 | the right dock's wanted width, clamped to 220..640 | 340 |

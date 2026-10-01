@@ -24,6 +24,7 @@
 #define TAG_MSAA NV_TAG('M', 'S', 'A', 'A') // anti-aliasing: samples per pixel, 1 or 4
 #define TAG_RSMD NV_TAG('R', 'S', 'M', 'D') // resolution mode: 0 scale, 1 fixed
 #define TAG_RSCL NV_TAG('R', 'S', 'C', 'L') // scale mode's divisor: 1 to 4
+#define TAG_RSFT NV_TAG('R', 'S', 'F', 'T') // fixed mode's fit: 0 whole multiples, 1 viewport, 2 stretch
 #define TAG_RSFW NV_TAG('R', 'S', 'F', 'W') // fixed mode's width
 #define TAG_RSFH NV_TAG('R', 'S', 'F', 'H') // fixed mode's height
 #define TAG_DKLW NV_TAG('D', 'K', 'L', 'W') // desktop: left dock width, CSS pixels
@@ -264,6 +265,7 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_MSAA, app->renderer.msaa);
     nv_chunk_u32(&w, TAG_RSMD, (u32)app->resolution.mode);
     nv_chunk_u32(&w, TAG_RSCL, app->resolution.divisor);
+    nv_chunk_u32(&w, TAG_RSFT, (u32)app->resolution.fixed_fit);
     nv_chunk_u32(&w, TAG_RSFW, app->resolution.fixed_width);
     nv_chunk_u32(&w, TAG_RSFH, app->resolution.fixed_height);
     nv_chunk_u32(&w, TAG_DKLW, (u32)(app->docks.left_width + 0.5f));
@@ -329,6 +331,8 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     u32 mode = (u32)resolution.mode;
     nv_chunk_read_u32s(r, edit, TAG_RSMD, &mode, 1);
     nv_chunk_read_u32s(r, edit, TAG_RSCL, &resolution.divisor, 1);
+    u32 fit = (u32)resolution.fixed_fit;
+    nv_chunk_read_u32s(r, edit, TAG_RSFT, &fit, 1);
     nv_chunk_read_u32s(r, edit, TAG_RSFW, &resolution.fixed_width, 1);
     nv_chunk_read_u32s(r, edit, TAG_RSFH, &resolution.fixed_height, 1);
     u32 dock_left = (u32)(app->docks.left_width + 0.5f), dock_right = (u32)(app->docks.right_width + 0.5f);
@@ -357,6 +361,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     // The modes and counts the View tab offers; anything else is the device's default (the phone
     // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
     resolution.mode = mode == RESOLUTION_FIXED ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    resolution.fixed_fit = fit == FIT_VIEWPORT ? FIT_VIEWPORT : fit == FIT_STRETCH ? FIT_STRETCH : FIT_WHOLE;
     if (resolution.divisor < 1 || resolution.divisor > 4)
         resolution.divisor = app->ui_mode == UI_PHONE ? 2 : 1;
     if (resolution.fixed_width < RESOLUTION_MIN || resolution.fixed_width > RESOLUTION_MAX)
@@ -769,7 +774,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
     switch (tag) {
     case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
         return TAG_KIND_CONTAINER;
-    case TAG_MSAA: case TAG_RSMD: case TAG_RSCL: case TAG_RSFW: case TAG_RSFH:
+    case TAG_MSAA: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
     case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:

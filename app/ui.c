@@ -194,6 +194,10 @@ internal void resolution_ui(App* app)
                 resolution->fixed_height = sizes[index][1];
             }
         }
+        local_persist const char* fits[] = {"Whole multiples", "Fit to viewport", "Stretch to viewport"};
+        s32 fit = (s32)resolution->fixed_fit;
+        if (igCombo_Str_arr("Fit", &fit, fits, 3, -1))
+            resolution->fixed_fit = (FixedFit)fit;
         if (index == (s32)NV_ARRAY_COUNT(sizes)) {
             int width = (int)resolution->fixed_width, height = (int)resolution->fixed_height;
             if (igInputInt("Width", &width, 16, 128, 0))
@@ -206,15 +210,27 @@ internal void resolution_ui(App* app)
     // What that comes to: the scene's pixels, and how big each one shows.
     const NvSceneOutput* scene = &app->layout.scene;
     f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    if (scene->pixel_size >= 1.0f) {
+    f32 pw = scene->pixel_width, ph = scene->pixel_height;
+    b32 whole = pw == ph && pw >= 1.0f && pw == (f32)(u32)pw;
+    if (whole) {
         igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
         igTextWrapped("Renders %u x %u; a pixel shows as %.0f x %.0f screen pixels (%.1f per CSS pixel)", scene->width, scene->height,
-                      (f64)scene->pixel_size, (f64)scene->pixel_size, (f64)(scene->pixel_size / ratio));
+                      (f64)pw, (f64)ph, (f64)(pw / ratio));
+        igPopStyleColor(1);
+    } else if (pw >= 1.0f && ph >= 1.0f) {
+        // Fitted or stretched: pixels are 1 or more screen pixels wide, unevenly.
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
+        if (pw == ph)
+            igTextWrapped("Renders %u x %u, fitted to the viewport at %.2fx: pixels are uneven blocks of whole screen pixels",
+                          scene->width, scene->height, (f64)pw);
+        else
+            igTextWrapped("Renders %u x %u, stretched to the viewport: %.2f x %.2f screen pixels per pixel, in uneven blocks",
+                          scene->width, scene->height, (f64)pw, (f64)ph);
         igPopStyleColor(1);
     } else {
         igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f});
-        igTextWrapped("Renders %u x %u, larger than the viewport: shown at %.2fx, some pixels dropped", scene->width, scene->height,
-                      (f64)scene->pixel_size);
+        igTextWrapped("Renders %u x %u, larger than the viewport: shown at %.2fx x %.2fx, some pixels dropped", scene->width,
+                      scene->height, (f64)pw, (f64)ph);
         igPopStyleColor(1);
     }
 }
@@ -549,7 +565,7 @@ NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 // The scene's resolution and where its image goes in the viewport (docs/specs/resolution.md).
 internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewport)
 {
-    NvSceneOutput out = {.image = viewport, .pixel_size = 1.0f};
+    NvSceneOutput out = {.image = viewport, .pixel_width = 1.0f, .pixel_height = 1.0f};
     if (!viewport.width || !viewport.height) {
         out.width = out.height = 1;
         return out;
@@ -559,20 +575,27 @@ internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewpor
         u32 height = clamp_u32(resolution->fixed_height, RESOLUTION_MIN, RESOLUTION_MAX);
         out.width = width;
         out.height = height;
-        // The largest whole multiple that fits, so every block is the same size; shrunk to fit,
-        // keeping the aspect ratio, only when even the size itself does not.
+        f32 sx = (f32)viewport.width / (f32)width, sy = (f32)viewport.height / (f32)height;
+        u32 image_width, image_height;
         u32 fit_x = viewport.width / width, fit_y = viewport.height / height;
         u32 multiple = fit_x < fit_y ? fit_x : fit_y;
-        u32 image_width, image_height;
-        if (multiple >= 1) {
-            out.pixel_size = (f32)multiple;
+        if (resolution->fixed_fit == FIT_STRETCH) {
+            // The whole viewport, whatever the aspect ratio.
+            out.pixel_width = sx;
+            out.pixel_height = sy;
+            image_width = viewport.width;
+            image_height = viewport.height;
+        } else if (resolution->fixed_fit == FIT_WHOLE && multiple >= 1) {
+            // The largest whole multiple that fits, so every block is the same size.
+            out.pixel_width = out.pixel_height = (f32)multiple;
             image_width = width * multiple;
             image_height = height * multiple;
         } else {
-            f32 sx = (f32)viewport.width / (f32)width, sy = (f32)viewport.height / (f32)height;
-            out.pixel_size = sx < sy ? sx : sy;
-            image_width = clamp_u32((u32)((f32)width * out.pixel_size + 0.5f), 1, viewport.width);
-            image_height = clamp_u32((u32)((f32)height * out.pixel_size + 0.5f), 1, viewport.height);
+            // The largest scale that fits keeping the aspect ratio: what FIT_VIEWPORT always does, and
+            // FIT_WHOLE does when even the size itself does not fit.
+            out.pixel_width = out.pixel_height = sx < sy ? sx : sy;
+            image_width = clamp_u32((u32)((f32)width * out.pixel_width + 0.5f), 1, viewport.width);
+            image_height = clamp_u32((u32)((f32)height * out.pixel_width + 0.5f), 1, viewport.height);
         }
         out.image = (NvRect){viewport.x + (viewport.width - image_width) / 2, viewport.y + (viewport.height - image_height) / 2,
                              image_width, image_height};
@@ -581,7 +604,7 @@ internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewpor
     u32 divisor = clamp_u32(resolution->divisor, 1, 4);
     out.width = (viewport.width + divisor - 1) / divisor;
     out.height = (viewport.height + divisor - 1) / divisor;
-    out.pixel_size = (f32)divisor;
+    out.pixel_width = out.pixel_height = (f32)divisor;
     return out;
 }
 

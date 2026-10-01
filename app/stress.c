@@ -388,10 +388,13 @@ internal void resolution_text(App* app, char* out, umm size)
 {
     const NvSceneOutput* scene = &app->layout.scene;
     if (app->resolution.mode == RESOLUTION_FIXED) {
-        if (scene->pixel_size >= 1.0f)
-            snprintf(out, size, "%u x %u fixed, shown x%.0f", scene->width, scene->height, (f64)scene->pixel_size);
+        if (scene->pixel_width != scene->pixel_height)
+            snprintf(out, size, "%u x %u fixed, stretched %.2fx%.2f", scene->width, scene->height, (f64)scene->pixel_width,
+                     (f64)scene->pixel_height);
+        else if (scene->pixel_width >= 1.0f && scene->pixel_width == (f32)(u32)scene->pixel_width)
+            snprintf(out, size, "%u x %u fixed, shown x%.0f", scene->width, scene->height, (f64)scene->pixel_width);
         else
-            snprintf(out, size, "%u x %u fixed, shown at %.2fx", scene->width, scene->height, (f64)scene->pixel_size);
+            snprintf(out, size, "%u x %u fixed, shown at %.2fx", scene->width, scene->height, (f64)scene->pixel_width);
     } else {
         snprintf(out, size, "%u x %u, scale 1/%u", scene->width, scene->height, app->resolution.divisor);
     }

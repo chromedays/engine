@@ -63,12 +63,13 @@ typedef struct NvRay {
 
 // How a frame's scene reaches the canvas (docs/specs/resolution.md): rendered at `width` x `height`
 // pixels of its own, then shown with the nearest-pixel filter in `image`, a rectangle of the
-// canvas (framebuffer pixels), `pixel_size` screen pixels per scene pixel (a whole number, or less
-// than 1 when a fixed size is shrunk to fit). The image may cut the last, partial scene pixels off.
+// canvas (framebuffer pixels), `pixel_width` x `pixel_height` screen pixels per scene pixel (equal,
+// whole numbers unless a fixed size is fitted to the viewport; less than 1 when it is shrunk, and
+// different when it is stretched). The image may cut the last, partial scene pixels off.
 typedef struct NvSceneOutput {
     u32 width, height;
     NvRect image;
-    f32 pixel_size;
+    f32 pixel_width, pixel_height;
 } NvSceneOutput;
 
 typedef struct NvRenderTexture {

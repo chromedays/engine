@@ -760,8 +760,7 @@ internal f64 target_megabytes(u32 width, u32 height, u32 samples)
 internal const char* upscale_shader =
     "struct Params {\n"
     "    origin: vec2f,\n"
-    "    block: f32,\n"
-    "    pad: f32,\n"
+    "    block: vec2f,\n"
     "    size: vec2f,\n"
     "    pad2: vec2f,\n"
     "}\n"
@@ -938,13 +937,13 @@ internal NvVec3 project(NvMat4 m, f32 x, f32 y, f32 z)
 
 NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y)
 {
-    NV_ASSERT(output.width && output.height && output.pixel_size > 0.0f);
+    NV_ASSERT(output.width && output.height && output.pixel_width > 0.0f && output.pixel_height > 0.0f);
     NvNode* camera = nv_scene_get(scene, scene->active_camera);
     NvMat4 view_proj = nv_mat4_mul(camera_projection(camera, (f32)output.width / (f32)output.height), nv_mat4_inverse(camera->world));
     NvMat4 to_world = nv_mat4_inverse(view_proj);
-    // Canvas pixels to scene pixels: from the image's corner, `pixel_size` screen pixels each.
-    f32 scene_x = (x - (f32)output.image.x) / output.pixel_size;
-    f32 scene_y = (y - (f32)output.image.y) / output.pixel_size;
+    // Canvas pixels to scene pixels: from the image's corner, `pixel_width` x `pixel_height` screen pixels each.
+    f32 scene_x = (x - (f32)output.image.x) / output.pixel_width;
+    f32 scene_y = (y - (f32)output.image.y) / output.pixel_height;
     f32 ndc_x = scene_x / (f32)output.width * 2.0f - 1.0f;
     f32 ndc_y = 1.0f - scene_y / (f32)output.height * 2.0f;
     NvVec3 near_point = project(to_world, ndc_x, ndc_y, 0.0f); // depth runs 0 (near) to 1 (far)
@@ -1102,7 +1101,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
 {
     NvGpu* gpu = renderer->gpu;
     if (!output.width || !output.height)
-        output = (NvSceneOutput){gpu->width, gpu->height, {0, 0, gpu->width, gpu->height}, 1.0f};
+        output = (NvSceneOutput){gpu->width, gpu->height, {0, 0, gpu->width, gpu->height}, 1.0f, 1.0f};
     NV_ASSERT(output.image.x + output.image.width <= gpu->width && output.image.y + output.image.height <= gpu->height);
     update_scene_targets(renderer, output.width, output.height);
     update_shadow_map(renderer);
@@ -1318,7 +1317,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     // The upscale pass: the scene color target, shown with the nearest filter in the image's
     // rectangle of the canvas. The canvas is cleared to black first, which is the bars around a
     // fixed size; the docks drawn later cover the rest.
-    f32 params[8] = {(f32)output.image.x, (f32)output.image.y, output.pixel_size, 0.0f, (f32)output.width, (f32)output.height, 0.0f, 0.0f};
+    f32 params[8] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height, 0.0f, 0.0f};
     wgpuQueueWriteBuffer(queue, renderer->upscale_buffer, 0, params, sizeof(params));
     WGPURenderPassColorAttachment upscale_color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
     upscale_color.view = target;

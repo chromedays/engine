@@ -46,8 +46,16 @@ typedef enum ResolutionMode {
     RESOLUTION_FIXED,
 } ResolutionMode;
 
+// How a fixed size is fitted to the viewport (docs/specs/resolution.md).
+typedef enum FixedFit {
+    FIT_WHOLE,    // the largest whole multiple that fits, centered, black bars around
+    FIT_VIEWPORT, // the largest scale that fits keeping the aspect ratio (pixels of uneven width)
+    FIT_STRETCH,  // stretched to fill the viewport, aspect ratio and all
+} FixedFit;
+
 typedef struct Resolution {
     ResolutionMode mode;
+    FixedFit fixed_fit;
     u32 divisor;                    // SCALE: 1, 2, 3 or 4
     u32 fixed_width, fixed_height;  // FIXED: RESOLUTION_MIN..RESOLUTION_MAX each
 } Resolution;

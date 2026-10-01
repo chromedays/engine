@@ -74,8 +74,10 @@ pass and set the scale.
 |---|---|
 | Sizes | Presets 640 × 360, 1280 × 720, 1920 × 1080 (16:9 landscape), 360 × 640, 720 × 1280 (9:16 portrait, for phones), and **Custom**: width and height fields, 16 to 4096 each (and within the device limit) |
 | Aspect ratio | The camera's projection uses the fixed size's aspect ratio, not the viewport's: the vertical field of view stays, so a portrait size shows a narrower view. What is visible therefore does not change when the docks or the window move |
-| Fit | The image is shown at the largest **whole** multiple of its size that fits in the viewport (×1, ×2, ...), centered, so every block is the same size. When even ×1 does not fit (a size larger than the viewport), it is shrunk to fit, keeping its aspect ratio, and the View tab says so ("larger than the viewport: shown at 0.62×, some pixels dropped") |
-| Bars | Black, drawn by the upscale pass's clear. They take input like the rest of the viewport |
+| Fit | A **Fit** setting picks how the image meets the viewport. **Whole multiples** (the default): the largest whole multiple of its size that fits (×1, ×2, ...), centered, so every block is the same size. When even ×1 does not fit (a size larger than the viewport), it is shrunk to fit, keeping its aspect ratio, and the View tab says so ("larger than the viewport: shown at 0.62×, some pixels dropped") |
+| Fit to viewport | The largest scale that fits keeping the aspect ratio, fractional (1920 × 1080 shown at 1.07× in a 1320 × 832 viewport), centered: bars on one axis only, and with the nearest filter some scene pixels show wider than others (1 or 2 screen pixels). Larger than the viewport it shrinks the same way |
+| Stretch to viewport | The image fills the whole viewport, bars gone, its aspect ratio bent to the viewport's (`NvSceneOutput.pixel_width` and `pixel_height` differ). The camera keeps the fixed size's aspect ratio, so the picture is distorted, as stretched images are |
+| Bars | Black, drawn by the upscale pass's clear; only with Whole multiples and Fit to viewport. They take input like the rest of the viewport |
 | Input on the bars | Drags orbit and pan, and the wheel or a pinch zooms, anywhere in the viewport, bars included. A tap on a bar picks nothing and keeps the selection (a tap on the image's empty background still clears it, as today). The build label's badge stays in the viewport's top-left corner, over the bar if there is one |
 | Picking and gizmo | Use the image rectangle and the fixed aspect ratio (`nv_renderer_view_ray`, `nv_renderer_camera_matrices` and `ImGuizmo_SetRect` get the image rectangle). The gizmo is drawn by ImGui at screen resolution, so it may reach over the bars |
 | Panning | One pixel of drag moves the orbit point by the height the view covers at that distance divided by the **image's** height, so the scene still follows the finger |
@@ -87,6 +89,7 @@ pass and set the scale.
 |---|---|---|---|
 | `RSMD` | u32 | mode: 0 Scale, 1 Fixed | 0 |
 | `RSCL` | u32 | Scale mode's divisor: 1, 2, 3 or 4 | the device's default |
+| `RSFT` | u32 | Fixed mode's fit: 0 whole multiples, 1 fit to the viewport, 2 stretch | 0 |
 | `RSFW`, `RSFH` | u32 | Fixed mode's width and height, clamped to 16..4096 | 1280 × 720 |
 
 The phone's and the desktop's defaults differ, so a save written on one device and loaded on
@@ -162,6 +165,12 @@ As built:
   selection, a tap on the empty background clearing it, the gizmo dragging and a drag from a bar
   orbiting; a reload keeping both modes; a bad divisor and a missing tag; the phone's default of
   1/2; the Stress tab's resolution line.
+- Added afterwards: the **Fit** setting with Fit to viewport and Stretch to viewport
+  (`App.resolution.fixed_fit`, saved as `RSFT`). `NvSceneOutput` now has `pixel_width` and
+  `pixel_height` instead of one `pixel_size`, and the upscale shader's block is a `vec2f`. Checked at
+  1920 × 1080: 640 × 360 fitted at 2.06×, 360 × 640 fitted by height at 1.3×, stretched to exactly
+  the viewport with a tap picking the character and the gizmo dragging, whole multiples still at
+  ×2, a reload keeping the fit.
 - Not measured: the real cost of the upscale pass and of each scale on a GPU; SwiftShader's numbers
   say nothing about it.
 

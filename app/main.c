@@ -414,7 +414,7 @@ internal void apply_view_input(App* app, SceneView* view, const NvSceneOutput* s
         // times the screen pixels each of its pixels takes).
         NvNode* camera = nv_scene_get(view->scene, view->camera);
         f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-        f32 height = (f32)scene_output->height * scene_output->pixel_size / pixel_ratio;
+        f32 height = (f32)scene_output->height * scene_output->pixel_height / pixel_ratio;
         f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
         NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
         NvVec3 up = nv_quat_rotate(camera->rotation, nv_vec3(0, 1, 0));
@@ -592,8 +592,8 @@ internal void draw_gizmo(App* app, const NvSceneOutput* scene_output)
     // ImGui works in CSS pixels; the image is in framebuffer pixels. The rectangle is the whole
     // scene at its screen size, which may reach past the image where the last scene pixels are cut.
     f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
-    f32 image_width = (f32)scene_output->width * scene_output->pixel_size / ratio;
-    f32 image_height = (f32)scene_output->height * scene_output->pixel_size / ratio;
+    f32 image_width = (f32)scene_output->width * scene_output->pixel_width / ratio;
+    f32 image_height = (f32)scene_output->height * scene_output->pixel_height / ratio;
     ImGuizmo_SetRect((f32)scene_output->image.x / ratio, (f32)scene_output->image.y / ratio, image_width, image_height);
     ImGuizmo_SetOrthographic(nv_scene_get(scene, scene->active_camera)->camera.projection == NV_PROJECTION_ORTHOGRAPHIC);
     // NOTE: ImGuizmo sizes the gizmo as a fraction of the viewport width, which leaves it tiny on a
@@ -878,16 +878,23 @@ EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
 }
 
 // The scene's resolution: 0 width, 1 height, 2 to 5 the image's x, y, width, height (framebuffer
-// pixels), 6 screen pixels per scene pixel, 7 and 8 the allocated targets' width and height.
+// pixels), 6 screen pixels per scene pixel across, 7 and 8 the allocated targets' width and height,
+// 9 screen pixels per scene pixel down.
 EMSCRIPTEN_KEEPALIVE float app_debug_scene(int which)
 {
     const NvSceneOutput* out = &app_state.layout.scene;
-    f32 values[9] = {(f32)out->width, (f32)out->height, (f32)out->image.x, (f32)out->image.y, (f32)out->image.width,
-                     (f32)out->image.height, out->pixel_size, (f32)app_state.renderer.target_width, (f32)app_state.renderer.target_height};
+    f32 values[10] = {(f32)out->width, (f32)out->height, (f32)out->image.x, (f32)out->image.y, (f32)out->image.width,
+                      (f32)out->image.height, out->pixel_width, (f32)app_state.renderer.target_width,
+                      (f32)app_state.renderer.target_height, out->pixel_height};
     return values[which];
 }
 
 // Sets the resolution without the UI: mode 0 Scale (a is the divisor) or 1 Fixed (a, b the size).
+EMSCRIPTEN_KEEPALIVE void app_debug_set_fit(int fit)
+{
+    app_state.resolution.fixed_fit = (FixedFit)fit;
+}
+
 EMSCRIPTEN_KEEPALIVE void app_debug_set_resolution(int mode, int a, int b)
 {
     Resolution* res = &app_state.resolution;
@@ -914,8 +921,8 @@ EMSCRIPTEN_KEEPALIVE float app_debug_project(float x, float y, float z, int axis
     f32 ndc_x = p.x / w, ndc_y = p.y / w;
     const NvSceneOutput* out = &app->layout.scene;
     f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    f32 screen_x = (f32)out->image.x + (ndc_x * 0.5f + 0.5f) * (f32)out->width * out->pixel_size;
-    f32 screen_y = (f32)out->image.y + (0.5f - ndc_y * 0.5f) * (f32)out->height * out->pixel_size;
+    f32 screen_x = (f32)out->image.x + (ndc_x * 0.5f + 0.5f) * (f32)out->width * out->pixel_width;
+    f32 screen_y = (f32)out->image.y + (0.5f - ndc_y * 0.5f) * (f32)out->height * out->pixel_height;
     return (axis ? screen_y : screen_x) / ratio;
 }
 

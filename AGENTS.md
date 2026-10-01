@@ -151,8 +151,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   (`scene_color`), MSAA and depth targets (allocated rounded up to 64 and kept while large enough),
   then an upscale pass clears the canvas to black and shows it with the nearest filter
   (`textureLoad`). The app computes it each frame in `app_layout` from `App.resolution` (Scale: a
-  divisor 1 to 4 of the viewport; Fixed: an exact size at the largest whole multiple that fits,
-  centered, with black bars): `App.layout.scene`. Picking, panning and the gizmo use it
+  divisor 1 to 4 of the viewport; Fixed: an exact size, by default at the largest whole multiple
+  that fits, centered, with black bars, or fitted or stretched to the viewport: `FixedFit`):
+  `App.layout.scene`. Picking, panning and the gizmo use it
   (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
   does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
   Debug builds export `_app_debug_scene`, `_app_debug_set_resolution` and `_app_debug_project`.
