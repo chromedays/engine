@@ -92,12 +92,12 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
 
 internal void file_menu(App* app, b32* open_reset)
 {
-    if (!igBeginMenu("File", true))
+    if (!igBeginMenu(TL("File"), true))
         return;
     b32 storage = app->storage.available;
-    if (igMenuItem_Bool("Save now", shortcut_label(SC_SAVE), false, storage))
+    if (igMenuItem_Bool(TL("Save now"), shortcut_label(SC_SAVE), false, storage))
         save_now(app, 1);
-    if (igMenuItem_Bool("Show save", NULL, app->show_save, storage)) {
+    if (igMenuItem_Bool(TL("Show save"), NULL, app->show_save, storage)) {
         if (app->show_save) {
             app->show_save = false;
         } else {
@@ -107,21 +107,21 @@ internal void file_menu(App* app, b32* open_reset)
         }
     }
     igSeparator();
-    if (igMenuItem_Bool("Reset...", NULL, false, storage))
+    if (igMenuItem_Bool(TL("Reset..."), NULL, false, storage))
         *open_reset = 1;
     igEndMenu();
 }
 
 internal void view_menu(App* app)
 {
-    if (!igBeginMenu("View", true))
+    if (!igBeginMenu(TL("View"), true))
         return;
     Docks* docks = &app->docks;
-    igMenuItem_BoolPtr("Scene dock", shortcut_label(SC_DOCK_LEFT), (bool*)&docks->show_left, true);
-    igMenuItem_BoolPtr("Inspector dock", shortcut_label(SC_DOCK_RIGHT), (bool*)&docks->show_right, true);
-    igMenuItem_BoolPtr("Console dock", shortcut_label(SC_DOCK_BOTTOM), (bool*)&docks->show_bottom, true);
+    igMenuItem_BoolPtr(TL("Scene dock"), shortcut_label(SC_DOCK_LEFT), (bool*)&docks->show_left, true);
+    igMenuItem_BoolPtr(TL("Inspector dock"), shortcut_label(SC_DOCK_RIGHT), (bool*)&docks->show_right, true);
+    igMenuItem_BoolPtr(TL("Console dock"), shortcut_label(SC_DOCK_BOTTOM), (bool*)&docks->show_bottom, true);
     igSeparator();
-    local_persist const char* scenes[SCENE_COUNT] = {"Showcase scene", "Stress scene"};
+    const char* scenes[SCENE_COUNT] = {T("Showcase scene"), T("Stress scene")};
     for (u32 scene = 0; scene < SCENE_COUNT; ++scene) {
         if (igMenuItem_Bool(scenes[scene], NULL, app->shown == (SceneKind)scene, true))
             app_show_scene(app, (SceneKind)scene);
@@ -140,16 +140,16 @@ internal void top_bar(App* app)
     b32 open_reset = 0;
     if (open && igBeginMenuBar()) {
         file_menu(app, &open_reset);
-        if (igBeginMenu("Edit", true)) {
+        if (igBeginMenu(TL("Edit"), true)) {
             undo_menu_items(app);
             igSeparator();
-            if (igMenuItem_Bool("Command palette", shortcut_label(SC_PALETTE), false, true))
+            if (igMenuItem_Bool(TL("Command palette"), shortcut_label(SC_PALETTE), false, true))
                 search_open_palette(app);
             igEndMenu();
         }
         view_menu(app);
-        if (igBeginMenu("Help", true)) {
-            if (igMenuItem_Bool("Keyboard shortcuts", shortcut_label(SC_HELP), false, true))
+        if (igBeginMenu(TL("Help"), true)) {
+            if (igMenuItem_Bool(TL("Keyboard shortcuts"), shortcut_label(SC_HELP), false, true))
                 app->show_shortcuts = 1;
             igEndMenu();
         }
@@ -159,16 +159,16 @@ internal void top_bar(App* app)
         igSetCursorPosX((width - DESKTOP_PLAY_WIDTH) * 0.5f);
         ui_play_button(app, (ImVec2_c){DESKTOP_PLAY_WIDTH, 0.0f});
         if (app->play_box[2] > app->play_box[0]) {
-            igSetItemTooltip("%s (%s)", app->playing ? "Stop and restore the scene" : "Run the scene", shortcut_label(SC_PLAY));
+            igSetItemTooltip("%s (%s)", app->playing ? T("Stop and restore the scene") : T("Run the scene"), shortcut_label(SC_PLAY));
             if (app->playing) {
                 igSameLine(0.0f, -1.0f);
-                igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, "Playing: edits are lost on Stop.");
+                igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, T("Playing: edits are lost on Stop."));
             }
         }
 
         char status[64];
         snprintf(status, sizeof(status), "%.1f ms  %s", 1000.0f / igGetIO_Nil()->Framerate,
-                 app->shown == SCENE_SHOWCASE ? "Showcase" : "Stress");
+                 app->shown == SCENE_SHOWCASE ? T("Showcase") : T("Stress"));
         igSetCursorPosX(width - igCalcTextSize(status, NULL, false, -1.0f).x - 12.0f);
         igTextDisabled("%s", status);
         igEndMenuBar();
@@ -177,7 +177,7 @@ internal void top_bar(App* app)
     // NOTE: A popup opened from inside a menu would live in the menu's ID scope; this one is opened
     // and drawn at the window's top level, where save_reset_popup looks for it.
     if (open_reset || app->request_reset)
-        igOpenPopup_Str("Reset everything?", 0);
+        igOpenPopup_Str(TL("Reset everything?"), 0);
     app->request_reset = 0;
     if (open)
         save_reset_popup(app);
@@ -196,7 +196,7 @@ internal void left_dock(App* app)
     bool open = nv_imgui_begin_panel(&app->imgui, "Scene dock", app->layout.left);
     ui_pop_play_tint(tint);
     if (open && igBeginTabBar("left tabs", 0)) {
-        if (igBeginTabItem("Scene", NULL, 0)) {
+        if (igBeginTabItem(TL("Scene"), NULL, 0)) {
             ui_scene_tab(app);
             igEndTabItem();
         }
@@ -216,13 +216,13 @@ internal void right_dock(App* app)
         // NOTE: Picking a node jumps to the Inspector, since that is where it is edited.
         ImGuiTabItemFlags inspector_flags = app->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
         app->open_inspector = 0;
-        if (igBeginTabItem("Inspector", NULL, inspector_flags)) {
+        if (igBeginTabItem(TL("Inspector"), NULL, inspector_flags)) {
             ui_inspector_tab(app);
             igEndTabItem();
         }
         ImGuiTabItemFlags view_flags = app->open_view ? ImGuiTabItemFlags_SetSelected : 0;
         app->open_view = 0;
-        if (igBeginTabItem("View", NULL, view_flags)) {
+        if (igBeginTabItem(TL("View"), NULL, view_flags)) {
             ui_view_tab(app);
             igEndTabItem();
         }
@@ -249,23 +249,23 @@ internal void bottom_dock(App* app)
         igPopStyleVar(1);
     ui_pop_play_tint(tint);
     if (open && !docks->bottom_open) {
-        if (igButton("Show Console###bottom", (ImVec2_c){0.0f, 0.0f}))
+        if (igButton(TL("Show Console###bottom"), (ImVec2_c){0.0f, 0.0f}))
             docks->bottom_open = 1;
         NvLogLevel worst;
         u32 unseen = console_unseen(app, &worst);
         if (unseen) {
             igSameLine(0.0f, -1.0f);
-            igTextColored(igColorConvertU32ToFloat4(console_level_color(worst)), "%u new", unseen);
+            igTextColored(igColorConvertU32ToFloat4(console_level_color(worst)), T("%u new"), unseen);
         }
     } else if (open) {
         // The Hide button sits at the tab strip's right end, drawn before the tabs so they keep the cursor.
         ImVec2_c start = igGetCursorPos();
-        f32 hide_width = igCalcTextSize("Hide", NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
+        f32 hide_width = igCalcTextSize(T("Hide"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
         // Left of the scrollbar the stress statistics bring.
         igSetCursorPos((ImVec2_c){igGetWindowWidth() - hide_width - igGetStyle()->WindowPadding.x - igGetStyle()->ScrollbarSize, start.y});
-        if (igButton("Hide###bottom", (ImVec2_c){0.0f, 0.0f}))
+        if (igButton(TL("Hide###bottom"), (ImVec2_c){0.0f, 0.0f}))
             docks->bottom_open = 0;
-        igSetItemTooltip("%s", "Collapse the dock to its strip");
+        igSetItemTooltip("%s", T("Collapse the dock to its strip"));
         igSetCursorPos(start);
         if (igBeginTabBar("bottom tabs", 0)) {
             if (ui_begin_console_tab(app)) {
@@ -275,7 +275,7 @@ internal void bottom_dock(App* app)
             if (app->shown == SCENE_STRESS) {
                 ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
                 app->open_stress = 0;
-                if (igBeginTabItem("Stress", NULL, stress_flags)) {
+                if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {
                     stress_ui(app);
                     igEndTabItem();
                 }

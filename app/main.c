@@ -1240,6 +1240,17 @@ EMSCRIPTEN_KEEPALIVE int app_debug_palette_result(int i, int k)
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
 
+// The UI language: 0 English, 1 Korean; _app_debug_set_language changes it.
+EMSCRIPTEN_KEEPALIVE int app_debug_language(void)
+{
+    return (int)strings_language();
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_set_language(int language)
+{
+    strings_set_language((Language)language);
+}
+
 // The k-th byte of the selected node's name; 0 past its end.
 EMSCRIPTEN_KEEPALIVE int app_debug_selected_name(int k)
 {
@@ -1345,6 +1356,7 @@ int main(void)
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
     load_font(app);
+    strings_set_language(strings_browser_language()); // a save may change it (the LANG tag)
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = app->imgui.ui_scale > 1.0f;
     // One UI per device (docs/specs/layout.md): touch gets the phone UI, everything else the desktop's.

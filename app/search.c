@@ -86,30 +86,50 @@ internal b32 query_match(const SearchQuery* query, const char* text, u32* score)
     return 1;
 }
 
-// Label, section and keywords as one candidate; the label's "##id" part is left out.
+// Appends `text` to `out`, after a space when there is something before it.
+internal void append_text(char* out, umm capacity, umm* used, const char* text, b32 cut_id)
+{
+    if (!text || !text[0])
+        return;
+    if (*used && *used + 1 < capacity)
+        out[(*used)++] = ' ';
+    for (; *text && *used + 1 < capacity; ++text) {
+        if (cut_id && text[0] == '#' && text[1] == '#')
+            break;
+        out[(*used)++] = *text;
+    }
+    out[*used] = 0;
+}
+
+// Label, section and keywords as one candidate, with the Korean of the label and the section too,
+// so a search finds a row in either language; the label's "##id" part is left out.
 internal void candidate_text(char* out, umm capacity, const char* label, const char* section, const char* keywords)
 {
     umm used = 0;
     out[0] = 0;
-    for (u32 part = 0; part < 3; ++part) {
-        const char* text = part == 0 ? label : part == 1 ? section : keywords;
-        if (!text || !text[0])
-            continue;
-        if (used)
-            out[used++] = ' ';
-        for (; *text && used + 1 < capacity; ++text) {
-            if (part == 0 && text[0] == '#' && text[1] == '#')
-                break;
-            out[used++] = *text;
-        }
-        out[used] = 0;
+    char plain[96];
+    plain[0] = 0;
+    if (label) {
+        umm n = 0;
+        for (; label[n] && n + 1 < sizeof(plain) && !(label[n] == '#' && label[n + 1] == '#'); ++n)
+            plain[n] = label[n];
+        plain[n] = 0;
     }
+    append_text(out, capacity, &used, plain, 0);
+    append_text(out, capacity, &used, strings_find_korean(plain), 0);
+    append_text(out, capacity, &used, section, 0);
+    if (section && section[0])
+        append_text(out, capacity, &used, strings_find_korean(section), 0);
+    append_text(out, capacity, &used, keywords, 0);
 }
 
 // The label's text without its "##id" part.
 internal void copy_label(char* out, umm capacity, const char* label)
 {
-    candidate_text(out, capacity, label, NULL, NULL);
+    umm n = 0;
+    for (; label[n] && n + 1 < capacity && !(label[n] == '#' && label[n + 1] == '#'); ++n)
+        out[n] = label[n];
+    out[n] = 0;
 }
 
 //
@@ -215,7 +235,7 @@ internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
             return 0;
     }
     if (s->section_pending) {
-        igSeparatorText(s->section);
+        igSeparatorText(T(s->section));
         s->section_pending = 0;
     }
     ++s->rows_now[s->panel];
@@ -258,21 +278,21 @@ void search_panel_begin(App* app, SearchPanel panel)
     f32 clear_width = igGetFrameHeight();
     f32 spacing = igGetStyle()->ItemSpacing.x;
     igSetNextItemWidth(igGetContentRegionAvail().x - (query[0] ? clear_width + spacing : 0.0f));
-    if (s->focus_panel == (s32)panel) {
+    if (s->focus_panel == (s32)panel + 1) {
         igSetKeyboardFocusHere(0);
-        s->focus_panel = -1;
+        s->focus_panel = 0;
     }
     // Escape clears the box and leaves it; Enter leaves it (ImGui deactivates a field on both).
     ImGuiID id = igGetID_Str("##search");
     b32 was_active = igGetActiveID() == id;
-    igInputTextWithHint("##search", "Search", query, SEARCH_QUERY_MAX, 0, NULL, NULL);
+    igInputTextWithHint("##search", T("Search"), query, SEARCH_QUERY_MAX, 0, NULL, NULL);
     if (was_active && igIsKeyPressed_Bool(ImGuiKey_Escape, false))
         query[0] = 0;
     if (query[0]) {
         igSameLine(0.0f, -1.0f);
         if (igButton("x##clear", (ImVec2_c){clear_width, 0.0f}))
             query[0] = 0;
-        igSetItemTooltip("%s", "Clear the search");
+        igSetItemTooltip("%s", T("Clear the search"));
     }
     igPopID();
     query_parse(&s->query, query);
@@ -297,7 +317,7 @@ void search_panel_end(App* app)
         return;
     flush_mark(app);
     if (s->queries[s->panel][0] && s->rows_now[s->panel] == 0)
-        igTextDisabled("No match for '%s'", s->queries[s->panel]);
+        igTextDisabled(T("No match for '%s'"), s->queries[s->panel]);
     igEndChild();
     igPopID();
     s->rows[s->panel] = s->rows_now[s->panel];
@@ -307,11 +327,11 @@ void search_focus_box(App* app)
 {
     Search* s = &app->search;
     if (s->hover_panel >= 0)
-        s->focus_panel = s->hover_panel;
+        s->focus_panel = s->hover_panel + 1;
     else if (s->right_panel >= 0)
-        s->focus_panel = s->right_panel;
+        s->focus_panel = s->right_panel + 1;
     else
-        s->focus_panel = SEARCH_SCENE;
+        s->focus_panel = SEARCH_SCENE + 1;
 }
 
 //
@@ -489,31 +509,31 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
     char name[64] = "", right[96] = "", kind[16] = "";
     switch (result->kind) {
     case PALETTE_ACTION:
-        snprintf(kind, sizeof(kind), "Action");
-        snprintf(name, sizeof(name), "%s", command_name(result->index));
+        snprintf(kind, sizeof(kind), "%s", T("Action"));
+        snprintf(name, sizeof(name), "%s", T(command_name(result->index)));
         snprintf(right, sizeof(right), "%s", shortcut_label((ShortcutId)result->index));
         break;
     case PALETTE_SETTING: {
         const SearchSetting* setting = &s->settings[result->index];
-        snprintf(kind, sizeof(kind), "Setting");
-        snprintf(name, sizeof(name), "%s", setting->label);
+        snprintf(kind, sizeof(kind), "%s", T("Setting"));
+        snprintf(name, sizeof(name), "%s", T(setting->label));
         if (setting->section[0])
-            snprintf(right, sizeof(right), "%s > %s", panel_names[setting->panel], setting->section);
+            snprintf(right, sizeof(right), "%s > %s", T(panel_names[setting->panel]), T(setting->section));
         else
-            snprintf(right, sizeof(right), "%s", panel_names[setting->panel]);
+            snprintf(right, sizeof(right), "%s", T(panel_names[setting->panel]));
         break;
     }
     case PALETTE_NODE: {
         const NvScene* scene = app_view(app)->scene;
         const NvNode* node = &scene->nodes[result->index];
-        snprintf(kind, sizeof(kind), "Node");
+        snprintf(kind, sizeof(kind), "%s", T("Node"));
         snprintf(name, sizeof(name), "%s", node->name);
         if (node->parent)
             snprintf(right, sizeof(right), "%s", scene->nodes[node->parent].name);
         break;
     }
     case PALETTE_MORE:
-        snprintf(name, sizeof(name), "and %u more: keep typing", result->index);
+        snprintf(name, sizeof(name), T("and %u more: keep typing"), result->index);
         break;
     }
 
@@ -522,7 +542,7 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
     ImU32 text = igGetColorU32_Col(result->enabled || result->kind == PALETTE_MORE ? ImGuiCol_Text : ImGuiCol_TextDisabled, 1.0f);
     f32 pad = igGetStyle()->FramePadding.x;
     f32 text_y = pos.y + (row_height - igGetFontSize()) * 0.5f;
-    f32 kind_width = igCalcTextSize("Setting", NULL, false, -1.0f).x + pad * 2.0f;
+    f32 kind_width = igCalcTextSize(T("Setting"), NULL, false, -1.0f).x + pad * 2.0f;
     f32 right_width = igCalcTextSize(right, NULL, false, -1.0f).x;
     if (right_width > width * 0.4f)
         right_width = width * 0.4f;
@@ -616,7 +636,7 @@ void search_palette(App* app)
         s->palette_focus = 0;
     }
     igSetNextItemWidth(inner);
-    if (igInputTextWithHint("##palette", "Type a command, node or setting", s->palette_query, SEARCH_QUERY_MAX, 0, NULL, NULL)) {
+    if (igInputTextWithHint("##palette", T("Type a command, node or setting"), s->palette_query, SEARCH_QUERY_MAX, 0, NULL, NULL)) {
         s->highlight = 0;
         s->scroll_to_top = 1;
         build_results(app);
@@ -667,7 +687,7 @@ void search_palette(App* app)
         }
         igEndChild();
     } else {
-        igTextDisabled("No match");
+        igTextDisabled(T("No match"));
     }
     if (close && s->palette_open)
         close_palette(s);

@@ -125,6 +125,7 @@ describe created nodes; older builds will skip them.
 | `DKRW` | u32 | the right dock's wanted width, clamped to 220..640 | 340 |
 | `DKBH` | u32 | the bottom dock's wanted height, clamped to 120..600 | 220 |
 | `DKBO` | u32 | the bottom dock shows its contents (1) or only its strip (0) | 1 |
+| `LANG` | u32 | the UI's language: 0 English, 1 Korean (`korean.md`); anything else loads as 0 | the browser's language (Korean if it starts with "ko") |
 
 ### `VIEW`: the showcase's camera and selection
 

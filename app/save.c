@@ -31,6 +31,7 @@
 #define TAG_DKRW NV_TAG('D', 'K', 'R', 'W') // desktop: right dock width
 #define TAG_DKBH NV_TAG('D', 'K', 'B', 'H') // desktop: bottom dock height
 #define TAG_DKBO NV_TAG('D', 'K', 'B', 'O') // desktop: bottom dock open
+#define TAG_LANG NV_TAG('L', 'A', 'N', 'G') // the UI's language: 0 English, 1 Korean (docs/specs/korean.md)
 // SCNE
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
@@ -272,6 +273,7 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_DKRW, (u32)(app->docks.right_width + 0.5f));
     nv_chunk_u32(&w, TAG_DKBH, (u32)(app->docks.bottom_height + 0.5f));
     nv_chunk_u32(&w, TAG_DKBO, app->docks.bottom_open);
+    nv_chunk_u32(&w, TAG_LANG, (u32)strings_language());
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
@@ -342,6 +344,8 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_DKRW, &dock_right, 1);
     nv_chunk_read_u32s(r, edit, TAG_DKBH, &dock_bottom, 1);
     read_bool(r, edit, TAG_DKBO, &bottom_open);
+    u32 language = (u32)strings_language(); // a save without the tag keeps the browser's language
+    nv_chunk_read_u32s(r, edit, TAG_LANG, &language, 1);
     if (!apply)
         return;
     app->autosave = autosave;
@@ -374,6 +378,8 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     app->docks.right_width = clamp((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
     app->docks.bottom_height = clamp((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
     app->docks.bottom_open = bottom_open;
+    // The two languages the View tab offers; anything else is English.
+    strings_set_language(language == LANG_KO ? LANG_KO : LANG_EN);
 }
 
 internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)
@@ -718,7 +724,7 @@ void save_now(App* app, b32 force)
         size = save_write(app, app->next_save, SAVE_MAX_SIZE);
     }
     if (!size) {
-        snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: the state is larger than %u KB.",
+        snprintf(app->save_notice, sizeof(app->save_notice), T("Not saved: the state is larger than %u KB."),
                  (u32)(SAVE_MAX_SIZE / 1024));
         nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
         return;
@@ -726,7 +732,7 @@ void save_now(App* app, b32 force)
     if (!force && size == app->saved_size && memcmp(app->next_save, app->saved, size) == 0)
         return;
     if (!nv_storage_write(&app->storage, SAVE_FILE, app->next_save, size)) {
-        snprintf(app->save_notice, sizeof(app->save_notice), "Not saved: writing %s failed.", SAVE_FILE);
+        snprintf(app->save_notice, sizeof(app->save_notice), T("Not saved: writing %s failed."), SAVE_FILE);
         nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
         return;
     }
@@ -775,7 +781,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
     case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
         return TAG_KIND_CONTAINER;
     case TAG_MSAA: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
-    case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO:
+    case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO: case TAG_LANG:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
         return TAG_KIND_U32;
@@ -876,7 +882,7 @@ internal void load_viewed(App* app, b32 bad)
 internal void save_viewer(App* app)
 {
     b32 has_bad = nv_storage_exists(&app->storage, SAVE_BAD_FILE);
-    if (igButton("Reload", (ImVec2_c){0.0f, 0.0f}))
+    if (igButton(TL("Reload"), (ImVec2_c){0.0f, 0.0f}))
         load_viewed(app, app->viewed_bad);
     if (has_bad) {
         igSameLine(0.0f, -1.0f);
@@ -929,7 +935,7 @@ void save_init(App* app)
         nv_storage_rename(&app->storage, SAVE_FILE, SAVE_BAD_FILE);
         nv_storage_flush(&app->storage);
         snprintf(app->save_notice, sizeof(app->save_notice),
-                 "The save could not be loaded: %s. The app started fresh and kept it as %s.", problem,
+                 T("The save could not be loaded: %s. The app started fresh and kept it as %s."), problem,
                  SAVE_BAD_FILE);
         nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
     }
@@ -952,14 +958,14 @@ void save_update(App* app)
 
 void save_reset_popup(App* app)
 {
-    if (igBeginPopupModal("Reset everything?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        igText("Delete the save and start over as on a first visit?");
-        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f})) {
+    if (igBeginPopupModal(TL("Reset everything?"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        igText(T("Delete the save and start over as on a first visit?"));
+        if (igButton(TL("Reset"), (ImVec2_c){0.0f, 0.0f})) {
             save_reset(app);
             igCloseCurrentPopup();
         }
         igSameLine(0.0f, -1.0f);
-        if (igButton("Cancel", (ImVec2_c){0.0f, 0.0f}))
+        if (igButton(TL("Cancel"), (ImVec2_c){0.0f, 0.0f}))
             igCloseCurrentPopup();
         igEndPopup();
     }
@@ -978,36 +984,36 @@ void save_ui(App* app)
     search_section(app, "Autosave");
     if (!app->storage.available) {
         if (search_group(app, "Autosave", "save storage unavailable"))
-            igTextWrapped("Browser storage is unavailable here (a private window may refuse it), so nothing is saved.");
+            igTextWrapped(T("Browser storage is unavailable here (a private window may refuse it), so nothing is saved."));
         return;
     }
     // The setting is part of the save, so turning autosave off is saved too.
     if (search_group(app, "Autosave", "save now storage")) {
-        if (igCheckbox("Autosave", &app->autosave))
+        if (igCheckbox(TL("Autosave"), &app->autosave))
             save_now(app, 1);
         igSameLine(0.0f, -1.0f);
-        if (igButton("Save now", (ImVec2_c){0.0f, 0.0f}))
+        if (igButton(TL("Save now"), (ImVec2_c){0.0f, 0.0f}))
             save_now(app, 1);
     }
     // What the save did is no setting: shown only without a search.
     if (search_plain(app)) {
         if (app->saved_at > 0.0)
-            igText("Saved %.0f s ago (%u bytes)", nv_time_seconds() - app->saved_at, app->saved_size);
+            igText(T("Saved %.0f s ago (%u bytes)"), nv_time_seconds() - app->saved_at, app->saved_size);
         else
-            igTextDisabled("Not saved yet this visit.");
+            igTextDisabled(T("Not saved yet this visit."));
         const char* error = nv_storage_error(&app->storage);
         if (error[0])
-            igTextWrapped("Browser storage: %s", error);
+            igTextWrapped(T("Browser storage: %s"), error);
         if (app->save_notice[0])
             igTextColored((ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f}, "%s", app->save_notice);
     }
 
     if (search_group(app, "Reset", "show save viewer delete start over")) {
-        if (igButton("Reset", (ImVec2_c){0.0f, 0.0f}))
-            igOpenPopup_Str("Reset everything?", 0);
+        if (igButton(TL("Reset"), (ImVec2_c){0.0f, 0.0f}))
+            igOpenPopup_Str(TL("Reset everything?"), 0);
         save_reset_popup(app);
         igSameLine(0.0f, -1.0f);
-        if (igCheckbox("Show save", &app->show_save) && app->show_save)
+        if (igCheckbox(TL("Show save"), &app->show_save) && app->show_save)
             save_show_viewer(app);
         if (app->show_save)
             save_viewer(app);

@@ -16,6 +16,8 @@
 #include <nv/storage.h>
 #include <nv/window.h>
 
+#include "strings.h"
+
 // The commit's hash and subject line (nv_version.h, written by cmake/version.cmake on every
 // build) and the build type (set by app/CMakeLists.txt); shown on the build label, in the View tab
 // and in benchmark reports.
@@ -425,7 +427,7 @@ typedef struct Search {
     b32 pending_highlight; // the last row's label gets its match marked after its widget
     u32 rows[SEARCH_PANEL_COUNT];     // rows drawn last frame
     u32 rows_now[SEARCH_PANEL_COUNT];
-    s32 focus_panel;   // the box to focus next frame; -1 = none
+    s32 focus_panel;   // the box to focus next frame, as panel + 1; 0 = none
     s32 hover_panel;   // the panel under the pointer this frame; -1 = none
     s32 right_panel;   // the right dock's (or the phone panel's) panel this frame; -1 = none
     // The Scene tree's matches: a byte per node (bit 0 matches, bit 1 is on the way to a match).

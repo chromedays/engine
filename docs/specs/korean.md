@@ -1,6 +1,6 @@
 # Korean support spec
 
-Status: proposed (2026-10-01). Changes to this spec are agreed first.
+Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -125,6 +125,55 @@ confirmed.
 4. **Docs.**
 
 Every phase is checked in Release and Debug in headless Chromium.
+
+As built, with the notes the build taught:
+
+- **Hangul font.** `assets/fonts/Hangul-Subset.ttf` (387 KB; every character of `app/strings.c` is
+  inside KS X 1001's 2,350, so the script added none), made by `tools/subset_hangul.sh` from
+  Pretendard Regular's TrueType file. It is renamed because the OFL reserves the name "Pretendard" for
+  unmodified fonts (the license's reserved-name clause covers the name shown to users, which the app
+  never shows); the font's own name table is still Pretendard's, as in the author's published
+  subsets. `nv_imgui_set_font` takes the fallback as a second face and merges it (`MergeMode`);
+  Hangul sat on Inter's baseline at the same size with no tuning. The package grew by 0.39 MB.
+- **Names.** `nv_utf8_fit` (`nv/base.h`) cuts at a character: `nv_scene_add_node` and a name read from a
+  save keep whole syllables (10 fit in 32 bytes). ImGui's own text field already refuses a character
+  that does not fit.
+- **Typing.** On the desktop the text agent takes focus when `WantTextInput` turns on, sits at the
+  caret ImGui reports (`Platform_SetImeDataFn`) and, while composing, shows the syllable (dark text on a
+  light box: Chromium paints its own highlight over a composition). The agent's keys: the ones the
+  input method takes ("Process") are left alone; keys that type no text, and chords except paste,
+  act in ImGui only and are kept from the agent (its caret must not move, Ctrl+Z must not undo in
+  it); typing and Backspace stay with the agent. As a consequence a letter typed in a field is no
+  longer kept from the browser (`defaultPrevented` is false for it), which a text field never needed.
+  Checked with CDP `Input.imeSetComposition` and `Input.insertText`.
+- **Strings.** `T(english)` returns the text and `TL(english)` a widget label, `text###English`, in
+  both languages, so a widget keeps its id when the language changes (a tab keeps its place). A table of
+  222 rows in `app/strings.c`, found through a hash table built on first use. Combo item arrays that
+  were `local_persist` are built each call with `T()`. `tests/strings_test.mjs` (ctest `strings_test`)
+  fails when a string the code wraps, passes to the search (`search_row`, `search_group`,
+  `search_section`), puts in the shortcut table (group, name, keys text), the stats, a texture note or
+  a panel name has no row, and when a row's printf conversions differ from the English text's.
+- **Search.** A row's search text is its English label, the Korean of it, its section in both
+  languages and its keywords, so "shadow" and "그림자" find the same rows whichever language is
+  shown; the palette lists names in the language in use.
+- **Language row.** A **Language** combo (English, 한국어, always written in their own language) in
+  the View tab; `LANG` tag; the browser's language decides at the first start.
+- **Not translated**, as decided: the Console's log rows, node, clip and texture names, the engine's
+  texture descriptions ("1 mip, 5.3 MB, 1 user"), the build label, the stress benchmark's copied
+  table, the save viewer's internals (header and chunk lines), and the undo steps' names ("moon
+  Position": the node's name and the field name stay English; only "Undo" and "Redo" are
+  translated).
+- Found on the way: the Scene tab's search box was focused at start, because `focus_panel` began at 0
+  (panel 0); it now holds the panel plus one.
+- Debug builds export `_app_debug_language`, `_app_debug_set_language`, `_app_debug_selected_name(k)`,
+  `_app_debug_rename_selected` (renames the selected node to the search buffer's text) and
+  `_app_debug_search_query(panel, k)`.
+- Checked in Debug (desktop 1280×800 and phone 390×664 at 2×) and Release: Hangul names in the tree
+  beside Latin, the 10 syllable limit, the save round trip and a reload; IME composition and commit into
+  the Name field, a search box and the palette, with ordinary typing, Backspace and arrows still
+  working; a Korean browser (`locale: ko-KR`) starts in Korean; the whole desktop and phone UI in Korean
+  without cut labels (the phone's Undo button, 64 px, fits "실행 취소" tightly); searches in either language
+  with either language shown; a reload keeps the choice either way; the old checks of search and shortcuts.
 
 ## Out of scope
 

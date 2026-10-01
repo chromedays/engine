@@ -511,10 +511,10 @@ internal void stats_section(App* app)
         if (!stats[i].visible)
             continue;
         igTableNextColumn();
-        igTextUnformatted(stats[i].label, NULL);
+        igTextUnformatted(T(stats[i].label), NULL);
         igTableNextColumn();
         if (stats[i].text)
-            igTextUnformatted(stats[i].text, NULL);
+            igTextUnformatted(T(stats[i].text), NULL);
         else
             igText(stats[i].format, stats[i].value);
     }
@@ -527,29 +527,29 @@ internal void workloads_section(App* app)
     StressWorkloads* w = &stress->want;
     search_section(app, "Workloads");
     if (search_row(app, "Cube grid", "workload cubes"))
-        igCheckbox("Cube grid", &w->grid_on);
+        igCheckbox(TL("Cube grid"), &w->grid_on);
     if (search_row(app, "Cubes", "workload grid count"))
-        igSliderInt("Cubes", &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
+        igSliderInt(TL("Cubes"), &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
     if (search_row(app, "Many colors", "workload materials"))
-        igCheckbox("Many colors", &w->colors_on);
+        igCheckbox(TL("Many colors"), &w->colors_on);
     if (search_row(app, "Colors", "workload materials count"))
-        igSliderInt("Colors", &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
+        igSliderInt(TL("Colors"), &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
     if (search_row(app, "Deep chain", "workload hierarchy"))
-        igCheckbox("Deep chain", &w->chain_on);
+        igCheckbox(TL("Deep chain"), &w->chain_on);
     if (search_row(app, "Links", "workload chain count"))
-        igSliderInt("Links", &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
+        igSliderInt(TL("Links"), &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
     if (search_row(app, "Crowd", "workload characters animation"))
-        igCheckbox("Crowd", &w->crowd_on);
+        igCheckbox(TL("Crowd"), &w->crowd_on);
     if (search_row(app, "Characters", "workload crowd count"))
-        igSliderInt("Characters", &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
+        igSliderInt(TL("Characters"), &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
     if (search_row(app, "Churn", "workload add remove nodes"))
-        igCheckbox("Churn", &w->churn_on);
+        igCheckbox(TL("Churn"), &w->churn_on);
     if (search_row(app, "Cubes / frame", "workload churn count"))
-        igSliderInt("Cubes / frame", &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
+        igSliderInt(TL("Cubes / frame"), &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
     if (search_row(app, "Crowd bones", "workload skeleton debug"))
-        igCheckbox("Crowd bones", &w->show_bones);
+        igCheckbox(TL("Crowd bones"), &w->show_bones);
     if (search_plain(app))
-        igTextDisabled("Built: %u cubes, %u links, %u of %u characters", stress->grid_built, stress->chain_built,
+        igTextDisabled(T("Built: %u cubes, %u links, %u of %u characters"), stress->grid_built, stress->chain_built,
                        stress->crowd_active, stress->crowd_created);
 }
 
@@ -564,9 +564,9 @@ internal void benchmark_section(App* app)
         f64 elapsed = nv_time_seconds() - stress->benchmark_step_start;
         igText("Step %u/%u: %s (%s)", stress->benchmark_step + 1, stress->step_count, stress->steps[stress->benchmark_step].name,
                elapsed < BENCHMARK_WARMUP_SECONDS ? "warming up" : "measuring");
-        if (igButton("Stop", (ImVec2_c){-1.0f, 0.0f}))
+        if (igButton(TL("Stop"), (ImVec2_c){-1.0f, 0.0f}))
             stop_benchmark(app, 1);
-    } else if (igButton("Run benchmark", (ImVec2_c){-1.0f, 0.0f})) {
+    } else if (igButton(TL("Run benchmark"), (ImVec2_c){-1.0f, 0.0f})) {
         start_benchmark(app);
     }
     if (!stress->result_count)
@@ -574,9 +574,9 @@ internal void benchmark_section(App* app)
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
     char shadows[64];
     shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
-    igText("Shadows: %s", shadows);
-    igText("Anti-aliasing: %s", stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
-    igText("Resolution: %s", stress->benchmark_resolution);
+    igText(T("Shadows: %s"), shadows);
+    igText(T("Anti-aliasing: %s"), stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
+    igText(T("Resolution: %s"), stress->benchmark_resolution);
     if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
@@ -606,7 +606,7 @@ internal void benchmark_section(App* app)
         }
         igEndTable();
     }
-    if (!stress->benchmark_running && igButton("Copy results", (ImVec2_c){-1.0f, 0.0f}))
+    if (!stress->benchmark_running && igButton(TL("Copy results"), (ImVec2_c){-1.0f, 0.0f}))
         copy_results(app);
 }
 

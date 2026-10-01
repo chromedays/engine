@@ -166,8 +166,8 @@ internal b32 toolbar(App* app, const u32* rows, u32 row_count, b32 compact)
     Console* console = &app->console;
     NvLog* log = &nv_log_ring;
     // A narrow panel (a phone) gets shorter labels and no counts, to keep the toolbar to two lines.
-    local_persist const char* names[NV_LOG_LEVEL_COUNT] = {"Info", "Warning", "Error"};
-    local_persist const char* short_names[NV_LOG_LEVEL_COUNT] = {"Info", "Warn", "Error"};
+    const char* names[NV_LOG_LEVEL_COUNT] = {T("Info"), T("Warning"), T("Error")};
+    const char* short_names[NV_LOG_LEVEL_COUNT] = {T("Info"), T("Warn"), T("Error")};
     for (u32 level = 0; level < NV_LOG_LEVEL_COUNT; ++level) {
         char label[40];
         if (compact)
@@ -183,21 +183,22 @@ internal b32 toolbar(App* app, const u32* rows, u32 row_count, b32 compact)
         igPopStyleColor(1);
         console_record(console, (ConsoleRect)(CONSOLE_RECT_LEVEL + level));
     }
-    ui_same_line_if_fits(igCalcTextSize("Clear", NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
-    if (igButton("Clear", (ImVec2_c){0.0f, 0.0f}))
+    ui_same_line_if_fits(igCalcTextSize(T("Clear"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
+    if (igButton(TL("Clear"), (ImVec2_c){0.0f, 0.0f}))
         clear = 1;
     console_record(console, CONSOLE_RECT_CLEAR);
-    ui_same_line_if_fits(igCalcTextSize("Copy", NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
-    if (igButton("Copy", (ImVec2_c){0.0f, 0.0f}))
+    ui_same_line_if_fits(igCalcTextSize(T("Copy"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
+    if (igButton(TL("Copy"), (ImVec2_c){0.0f, 0.0f}))
         copy_shown(app, rows, row_count);
     console_record(console, CONSOLE_RECT_COPY);
-    const char* auto_label = compact ? "Auto###auto" : "Auto-scroll###auto";
+    char auto_label[64];
+    snprintf(auto_label, sizeof(auto_label), "%s###auto", T(compact ? "Auto" : "Auto-scroll"));
     ui_same_line_if_fits(checkbox_fits(auto_label));
     igCheckbox(auto_label, &console->auto_scroll);
     console_record(console, CONSOLE_RECT_AUTO_SCROLL);
 
     igSetNextItemWidth(-1.0f);
-    if (igInputTextWithHint("##filter", "Filter (-word leaves it out)", console->filter.InputBuf,
+    if (igInputTextWithHint("##filter", T("Filter (-word leaves it out)"), console->filter.InputBuf,
                             sizeof(console->filter.InputBuf), 0, NULL, NULL))
         ImGuiTextFilter_Build(&console->filter);
     console_record(console, CONSOLE_RECT_FILTER);
@@ -290,8 +291,8 @@ void console_tab(App* app)
             snprintf(repeat, sizeof(repeat), " x%u", message->repeat);
         igText("%s %s  %.3f s%s", level_name(message->level), message->source, message->time, repeat);
         // Touch has no keyboard to copy the field with.
-        ui_same_line_if_fits(igCalcTextSize("Copy message", NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
-        if (igButton("Copy message", (ImVec2_c){0.0f, 0.0f}))
+        ui_same_line_if_fits(igCalcTextSize(T("Copy message"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
+        if (igButton(TL("Copy message"), (ImVec2_c){0.0f, 0.0f}))
             igSetClipboardText(console->detail);
         console_record(console, CONSOLE_RECT_COPY_MESSAGE);
         igInputTextMultiline("##detail", console->detail, sizeof(console->detail),

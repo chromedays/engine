@@ -125,7 +125,7 @@ Every phase is checked in Release and Debug in headless Chromium, the desktop UI
 - Inter 14 px has about the same line height and average width as the old 13 px face, so the
   layout needed no changes: the docks, top bars and tabs still fit on desktop and on the phone
   (390×664), where the Inspector tab's label no longer needs to be cut.
-- The package grows by 0.4 MB (`app.data` 1.7 MB).
+- The package grows by 0.4 MB (`app.data` 1.7 MB); `korean.md` adds a Hangul fallback face behind it (0.39 MB).
 - Playwright scripts written against the old font's pixel positions (menu items, the Reset
   dialog's buttons, rows of the Scene tree) click the wrong places and need new coordinates; the
   app's behavior is unchanged.

@@ -351,7 +351,7 @@ internal void section(App* app, const char* label, TextureKind first, TextureKin
         igSetNextItemOpen(true, ImGuiCond_Always);
     }
     char header[96];
-    snprintf(header, sizeof(header), "%s (%s)###%s", label, memory, label);
+    snprintf(header, sizeof(header), "%s (%s)###%s", T(label), memory, label);
     if (!igCollapsingHeader_TreeNodeFlags(header, ImGuiTreeNodeFlags_DefaultOpen))
         return;
     f32 height = THUMBNAIL * app->imgui.ui_scale;
@@ -374,7 +374,7 @@ internal void used_by(App* app, u32 texture)
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
     NvRenderer* renderer = &app->renderer;
-    igSeparatorText("Used by");
+    igSeparatorText(T("Used by"));
     u32 shown = 0;
     for (u32 i = 1; i <= scene->node_count; ++i) {
         NvNode* node = &scene->nodes[i];
@@ -398,7 +398,7 @@ internal void used_by(App* app, u32 texture)
         ++shown;
     }
     if (!shown)
-        igTextDisabled("No node of this scene.");
+        igTextDisabled(T("No node of this scene."));
 }
 
 internal void detail(App* app, const TextureEntry* entry)
@@ -418,25 +418,25 @@ internal void detail(App* app, const TextureEntry* entry)
     describe(entry, size_line, memory_line, sizeof(memory_line));
     igTextDisabled("%s, %s", size_line, memory_line);
     if (!entry->preview) {
-        igTextWrapped("%s", entry->note ? entry->note : "No preview.");
+        igTextWrapped("%s", entry->note ? T(entry->note) : T("No preview."));
         return;
     }
 
     b32 depth = entry->kind == TEXTURE_DEPTH || entry->kind == TEXTURE_SHADOW;
     igSetNextItemWidth(igGetContentRegionAvail().x * 0.5f);
-    igSliderFloat("Zoom", &viewer->zoom, 1.0f, 16.0f, "%.1fx", ImGuiSliderFlags_Logarithmic);
+    igSliderFloat(TL("Zoom"), &viewer->zoom, 1.0f, 16.0f, "%.1fx", ImGuiSliderFlags_Logarithmic);
     textures_record(viewer, TEXTURES_RECT_ZOOM);
     if (depth) {
         if (entry->kind == TEXTURE_DEPTH) {
             NvImguiPreview camera = {0};
             camera_depth(app, &camera);
             igSetNextItemWidth(igGetContentRegionAvail().x * 0.5f);
-            igSliderFloat("White at", &viewer->depth_range, camera.near_z, camera.far_z, "%.1f m", ImGuiSliderFlags_Logarithmic);
-            igSetItemTooltip("%s", "Distance from the camera shown white; nearer is darker");
+            igSliderFloat(TL("White at"), &viewer->depth_range, camera.near_z, camera.far_z, "%.1f m", ImGuiSliderFlags_Logarithmic);
+            igSetItemTooltip("%s", T("Distance from the camera shown white; nearer is darker"));
         } else {
             igSetNextItemWidth(igGetContentRegionAvail().x * 0.5f);
-            igDragFloatRange2("Range", &viewer->shadow_range[0], &viewer->shadow_range[1], 0.005f, 0.0f, 1.0f, "%.3f", NULL, 0);
-            igSetItemTooltip("%s", "Stored depth shown black and white");
+            igDragFloatRange2(TL("Range"), &viewer->shadow_range[0], &viewer->shadow_range[1], 0.005f, 0.0f, 1.0f, "%.3f", NULL, 0);
+            igSetItemTooltip("%s", T("Stored depth shown black and white"));
         }
         textures_record(viewer, TEXTURES_RECT_RANGE);
     } else {
@@ -449,12 +449,12 @@ internal void detail(App* app, const TextureEntry* entry)
             u32 w = entry->width >> viewer->mip, h = entry->height >> viewer->mip;
             snprintf(format, sizeof(format), "%%d (%ux%u)", w ? w : 1, h ? h : 1);
             igSetNextItemWidth(igGetContentRegionAvail().x * 0.5f);
-            if (igSliderInt("Mip", &mip, 0, max_mip, format, ImGuiSliderFlags_AlwaysClamp))
+            if (igSliderInt(TL("Mip"), &mip, 0, max_mip, format, ImGuiSliderFlags_AlwaysClamp))
                 viewer->mip = (u32)mip;
             textures_record(viewer, TEXTURES_RECT_MIP);
         }
         // One tap each, rather than a combo's two.
-        local_persist const char* channel_names[] = {"RGBA", "RGB", "R", "G", "B", "A"};
+        const char* channel_names[] = {"RGBA", "RGB", "R", "G", "B", "A"};
         for (u32 c = 0; c < NV_ARRAY_COUNT(channel_names); ++c) {
             if (c)
                 ui_same_line_if_fits(igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x +
@@ -463,9 +463,9 @@ internal void detail(App* app, const TextureEntry* entry)
             textures_record(viewer, (TexturesRect)(TEXTURES_RECT_CHANNELS + c));
         }
         ui_same_line_if_fits(igGetFrameHeight() + igGetStyle()->ItemInnerSpacing.x +
-                             igCalcTextSize("Checkerboard", NULL, false, -1.0f).x);
+                             igCalcTextSize(T("Checkerboard"), NULL, false, -1.0f).x);
         bool checker = !viewer->no_checkerboard;
-        if (igCheckbox("Checkerboard", &checker))
+        if (igCheckbox(TL("Checkerboard"), &checker))
             viewer->no_checkerboard = !checker;
     }
 
@@ -519,10 +519,10 @@ internal void detail(App* app, const TextureEntry* entry)
         f32 u = w0.x + (w1.x - w0.x) * (mouse.x - min.x) / size.x;
         f32 v = w0.y + (w1.y - w0.y) * (mouse.y - min.y) / size.y;
         u32 x = (u32)(u * (f32)level_w), y = (u32)(v * (f32)level_h);
-        igTextDisabled("texel (%u, %u) of %ux%u, uv (%.3f, %.3f)", x < level_w ? x : level_w - 1, y < level_h ? y : level_h - 1,
+        igTextDisabled(T("texel (%u, %u) of %ux%u, uv (%.3f, %.3f)"), x < level_w ? x : level_w - 1, y < level_h ? y : level_h - 1,
                        level_w, level_h, (f64)u, (f64)v);
     } else {
-        igTextDisabled("%ux%u shown; drag to pan", level_w, level_h);
+        igTextDisabled(T("%ux%u shown; drag to pan"), level_w, level_h);
     }
 }
 
@@ -556,14 +556,14 @@ void textures_tab(App* app)
         search_panel_begin(app, SEARCH_TEXTURES);
 
     bool in_use_only = !viewer->show_unused;
-    if (igCheckbox("In use only", &in_use_only))
+    if (igCheckbox(TL("In use only"), &in_use_only))
         viewer->show_unused = !in_use_only;
     textures_record(viewer, TEXTURES_RECT_IN_USE);
     igSameLine(0.0f, -1.0f);
     char memory[32];
     format_bytes(total, memory, sizeof(memory));
-    igTextDisabled("%u textures, %s", count, memory);
-    igSetItemTooltip("%s", "GPU memory of the textures listed, not counting the swapchain (the browser owns it)");
+    igTextDisabled(T("%u textures, %s"), count, memory);
+    igSetItemTooltip("%s", T("GPU memory of the textures listed, not counting the swapchain (the browser owns it)"));
 
 #if !defined(NDEBUG)
     memset(viewer->row_rects, 0, sizeof(viewer->row_rects));
@@ -587,7 +587,7 @@ void textures_tab(App* app)
         if (side_by_side)
             igBeginChild_Str("##texture detail", (ImVec2_c){0.0f, 0.0f}, ImGuiChildFlags_Borders, 0);
         else {
-            if (igButton("< Textures", (ImVec2_c){0.0f, 0.0f}))
+            if (igButton(TL("< Textures"), (ImVec2_c){0.0f, 0.0f}))
                 viewer->detail_open = 0;
             textures_record(viewer, TEXTURES_RECT_BACK);
         }
@@ -596,7 +596,7 @@ void textures_tab(App* app)
             if (picked->kind == TEXTURE_MATERIAL)
                 used_by(app, picked->index);
         } else {
-            igTextDisabled("Pick a texture to see it large.");
+            igTextDisabled(T("Pick a texture to see it large."));
         }
         if (side_by_side)
             igEndChild();
@@ -620,11 +620,11 @@ void textures_inspector_thumbnail(App* app, NvTextureId texture)
         app->open_textures = 1;
     }
     textures_record(&app->textures, TEXTURES_RECT_INSPECTOR);
-    igSetItemTooltip("%s", "Show it in the Textures tab");
+    igSetItemTooltip("%s", T("Show it in the Textures tab"));
     igSameLine(0.0f, -1.0f);
     igBeginGroup();
     igTextUnformatted(slot->name, NULL);
-    igTextDisabled("Multiplied with the color.");
+    igTextDisabled(T("Multiplied with the color."));
     igEndGroup();
 }
 

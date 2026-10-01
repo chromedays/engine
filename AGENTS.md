@@ -28,7 +28,7 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
-                           assets/fonts/ holds the UI font (Inter)
+                           assets/fonts/ holds the UI font (Inter) and its Hangul fallback (from Pretendard)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the app with a progress bar, then
@@ -65,7 +65,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/src/imgui.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Inter
-  Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`), not ImGui's built-in one.
+  Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`) with a Hangul fallback, not
+  ImGui's built-in one.
 - The app has two editor UIs, chosen once at start from the primary pointer (`App.ui_mode`; touch
   gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `app_layout` fills
   `App.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
@@ -128,6 +129,15 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   builds export `Module._app_debug_search_buffer`, `_app_debug_search_set(panel)`,
   `_app_debug_search_rows(panel)`, `_app_debug_palette(n)`, `_app_debug_palette_result(i, k)` and
   `_app_debug_palette_query(k)` for tests.
+- UI text is written in English in the code and goes through `T("text")` (a printf format keeps
+  its conversions) or `TL("label")` (a widget label: it keeps its ImGui id in both languages),
+  from `app/strings.h`; each string needs a Korean row in `app/strings.c` (`docs/specs/korean.md`).
+  `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
+  conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
+  rows, node, clip and texture names and the benchmark's copied table stay English. Hangul that is not
+  among KS X 1001's 2,350 syllables needs `tools/subset_hangul.sh` run again. The desktop types
+  through the text agent too (an input method composes there); a key that types no text is kept from it
+  in `on_key`.
 - Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output

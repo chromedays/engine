@@ -228,10 +228,11 @@ const char* shortcut_label(ShortcutId id)
     char* out = labels[id];
     const Command* shortcut = &shortcuts[id];
     if (shortcut->keys_text) {
-        if (is_mac() && strncmp(shortcut->keys_text, "Ctrl", 4) == 0)
-            snprintf(out, sizeof(labels[id]), "Cmd%s", shortcut->keys_text + 4);
+        const char* text = T(shortcut->keys_text);
+        if (is_mac() && strncmp(text, "Ctrl", 4) == 0)
+            snprintf(out, sizeof(labels[id]), "Cmd%s", text + 4);
         else
-            snprintf(out, sizeof(labels[id]), "%s", shortcut->keys_text);
+            snprintf(out, sizeof(labels[id]), "%s", text);
         return out;
     }
     umm used = 0;
@@ -248,11 +249,10 @@ const char* shortcut_label(ShortcutId id)
     return out;
 }
 
-local_persist const char* help_title = "Keyboard shortcuts";
-
 void shortcuts_help(App* app)
 {
     local_persist s32 opened_frame;
+    const char* help_title = TL("Keyboard shortcuts");
     if (app->show_shortcuts && !igIsPopupOpen_Str(help_title, 0)) {
         igOpenPopup_Str(help_title, 0);
         opened_frame = igGetFrameCount();
@@ -275,17 +275,17 @@ void shortcuts_help(App* app)
                 continue; // palette only
             if (!group || strcmp(group, shortcut->group) != 0) {
                 group = shortcut->group;
-                igSeparatorText(group);
+                igSeparatorText(T(group));
             }
             // Greyed while it does not apply (no selection, playing, ...).
             igBeginDisabled(!applies(app, shortcut->when));
             igTextUnformatted(shortcut_label((ShortcutId)i), NULL);
             igSameLine(170.0f, 0.0f);
-            igTextUnformatted(shortcut->name, NULL);
+            igTextUnformatted(T(shortcut->name), NULL);
             igEndDisabled();
         }
         igSeparator();
-        igTextDisabled("Keys do nothing while a text field is being edited or a popup is open.");
+        igTextDisabled(T("Keys do nothing while a text field is being edited or a popup is open."));
         if (!open) {
             app->show_shortcuts = 0;
             igCloseCurrentPopup();

@@ -162,6 +162,8 @@ and the phases then checked them. Notes:
   open.
 - The phone's side buttons are 64 px and Find 52 px (`layout.md`). The Reset confirmation's text is
   wider than a phone screen; it was before too.
+- Since `korean.md` a row's text for matching has the Korean of its label and section too, so a query in
+  either language finds it (`candidate_text`).
 - Ctrl+F is taken from the browser like any bound key; while a box is being edited the engine
   already keeps every key from the browser (`WantCaptureKeyboard`), so Ctrl+F there does nothing.
 - Typing fast (Playwright's `keyboard.type` without a delay) under SwiftShader's few frames per

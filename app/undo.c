@@ -199,12 +199,12 @@ void undo_button(App* app, s32 direction, b32 labels, ImVec2_c size)
     undo_state(app, &can_undo, &can_redo, undo_label, redo_label, sizeof(undo_label));
     char label[UNDO_LABEL_MAX + 16];
     b32 can = direction < 0 ? can_undo : can_redo;
-    const char* name = direction < 0 ? "Undo" : "Redo";
+    const char* name = direction < 0 ? "Undo" : "Redo"; // the id; the text is translated
     const char* step = direction < 0 ? undo_label : redo_label;
     if (labels && can)
-        snprintf(label, sizeof(label), "%s: %s###%s", name, step, name);
+        snprintf(label, sizeof(label), "%s: %s###%s", T(name), step, name);
     else
-        snprintf(label, sizeof(label), "%s###%s", name, name);
+        snprintf(label, sizeof(label), "%s###%s", T(name), name);
     igBeginDisabled(!can);
     if (igButton(label, size))
         undo->request = direction;
@@ -220,15 +220,15 @@ void undo_menu_items(App* app)
     char label[UNDO_LABEL_MAX + 16];
 
     if (can_undo)
-        snprintf(label, sizeof(label), "Undo: %s", undo_label);
+        snprintf(label, sizeof(label), "%s: %s", T("Undo"), undo_label);
     else
-        snprintf(label, sizeof(label), "Undo");
+        snprintf(label, sizeof(label), "%s", T("Undo"));
     if (igMenuItem_Bool(label, shortcut_label(SC_UNDO), false, can_undo))
         undo->request = -1;
     if (can_redo)
-        snprintf(label, sizeof(label), "Redo: %s", redo_label);
+        snprintf(label, sizeof(label), "%s: %s", T("Redo"), redo_label);
     else
-        snprintf(label, sizeof(label), "Redo");
+        snprintf(label, sizeof(label), "%s", T("Redo"));
     if (igMenuItem_Bool(label, shortcut_label(SC_REDO), false, can_redo))
         undo->request = 1;
 }

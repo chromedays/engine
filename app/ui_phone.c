@@ -35,7 +35,7 @@ internal void top_bar(App* app)
         igSetCursorPos((ImVec2_c){PHONE_MARGIN, y});
         undo_button(app, -1, 0, side);
         igSetCursorPos((ImVec2_c){PHONE_MARGIN + PHONE_SIDE_BUTTON_WIDTH + PHONE_BUTTON_GAP, y});
-        if (igButton("Find", (ImVec2_c){PHONE_FIND_WIDTH, PHONE_BUTTON_HEIGHT}))
+        if (igButton(TL("Find"), (ImVec2_c){PHONE_FIND_WIDTH, PHONE_BUTTON_HEIGHT}))
             search_open_palette(app);
         // The Play button's center is the screen's center.
         igSetCursorPos((ImVec2_c){(width - PHONE_PLAY_WIDTH) * 0.5f, y});
@@ -45,7 +45,7 @@ internal void top_bar(App* app)
     }
     // The palette's Reset command opens the confirmation here, at the window's top level.
     if (open && app->request_reset)
-        igOpenPopup_Str("Reset everything?", 0);
+        igOpenPopup_Str(TL("Reset everything?"), 0);
     app->request_reset = 0;
     if (open)
         save_reset_popup(app);
@@ -63,20 +63,20 @@ void phone_build_ui(App* app)
         ui_playing_note(app);
     // Shrink, not scroll: all the tabs stay in view on a narrow screen, their labels cut if need be.
     if (panel_open && igBeginTabBar("tabs", ImGuiTabBarFlags_FittingPolicyShrink)) {
-        if (igBeginTabItem("Scene", NULL, 0)) {
+        if (igBeginTabItem(TL("Scene"), NULL, 0)) {
             ui_scene_tab(app);
             igEndTabItem();
         }
         // NOTE: Picking a node in the Scene tab jumps here, since that is where it is edited.
         ImGuiTabItemFlags inspector_flags = app->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
         app->open_inspector = 0;
-        if (igBeginTabItem("Inspector", NULL, inspector_flags)) {
+        if (igBeginTabItem(TL("Inspector"), NULL, inspector_flags)) {
             ui_inspector_tab(app);
             igEndTabItem();
         }
         ImGuiTabItemFlags view_flags = app->open_view ? ImGuiTabItemFlags_SetSelected : 0;
         app->open_view = 0;
-        if (igBeginTabItem("View", NULL, view_flags)) {
+        if (igBeginTabItem(TL("View"), NULL, view_flags)) {
             ui_view_tab(app);
             igEndTabItem();
         }
@@ -91,7 +91,7 @@ void phone_build_ui(App* app)
         if (app->shown == SCENE_STRESS) {
             ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
             app->open_stress = 0;
-            if (igBeginTabItem("Stress", NULL, stress_flags)) {
+            if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {
                 stress_ui(app);
                 igEndTabItem();
             }
