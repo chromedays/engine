@@ -50,7 +50,7 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 | 3 | 군집 이동 | flow field(흐름장)와 분리, 회피. 전장이 평평하므로 navmesh는 필요 없다 | engine |
 | 4 | 데이터 기반 정의 | 유닛, 테크, 카드, 스테이지를 데이터 파일로 두어 밸런스 조정에 재빌드가 필요 없게 | app |
 | 5 | AI 상대 | 배치, 구매, 업그레이드 휴리스틱; 난이도별 파라미터; 플레이어 배치에 대한 카운터 | app |
-| 6 | 대량 렌더링 | 메시별 인스턴싱 배치, frustum culling(시야 절두체 컬링), LOD(level of detail, 거리별 세부 단계) | engine |
+| 6 | 대량 렌더링 | 메시별 인스턴싱 배치, frustum culling, LOD(level of detail, 거리별 세부 단계) | engine |
 | 7 | 대량 애니메이션 | 메카용 리지드(관절별 강체) 애니메이션이나 VAT(vertex animation texture, 정점 애니메이션 텍스처). 애니메이터 256개 상한을 넘기 위해 | engine |
 | 8 | VFX(visual effects, 시각 효과) | GPU 파티클(compute shader), 미사일 궤적, 빔, 가산 블렌딩, bloom, 데칼 | engine |
 | 9 | 시간 조작 | 일시정지, 2배속, 4배속, 슬로 모션: 프레임당 틱 수만 바뀐다 | app |

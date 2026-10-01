@@ -76,9 +76,9 @@
 | 버퍼 | 상태; 빈 목록 (번호 스택); 살아 있는 목록 A와 B (프레임마다 번갈아); 보이는 목록 (이번 프레임에 그릴 것; 블렌드 모드별 구간 둘); 카운터와 간접 인자 (빈 번호 수, 살아 있는 수, 이번 프레임에 버려진 생성 수, `dispatchWorkgroupsIndirect`와 `drawIndirect`의 인자). 모두 GPU에만 있다. 시작할 때 빈 목록을 0..N−1로 채운다 |
 | 메모리 | 파티클 하나에 48바이트 (상태 32, 빈 목록 4, 살아 있는 목록 둘 8, 보이는 목록 4): 2M에 96 MB, 256K에 12 MB. 상태 버퍼는 바인딩 하나에 들어가야 하므로, WebGPU 기본 `maxStorageBufferBindingSize` (128 MiB)에서는 약 400만 개가 상한이다. 앱이 그보다 크게 요청하면 `gpu.c`가 어댑터가 허락하는 한도까지 올려 장치를 만든다 |
 | 생성 (emit 패스) | 효과를 터뜨리면 CPU는 이미터마다 버스트 기록 하나 (이미터, 위치, 방향, 배율, 시드, 수; 48바이트)를 큐에 넣는다. 지연이 있는 이미터는 그 시각이 될 때까지 CPU 큐에 머문다. 프레임마다 CPU가 버스트들과 작업 목록 (작업 그룹마다 버스트 번호와 그 안의 시작 순번)을 올리고, 생성 수를 알므로 직접 dispatch한다. 스레드마다 빈 목록에서 번호를 꺼내 (atomic), 이미터 설정과 해시 난수로 초기 상태를 쓰고, 살아 있는 목록에 넣는다. 빈 번호가 없으면 그 생성은 버려지고 수를 센다: 가장 오래된 것을 덮어쓰지 않는다 |
-| 시뮬레이션 (simulate 패스) | 지난 프레임의 살아 있는 목록 위의 간접 dispatch. 스레드마다 나이를 dt만큼 늘리고, 수명이 끝났으면 번호를 빈 목록에 돌려놓는다; 아니면 힘을 적분하고 (반암시적 오일러) 다음 살아 있는 목록에 넣는다. 그다음 절두체 컬링: 파티클의 경계 구 (위치와 크기)가 씬 카메라의 절두체 여섯 평면 안에 있으면 블렌드 모드에 맞는 보이는 목록 구간에도 넣는다. 새로 생긴 파티클은 같은 프레임의 목록에 들어가므로 생긴 프레임부터 보인다 |
+| 시뮬레이션 (simulate 패스) | 지난 프레임의 살아 있는 목록 위의 간접 dispatch. 스레드마다 나이를 dt만큼 늘리고, 수명이 끝났으면 번호를 빈 목록에 돌려놓는다; 아니면 힘을 적분하고 (반암시적 오일러) 다음 살아 있는 목록에 넣는다. 그다음 frustum culling: 파티클의 경계 구 (위치와 크기)가 씬 카메라의 frustum 여섯 평면 안에 있으면 블렌드 모드에 맞는 보이는 목록 구간에도 넣는다. 새로 생긴 파티클은 같은 프레임의 목록에 들어가므로 생긴 프레임부터 보인다 |
 | 힘 | 이미터별: 중력, 공기 저항, 난류 (curl noise; 세기와 크기), 지면 충돌 (높이, 반발 계수, 마찰; 거의 멈추면 그 자리에 머문다). 전역: 바람 (`NvVfx.wind`). 끌어당기는 점과 파티클끼리의 상호작용은 범위 밖 |
-| 절두체 컬링 | Wicked Engine처럼 simulate 안에서 한다 (위). 카메라 밖의 파티클은 시뮬레이션은 계속되지만 정점도 픽셀도 쓰지 않는다. RTS 카메라는 전장의 일부만 보이는 때가 많아서 효과가 크다. 절두체는 씬 패스와 같은 카메라와 씬 해상도의 종횡비로 렌더러가 만든다. 그림자 패스는 파티클을 그리지 않으므로 빛의 절두체는 필요 없다 |
+| frustum culling | Wicked Engine처럼 simulate 안에서 한다 (위). 카메라 밖의 파티클은 시뮬레이션은 계속되지만 정점도 픽셀도 쓰지 않는다. RTS 카메라는 전장의 일부만 보이는 때가 많아서 효과가 크다. frustum은 씬 패스와 같은 카메라와 씬 해상도의 종횡비로 렌더러가 만든다. 그림자 패스는 파티클을 그리지 않으므로 빛의 frustum은 필요 없다 |
 | atomic 줄이기 | 모든 스레드가 전역 카운터 하나에 atomic을 하면 경합이 생긴다. 작업 그룹 (64 스레드) 안에서 workgroup 메모리로 먼저 세고, 작업 그룹마다 전역 atomic 한 번으로 구간을 받는다. 64는 wave32와 wave64 모두의 배수라서 어느 쪽이든 웨이브를 채운다 |
 | 순서 | 한 command encoder 안에서: emit → simulate → prepare (간접 인자를 채우는 1스레드 패스) → 그림자 패스 → 씬 패스. WebGPU가 패스 사이의 버퍼 사용을 맞춰 주므로 배리어를 따로 두지 않는다. 렌더러가 `nv_renderer_draw` 안에서 `NvRenderer.vfx`의 compute 패스를 기록한다 |
 | 시각 | dt가 0 (일시정지)이면 simulate를 건너뛰고 목록을 바꾸지 않는다. 슬로 모션은 작은 dt다. 큰 dt (탭이 숨었다 돌아옴)는 0.1초로 자른다 |
@@ -241,7 +241,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 - **구현의 참고:** Wicked Engine 소스 ([GitHub](https://github.com/turanszkij/WickedEngine), MIT): `wiEmittedParticle.cpp`,
   `shaders/emittedparticle_emitCS.hlsl`, `emittedparticle_kickoffUpdateCS.hlsl`, `emittedparticle_simulateCS.hlsl`,
   `emittedparticle_finishUpdateCS.hlsl`. 같은 구조에 번갈아 쓰는 살아 있는 목록, 1스레드 간접 인자 패스, simulate 안의
-  절두체 컬링, GPU radix 정렬 (`wiGPUSortLib`)이 더해져 있다. 코드를 가져오지 않고 구조만 참고한다. 다른 점: 이미터마다
+  frustum culling, GPU radix 정렬 (`wiGPUSortLib`)이 더해져 있다. 코드를 가져오지 않고 구조만 참고한다. 다른 점: 이미터마다
   버퍼와 dispatch가 따로이고 (우리는 전역 풀 하나), 스레드마다 전역 atomic을 한다 (우리는 작업 그룹 단위).
 - **나중 단계:** AMD FidelityFX Parallel Sort ([GPUOpen](https://gpuopen.com/fidelityfx-parallel-sort/), MIT; GPU 정렬),
   Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of Tsushima", GDC 2021
