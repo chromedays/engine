@@ -31,6 +31,7 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 | Parents and joints | The gizmo edits the world matrix. The result goes back to `local` through the inverse of parent world × `attach.joint_model` |
 | Write-back | Our own `nv_mat4_decompose` (translation, quaternion, scale), not ImGuizmo's Euler-degree decomposition. Shear from non-uniform scale under a rotated parent is dropped |
 | Camera follow | While the gizmo drags, the camera holds still even when it follows the selection; following the dragged node would move the pointer's ray with it and the drag would run away |
+| Image rectangle | ImGuizmo is given the scene image's rectangle (`resolution.md`) at its screen size, so the gizmo follows a scene shown at another resolution; it is ImGui, drawn at full resolution, and may reach over the bars around a fixed-size image |
 | Viewport UI | The gizmo draws in the viewport; it is the second exception to "editor UI stays in the panel", after the build label |
 | Size | About 64 CSS pixels long, times `NvImgui.ui_scale` (96 on touch screens), set in pixels every frame. ImGuizmo's own size is a fraction of the viewport width, which left it about 20 pixels long on a phone, and it hits handles within fixed pixel distances (12 for arrows, 8 for rings). Line widths also scale with `ui_scale` |
 | Controls row | Wraps on a narrow panel instead of running off its edge |

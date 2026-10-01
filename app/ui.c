@@ -165,15 +165,58 @@ internal void resolution_ui(App* app)
 {
     Resolution* resolution = &app->resolution;
     igSeparatorText("Resolution");
-    local_persist const char* divisors[] = {"1/1 (full)", "1/2", "1/3", "1/4"};
-    s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
-    if (igCombo_Str_arr("Scale", &index, divisors, 4, -1))
-        resolution->divisor = (u32)index + 1;
+    local_persist const char* modes[] = {"Scale", "Fixed size"};
+    s32 mode = (s32)resolution->mode;
+    if (igCombo_Str_arr("Mode", &mode, modes, 2, -1))
+        resolution->mode = mode == 1 ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+
+    if (resolution->mode == RESOLUTION_SCALE) {
+        local_persist const char* divisors[] = {"1/1 (full)", "1/2", "1/3", "1/4"};
+        s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
+        if (igCombo_Str_arr("Scale", &index, divisors, 4, -1))
+            resolution->divisor = (u32)index + 1;
+    } else {
+        // Presets, and Custom for any other size (also while it is being typed).
+        local_persist const u32 sizes[][2] = {{640, 360}, {1280, 720}, {1920, 1080}, {360, 640}, {720, 1280}};
+        local_persist const char* names[] = {"640 x 360", "1280 x 720", "1920 x 1080", "360 x 640 (portrait)", "720 x 1280 (portrait)", "Custom"};
+        local_persist b32 want_custom;
+        s32 index = (s32)NV_ARRAY_COUNT(sizes); // Custom
+        for (u32 i = 0; i < NV_ARRAY_COUNT(sizes); ++i) {
+            if (sizes[i][0] == resolution->fixed_width && sizes[i][1] == resolution->fixed_height)
+                index = (s32)i;
+        }
+        if (want_custom)
+            index = (s32)NV_ARRAY_COUNT(sizes);
+        if (igCombo_Str_arr("Size", &index, names, (int)NV_ARRAY_COUNT(names), -1)) {
+            want_custom = index == (s32)NV_ARRAY_COUNT(sizes);
+            if (!want_custom) {
+                resolution->fixed_width = sizes[index][0];
+                resolution->fixed_height = sizes[index][1];
+            }
+        }
+        if (index == (s32)NV_ARRAY_COUNT(sizes)) {
+            int width = (int)resolution->fixed_width, height = (int)resolution->fixed_height;
+            if (igInputInt("Width", &width, 16, 128, 0))
+                resolution->fixed_width = clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
+            if (igInputInt("Height", &height, 16, 128, 0))
+                resolution->fixed_height = clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
+        }
+    }
+
     // What that comes to: the scene's pixels, and how big each one shows.
     const NvSceneOutput* scene = &app->layout.scene;
     f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    igTextDisabled("Renders %u x %u; a pixel shows as %.0f x %.0f screen pixels (%.1f per CSS pixel)", scene->width, scene->height,
-                   (f64)scene->pixel_size, (f64)scene->pixel_size, (f64)(scene->pixel_size / ratio));
+    if (scene->pixel_size >= 1.0f) {
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.6f, 0.6f, 0.6f, 1.0f});
+        igTextWrapped("Renders %u x %u; a pixel shows as %.0f x %.0f screen pixels (%.1f per CSS pixel)", scene->width, scene->height,
+                      (f64)scene->pixel_size, (f64)scene->pixel_size, (f64)(scene->pixel_size / ratio));
+        igPopStyleColor(1);
+    } else {
+        igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.75f, 0.35f, 1.0f});
+        igTextWrapped("Renders %u x %u, larger than the viewport: shown at %.2fx, some pixels dropped", scene->width, scene->height,
+                      (f64)scene->pixel_size);
+        igPopStyleColor(1);
+    }
 }
 
 // The View tab's Shadows section (docs/specs/shadows.md).

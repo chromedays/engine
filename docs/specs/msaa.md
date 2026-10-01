@@ -97,6 +97,9 @@ notes below are what the build taught:
   sRGB format resolved into the canvas about a stop too dark in Chromium on SwiftShader (the
   resolve wrote linear values where the canvas expects encoded ones); made like the canvas, the 4×
   and Off images have the same colors.
+- Since `resolution.md` the 4-sample color and depth targets are the scene's resolution (rounded up
+  to 64), not the canvas's, and the 4-sample color resolves into the scene color target; the
+  upscale pass puts that into the canvas. The memory table above is for the canvas-sized targets.
 - `NvRenderer.scene_samples` is what the pipelines and the depth target have; `NvRenderer.msaa` is
   what the app asks for, and `update_msaa` (before `update_depth_buffer`) reconciles them each
   frame. The engine's default is 1; the app sets 4.

@@ -676,7 +676,7 @@ internal f64 now_ms(void)
 f64 app_load(const FrameTimes* t)
 {
     f64 cpu = t->anim + t->scene + t->draw + t->ui;
-    f64 gpu = t->gpu + t->gpu_shadow;
+    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale;
     f64 busy = cpu > gpu ? cpu : gpu;
     return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
 }
@@ -693,6 +693,7 @@ internal void accumulate_times(App* app, f64 now)
     sum->ui += t->ui;
     sum->gpu += t->gpu;
     sum->gpu_shadow += t->gpu_shadow;
+    sum->gpu_upscale += t->gpu_upscale;
     if (t->frame > app->window_worst_frame)
         app->window_worst_frame = t->frame;
     ++app->window_frames;
@@ -700,7 +701,7 @@ internal void accumulate_times(App* app, f64 now)
         return;
     f64 n = (f64)app->window_frames;
     app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                                      sum->gpu_shadow / n};
+                                      sum->gpu_shadow / n, sum->gpu_upscale / n};
     app->shown_worst_frame = app->window_worst_frame;
     *sum = (FrameTimes){0};
     app->window_worst_frame = 0.0;
@@ -838,6 +839,7 @@ internal void frame(void* userdata)
     times->draw = now_ms() - t;
     times->gpu = app->renderer.gpu_ms;
     times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
+    times->gpu_upscale = app->renderer.gpu_upscale_ms;
     t = now_ms();
     nv_imgui_render(&app->imgui, encoder, target);
     times->ui += now_ms() - t;
@@ -896,6 +898,25 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_resolution(int mode, int a, int b)
     } else {
         res->divisor = (u32)a;
     }
+}
+
+// Where a world point is on screen, in CSS pixels (axis 0 x, 1 y), seen by the shown scene's camera
+// as drawn now: for tests that press on the gizmo or a node.
+EMSCRIPTEN_KEEPALIVE float app_debug_project(float x, float y, float z, int axis)
+{
+    App* app = &app_state;
+    SceneView* view = app_view(app);
+    NvMat4 view_matrix, projection;
+    nv_renderer_camera_matrices(view->scene, app->layout.scene, &view_matrix, &projection);
+    NvMat4 view_projection = nv_mat4_mul(projection, view_matrix);
+    f32 w = view_projection.e[3] * x + view_projection.e[7] * y + view_projection.e[11] * z + view_projection.e[15];
+    NvVec3 p = nv_mat4_transform_point(view_projection, nv_vec3(x, y, z));
+    f32 ndc_x = p.x / w, ndc_y = p.y / w;
+    const NvSceneOutput* out = &app->layout.scene;
+    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 screen_x = (f32)out->image.x + (ndc_x * 0.5f + 0.5f) * (f32)out->width * out->pixel_size;
+    f32 screen_y = (f32)out->image.y + (0.5f - ndc_y * 0.5f) * (f32)out->height * out->pixel_size;
+    return (axis ? screen_y : screen_x) / ratio;
 }
 
 // The renderer's sample count (1 or 4); the setter is for tests that switch it without the UI.

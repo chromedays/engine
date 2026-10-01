@@ -1,6 +1,6 @@
 # Scene resolution spec
 
-Status: proposed (2026-10-01). Changes to this spec are agreed first.
+Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
 ## Goal
 
@@ -139,6 +139,31 @@ default docks (viewport 680 × 552), about 13 MB against 32 MB.
 
 Every phase is checked in Release and Debug in headless Chromium, at desktop and phone size.
 SwiftShader's timings mean nothing; real costs come from devices.
+
+As built:
+
+- The Fixed mode's code (the size, the whole-multiple fit, the shrink, the image rectangle) and the
+  save tags came with phases 1 and 2, where the scene output was first computed; phase 3 added its
+  View tab controls and checked it; the upscale pass's timestamp pair came with phase 1.
+- The targets stay allocated while they are large enough and at most twice the pixels needed, so a
+  fixed 1280 × 720 can sit in targets left from a larger viewport (the log lines say what is held).
+- The upscale shader reads the scene color target with `textureLoad` (the texel under the screen
+  pixel, counted from the image's corner in blocks of `pixel_size`), not a sampler: that is exact
+  nearest filtering, and also what lets a shrunk fixed size drop pixels evenly.
+- The scene color target is made like the canvas (`BGRA8Unorm` with the sRGB view format), and the
+  Textures tab previews it through the same path as other `Unorm` textures (their bytes are
+  display-encoded), which came out right.
+- Checked in a Debug build at 1280 × 800, 1920 × 1080 and 390 × 664 (touch): the scene size for each
+  divisor; even 2 × 2 and 4 × 4 blocks at 1/2 and 1/4; the first frame at 1/1 equal to the
+  previous build's in the static regions, with MSAA on and off; 1280 × 720 pillarboxed and
+  letterboxed in a 1320 × 832 viewport with black bars; 640 × 360 shown at ×2 as even blocks; a
+  portrait size; 4096 × 2160 shrunk to 0.32 keeping its aspect ratio; the scene inside the image
+  identical after a splitter drag; a tap picking the character, a tap on a bar keeping the
+  selection, a tap on the empty background clearing it, the gizmo dragging and a drag from a bar
+  orbiting; a reload keeping both modes; a bad divisor and a missing tag; the phone's default of
+  1/2; the Stress tab's resolution line.
+- Not measured: the real cost of the upscale pass and of each scale on a GPU; SwiftShader's numbers
+  say nothing about it.
 
 ## Out of scope
 

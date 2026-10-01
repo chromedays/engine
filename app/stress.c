@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+internal void resolution_text(App* app, char* out, umm size);
+
 // The stress scene (docs/specs/stress.md): workloads that load the engine with many objects,
 // live frame statistics and a benchmark that steps through fixed setups.
 
@@ -317,6 +319,7 @@ internal void start_benchmark(App* app)
     stress->before_benchmark = stress->want;
     stress->benchmark_shadows = app->renderer.shadows;
     stress->benchmark_msaa = app->renderer.scene_samples;
+    resolution_text(app, stress->benchmark_resolution, sizeof(stress->benchmark_resolution));
     stress->benchmark_running = 1;
     stress->result_count = 0;
     start_step(app, 0, nv_time_seconds());
@@ -357,6 +360,7 @@ void stress_after_frame(App* app)
     sum->ui += t->ui;
     sum->gpu += t->gpu;
     sum->gpu_shadow += t->gpu_shadow;
+    sum->gpu_upscale += t->gpu_upscale;
     if (t->frame > result->worst_frame)
         result->worst_frame = t->frame;
     ++result->frames;
@@ -365,7 +369,7 @@ void stress_after_frame(App* app)
         return;
     f64 n = (f64)result->frames;
     *sum = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                        sum->gpu_shadow / n};
+                        sum->gpu_shadow / n, sum->gpu_upscale / n};
     stress->result_count = stress->benchmark_step + 1;
     if (stress->benchmark_step + 1 < stress->step_count)
         start_step(app, stress->benchmark_step + 1, now);
@@ -378,6 +382,20 @@ EM_JS_DEPS(nv_stress, "$stringToUTF8");
 EM_JS(void, js_user_agent, (char* out, int size), {
     stringToUTF8(navigator.userAgent, out, size);
 });
+
+// "585 x 497, scale 1/2" or "1280 x 720 fixed, shown x2": what the scene renders at.
+internal void resolution_text(App* app, char* out, umm size)
+{
+    const NvSceneOutput* scene = &app->layout.scene;
+    if (app->resolution.mode == RESOLUTION_FIXED) {
+        if (scene->pixel_size >= 1.0f)
+            snprintf(out, size, "%u x %u fixed, shown x%.0f", scene->width, scene->height, (f64)scene->pixel_size);
+        else
+            snprintf(out, size, "%u x %u fixed, shown at %.2fx", scene->width, scene->height, (f64)scene->pixel_size);
+    } else {
+        snprintf(out, size, "%u x %u, scale 1/%u", scene->width, scene->height, app->resolution.divisor);
+    }
+}
 
 // "2048 32-bit float High", or "off": what the shadows were while measuring.
 internal void shadow_settings_text(const NvShadowSettings* s, char* out, umm size)
@@ -400,16 +418,16 @@ internal void copy_results(App* app)
     shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
     used += (umm)snprintf(text + used, sizeof(text) - used,
                           "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
-                          "shadows: %s\nanti-aliasing: %s\n\n"
-                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow\n",
+                          "shadows: %s\nanti-aliasing: %s\nresolution: %s\n\n"
+                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale\n",
                           NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no",
-                          shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
+                          shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off", stress->benchmark_resolution);
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
-        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f\n",
+        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f\n",
                               stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, app_load(&r->average),
                               r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
-                              r->average.gpu_shadow);
+                              r->average.gpu_shadow, r->average.gpu_upscale);
     }
     igSetClipboardText(text);
 }
@@ -443,6 +461,7 @@ internal void stats_section(App* app)
     if (app->gpu.has_timestamps) {
         stat("GPU scene pass", "%.2f", a->gpu);
         stat("GPU shadow pass", "%.2f", a->gpu_shadow);
+        stat("GPU upscale pass", "%.2f", a->gpu_upscale);
     } else {
         igTableNextColumn();
         igTextUnformatted("GPU passes", NULL);
@@ -467,6 +486,12 @@ internal void stats_section(App* app)
     igTextUnformatted("Anti-aliasing", NULL);
     igTableNextColumn();
     igTextUnformatted(app->renderer.scene_samples > 1 ? "MSAA 4x" : "off", NULL);
+    char resolution[64];
+    resolution_text(app, resolution, sizeof(resolution));
+    igTableNextColumn();
+    igTextUnformatted("Resolution", NULL);
+    igTableNextColumn();
+    igTextUnformatted(resolution, NULL);
     igEndTable();
 }
 
@@ -510,13 +535,14 @@ internal void benchmark_section(App* app)
     shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
     igText("Shadows: %s", shadows);
     igText("Anti-aliasing: %s", stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
+    igText("Resolution: %s", stress->benchmark_resolution);
     if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
         igTableSetupColumn("Load %", 0, 0.0f, 0);
         igTableSetupColumn("Worst", 0, 0.0f, 0);
         igTableSetupColumn("CPU a/s/d", 0, 0.0f, 0);
-        igTableSetupColumn("GPU sc/sh", 0, 0.0f, 0);
+        igTableSetupColumn("GPU sc/sh/up", 0, 0.0f, 0);
         igTableHeadersRow();
         for (u32 i = 0; i < stress->result_count; ++i) {
             const BenchmarkResult* r = &stress->results[i];
@@ -533,7 +559,7 @@ internal void benchmark_section(App* app)
             igText("%.2f/%.2f/%.2f", r->average.anim, r->average.scene, r->average.draw);
             igTableNextColumn();
             if (app->gpu.has_timestamps)
-                igText("%.2f/%.2f", r->average.gpu, r->average.gpu_shadow);
+                igText("%.2f/%.2f/%.2f", r->average.gpu, r->average.gpu_shadow, r->average.gpu_upscale);
             else
                 igTextDisabled("-");
         }

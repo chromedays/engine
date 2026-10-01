@@ -26,6 +26,10 @@ touch. Rotation becomes editable in the inspector.
 ## Engine changes
 
 - **Input routing (`nv/imgui.h`).**
+  - Since `resolution.md` the scene may be rendered at a resolution of its own and shown in an
+    image rectangle inside the viewport (`App.layout.scene`): picking and panning use that image
+    (`nv_renderer_view_ray` takes an `NvSceneOutput`), and a tap on the bars around a fixed-size
+    image does nothing. Orbit, pan and zoom still work anywhere in the viewport.
   - `NvImgui.view_rect` is the viewport (set each frame by the app). Mouse and touch input that
     starts inside it, while no ImGui popup is open, skips the ImGui gesture handling and fills
     `NvImgui.view` (`NvViewInput`):

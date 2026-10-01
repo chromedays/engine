@@ -279,6 +279,7 @@ typedef struct FrameTimes {
     f64 ui;    // building and recording ImGui
     f64 gpu;   // the scene pass on the GPU; 0 where the browser has no timestamps
     f64 gpu_shadow; // the shadow pass on the GPU; 0 without timestamps or shadows
+    f64 gpu_upscale; // the upscale pass on the GPU; 0 without timestamps
 } FrameTimes;
 
 typedef struct BenchmarkStep {
@@ -342,6 +343,7 @@ typedef struct Stress {
     StressWorkloads before_benchmark; // put back when a run finishes
     NvShadowSettings benchmark_shadows; // the shadow settings the last run measured with
     u32 benchmark_msaa;                 // the sample count it measured with
+    char benchmark_resolution[64];      // the scene's resolution it measured at ("585 x 497, scale 1/2")
     BenchmarkStep steps[STRESS_MAX_STEPS];
     BenchmarkResult results[STRESS_MAX_STEPS];
     u32 step_count;

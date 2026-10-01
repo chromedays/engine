@@ -145,6 +145,17 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   its depth-only pipelines when the size or format changes. The shadow pass binds
   `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
   A new mesh vertex layout needs a matching entry point in `shadow_shader` too.
+- The scene renders at a resolution of its own (`docs/specs/resolution.md`): `nv_renderer_draw`
+  takes an `NvSceneOutput` (the scene's width and height, and the image rectangle of the canvas it
+  is shown in, with `pixel_size` screen pixels per scene pixel), draws into the renderer's own color
+  (`scene_color`), MSAA and depth targets (allocated rounded up to 64 and kept while large enough),
+  then an upscale pass clears the canvas to black and shows it with the nearest filter
+  (`textureLoad`). The app computes it each frame in `app_layout` from `App.resolution` (Scale: a
+  divisor 1 to 4 of the viewport; Fixed: an exact size at the largest whole multiple that fits,
+  centered, with black bars): `App.layout.scene`. Picking, panning and the gizmo use it
+  (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
+  does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
+  Debug builds export `_app_debug_scene`, `_app_debug_set_resolution` and `_app_debug_project`.
 - The scene pass is multisampled by default (`docs/specs/msaa.md`): the app sets `NvRenderer.msaa`
   (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
   4-sample color target (made like the canvas: its own format with the sRGB view format, rendered
