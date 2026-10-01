@@ -1302,6 +1302,35 @@ EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
 }
 #endif
 
+// What the page downloaded (the Resource Timing entries of the engine's own files): `what` 0 is the
+// bytes after the browser unpacked them, 1 the bytes that crossed the network (0 from the cache);
+// -1 when the browser does not say.
+EM_JS(double, js_download_bytes, (int what), {
+    const names = ["app.wasm", "app.data", "app.js"];
+    let decoded = 0, sent = 0, found = 0;
+    for (const entry of performance.getEntriesByType("resource")) {
+        const path = new URL(entry.name).pathname;
+        if (!names.some((name) => path.endsWith("/" + name))) continue;
+        ++found;
+        decoded += entry.decodedBodySize;
+        sent += entry.transferSize;
+    }
+    if (!found || !decoded) return -1;
+    return what == 0 ? decoded : sent;
+});
+
+internal void read_download_size(App* app)
+{
+    f64 unpacked = js_download_bytes(0), sent = js_download_bytes(1);
+    f64 mb = 1048576.0;
+    if (unpacked < 0.0)
+        app->download_text[0] = 0;
+    else if (sent > 0.0)
+        snprintf(app->download_text, sizeof(app->download_text), "%.1f MB downloaded", sent / mb);
+    else
+        snprintf(app->download_text, sizeof(app->download_text), "%.1f MB from cache", unpacked / mb);
+}
+
 // The UI font (docs/specs/fonts.md, korean.md): Inter, with Pretendard's Hangul behind it, read
 // from the package into permanent memory, since ImGui keeps pointing at the bytes. Without them
 // the built-in font stays.
@@ -1356,6 +1385,7 @@ int main(void)
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
     load_font(app);
+    read_download_size(app);
     strings_set_language(strings_browser_language()); // a save may change it (the LANG tag)
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = app->imgui.ui_scale > 1.0f;

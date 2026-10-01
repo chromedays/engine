@@ -578,6 +578,7 @@ typedef struct App {
     f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden
     b32 show_shortcuts; // the Keyboard shortcuts window is open
     b32 request_reset;  // open the Reset confirmation (the palette asks; the top bar draws it)
+    char download_text[64]; // what the page downloaded, for the build label ("0.9 MB downloaded"); empty = unknown
     Search search;
 } App;
 

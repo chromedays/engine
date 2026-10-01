@@ -619,9 +619,9 @@ void ui_build_label(App* app)
         app->badge_box[0] = app->badge_box[1] = app->badge_box[2] = app->badge_box[3] = 0.0f;
         return;
     }
-    char text[80];
-    snprintf(text, sizeof(text), "%s build %s%s", NV_BUILD_NAME, NV_GIT_COMMIT,
-             app->playing && app->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
+    char text[160];
+    snprintf(text, sizeof(text), "%s build %s%s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, app->download_text[0] ? " \xC2\xB7 " : "",
+             app->download_text, app->playing && app->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
     NvLogLevel worst;
     u32 unseen = console_unseen(app, &worst);
     char count[8];

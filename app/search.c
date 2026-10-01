@@ -18,9 +18,62 @@ local_persist const char* panel_names[SEARCH_PANEL_COUNT] = {"Scene", "Inspector
 // Matching
 //
 
-internal char lower(char c)
+// The lowercase of a code point in the scripts the names and labels use (ASCII, Latin-1 and Latin
+// Extended-A, Greek, Cyrillic), which keeps the number of UTF-8 bytes: a folded text has the same
+// offsets as the text. Hangul and the other scripts without case map to themselves.
+internal u32 fold_code_point(u32 c)
 {
-    return c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+    if (c < 0x80)
+        return c >= 'A' && c <= 'Z' ? c + 32 : c;
+    if ((c >= 0xC0 && c <= 0xDE && c != 0xD7))
+        return c + 32;
+    if (c >= 0x100 && c <= 0x137)
+        return (c & 1) ? c : c + 1;
+    if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E))
+        return (c & 1) ? c + 1 : c;
+    if (c >= 0x14A && c <= 0x177)
+        return (c & 1) ? c : c + 1;
+    if (c == 0x178)
+        return 0xFF;
+    if (c == 0x386)
+        return 0x3AC;
+    if (c >= 0x388 && c <= 0x38A)
+        return c + 37;
+    if (c == 0x38C)
+        return 0x3CC;
+    if (c == 0x38E || c == 0x38F)
+        return c + 63;
+    if (c >= 0x391 && c <= 0x3A9 && c != 0x3A2)
+        return c + 32;
+    if (c >= 0x410 && c <= 0x42F)
+        return c + 32;
+    if (c >= 0x400 && c <= 0x40F)
+        return c + 80;
+    return c;
+}
+
+// `text` with every character folded to lowercase, in `out` (cut at a whole character).
+internal void fold_text(const char* text, char* out, umm capacity)
+{
+    umm used = 0;
+    while (*text) {
+        u32 length = nv_utf8_length((u8)*text);
+        if (used + length + 1 > capacity)
+            break;
+        if (length == 1) {
+            out[used++] = (char)fold_code_point((u8)*text);
+            ++text;
+        } else if (length == 2 && ((u8)text[1] & 0xC0) == 0x80) {
+            u32 c = fold_code_point((((u8)text[0] & 0x1Fu) << 6) | ((u8)text[1] & 0x3Fu));
+            out[used++] = (char)(0xC0 | (c >> 6));
+            out[used++] = (char)(0x80 | (c & 0x3F));
+            text += 2;
+        } else {
+            for (u32 i = 0; i < length && *text; ++i) // 3 and 4 byte characters have no case here
+                out[used++] = *text++;
+        }
+    }
+    out[used] = 0;
 }
 
 // Where a word may start: the text's start, or after anything that is not a letter or digit (bytes
@@ -30,34 +83,53 @@ internal b32 is_boundary(char c)
     return !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (u8)c >= 0x80);
 }
 
+// Words are cut at spaces: the ASCII one and the ideographic space (U+3000) Korean keyboards can type.
+internal u32 separator_length(const char* p)
+{
+    if (*p == ' ')
+        return 1;
+    if ((u8)p[0] == 0xE3 && (u8)p[1] == 0x80 && (u8)p[2] == 0x80)
+        return 3;
+    return 0;
+}
+
 internal void query_parse(SearchQuery* query, const char* text)
 {
     query->count = 0;
     const char* p = text;
     while (*p && query->count < SEARCH_MAX_WORDS) {
-        while (*p == ' ')
-            ++p;
+        u32 skip;
+        while ((skip = separator_length(p)))
+            p += skip;
         if (!*p)
             break;
         char* word = query->words[query->count];
+        char raw[SEARCH_WORD_MAX * 2];
         u32 n = 0;
-        for (; *p && *p != ' '; ++p) {
-            if (n < SEARCH_WORD_MAX - 1)
-                word[n++] = lower(*p);
+        while (*p && !separator_length(p)) {
+            // Whole characters only: a word cut inside one would match nothing.
+            u32 length = nv_utf8_length((u8)*p);
+            if (n + length < sizeof(raw)) {
+                for (u32 i = 0; i < length && p[i]; ++i)
+                    raw[n++] = p[i];
+            }
+            for (u32 i = 0; i < length && *p; ++i)
+                ++p;
         }
-        word[n] = 0;
+        raw[n] = 0;
+        fold_text(raw, word, SEARCH_WORD_MAX);
         ++query->count;
     }
 }
 
-// The first place `word` (lowercase) is in `text`, preferring one that starts a word; -1 if none.
+// The first place `word` (folded) is in `text` (folded), preferring one that starts a word; -1 if none.
 internal s32 find_word(const char* text, const char* word)
 {
     u32 length = (u32)strlen(word);
     s32 first = -1;
     for (u32 i = 0; text[i]; ++i) {
         u32 k = 0;
-        while (k < length && text[i + k] && lower(text[i + k]) == word[k])
+        while (k < length && text[i + k] && text[i + k] == word[k])
             ++k;
         if (k == length) {
             if (i == 0 || is_boundary(text[i - 1]))
@@ -69,10 +141,12 @@ internal s32 find_word(const char* text, const char* word)
     return first;
 }
 
-// Whether every word is in the text. `score` is the number of words that matched in the middle of
-// a word: lower ranks higher.
-internal b32 query_match(const SearchQuery* query, const char* text, u32* score)
+// Whether every word is in the text, ignoring case in the scripts that have it. `score` is the
+// number of words that matched in the middle of a word: lower ranks higher.
+internal b32 query_match(const SearchQuery* query, const char* original, u32* score)
 {
+    char text[256];
+    fold_text(original, text, sizeof(text));
     u32 middle = 0;
     for (u32 w = 0; w < query->count; ++w) {
         s32 at = find_word(text, query->words[w]);
@@ -86,19 +160,31 @@ internal b32 query_match(const SearchQuery* query, const char* text, u32* score)
     return 1;
 }
 
-// Appends `text` to `out`, after a space when there is something before it.
+// Appends `text` to `out`, after a space when there is something before it; whole characters only.
 internal void append_text(char* out, umm capacity, umm* used, const char* text, b32 cut_id)
 {
     if (!text || !text[0])
         return;
     if (*used && *used + 1 < capacity)
         out[(*used)++] = ' ';
-    for (; *text && *used + 1 < capacity; ++text) {
+    while (*text) {
         if (cut_id && text[0] == '#' && text[1] == '#')
             break;
-        out[(*used)++] = *text;
+        u32 length = nv_utf8_length((u8)*text);
+        if (*used + length + 1 > capacity)
+            break;
+        for (u32 i = 0; i < length && *text; ++i)
+            out[(*used)++] = *text++;
     }
     out[*used] = 0;
+}
+
+// The label's text without its "##id" part, cut at a whole character.
+internal void copy_label(char* out, umm capacity, const char* label)
+{
+    umm used = 0;
+    out[0] = 0;
+    append_text(out, capacity, &used, label, 1);
 }
 
 // Label, section and keywords as one candidate, with the Korean of the label and the section too,
@@ -110,10 +196,7 @@ internal void candidate_text(char* out, umm capacity, const char* label, const c
     char plain[96];
     plain[0] = 0;
     if (label) {
-        umm n = 0;
-        for (; label[n] && n + 1 < sizeof(plain) && !(label[n] == '#' && label[n + 1] == '#'); ++n)
-            plain[n] = label[n];
-        plain[n] = 0;
+        copy_label(plain, sizeof(plain), label);
     }
     append_text(out, capacity, &used, plain, 0);
     append_text(out, capacity, &used, strings_find_korean(plain), 0);
@@ -123,14 +206,6 @@ internal void candidate_text(char* out, umm capacity, const char* label, const c
     append_text(out, capacity, &used, keywords, 0);
 }
 
-// The label's text without its "##id" part.
-internal void copy_label(char* out, umm capacity, const char* label)
-{
-    umm n = 0;
-    for (; label[n] && n + 1 < capacity && !(label[n] == '#' && label[n + 1] == '#'); ++n)
-        out[n] = label[n];
-    out[n] = 0;
-}
 
 //
 // Marking the matched parts
@@ -141,8 +216,10 @@ void search_mark(App* app, const char* text, ImVec2_c origin, f32 height)
 {
     const SearchQuery* query = &app->search.query;
     ImDrawList* draw = igGetWindowDrawList();
+    char folded[256];
+    fold_text(text, folded, sizeof(folded)); // the same offsets as `text`
     for (u32 w = 0; w < query->count; ++w) {
-        s32 at = find_word(text, query->words[w]);
+        s32 at = find_word(folded, query->words[w]);
         if (at < 0)
             continue;
         u32 length = (u32)strlen(query->words[w]);
@@ -202,6 +279,7 @@ b32 search_match(App* app, const char* text)
 void search_set_query(App* app, SearchPanel panel, const char* text)
 {
     snprintf(app->search.queries[panel], SEARCH_QUERY_MAX, "%s", text);
+    nv_utf8_trim(app->search.queries[panel]);
 }
 
 void search_section(App* app, const char* heading)
@@ -210,6 +288,7 @@ void search_section(App* app, const char* heading)
     if (!s->collecting)
         flush_mark(app);
     snprintf(s->section, sizeof(s->section), "%s", heading ? heading : "");
+    nv_utf8_trim(s->section);
     s->section_pending = heading != NULL;
 }
 
@@ -222,7 +301,9 @@ internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
             setting->panel = (u8)s->panel;
             copy_label(setting->label, sizeof(setting->label), label);
             snprintf(setting->section, sizeof(setting->section), "%s", s->section);
+            nv_utf8_trim(setting->section);
             snprintf(setting->keywords, sizeof(setting->keywords), "%s", keywords ? keywords : "");
+            nv_utf8_trim(setting->keywords);
         }
         return 0;
     }
@@ -537,6 +618,8 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
         break;
     }
 
+    nv_utf8_trim(name);
+    nv_utf8_trim(right);
     ImDrawList* draw = igGetWindowDrawList();
     ImU32 dim = igGetColorU32_Col(ImGuiCol_TextDisabled, 1.0f);
     ImU32 text = igGetColorU32_Col(result->enabled || result->kind == PALETTE_MORE ? ImGuiCol_Text : ImGuiCol_TextDisabled, 1.0f);

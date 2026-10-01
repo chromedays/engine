@@ -82,3 +82,28 @@ static inline u32 nv_utf8_fit(const char* text, u32 limit)
         --length;
     return length;
 }
+
+// How many bytes the UTF-8 character that starts with `lead` has (1 for a byte that starts none).
+static inline u32 nv_utf8_length(u8 lead)
+{
+    return lead < 0x80 ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : (lead >> 3) == 0x1E ? 4 : 1;
+}
+
+// Drops a character cut off at the end of `text` (what snprintf leaves when a name did not fit), so
+// the string stays valid UTF-8.
+static inline void nv_utf8_trim(char* text)
+{
+    u32 length = 0;
+    while (text[length])
+        ++length;
+    u32 start = length;
+    while (start > 0 && ((u8)text[start - 1] & 0xC0u) == 0x80u)
+        --start;
+    if (start == 0) {
+        if (length) // nothing but continuation bytes
+            text[0] = 0;
+        return;
+    }
+    if (length - (start - 1) < nv_utf8_length((u8)text[start - 1]))
+        text[start - 1] = 0;
+}

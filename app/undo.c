@@ -89,6 +89,7 @@ internal void push_step(App* app, SaveScope scope, NvNodeId node, const u8* befo
         snprintf(step->label, sizeof(step->label), "Character %s", field);
     else
         snprintf(step->label, sizeof(step->label), "%s", field);
+    nv_utf8_trim(step->label); // a long Hangul name may have been cut
     ++undo->count;
     undo->done = undo->count;
 }
@@ -188,7 +189,9 @@ internal void undo_state(App* app, b32* can_undo, b32* can_redo, char* undo_labe
     *can_undo = on && undo->done > 0;
     *can_redo = on && undo->done < undo->count;
     snprintf(undo_label, capacity, "%s", *can_undo ? step_at(undo, undo->done - 1)->label : "");
+    nv_utf8_trim(undo_label);
     snprintf(redo_label, capacity, "%s", *can_redo ? step_at(undo, undo->done)->label : "");
+    nv_utf8_trim(redo_label);
 }
 
 void undo_button(App* app, s32 direction, b32 labels, ImVec2_c size)

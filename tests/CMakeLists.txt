@@ -18,3 +18,9 @@ add_test(NAME gpu_format_test COMMAND gpu_format_test)
 
 # The Korean UI strings: every wrapped English text has a row, and rows keep their printf conversions.
 add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs)
+
+# nv_utf8_fit and nv_utf8_trim: text cut to fit stays valid UTF-8.
+add_executable(utf8_test utf8_test.c)
+target_include_directories(utf8_test PRIVATE ${PROJECT_SOURCE_DIR}/engine/include)
+target_link_options(utf8_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME utf8_test COMMAND utf8_test)

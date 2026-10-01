@@ -138,6 +138,14 @@ As built, with the notes the build taught:
 - **Names.** `nv_utf8_fit` (`nv/base.h`) cuts at a character: `nv_scene_add_node` and a name read from a
   save keep whole syllables (10 fit in 32 bytes). ImGui's own text field already refuses a character
   that does not fit.
+- **UTF-8 everywhere text is cut or compared.** `nv_utf8_length`, `nv_utf8_fit` and `nv_utf8_trim`
+  (`nv/base.h`, tested by `tests/utf8_test.c`): a string copied into a fixed buffer with `snprintf`
+  (undo step names, palette rows, the search's labels, sections, keywords, candidates and query
+  words, the save viewer's strings, the translated widget labels) is trimmed so no character is cut
+  in half. The search folds case by character, not byte: ASCII, Latin-1 and Latin Extended-A, Greek and
+  Cyrillic (all keep the byte length, so a match's offsets are the same in the original text, which the
+  highlight uses), and treats the ideographic space (U+3000) as a word separator. Hangul has no case
+  and is compared as it is.
 - **Typing.** On the desktop the text agent takes focus when `WantTextInput` turns on, sits at the
   caret ImGui reports (`Platform_SetImeDataFn`) and, while composing, shows the syllable (dark text on a
   light box: Chromium paints its own highlight over a composition). The agent's keys: the ones the

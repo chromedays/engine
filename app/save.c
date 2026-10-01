@@ -823,8 +823,13 @@ internal void field_text(NvChunk chunk, TagKind kind, char* out, umm capacity)
             at += snprintf(out + at, capacity - (umm)at, "%g ", (f64)value);
         }
     }
-    if (kind == TAG_KIND_STRING)
-        at += snprintf(out + at, capacity - (umm)at, "\"%.*s\"", (int)(chunk.size < 64 ? chunk.size : 64), chunk.data);
+    if (kind == TAG_KIND_STRING) {
+        // At most 64 bytes, ending between characters.
+        u32 shown = chunk.size < 64 ? chunk.size : 64;
+        while (shown > 0 && shown < chunk.size && (chunk.data[shown] & 0xC0u) == 0x80u)
+            --shown;
+        at += snprintf(out + at, capacity - (umm)at, "\"%.*s\"", (int)shown, chunk.data);
+    }
     if (kind == TAG_KIND_UNKNOWN) {
         for (u32 i = 0; i < chunk.size && i < 24 && at < (int)capacity; ++i)
             at += snprintf(out + at, capacity - (umm)at, "%02x ", chunk.data[i]);

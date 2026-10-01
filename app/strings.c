@@ -323,9 +323,11 @@ const char* TL(const char* english)
         const Entry* entry = find(english, text_length);
         if (entry) {
             snprintf(out, TL_SIZE, "%s###%s", entry->korean, id);
+            nv_utf8_trim(out);
             return out;
         }
     }
     snprintf(out, TL_SIZE, "%.*s###%s", (int)text_length, shown, id);
+    nv_utf8_trim(out);
     return out;
 }
