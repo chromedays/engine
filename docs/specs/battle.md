@@ -23,7 +23,8 @@
 | 분대 단위 배치 | AI 상대 (적 배치는 스테이지 데이터에 고정) |
 | 유닛당 무기 여러 개, 고유 능력 | 시간 조작 (일시정지, 배속) |
 | 투사체 실제 시뮬레이션, 방어력, 범위 피해, 아군 피해 | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
-| 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | 저장, undo (스트레스 씬처럼) |
+| 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | 저장, undo, 한국어 UI |
+| 에디터와 따로인 실행 파일 `autobattler` | 게임 UI (지금은 ImGui 패널 하나) |
 
 ### 규칙
 
@@ -297,28 +298,34 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 코드 위치
 
+에디터 앱(`app/`)과 따로, 자기 실행 파일을 가진 `autobattler/` 폴더에 둔다. 엔진(`nv`)만 링크하고 `app/`의 코드는 쓰지 않는다.
+
 | 파일 | 내용 |
 |---|---|
-| `engine/include/nv/spatial.h`, `engine/src/spatial.c` | `NvSpatialGrid`: XZ 균일 격자. 점 목록에서 계수 정렬로 만들고, 원 질의와 선분 질의. 넣은 순서대로 돌려준다 |
-| `engine/include/nv/flow.h`, `engine/src/flow.c` | `NvFlowField`: 칸 격자 위의 다중 출발 다익스트라, 칸마다 다음 방향 |
-| `app/battle.h`, `app/battle.c` | 규칙과 틱. GPU, `App`, ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
-| `app/battle_defs.c` | 유닛 정의 표와 스테이지 하나(지형지물, 적 배치) |
-| `app/battle_view.c` | 전투 씬: 노드와 이펙트로 그리기, 배치 입력, Battle 탭 |
+| `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. `nv_setup_executable(autobattler)`이므로 설치 위치는 `<prefix>/autobattler/` |
+| `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 이펙트, 카메라, 프레임 루프(고정 틱 누산기) |
+| `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
+| `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(지형지물, 적 배치) |
+| `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
+| 공간 격자, 흐름장 | 열린 질문 2: `engine/`(`nv/spatial.h`, `nv/flow.h`) 또는 `autobattler/` |
 
-### 앱
+### 실행 파일
 
-- **씬:** View 탭 콤보의 세 번째 씬 "Battle"(`SCENE_BATTLE`). 처음 보일 때 만든다. 저장하지 않고 undo가 없다(스트레스
-  씬처럼). Play / Stop은 이 씬에서 쓰지 않는다. 전투는 Battle 탭의 Start로 시작한다.
+- **페이지:** CI가 설치하는 대로 Pages의 `release/autobattler/`, `debug/autobattler/`, 다른 브랜치는 `<branch>/autobattler/`.
+  에디터 앱과 따로 내려받는다. 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
+- **화면:** 캔버스 전체가 전장이고 ImGui 창 하나(Battle 패널)가 위에 뜬다. 에디터의 도크, 검색, 팔레트, 저장, undo,
+  선택, 콘솔 탭은 없다. 씬 해상도는 캔버스와 같게(`NvSceneOutput`의 `pixel_size` 1) 시작한다.
+- **카메라:** 플레이어 진영 뒤 위에서 비스듬히 보는 시점. `NvImgui.view`의 드래그로 팬, 휠과 핀치로 줌, 전장 밖으로 나가지
+  않는다.
 - **그리기:**
   - 유닛은 팀 색 큐브 메시 노드로, 크기는 반지름과 높이. 틱 사이를 보간한다.
   - 지형지물은 회색 상자, 배치 격자와 구역은 디버그 라인, 체력 바는 유닛 위의 디버그 라인이다.
   - 투사체는 `nv_vfx_trail`, 폭발은 `nv_vfx_burst`와 `nv_vfx_decal`, 실드는 디버그 라인 원으로 그린다.
-- **배치 입력:** Battle 탭에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
+- **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다. 놓인 분대를 탭하면 지운다. 데스크톱과 폰 모두 같다.
-- **Battle 탭:** 단계, 남은 공급, 유닛 종류 버튼(이름과 비용), Start, Retry, Reset, 남은 시간, 팀별 살아 있는 유닛, 결과.
-  검색 패널 규칙(`search_row`, `search_section`)과 `T()`/`TL()` 문자열, 한국어 행을 따른다.
-- **디버그 내보내기:** `_app_debug_battle(n)`(단계, 틱, 결과, 유닛 수, 해시), `_app_debug_battle_deploy(def, x, row)`,
-  `_app_debug_battle_start()`, `_app_debug_battle_run(ticks)`.
+- **Battle 패널:** 단계, 남은 공급, 유닛 종류 버튼(이름과 비용), Start, Retry, Reset, 남은 시간, 팀별 살아 있는 유닛, 결과.
+- **디버그 내보내기:** `_battle_debug(n)`(단계, 틱, 결과, 유닛 수, 해시), `_battle_debug_deploy(def, x, row)`,
+  `_battle_debug_start()`, `_battle_debug_run(ticks)`.
 
 ### 서드파티 후보
 
@@ -334,7 +341,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 테스트
 
-`tests/battle_test.c`(ctest, Node)가 `app/battle.c`, `spatial.c`, `flow.c`를 빌드한다:
+`tests/battle_test.c`(ctest, Node)가 `autobattler/battle.c`, `autobattler/battle_defs.c`와 공간 격자, 흐름장 소스를 빌드한다:
 
 - 같은 배치와 시드로 두 번 돌리면 같은 해시.
 - 공간 격자: 질의가 무차별 검사와 같은 유닛을 같은 순서로 돌려준다.
@@ -343,24 +350,29 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   유닛을 맞히지 않는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 실드가 적 투사체를 막고 아군 것은
   통과시킨다; 박격포의 최소 사거리; 60초에 끝나고 남은 가치로 판정한다.
 
-Playwright(Release, Debug, 데스크톱과 폰 크기): Battle 씬으로 바꾸고, 배치를 탭으로 놓고 지우고, Start에서 결과까지 가고,
+Playwright(Release, Debug, 데스크톱과 폰 크기): `autobattler/` 페이지를 열고, 배치를 탭으로 놓고 지우고, Start에서 결과까지 가고,
 assert와 WebGPU 오류가 없는지 본다.
 
 ### 단계
 
 1. **시뮬레이션:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. 화면 없음.
-2. **화면:** Battle 씬, 그리기, 이펙트, Battle 탭, 배치 입력, 문자열.
-3. **확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`와 `autobattler.md` 갱신.
+2. **실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널, 배치 입력.
+3. **확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
 
 ### 열린 질문
 
 1. **정의 데이터 형식:** 이번 단계는 C 표로 하고 파일 형식은 밸런스 작업 전에 따로 정할까, 아니면 지금 정할까?
-2. **공간 격자와 흐름장의 위치:** `autobattler.md`대로 엔진인가, 아니면 앱에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
+2. **공간 격자와 흐름장의 위치:** `autobattler.md`대로 엔진(`nv/spatial.h`, `nv/flow.h`)인가, 아니면 `autobattler/`에서 먼저
+   쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. **시간 제한 판정:** 남은 가치 비교가 맞는가?
 4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가?
 5. **대형 유닛의 통로:** 흐름장은 칸 하나 너비를 기준으로 하므로 Fortress가 1칸 틈에 낄 수 있다. 이번 단계는 스테이지에
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. **수치:** 위 표의 값은 출발점이다. 바꾸고 싶은 것이 있는가?
+7. **UI 문자열:** `T()`와 한국어 표는 `app/`의 것이다. 프로토타입은 영어만 쓸까, 아니면 문자열 표를 엔진으로 옮겨 함께
+   쓸까?
+8. **에셋:** 프로토타입에 필요한 것은 UI 폰트뿐이다. `assets/` 전체를 함께 내려받을까, 아니면 `assets/fonts/`만 넣을까
+   (`nv_setup_executable`의 `ASSETS`는 폴더 하나를 받는다)?
 
 ## English
 
@@ -382,7 +394,8 @@ The point is to settle the rules and the game object structure before finding ou
 | Deployment by squad | An AI opponent (the enemy deployment is fixed in the stage data) |
 | Several weapons per unit, special abilities | Time controls (pause, speed-up) |
 | Simulated projectiles, armor, area damage, friendly fire | Mass rendering and animation (one mesh node each) |
-| One round, ended by a wipe-out or a 60-second time limit | Saving and undo (as in the stress scene) |
+| One round, ended by a wipe-out or a 60-second time limit | Saving, undo, a Korean UI |
+| An executable of its own, `autobattler`, apart from the editor | A game UI (one ImGui panel for now) |
 
 ### Rules
 
@@ -667,29 +680,37 @@ module, so no fixed-point math is needed. Finished battles are compared by a has
 
 ### Where the code goes
 
+In a folder of its own, `autobattler/`, with its own executable, apart from the editor app (`app/`). It links only the engine
+(`nv`) and uses no code from `app/`.
+
 | File | Contents |
 |---|---|
-| `engine/include/nv/spatial.h`, `engine/src/spatial.c` | `NvSpatialGrid`: a uniform grid over XZ, built from a point list by counting sort, with circle and segment queries. Results come back in insertion order |
-| `engine/include/nv/flow.h`, `engine/src/flow.c` | `NvFlowField`: multi-source Dijkstra over a cell grid, a next direction per cell |
-| `app/battle.h`, `app/battle.c` | The rules and the tick. No GPU, `App` or ImGui, so ctest can build it |
-| `app/battle_defs.c` | The unit definition table and one stage (props, enemy deployment) |
-| `app/battle_view.c` | The battle scene: drawing with nodes and effects, deployment input, the Battle tab |
+| `autobattler/CMakeLists.txt` | The `autobattler` executable. Set up with `nv_setup_executable(autobattler)`, so it installs into `<prefix>/autobattler/` |
+| `autobattler/main.c` | Window, GPU, renderer, ImGui, effects, camera, the frame loop (a fixed-tick accumulator) |
+| `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
+| `autobattler/battle_defs.c` | The unit definition table and one stage (props, enemy deployment) |
+| `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
+| Spatial grid, flow field | Open question 2: `engine/` (`nv/spatial.h`, `nv/flow.h`) or `autobattler/` |
 
-### App
+### Executable
 
-- **Scene:** a third scene, "Battle" (`SCENE_BATTLE`), in the View tab's combo, made the first time it is shown. Not saved, no
-  undo (as in the stress scene). Play / Stop does not apply to it; a battle starts with Start in the Battle tab.
+- **Page:** as CI installs it, at `release/autobattler/` and `debug/autobattler/` on Pages, and `<branch>/autobattler/` for
+  other branches. Downloaded apart from the editor app. The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
+- **Screen:** the whole canvas is the battlefield, with one ImGui window (the Battle panel) over it. None of the editor's docks,
+  search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the canvas (`pixel_size` 1 in
+  `NvSceneOutput`).
+- **Camera:** an angled view from above and behind the player's side. Pan by dragging in `NvImgui.view`, zoom with the wheel
+  and pinch, kept over the field.
 - **Drawing:**
   - Units are cube mesh nodes in team colors, sized by radius and height, interpolated between ticks.
   - Props are gray boxes; the deployment grid and zones are debug lines; health bars are debug lines above units.
   - Projectiles are `nv_vfx_trail`, explosions `nv_vfx_burst` and `nv_vfx_decal`, shields a debug-line circle.
-- **Deployment input:** pick a unit type in the Battle tab, then tap a cell in the viewport to place it. Cells that can take it
+- **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
   preview green, others red. Tapping a placed squad removes it. The same on desktop and phone.
-- **Battle tab:** the phase, remaining supply, a button per unit type (name and cost), Start, Retry, Reset, time left, living
-  units per team, the result. It follows the searchable panel rules (`search_row`, `search_section`) and `T()`/`TL()` strings
-  with Korean rows.
-- **Debug exports:** `_app_debug_battle(n)` (phase, tick, outcome, unit counts, hash), `_app_debug_battle_deploy(def, x, row)`,
-  `_app_debug_battle_start()`, `_app_debug_battle_run(ticks)`.
+- **Battle panel:** the phase, remaining supply, a button per unit type (name and cost), Start, Retry, Reset, time left, living
+  units per team, the result.
+- **Debug exports:** `_battle_debug(n)` (phase, tick, outcome, unit counts, hash), `_battle_debug_deploy(def, x, row)`,
+  `_battle_debug_start()`, `_battle_debug_run(ticks)`.
 
 ### Third-party candidates
 
@@ -705,7 +726,7 @@ module, so no fixed-point math is needed. Finished battles are compared by a has
 
 ### Tests
 
-`tests/battle_test.c` (ctest, Node) builds `app/battle.c`, `spatial.c` and `flow.c`:
+`tests/battle_test.c` (ctest, Node) builds `autobattler/battle.c`, `autobattler/battle_defs.c` and the spatial grid and flow field sources:
 
 - The same deployment and seed run twice give the same hash.
 - Spatial grid: queries return the same units, in the same order, as a brute-force check.
@@ -714,22 +735,26 @@ module, so no fixed-point math is needed. Finished battles are compared by a has
   does not hit air units; a Wasp flies over props; a Ranger jumps a low wall; a shield stops enemy projectiles and lets
   friendly ones through; the mortar's minimum range; the battle ends at 60 seconds and is judged by remaining value.
 
-Playwright (Release and Debug, desktop and phone sizes): switch to the Battle scene, place and remove squads by tapping, go
+Playwright (Release and Debug, desktop and phone sizes): open the `autobattler/` page, place and remove squads by tapping, go
 from Start to a result, and check for no asserts and no WebGPU errors.
 
 ### Phases
 
 1. **Simulation:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. No view.
-2. **View:** the Battle scene, drawing, effects, the Battle tab, deployment input, strings.
-3. **Checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` and `autobattler.md`.
+2. **Executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel, deployment input.
+3. **Checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and `autobattler.md`.
 
 ### Open questions
 
 1. **Definition data format:** C tables for this step and a file format decided separately before balancing, or decide now?
-2. **Where the spatial grid and flow field go:** the engine, as `autobattler.md` says, or the app first, moving them when a
-   second use appears?
+2. **Where the spatial grid and flow field go:** the engine (`nv/spatial.h`, `nv/flow.h`), as `autobattler.md` says, or
+   `autobattler/` first, moving them when a second use appears?
 3. **Time-limit judgment:** is comparing remaining value right?
 4. **Squads:** units act on their own after the start (proposed), or keep a formation?
 5. **Passages for large units:** the flow field assumes a one-cell width, so a Fortress can get stuck in a one-cell gap. This
    step keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
 6. **Numbers:** the table values are a starting point. Anything to change?
+7. **UI strings:** `T()` and the Korean table belong to `app/`. Does the prototype use English only, or does the string
+   table move to the engine to be shared?
+8. **Assets:** the prototype needs only the UI font. Ship the whole `assets/` directory, or only `assets/fonts/`
+   (`ASSETS` in `nv_setup_executable` takes one directory)?
