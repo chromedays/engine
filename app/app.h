@@ -6,6 +6,7 @@
 // benchmark, ui.c the panel.
 
 #include <engine/anim.h>
+#include <engine/camera.h>
 #include <engine/chunk.h>
 #include <engine/gltf.h>
 #include <engine/gpu.h>
@@ -17,7 +18,10 @@
 #include <engine/vfx.h>
 #include <engine/window.h>
 
-#include "strings.h"
+#include <engine/strings.h>
+
+// The Korean table of this app (app/strings.c): hands it to the engine's T() and TL(). Call once, before the first frame.
+void app_strings_init(void);
 
 // The commit's hash and subject line (nv_version.h, written by cmake/version.cmake on every
 // build) and the build type (set by app/CMakeLists.txt); shown on the build label, in the View tab
@@ -48,30 +52,6 @@ typedef enum UiMode {
     UI_DESKTOP,
     UI_PHONE,
 } UiMode;
-
-// How the scene is rendered and shown in the viewport (docs/specs/resolution.md): at a whole
-// fraction of the viewport's pixels filling it, or at a fixed size centered in it with black bars.
-typedef enum ResolutionMode {
-    RESOLUTION_SCALE,
-    RESOLUTION_FIXED,
-} ResolutionMode;
-
-// How a fixed size is fitted to the viewport (docs/specs/resolution.md).
-typedef enum FixedFit {
-    FIT_WHOLE,    // the largest whole multiple that fits, centered, black bars around
-    FIT_VIEWPORT, // the largest scale that fits keeping the aspect ratio (pixels of uneven width)
-    FIT_STRETCH,  // stretched to fill the viewport, aspect ratio and all
-} FixedFit;
-
-typedef struct Resolution {
-    ResolutionMode mode;
-    FixedFit fixed_fit;
-    u32 divisor;                    // SCALE: 1, 2, 3 or 4
-    u32 fixed_width, fixed_height;  // FIXED: RESOLUTION_MIN..RESOLUTION_MAX each
-} Resolution;
-
-#define RESOLUTION_MIN 16
-#define RESOLUTION_MAX 4096
 
 // Where the editor's regions are, in framebuffer pixels (app_layout, every frame). A region the
 // shown UI does not have is empty. The phone's tabbed panel is `panel`.
@@ -137,11 +117,14 @@ typedef enum SceneKind {
     SCENE_COUNT,
 } SceneKind;
 
-// The orbit camera's limits.
+// The orbit camera's limits, as the fields of an NvOrbitCamera: `.orbit = {..., ORBIT_LIMITS}`.
 #define CAMERA_MIN_PITCH (-10.0f * NV_PI / 180.0f)
 #define CAMERA_MAX_PITCH (80.0f * NV_PI / 180.0f)
 #define CAMERA_MIN_DISTANCE 1.0f
 #define CAMERA_MAX_DISTANCE 100.0f
+#define ORBIT_LIMITS                                                                        \
+    .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH, .min_distance = CAMERA_MIN_DISTANCE, \
+    .max_distance = CAMERA_MAX_DISTANCE
 
 // The autosave (docs/specs/save.md).
 #define SAVE_MAGIC NV_TAG('N', 'V', 'S', 'V')
@@ -296,16 +279,11 @@ typedef struct SceneView {
     NvNodeId others[SELECTION_MAX - 1];
     u32 other_count;
     NvNodeId range_anchor; // where a Shift+click range in the Scene tab starts
-    f32 camera_yaw;      // radians
-    f32 camera_pitch;    // radians, looking down
-    f32 camera_distance; // meters
-    NvVec3 pan;          // added to the orbit point by panning; cleared when the selection changes
+    NvOrbitCamera orbit; // `orbit.target` is where the camera looked last frame; panned directly while not following
+    NvVec3 pan;          // added to the target by panning; cleared when the selection changes
     NvNodeId panned_for; // the selection `pan` belongs to
-    bool follow_selection; // orbit the selection; otherwise stay at orbit_point
-    NvVec3 orbit_point;    // where the camera looked last frame; panned directly while not following
-    // The view the scene starts with, for Home (app_set_home).
-    f32 home_yaw, home_pitch, home_distance;
-    NvVec3 home_orbit;
+    bool follow_selection; // orbit the selection; otherwise stay at orbit.target
+    NvOrbitCamera home;    // the view the scene starts with, for Home (app_set_home)
 } SceneView;
 
 // CPU time of the frame's stages, in milliseconds.
@@ -638,7 +616,7 @@ typedef struct App {
     // Layout (ui.c, ui_desktop.c, ui_phone.c)
     UiMode ui_mode;
     Layout layout;
-    Resolution resolution;
+    NvResolution resolution;
     Docks docks;
     b32 open_view;    // switch to the View tab on the next frame
     f32 play_box[4];  // the Play / Stop button, CSS pixels (x0, y0, x1, y1); zero width = hidden

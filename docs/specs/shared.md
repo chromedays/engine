@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 합의됨, 구현 전 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 선행 작업인 엔진 구조 평탄화(`engine/include/nv/`와
+상태: 구현됨, 1–7단계 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 만든 것이 스펙과 다른 곳은 "구현 결과"에 있다. 선행 작업인 엔진 구조 평탄화(`engine/include/nv/`와
 `engine/src/`를 `engine/` 하나로)는 끝났다(`c3e0de4`).
 
 ### 목표
@@ -84,9 +84,17 @@ const char* nv_strings_label(const char* english);
 #### 2. 메시 기본형 (`engine/mesh.h`)
 
 ```c
-// Appends to `data`, whose arrays hold `vertex_capacity` and `index_capacity`; asserts on overflow.
-void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, NvVec3 center, NvVec3 half);
-void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
+// A mesh being built in arrays the caller owns; the primitives append to it and assert that they fit.
+typedef struct NvMeshBuilder {
+    NvVertex* vertices;
+    u32 vertex_count, vertex_capacity;
+    u32* indices;
+    u32 index_count, index_capacity;
+} NvMeshBuilder;
+NvMeshData nv_mesh_builder_data(const NvMeshBuilder* mesh); // what nv_renderer_add_mesh takes
+
+void nv_mesh_append_box(NvMeshBuilder* mesh, NvVec3 center, NvVec3 half);
+void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
 - `engine/mesh.h`가 `NvVertex`, `NvSkinnedVertex`, `NvMeshData`를 `engine/renderer.h`에서 넘겨받고, `renderer.h`는
@@ -130,6 +138,9 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 
 // A ray through a tap given in CSS pixels; false when the tap is outside the image (on a black bar).
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+
+// The view-projection the scene pass draws with (reverse Z): `renderer.c` calls it, so it is declared too.
+NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
 ```
 
 - `engine/renderer_cpu.c`: GPU 없는 렌더러 코드(`engine/vfx_cpu.c`와 같은 방식). `nv_renderer_scene_output`과
@@ -186,7 +197,8 @@ void nv_window_download_text(char* out, umm capacity);
 
 ```c
 // engine/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
-#define NV_FNV1A_SEED 2166136261u
+#define NV_FNV1A_SEED  2166136261u
+#define NV_FNV1A_PRIME 16777619u
 static inline u32 nv_fnv1a(u32 hash, const void* bytes, umm size);
 
 // engine/math.h
@@ -196,12 +208,12 @@ static inline u32 nv_clamp_u32(u32 value, u32 lo, u32 hi);
 // engine/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
 // generator (the step uses increment | 1); nv_random_seed picks a sequence.
 typedef struct NvRandom { u64 state, increment; } NvRandom;
-void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
-u32 nv_random_u32(NvRandom* random);
-f32 nv_random_f32(NvRandom* random); // [0, 1)
+static inline void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
+static inline u32 nv_random_u32(NvRandom* random);
+static inline f32 nv_random_f32(NvRandom* random); // [0, 1)
 
 // engine/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
-f32 nv_window_pixel_ratio(const NvWindow* window);
+static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
 - 앱의 `clampf`, `clamp`, `clamp_u32`, 세 FNV-1a 루프, 일곱 `pixel_ratio` 식이 이것을 쓴다. `save.c`의 장면 배치 해시는
@@ -239,7 +251,7 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 
 ### 단계
 
-각 단계는 커밋 하나이고, 끝마다 앱이 전과 같은지 위 검사로 확인한다.
+각 단계 끝마다 앱이 전과 같은지 위 검사로 확인했다. 2–6단계는 서로 같은 파일을 바꿔서 커밋 하나에 담았다.
 
 1. **도우미:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
 2. **메시:** `engine/mesh.h`, `mesh_test.c`.
@@ -249,6 +261,28 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 6. **문자열:** `engine/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
 7. **문서:** `AGENTS.md`(`engine/` 목록의 새 모듈 `mesh.c/.h`, `camera.c/.h`, `strings.c/.h`, `renderer_cpu.c`; UI 문자열 줄), `CODING_STANDARD.md`(`T`/`TL` 예외), `korean.md`,
    `resolution.md`, `fonts.md`의 이름과 경로. `battle.md`는 이 스펙을 선행 작업으로 가리킨다.
+
+### 구현 결과
+
+스펙과 다르게 만든 곳:
+
+- **도우미:** `nv_random_*`와 `nv_window_pixel_ratio`는 `static inline`이다(`engine/math.c`가 없다). `base.h`에 `NV_FNV1A_PRIME`이
+  더 있다: `save.c`의 장면 배치 해시는 깊이를 바이트가 아니라 한 단어로 섞으므로(`(hash ^ depth) * prime`), 바이트 단위
+  `nv_fnv1a`로는 깊이 256부터 다른 값이 나온다. 이름만 `nv_fnv1a`로 돌리고 깊이 줄은 그대로 두었다. `engine/imgui.c`의 두 곳도
+  `nv_window_pixel_ratio`를 쓴다. `engine/gpu.c`의 것은 대체 값이 달라서 그대로다.
+- **메시:** `NvMeshData`는 const 포인터를 가지므로 쓸 수 없다. 그래서 `NvMeshBuilder`(배열, 개수, 용량)에 덧붙이고
+  `nv_mesh_builder_data`로 `NvMeshData`를 얻는다. 용량 초과는 assert(trap)라 같은 프로세스에서 검사하지 못한다.
+- **해상도:** `nv_renderer_camera_view_proj`(그리기가 쓰는 reverse Z 행렬)도 `renderer_cpu.c`로 옮겨 선언했다. `renderer.c`가
+  부르기 때문이다. `nv_renderer_camera_matrices`와 `nv_renderer_view_ray`도 같이 옮겼다.
+- **카메라:** `SceneView.home`은 `NvOrbitCamera` 통째의 복사다. 제한은 필드이고 0이 아니어야 하므로, 시야를 만드는 두 곳이
+  `ORBIT_LIMITS`를 넣는다.
+- **문자열:** 앱은 `app_strings_init()`으로 표를 넘긴다. 해시 표는 표를 정할 때 바로 만든다(전에는 처음 쓸 때). 해시 표 크기는
+  8192칸(`u16`, 16 KB)이다.
+- **브라우저 확인:** 리팩터링 전 빌드(`3f6f8c7`)와 단계마다의 빌드를 같은 Playwright 절차로 돌려 비교했다. 절차: 첫 방문, 클릭으로
+  고르기(땅, 큐브, 캐릭터), 궤도, 줌, 팬, 고정 해상도와 그 띠 탭, Scale 2, 한국어, 폰 UI, 저장 파일 읽기, 전 빌드가 쓴 저장 불러오기.
+  JSON(CRC, 해상도, 시점, 선택, 언어, 저장 파일의 SHA-256)은 정확히 같고, 스크린샷은 독(dock)이 거의 같고(0.1% 이하) 뷰포트는
+  15% 이하로 같았다. 뷰포트에는 Edit 모드에서도 시간으로 움직이는 캐릭터의 애니메이션과 그림자가 있어서 픽셀 단위로 같을 수
+  없다. 스트레스 씬과 이펙트는 Debug에서 시도해 assert 없이 돌았다.
 
 ### 해결된 질문
 
@@ -264,7 +298,7 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 
 ## English
 
-Status: agreed, not built yet (2026-10-02). Changes to this spec are agreed first. The work it needs first, flattening the
+Status: built, all seven phases (2026-10-02). Changes to this spec are agreed first. Where the build differs from the spec, see "As built". The work it needs first, flattening the
 engine (`engine/include/nv/` and `engine/src/` into one `engine/`), is done (`c3e0de4`).
 
 ### Goal
@@ -345,9 +379,17 @@ const char* nv_strings_label(const char* english);
 #### 2. Mesh primitives (`engine/mesh.h`)
 
 ```c
-// Appends to `data`, whose arrays hold `vertex_capacity` and `index_capacity`; asserts on overflow.
-void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, NvVec3 center, NvVec3 half);
-void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
+// A mesh being built in arrays the caller owns; the primitives append to it and assert that they fit.
+typedef struct NvMeshBuilder {
+    NvVertex* vertices;
+    u32 vertex_count, vertex_capacity;
+    u32* indices;
+    u32 index_count, index_capacity;
+} NvMeshBuilder;
+NvMeshData nv_mesh_builder_data(const NvMeshBuilder* mesh); // what nv_renderer_add_mesh takes
+
+void nv_mesh_append_box(NvMeshBuilder* mesh, NvVec3 center, NvVec3 half);
+void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
 - `engine/mesh.h` takes `NvVertex`, `NvSkinnedVertex` and `NvMeshData` over from `engine/renderer.h`, which includes
@@ -393,6 +435,9 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 
 // A ray through a tap given in CSS pixels; false when the tap is outside the image (on a black bar).
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+
+// The view-projection the scene pass draws with (reverse Z): `renderer.c` calls it, so it is declared too.
+NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
 ```
 
 - `engine/renderer_cpu.c`: the renderer's GPU-free code (the way `engine/vfx_cpu.c` works). `nv_renderer_scene_output`
@@ -452,7 +497,8 @@ void nv_window_download_text(char* out, umm capacity);
 
 ```c
 // engine/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
-#define NV_FNV1A_SEED 2166136261u
+#define NV_FNV1A_SEED  2166136261u
+#define NV_FNV1A_PRIME 16777619u
 static inline u32 nv_fnv1a(u32 hash, const void* bytes, umm size);
 
 // engine/math.h
@@ -462,12 +508,12 @@ static inline u32 nv_clamp_u32(u32 value, u32 lo, u32 hi);
 // engine/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
 // generator (the step uses increment | 1); nv_random_seed picks a sequence.
 typedef struct NvRandom { u64 state, increment; } NvRandom;
-void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
-u32 nv_random_u32(NvRandom* random);
-f32 nv_random_f32(NvRandom* random); // [0, 1)
+static inline void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
+static inline u32 nv_random_u32(NvRandom* random);
+static inline f32 nv_random_f32(NvRandom* random); // [0, 1)
 
 // engine/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
-f32 nv_window_pixel_ratio(const NvWindow* window);
+static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
 - The app's `clampf`, `clamp`, `clamp_u32`, the three FNV-1a loops and the seven `pixel_ratio` expressions use these. The
@@ -508,7 +554,7 @@ run the same steps and are compared:
 
 ### Phases
 
-Each phase is one commit, and each ends by checking with the steps above that the app is as before.
+Each phase ended by checking with the steps above that the app is as before. Phases 2 to 6 change the same files, so they share one commit.
 
 1. **Helpers:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
 2. **Meshes:** `engine/mesh.h`, `mesh_test.c`.
@@ -520,6 +566,31 @@ Each phase is one commit, and each ends by checking with the steps above that th
    `renderer_cpu.c`; the UI strings line), `CODING_STANDARD.md` (the `T`/`TL`
    exception), and the names and paths in `korean.md`, `resolution.md` and `fonts.md`. `battle.md` points to this spec as
    the work that comes first.
+
+### As built
+
+Where the build differs from the spec:
+
+- **Helpers:** `nv_random_*` and `nv_window_pixel_ratio` are `static inline` (there is no `engine/math.c`). `base.h` has one more,
+  `NV_FNV1A_PRIME`: the scene layout hash in `save.c` mixes the depth in as a word, not a byte (`(hash ^ depth) * prime`), so a
+  byte-wise `nv_fnv1a` would give another value from depth 256 on. Only the name loop became `nv_fnv1a`, and the depth line
+  stayed. The two places in `engine/imgui.c` use `nv_window_pixel_ratio` too; the one in `engine/gpu.c` has another fallback and
+  stays.
+- **Meshes:** `NvMeshData` holds const pointers, so it cannot be written to. The primitives append to an `NvMeshBuilder`
+  (arrays, counts, capacities) instead, and `nv_mesh_builder_data` gives the `NvMeshData`. Running out of room is an assert (a
+  trap), which cannot be tested in the same process.
+- **Resolution:** `nv_renderer_camera_view_proj` (the reverse-Z matrix drawing uses) moved to `renderer_cpu.c` and is declared
+  too, since `renderer.c` calls it. `nv_renderer_camera_matrices` and `nv_renderer_view_ray` moved with it.
+- **Camera:** `SceneView.home` is a copy of a whole `NvOrbitCamera`. The limits are fields and must not be zero, so the two
+  places that make a view put in `ORBIT_LIMITS`.
+- **Strings:** the app hands its table over with `app_strings_init()`. The hash table is built when the table is set (it was on
+  first use), and has 8192 slots (`u16`, 16 KB).
+- **Browser checks:** the build from before the refactoring (`3f6f8c7`) and the build of each phase ran the same Playwright steps
+  and were compared. The steps: a first visit, picking by click (the ground, a cube, the character), orbit, zoom, pan, a fixed
+  resolution and a tap on its bar, Scale 2, Korean, the phone UI, reading the save file, and loading a save the old build wrote.
+  The JSON (CRC, resolution, view, selection, language, the save file's SHA-256) is exactly the same. In screenshots the docks match
+  (within 0.1%) and the viewport within 15%: it has the character's animation and shadow, which move with time even in Edit mode,
+  so it cannot be the same pixel for pixel. The stress scene and the effects ran in Debug without an assert.
 
 ### Resolved questions
 

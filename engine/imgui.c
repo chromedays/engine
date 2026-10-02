@@ -1,4 +1,5 @@
 #include "engine/imgui.h"
+#include "engine/log.h"
 #include "engine/math.h"
 #include "engine/window.h"
 
@@ -7,6 +8,7 @@
 
 #include <float.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 // NOTE: imgui.h spells this as a macro that cimgui does not carry over.
@@ -1170,6 +1172,72 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, void* fallback, u32 
     io->FontDefault = font;
     igGetStyle()->FontSizeBase = pixel_size;
     return true;
+}
+
+#define UI_FONT_FILE "/assets/fonts/Inter-Regular.ttf"
+#define UI_FONT_HANGUL_FILE "/assets/fonts/Hangul-Subset.ttf"
+#define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
+
+// The whole file in the arena; NULL (and a warning) if it cannot be read.
+internal void* read_font_file(NvArena* arena, const char* path, u32* out_size)
+{
+    FILE* file = fopen(path, "rb");
+    if (!file) {
+        nv_log(NV_LOG_WARNING, "imgui", "font %s is missing", path);
+        return NULL;
+    }
+    fseek(file, 0, SEEK_END);
+    long size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    void* bytes = size > 0 ? nv_arena_push(arena, (umm)size, 16) : NULL;
+    b32 ok = bytes && fread(bytes, 1, (umm)size, file) == (umm)size;
+    fclose(file);
+    if (!ok) {
+        nv_log(NV_LOG_WARNING, "imgui", "font %s could not be read", path);
+        return NULL;
+    }
+    *out_size = (u32)size;
+    return bytes;
+}
+
+b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
+{
+    u32 size = 0, hangul_size = 0;
+    void* font = read_font_file(arena, UI_FONT_FILE, &size);
+    void* hangul = read_font_file(arena, UI_FONT_HANGUL_FILE, &hangul_size);
+    if (!font || !nv_imgui_set_font(imgui, font, size, hangul, hangul_size, UI_FONT_SIZE)) {
+        nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
+        return 0;
+    }
+    return 1;
+}
+
+void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
+{
+    umm length = strlen(text);
+    if (length >= capacity - 4)
+        length = capacity - 5;
+    memcpy(out, text, length);
+    out[length] = 0;
+    if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
+        return;
+    umm lo = 0, hi = length; // the longest prefix that fits is in [lo, hi)
+    while (lo + 1 < hi) {
+        umm mid = (lo + hi) / 2;
+        while (mid > lo && ((u8)text[mid] & 0xC0) == 0x80)
+            --mid; // the start of a character
+        if (mid == lo) {
+            lo = hi - 1; // no character start between: stop
+            break;
+        }
+        char candidate[512];
+        snprintf(candidate, sizeof(candidate), "%.*s...", (int)mid, text);
+        if (igCalcTextSize(candidate, NULL, false, -1.0f).x <= room)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    snprintf(out, capacity, "%.*s...", (int)lo, text);
 }
 
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)

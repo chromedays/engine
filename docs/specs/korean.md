@@ -5,6 +5,10 @@
 
 ## 한국어
 
+참고 (2026-10-02, `shared.md`): `T`, `TL`, 언어와 조회는 엔진으로 옮겨졌다(`engine/strings.h`, `engine/strings.c`; 이름은 `nv_strings_*`,
+`NvLanguage`, `NV_LANGUAGE_*`). 표는 실행 파일마다 남는다(앱의 것은 `app/strings.c`, `app_strings_init`이 엔진에 넘긴다). 아래의
+`app/strings.h`, `strings_*`, `Language`, `LANG_*`는 옛 이름이다. 한글 글꼴은 `nv_imgui_load_ui_font`가 읽는다.
+
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
@@ -175,6 +179,11 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
   한국어와 영어로 함께 쓴다.
 
 ## English
+
+Note (2026-10-02, `shared.md`): `T`, `TL`, the language and the lookup moved to the engine (`engine/strings.h`,
+`engine/strings.c`; the names are `nv_strings_*`, `NvLanguage`, `NV_LANGUAGE_*`). Each executable keeps its own table (the app's is
+`app/strings.c`, which `app_strings_init` hands to the engine). `app/strings.h`, `strings_*`, `Language` and `LANG_*` below are the
+old names. The Hangul font is read by `nv_imgui_load_ui_font`.
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 

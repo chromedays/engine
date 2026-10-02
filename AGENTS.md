@@ -24,7 +24,10 @@ engine/                    each module's header and source side by side, include
                            C++ file), chunk.c/.h (tagged binary files), storage.c/.h (files kept in IndexedDB),
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
-                           GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h)
+                           GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
+                           mesh.c/.h (vertex types, box and plane primitives), camera.c/.h (orbit camera math),
+                           strings.c/.h (T, TL and the language; each executable brings its own table),
+                           renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
@@ -76,7 +79,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
   in `engine/imgui.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Inter
-  Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`) with a Hangul fallback, not
+  Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`) with a Hangul fallback, not
   ImGui's built-in one.
 - The app has two editor UIs, chosen once at start from the primary pointer (`App.ui_mode`; touch
   gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `app_layout` fills
@@ -95,8 +98,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `_app_debug_ui_mode`, `_app_debug_dock`, `_app_debug_view` and `_app_debug_playing` for tests.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
-  (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
-  CDP `Input.dispatchTouchEvent` for multi-touch.
+  (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
+  `SceneView.orbit`, with the limits `ORBIT_LIMITS` set where a view is made). Playwright drives it with mouse drags,
+  the wheel and CDP `Input.dispatchTouchEvent` for multi-touch.
 - The transform gizmo is ImGuizmo through cimguizmo (`#include <cimguizmo.h>`, `ImGuizmo_*`).
   A press on its handle reaches ImGui through `NvImgui.view_grab`: a left press or one-finger touch
   in the viewport waits two frames before the hook decides. Tests must hold the press longer than
@@ -156,7 +160,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `_app_debug_palette_query(k)` for tests.
 - UI text is written in English in the code and goes through `T("text")` (a printf format keeps
   its conversions) or `TL("label")` (a widget label: it keeps its ImGui id in both languages),
-  from `app/strings.h`; each string needs a Korean row in `app/strings.c` (`docs/specs/korean.md`).
+  from `engine/strings.h`; each executable keeps its own table of Korean rows (the app's is `app/strings.c`, handed to
+  the engine by `app_strings_init`) and each string needs a row there (`docs/specs/korean.md`).
   `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
   conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
   rows, node, clip and texture names and the benchmark's copied table stay English. Hangul that is not
@@ -178,10 +183,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
   viewport's width. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
-  `NV_GIT_SUBJECT`) on every build, through the `app_version` target, so they are never those of
-  an older configure. Beside the build it shows what the page downloaded (`App.download_text`, from
-  the Resource Timing entries of `app.wasm`, `app.data` and `app.js`: "3.2 MB downloaded", or "from
-  cache"). The label also gets a badge (a dot and the count of warnings and
+  `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
+  makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
+  (`App.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
+  `.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
   errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
   instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
 - The Textures tab (`docs/specs/textures.md`, `app/textures.c`) draws engine textures with
@@ -204,7 +209,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   then an upscale pass clears the canvas to black and shows it with the nearest filter
   (`textureLoad`). The app computes it each frame in `app_layout` from `App.resolution` (Scale: a
   divisor 1 to 4 of the viewport; Fixed: an exact size, by default at the largest whole multiple
-  that fits, centered, with black bars, or fitted or stretched to the viewport: `FixedFit`):
+  that fits, centered, with black bars, or fitted or stretched to the viewport: `NvFixedFit`; `NvResolution` and
+  `nv_renderer_scene_output` are the engine's):
   `App.layout.scene`. Picking, panning and the gizmo use it
   (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
   does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.

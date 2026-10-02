@@ -5,6 +5,10 @@
 
 ## 한국어
 
+참고 (2026-10-02, `shared.md`): 카메라 필드는 `SceneView.orbit`(`NvOrbitCamera`, `engine/camera.h`)에 있다: `camera_yaw`는
+`orbit.yaw`, `camera_pitch`는 `orbit.pitch`, `camera_distance`는 `orbit.distance`, `orbit_point`는 `orbit.target`이다. 태그와
+값은 그대로이고, 불러올 때의 제한은 `orbit`의 `min_pitch`, `max_pitch`, `min_distance`, `max_distance`다.
+
 상태: 구현됨 (2026-09-28). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
@@ -269,6 +273,10 @@ Chunks
 저장, 새 버전의 저장을 쓰고, 앱이 첫 방문처럼 시작하고 `.bad` 파일을 유지하는지 확인한다.
 
 ## English
+
+Note (2026-10-02, `shared.md`): the camera fields are in `SceneView.orbit` (`NvOrbitCamera`, `engine/camera.h`): `camera_yaw`
+is `orbit.yaw`, `camera_pitch` is `orbit.pitch`, `camera_distance` is `orbit.distance` and `orbit_point` is `orbit.target`. The tags
+and values are unchanged, and the limits on load are `orbit`'s `min_pitch`, `max_pitch`, `min_distance` and `max_distance`.
 
 Status: implemented (2026-09-28). Changes to this spec are agreed first.
 

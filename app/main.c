@@ -130,47 +130,14 @@ internal void update_blend(App* app)
 // Scene
 //
 
-// Appends an axis-aligned box to vertex and index arrays.
-internal void append_box(NvVertex* vertices, u32* vertex_count, u32* indices, u32* index_count, NvVec3 center, NvVec3 half)
-{
-    // Each face: normal n and in-plane axes u, v with u x v = n (counter-clockwise from outside).
-    local_persist const f32 faces[6][3][3] = {
-        {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
-        {{-1, 0, 0}, {0, 0, 1}, {0, 1, 0}},
-        {{0, 1, 0}, {0, 0, 1}, {1, 0, 0}},
-        {{0, -1, 0}, {1, 0, 0}, {0, 0, 1}},
-        {{0, 0, 1}, {1, 0, 0}, {0, 1, 0}},
-        {{0, 0, -1}, {0, 1, 0}, {1, 0, 0}},
-    };
-    local_persist const f32 corners[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-    const f32 c[3] = {center.x, center.y, center.z};
-    const f32 h[3] = {half.x, half.y, half.z};
-    for (u32 face = 0; face < 6; ++face) {
-        u32 base = *vertex_count;
-        for (u32 corner = 0; corner < 4; ++corner) {
-            NvVertex* vertex = &vertices[(*vertex_count)++];
-            *vertex = (NvVertex){0};
-            for (u32 axis = 0; axis < 3; ++axis) {
-                f32 p = faces[face][0][axis] + corners[corner][0] * faces[face][1][axis] + corners[corner][1] * faces[face][2][axis];
-                vertex->position[axis] = c[axis] + p * h[axis];
-                vertex->normal[axis] = faces[face][0][axis];
-            }
-        }
-        u32* out = &indices[*index_count];
-        out[0] = base; out[1] = base + 1; out[2] = base + 2;
-        out[3] = base; out[4] = base + 2; out[5] = base + 3;
-        *index_count += 6;
-    }
-}
-
 NvMeshId app_box_mesh(App* app, NvVec3 half)
 {
     NvVertex vertices[24];
     u32 indices[36];
-    u32 vertex_count = 0;
-    u32 index_count = 0;
-    append_box(vertices, &vertex_count, indices, &index_count, nv_vec3(0, 0, 0), half);
-    NvMeshData data = {.vertices = vertices, .vertex_count = vertex_count, .indices = indices, .index_count = index_count};
+    NvMeshBuilder mesh = {.vertices = vertices, .vertex_capacity = NV_ARRAY_COUNT(vertices), .indices = indices,
+                          .index_capacity = NV_ARRAY_COUNT(indices)};
+    nv_mesh_append_box(&mesh, nv_vec3(0, 0, 0), half);
+    NvMeshData data = nv_mesh_builder_data(&mesh);
     return nv_renderer_add_mesh(&app->renderer, &data);
 }
 
@@ -179,26 +146,23 @@ internal NvMeshId create_sword_mesh(NvRenderer* renderer)
 {
     NvVertex vertices[24 * 3];
     u32 indices[36 * 3];
-    u32 vertex_count = 0;
-    u32 index_count = 0;
-    append_box(vertices, &vertex_count, indices, &index_count, nv_vec3(0, 0, 0), nv_vec3(0.018f, 0.09f, 0.018f));
-    append_box(vertices, &vertex_count, indices, &index_count, nv_vec3(0, 0.1f, 0), nv_vec3(0.09f, 0.012f, 0.025f));
-    append_box(vertices, &vertex_count, indices, &index_count, nv_vec3(0, 0.52f, 0), nv_vec3(0.025f, 0.41f, 0.006f));
-    NvMeshData data = {.vertices = vertices, .vertex_count = vertex_count, .indices = indices, .index_count = index_count};
+    NvMeshBuilder mesh = {.vertices = vertices, .vertex_capacity = NV_ARRAY_COUNT(vertices), .indices = indices,
+                          .index_capacity = NV_ARRAY_COUNT(indices)};
+    nv_mesh_append_box(&mesh, nv_vec3(0, 0, 0), nv_vec3(0.018f, 0.09f, 0.018f));
+    nv_mesh_append_box(&mesh, nv_vec3(0, 0.1f, 0), nv_vec3(0.09f, 0.012f, 0.025f));
+    nv_mesh_append_box(&mesh, nv_vec3(0, 0.52f, 0), nv_vec3(0.025f, 0.41f, 0.006f));
+    NvMeshData data = nv_mesh_builder_data(&mesh);
     return nv_renderer_add_mesh(renderer, &data);
 }
 
 internal NvMeshId create_ground_mesh(NvRenderer* renderer)
 {
-    f32 h = 30.0f; // half size in meters
-    NvVertex vertices[4] = {
-        {{-h, 0, -h}, {0, 1, 0}, {0, 0}},
-        {{-h, 0, h}, {0, 1, 0}, {0, 1}},
-        {{h, 0, h}, {0, 1, 0}, {1, 1}},
-        {{h, 0, -h}, {0, 1, 0}, {1, 0}},
-    };
-    u32 indices[6] = {0, 1, 2, 0, 2, 3};
-    NvMeshData data = {.vertices = vertices, .vertex_count = 4, .indices = indices, .index_count = 6};
+    NvVertex vertices[4];
+    u32 indices[6];
+    NvMeshBuilder mesh = {.vertices = vertices, .vertex_capacity = NV_ARRAY_COUNT(vertices), .indices = indices,
+                          .index_capacity = NV_ARRAY_COUNT(indices)};
+    nv_mesh_append_plane(&mesh, 30.0f, 30.0f); // half size in meters
+    NvMeshData data = nv_mesh_builder_data(&mesh);
     return nv_renderer_add_mesh(renderer, &data);
 }
 
@@ -224,11 +188,9 @@ internal void build_world(App* app)
     app->views[SCENE_SHOWCASE] = (SceneView){
         .scene = scene,
         .camera = camera,
-        .camera_yaw = 0.35f,
-        .camera_pitch = 0.12f,
-        .camera_distance = 5.0f,
+        .orbit = {.target = {0.0f, 0.92f, 0.0f}, // the character's head height, where following would look
+                  .yaw = 0.35f, .pitch = 0.12f, .distance = 5.0f, ORBIT_LIMITS},
         .follow_selection = false,
-        .orbit_point = {0.0f, 0.92f, 0.0f}, // the character's head height, where following would look
     };
     app_set_home(&app->views[SCENE_SHOWCASE]);
 
@@ -396,33 +358,21 @@ internal void update_look_target(App* app)
 internal void apply_view_input(App* app, SceneView* view, const NvSceneOutput* scene_output)
 {
     const NvViewInput* in = &app->imgui.view;
-    view->camera_yaw -= in->orbit_x * ORBIT_RADIANS_PER_PIXEL;
-    view->camera_pitch += in->orbit_y * ORBIT_RADIANS_PER_PIXEL;
-    view->camera_pitch = view->camera_pitch < CAMERA_MIN_PITCH ? CAMERA_MIN_PITCH : view->camera_pitch;
-    view->camera_pitch = view->camera_pitch > CAMERA_MAX_PITCH ? CAMERA_MAX_PITCH : view->camera_pitch;
-    view->camera_distance *= expf(in->dolly);
-    view->camera_distance = view->camera_distance < CAMERA_MIN_DISTANCE ? CAMERA_MIN_DISTANCE : view->camera_distance;
-    view->camera_distance = view->camera_distance > CAMERA_MAX_DISTANCE ? CAMERA_MAX_DISTANCE : view->camera_distance;
+    nv_orbit_camera_turn(&view->orbit, -in->orbit_x * ORBIT_RADIANS_PER_PIXEL, in->orbit_y * ORBIT_RADIANS_PER_PIXEL, in->dolly);
 
     if (view->selected.index != view->panned_for.index || view->selected.gen != view->panned_for.gen) {
         view->pan = nv_vec3(0, 0, 0);
         view->panned_for = view->selected;
     }
     if (in->pan_x != 0.0f || in->pan_y != 0.0f) {
-        // Move the orbit point so the scene follows the finger: one pixel is the height the view
-        // covers at the orbit point, divided by the image's height in CSS pixels (the scene's height
-        // times the screen pixels each of its pixels takes).
-        NvNode* camera = nv_scene_get(view->scene, view->camera);
-        f32 pixel_ratio = nv_window_pixel_ratio(&app->window);
-        f32 height = (f32)scene_output->height * scene_output->pixel_height / pixel_ratio;
-        f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
-        NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
-        NvVec3 up = nv_quat_rotate(camera->rotation, nv_vec3(0, 1, 0));
-        NvVec3 move = nv_vec3_add(nv_vec3_scale(right, -in->pan_x * meters), nv_vec3_scale(up, in->pan_y * meters));
+        // Move the orbit point so the scene follows the finger. The image's height is in CSS pixels: the scene's height
+        // times the screen pixels each of its pixels takes.
+        f32 height = (f32)scene_output->height * scene_output->pixel_height / nv_window_pixel_ratio(&app->window);
+        NvVec3 move = nv_orbit_camera_pan(&view->orbit, nv_scene_get(view->scene, view->camera), height, in->pan_x, in->pan_y);
         if (view->follow_selection)
             view->pan = nv_vec3_add(view->pan, move);
         else
-            view->orbit_point = nv_vec3_add(view->orbit_point, move);
+            view->orbit.target = nv_vec3_add(view->orbit.target, move);
     }
 }
 
@@ -443,13 +393,9 @@ internal void pick(App* app, const NvSceneOutput* scene_output)
         return;
     }
     SceneView* view = app_view(app);
-    f32 pixel_ratio = nv_window_pixel_ratio(&app->window);
-    f32 tap_x = in->tap_x * pixel_ratio, tap_y = in->tap_y * pixel_ratio;
-    const NvRect* image = &scene_output->image;
-    if (tap_x < (f32)image->x || tap_y < (f32)image->y || tap_x >= (f32)(image->x + image->width) ||
-        tap_y >= (f32)(image->y + image->height))
+    NvRay ray;
+    if (!nv_renderer_tap_ray(view->scene, *scene_output, in->tap_x, in->tap_y, nv_window_pixel_ratio(&app->window), &ray))
         return;
-    NvRay ray = nv_renderer_view_ray(view->scene, *scene_output, tap_x, tap_y);
     NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, nv_anim_skins(), ray, NULL);
     if (hit.index) {
         NvNode* node = nv_scene_get(view->scene, hit);
@@ -526,10 +472,7 @@ internal NvVec3 view_focus_point(SceneView* view)
 
 void app_set_home(SceneView* view)
 {
-    view->home_yaw = view->camera_yaw;
-    view->home_pitch = view->camera_pitch;
-    view->home_distance = view->camera_distance;
-    view->home_orbit = view->orbit_point;
+    view->home = view->orbit;
 }
 
 void app_focus_selection(App* app)
@@ -539,7 +482,7 @@ void app_focus_selection(App* app)
         return;
     // Following, the orbit point is the selection plus the pan, so an empty pan is what centers it.
     view->pan = nv_vec3(0, 0, 0);
-    view->orbit_point = view_focus_point(view);
+    view->orbit.target = view_focus_point(view);
 }
 
 internal void update_camera(App* app, const NvSceneOutput* scene_output)
@@ -549,22 +492,13 @@ internal void update_camera(App* app, const NvSceneOutput* scene_output)
     apply_view_input(app, view, scene_output);
     // Following, the camera orbits the selection (or the view's focus). Not following, it stays
     // where it was and only moves by panning, whatever gets selected.
-    NvVec3 point = view->orbit_point;
     // NOTE: While the gizmo drags the selection, the camera holds still: following it would move
     // the pointer's ray with the node, and the drag would run away.
-    if (view->follow_selection && !ImGuizmo_IsUsingAny()) {
-        point = nv_vec3_add(view_focus_point(view), view->pan);
-        view->orbit_point = point;
-    }
+    if (view->follow_selection && !ImGuizmo_IsUsingAny())
+        view->orbit.target = nv_vec3_add(view_focus_point(view), view->pan);
 
-    f32 d = view->camera_distance;
-    f32 cp = cosf(view->camera_pitch);
-    NvNode* camera = nv_scene_get(scene, view->camera);
-    camera->position = nv_vec3_add(point, nv_vec3(sinf(view->camera_yaw) * cp * d, sinf(view->camera_pitch) * d, cosf(view->camera_yaw) * cp * d));
-    camera->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), view->camera_yaw),
-                                   nv_quat_axis_angle(nv_vec3(1, 0, 0), -view->camera_pitch));
     // The camera is a top-level node and nv_scene_update already ran this frame.
-    camera->world = nv_mat4_trs(camera->position, camera->rotation, camera->scale);
+    nv_orbit_camera_place(&view->orbit, nv_scene_get(scene, view->camera));
 }
 
 internal OPERATION gizmo_imguizmo_operation(App* app)
@@ -978,13 +912,13 @@ EMSCRIPTEN_KEEPALIVE float app_debug_scene(int which)
 // Sets the resolution without the UI: mode 0 Scale (a is the divisor) or 1 Fixed (a, b the size).
 EMSCRIPTEN_KEEPALIVE void app_debug_set_fit(int fit)
 {
-    app_state.resolution.fixed_fit = (FixedFit)fit;
+    app_state.resolution.fixed_fit = (NvFixedFit)fit;
 }
 
 EMSCRIPTEN_KEEPALIVE void app_debug_set_resolution(int mode, int a, int b)
 {
-    Resolution* res = &app_state.resolution;
-    res->mode = mode ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+    NvResolution* res = &app_state.resolution;
+    res->mode = mode ? NV_RESOLUTION_FIXED : NV_RESOLUTION_SCALE;
     if (mode) {
         res->fixed_width = (u32)a;
         res->fixed_height = (u32)b;
@@ -1114,7 +1048,7 @@ EMSCRIPTEN_KEEPALIVE int app_debug_playing(void)
 EMSCRIPTEN_KEEPALIVE float app_debug_view(int which)
 {
     const SceneView* view = app_view(&app_state);
-    f32 values[6] = {view->camera_yaw, view->camera_pitch, view->camera_distance, view->orbit_point.x, view->orbit_point.y, view->orbit_point.z};
+    f32 values[6] = {view->orbit.yaw, view->orbit.pitch, view->orbit.distance, view->orbit.target.x, view->orbit.target.y, view->orbit.target.z};
     return values[which];
 }
 
@@ -1207,7 +1141,7 @@ EMSCRIPTEN_KEEPALIVE float app_debug_ui_ms(void)
 // The shown scene's camera yaw, in radians.
 EMSCRIPTEN_KEEPALIVE float app_debug_camera_yaw(void)
 {
-    return app_view(&app_state)->camera_yaw;
+    return app_view(&app_state)->orbit.yaw;
 }
 
 // Warnings and errors not yet seen (0 while the Console tab is shown).
@@ -1389,12 +1323,12 @@ EMSCRIPTEN_KEEPALIVE int app_debug_palette_result(int i, int k)
 // The UI language: 0 English, 1 Korean; _app_debug_set_language changes it.
 EMSCRIPTEN_KEEPALIVE int app_debug_language(void)
 {
-    return (int)strings_language();
+    return (int)nv_strings_language();
 }
 
 EMSCRIPTEN_KEEPALIVE void app_debug_set_language(int language)
 {
-    strings_set_language((Language)language);
+    nv_strings_set_language((NvLanguage)language);
 }
 
 // The k-th byte of the selected node's name; 0 past its end.
@@ -1512,79 +1446,13 @@ EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
 }
 #endif
 
-// What the page downloaded (the Resource Timing entries of the engine's own files): `what` 0 is the
-// bytes after the browser unpacked them, 1 the bytes that crossed the network (0 from the cache);
-// -1 when the browser does not say.
-EM_JS(double, js_download_bytes, (int what), {
-    const names = ["app.wasm", "app.data", "app.js"];
-    let decoded = 0, sent = 0, found = 0;
-    for (const entry of performance.getEntriesByType("resource")) {
-        const path = new URL(entry.name).pathname;
-        if (!names.some((name) => path.endsWith("/" + name))) continue;
-        ++found;
-        decoded += entry.decodedBodySize;
-        sent += entry.transferSize;
-    }
-    if (!found || !decoded) return -1;
-    return what == 0 ? decoded : sent;
-});
-
-internal void read_download_size(App* app)
-{
-    f64 unpacked = js_download_bytes(0), sent = js_download_bytes(1);
-    f64 mb = 1048576.0;
-    if (unpacked < 0.0)
-        app->download_text[0] = 0;
-    else if (sent > 0.0)
-        snprintf(app->download_text, sizeof(app->download_text), "%.1f MB downloaded", sent / mb);
-    else
-        snprintf(app->download_text, sizeof(app->download_text), "%.1f MB from cache", unpacked / mb);
-}
-
-// The UI font (docs/specs/fonts.md, korean.md): Inter, with Pretendard's Hangul behind it, read
-// from the package into permanent memory, since ImGui keeps pointing at the bytes. Without them
-// the built-in font stays.
-#define UI_FONT_FILE "/assets/fonts/Inter-Regular.ttf"
-#define UI_FONT_HANGUL_FILE "/assets/fonts/Hangul-Subset.ttf"
-#define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
-
-// The whole file in permanent memory; NULL (and a Console warning) if it cannot be read.
-internal void* read_asset(App* app, const char* path, u32* out_size)
-{
-    FILE* file = fopen(path, "rb");
-    if (!file) {
-        nv_log(NV_LOG_WARNING, "app", "font %s is missing", path);
-        return NULL;
-    }
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    void* bytes = size > 0 ? nv_arena_push(&app->permanent, (umm)size, 16) : NULL;
-    b32 ok = bytes && fread(bytes, 1, (umm)size, file) == (umm)size;
-    fclose(file);
-    if (!ok) {
-        nv_log(NV_LOG_WARNING, "app", "font %s could not be read", path);
-        return NULL;
-    }
-    *out_size = (u32)size;
-    return bytes;
-}
-
-internal void load_font(App* app)
-{
-    u32 size = 0, hangul_size = 0;
-    void* font = read_asset(app, UI_FONT_FILE, &size);
-    void* hangul = read_asset(app, UI_FONT_HANGUL_FILE, &hangul_size);
-    if (!font || !nv_imgui_set_font(&app->imgui, font, size, hangul, hangul_size, UI_FONT_SIZE))
-        nv_log(NV_LOG_WARNING, "app", "the UI font could not be loaded: using the built-in font");
-}
-
 int main(void)
 {
     App* app = &app_state;
     nv_arena_init(&app->permanent, permanent_memory, sizeof(permanent_memory));
     nv_arena_init(&app->scratch, scratch_memory, sizeof(scratch_memory));
     nv_arena_init(&app->anim_memory, anim_memory, sizeof(anim_memory));
+    app_strings_init();
     app->scene = NV_PUSH_STRUCT(&app->permanent, NvScene);
 
     nv_window_create(&app->window, "nv");
@@ -1594,9 +1462,9 @@ int main(void)
     }
     nv_renderer_init(&app->renderer, &app->gpu, &app->permanent);
     nv_imgui_init(&app->imgui, &app->gpu, &app->window, &app->permanent);
-    load_font(app);
-    read_download_size(app);
-    strings_set_language(strings_browser_language()); // a save may change it (the LANG tag)
+    nv_imgui_load_ui_font(&app->imgui, &app->permanent);
+    nv_window_download_text(app->download_text, sizeof(app->download_text));
+    nv_strings_set_language(nv_strings_browser_language()); // a save may change it (the LANG tag)
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = app->imgui.ui_scale > 1.0f;
     // One UI per device (docs/specs/layout.md): touch gets the phone UI, everything else the desktop's.
@@ -1621,7 +1489,7 @@ int main(void)
     // Tone mapping and bloom (docs/specs/vfx.md); the View tab changes them.
     app->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
     // The phone shows the scene at half the pixels by default: its GPU is the limit.
-    app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = touch ? 2 : 1, .fixed_width = 1280, .fixed_height = 720};
+    app->resolution = (NvResolution){.mode = NV_RESOLUTION_SCALE, .divisor = touch ? 2 : 1, .fixed_width = 1280, .fixed_height = 720};
     app->imgui.view_grab = gizmo_grab;
     app->imgui.view_grab_data = app;
     // Keys the desktop UI binds are not the browser's (Ctrl+S would open "Save page").

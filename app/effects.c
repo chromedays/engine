@@ -148,7 +148,7 @@ NvVec3 effects_test_point(App* app)
         right = nv_vec3_scale(right, 1.0f / length);
     else
         right = nv_vec3(1.0f, 0.0f, 0.0f);
-    return nv_vec3(view->orbit_point.x + right.x * 2.5f, 0.05f, view->orbit_point.z + right.z * 2.5f);
+    return nv_vec3(view->orbit.target.x + right.x * 2.5f, 0.05f, view->orbit.target.z + right.z * 2.5f);
 }
 
 // A scorch mark on the ground below `point`, turned at random.
@@ -203,7 +203,7 @@ void effects_clear(App* app)
 internal NvVec3 field_point(App* app, f32 height)
 {
     Effects* effects = &app->effects;
-    NvVec3 orbit = app_view(app)->orbit_point;
+    NvVec3 orbit = app_view(app)->orbit.target;
     return nv_vec3(orbit.x + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 12.0f);
 }
 
@@ -258,7 +258,7 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
     // Beams: each is held by calling again every frame with a short life, between fixed points of its own.
     for (u32 i = 0; i < beams; ++i) {
         u32 h = i * 2654435761u + 12345u;
-        NvVec3 orbit = app_view(app)->orbit_point;
+        NvVec3 orbit = app_view(app)->orbit.target;
         f32 ax = (f32)(h & 1023u) / 1023.0f, az = (f32)((h >> 10) & 1023u) / 1023.0f;
         f32 bx = (f32)((h >> 20) & 1023u) / 1023.0f, bz = (f32)((h * 40503u >> 8) & 1023u) / 1023.0f;
         NvVec3 from = nv_vec3(orbit.x + (ax * 2.0f - 1.0f) * 16.0f, 7.0f, orbit.z + (az * 2.0f - 1.0f) * 12.0f);

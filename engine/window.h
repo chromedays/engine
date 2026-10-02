@@ -21,6 +21,11 @@ static inline f32 nv_window_pixel_ratio(const NvWindow* window)
 // NOTE: Returns the canvas size in device pixels and resizes its backing store to match.
 void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 
+// What the page downloaded, for a build label: "3.2 MB downloaded", or "3.2 MB from cache" (the bytes after the browser unpacked
+// them). From the page's resource timing entries of the executable's own files (<target>.wasm, .data and .js; the page names
+// the target in Module.nvTarget). Empty when the browser does not say.
+void nv_window_download_text(char* out, umm capacity);
+
 // Seconds since the page loaded.
 f64 nv_time_seconds(void);
 

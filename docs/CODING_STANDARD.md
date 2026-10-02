@@ -41,6 +41,8 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 | 파일 내부 함수 / 타입 | `snake_case` / `PascalCase`, 접두사 없음 | `configure_surface`, `AdapterRequest` |
 | 변수와 필드 | `snake_case`, 줄이지 않은 단어 | `surface_format`, `new_width` |
 
+예외 하나: UI 문자열을 감싸는 `T("text")`와 `TL("label")`(`engine/strings.h`)은 모든 UI 텍스트에 붙으므로 짧은 이름의 매크로다.
+
 ### 타입과 키워드
 
 - `engine/base.h`의 별칭을 쓴다: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32`(true/false), `umm`(메모리 크기와
@@ -130,6 +132,9 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 | Public macro / constant | `NV_UPPER_CASE` | `NV_ASSERT`, `NV_PUSH_ARRAY` |
 | File-local function / type | `snake_case` / `PascalCase`, no prefix | `configure_surface`, `AdapterRequest` |
 | Variables and fields | `snake_case`, full words | `surface_format`, `new_width` |
+
+One exception: `T("text")` and `TL("label")` (`engine/strings.h`), which wrap UI strings, are macros with short names, since they
+go around every UI text.
 
 ### Types and keywords
 

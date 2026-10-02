@@ -5,6 +5,10 @@
 
 ## 한국어
 
+참고 (2026-10-02, `shared.md`): 해상도 계산은 엔진으로 옮겨졌다. `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_*`,
+`scene_output`은 `NvResolution`, `NvResolutionMode`, `NvFixedFit`(`NV_FIT_*`), `NV_RESOLUTION_*`, `nv_renderer_scene_output`
+(`engine/renderer.h`, `engine/renderer_cpu.c`)이고, 띠 탭 무시는 `nv_renderer_tap_ray`가 한다. 동작과 저장 태그는 그대로다.
+
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
@@ -160,6 +164,11 @@
 - 다른 색이나 무늬의 띠.
 
 ## English
+
+Note (2026-10-02, `shared.md`): the resolution math moved to the engine. `Resolution`, `ResolutionMode`, `FixedFit`,
+`RESOLUTION_*` and `scene_output` are `NvResolution`, `NvResolutionMode`, `NvFixedFit` (`NV_FIT_*`), `NV_RESOLUTION_*` and
+`nv_renderer_scene_output` (`engine/renderer.h`, `engine/renderer_cpu.c`), and ignoring a tap on a bar is
+`nv_renderer_tap_ray`. Behavior and save tags are unchanged.
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 

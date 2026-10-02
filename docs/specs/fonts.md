@@ -5,6 +5,9 @@
 
 ## 한국어
 
+참고 (2026-10-02, `shared.md`): 글꼴 읽기는 엔진으로 옮겨졌다. `nv_imgui_load_ui_font`(`engine/imgui.h`)가 `app/main.c`의
+`read_asset`과 `load_font`를 대신하고, 경고의 출처는 `"imgui"`다.
+
 상태: 더 작은 범위로 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
 **결정된 범위:** Inter, 고정. 에디터는 Inter Regular를 14 CSS 픽셀 (곱하기 터치 배율)로만 쓴다: Font 섹션,
@@ -129,6 +132,9 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 - FreeType 힌팅 (위, 견본이 요구할 때까지).
 
 ## English
+
+Note (2026-10-02, `shared.md`): reading the font moved to the engine. `nv_imgui_load_ui_font` (`engine/imgui.h`) replaces
+`read_asset` and `load_font` in `app/main.c`, and its warnings come from the source `"imgui"`.
 
 Status: implemented in a smaller scope (2026-10-01). Changes to this spec are agreed first.
 

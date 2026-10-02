@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/gpu.h"
+#include "engine/mesh.h"
 #include "engine/vfx.h"
 #include "engine/scene.h"
 
@@ -12,29 +13,6 @@
 #define NV_MAX_JOINT_BOUNDS  4096 // per-joint boxes across all skinned meshes
 
 typedef struct NvTextureId { u32 index; } NvTextureId; // 0 = plain white
-
-typedef struct NvVertex {
-    f32 position[3];
-    f32 normal[3];
-    f32 uv[2];
-} NvVertex;
-
-typedef struct NvSkinnedVertex {
-    f32 position[3];
-    f32 normal[3];
-    f32 uv[2];
-    u16 joints[4];
-    f32 weights[4];
-} NvSkinnedVertex;
-
-// Mesh data to upload. Exactly one of `vertices` / `skinned_vertices` is set.
-typedef struct NvMeshData {
-    const NvVertex* vertices;
-    const NvSkinnedVertex* skinned_vertices;
-    u32 vertex_count;
-    const u32* indices;
-    u32 index_count;
-} NvMeshData;
 
 typedef struct NvMaterialDesc {
     f32 base_color[4];   // linear RGBA, multiplied with the texture
@@ -72,6 +50,34 @@ typedef struct NvSceneOutput {
     NvRect image;
     f32 pixel_width, pixel_height;
 } NvSceneOutput;
+
+// How the scene's resolution follows the viewport (docs/specs/resolution.md): at a whole fraction of the viewport's
+// pixels filling it, or at a fixed size shown in it, with black bars or stretched.
+typedef enum NvResolutionMode {
+    NV_RESOLUTION_SCALE,
+    NV_RESOLUTION_FIXED,
+} NvResolutionMode;
+
+// How a fixed size is fitted to the viewport.
+typedef enum NvFixedFit {
+    NV_FIT_WHOLE,    // the largest whole multiple that fits, centered, black bars around
+    NV_FIT_VIEWPORT, // the largest scale that fits keeping the aspect ratio (pixels of uneven width)
+    NV_FIT_STRETCH,  // stretched to fill the viewport, aspect ratio and all
+} NvFixedFit;
+
+typedef struct NvResolution {
+    NvResolutionMode mode;
+    NvFixedFit fixed_fit;
+    u32 divisor;                   // SCALE: 1 to 4
+    u32 fixed_width, fixed_height; // FIXED: NV_RESOLUTION_MIN..NV_RESOLUTION_MAX each
+} NvResolution;
+
+#define NV_RESOLUTION_MIN 16
+#define NV_RESOLUTION_MAX 4096
+
+// The scene's size and where its image goes in `viewport` (framebuffer pixels). A viewport with no area gives a 1 x 1
+// scene.
+NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect viewport);
 
 typedef struct NvRenderTexture {
     WGPUTexture texture;
@@ -299,6 +305,14 @@ void nv_renderer_camera_matrices(NvScene* scene, NvSceneOutput output, NvMat4* v
 // The world ray through (x, y) of the canvas (framebuffer pixels), seen by the scene's active
 // camera as drawn with `output`.
 NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y);
+
+// A ray through a tap at (tap_x, tap_y) CSS pixels, `pixel_ratio` canvas pixels each. False, with `ray` untouched, when the
+// tap is outside the image (on a black bar around a fixed size).
+b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+
+// The view-projection matrix the scene pass draws with: the camera node's projection, reverse Z (docs/specs/vfx.md), and its
+// inverse world matrix.
+NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
 
 // A mesh's box in its node's space. A skinned mesh posed by `skin` gets the box of its current
 // pose (the union of its joint boxes moved by their skinning matrices); without a skin, the bind

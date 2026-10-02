@@ -1,13 +1,17 @@
 add_library(nv STATIC
     anim.cpp
+    camera.c
     chunk.c
     gltf.c
     gpu.c
     imgui.c
     log.c
+    mesh.c
     renderer.c
+    renderer_cpu.c
     scene.c
     storage.c
+    strings.c
     vfx.c
     vfx_cpu.c
     window.c)

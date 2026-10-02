@@ -1230,69 +1230,6 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
            renderer->depth_sampled ? ", samplable (texture viewer)" : "");
 }
 
-internal NvMat4 camera_projection(NvNode* camera_node, f32 aspect)
-{
-    NvCamera* camera = &camera_node->camera;
-    NvMat4 proj = nv_mat4_identity();
-    switch (camera->projection) {
-    case NV_PROJECTION_PERSPECTIVE:
-        proj = nv_mat4_perspective(camera->fov_y, aspect, camera->near_z, camera->far_z);
-        break;
-    case NV_PROJECTION_ORTHOGRAPHIC:
-        proj = nv_mat4_orthographic(camera->ortho_height, aspect, camera->near_z, camera->far_z);
-        break;
-    default:
-        NV_INVALID_CODE_PATH;
-    }
-    return proj;
-}
-
-// Reverse Z for drawing: clip z becomes w - z, so depth runs 1 (near) to 0 (far). A float depth
-// buffer keeps its precision near 0, where the far range is, instead of wasting it near the camera.
-internal NvMat4 reverse_depth(NvMat4 m)
-{
-    for (u32 column = 0; column < 4; ++column)
-        m.e[column * 4 + 2] = m.e[column * 4 + 3] - m.e[column * 4 + 2];
-    return m;
-}
-
-internal NvMat4 camera_view_proj(NvNode* camera_node, f32 aspect)
-{
-    return nv_mat4_mul(reverse_depth(camera_projection(camera_node, aspect)), nv_mat4_inverse(camera_node->world));
-}
-
-void nv_renderer_camera_matrices(NvScene* scene, NvSceneOutput output, NvMat4* view, NvMat4* projection)
-{
-    NV_ASSERT(output.width && output.height);
-    NvNode* camera = nv_scene_get(scene, scene->active_camera);
-    *view = nv_mat4_inverse(camera->world);
-    *projection = camera_projection(camera, (f32)output.width / (f32)output.height);
-}
-
-// A point through a projective matrix, with the perspective divide.
-internal NvVec3 project(NvMat4 m, f32 x, f32 y, f32 z)
-{
-    f32 w = m.e[3] * x + m.e[7] * y + m.e[11] * z + m.e[15];
-    NvVec3 p = nv_mat4_transform_point(m, nv_vec3(x, y, z));
-    return nv_vec3_scale(p, 1.0f / w);
-}
-
-NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y)
-{
-    NV_ASSERT(output.width && output.height && output.pixel_width > 0.0f && output.pixel_height > 0.0f);
-    NvNode* camera = nv_scene_get(scene, scene->active_camera);
-    NvMat4 view_proj = nv_mat4_mul(camera_projection(camera, (f32)output.width / (f32)output.height), nv_mat4_inverse(camera->world));
-    NvMat4 to_world = nv_mat4_inverse(view_proj);
-    // Canvas pixels to scene pixels: from the image's corner, `pixel_width` x `pixel_height` screen pixels each.
-    f32 scene_x = (x - (f32)output.image.x) / output.pixel_width;
-    f32 scene_y = (y - (f32)output.image.y) / output.pixel_height;
-    f32 ndc_x = scene_x / (f32)output.width * 2.0f - 1.0f;
-    f32 ndc_y = 1.0f - scene_y / (f32)output.height * 2.0f;
-    NvVec3 near_point = project(to_world, ndc_x, ndc_y, 0.0f); // depth runs 0 (near) to 1 (far)
-    NvVec3 far_point = project(to_world, ndc_x, ndc_y, 1.0f);
-    return (NvRay){near_point, nv_vec3_normalize(nv_vec3_sub(far_point, near_point))};
-}
-
 // Where a ray enters a box (slab test), or a negative number when it misses.
 internal f32 ray_box(NvVec3 origin, NvVec3 direction, NvVec3 lo, NvVec3 hi)
 {
@@ -1454,7 +1391,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     NvRect viewport = {0, 0, output.width, output.height};
 
     FrameUniforms uniforms = {0};
-    uniforms.view_proj = camera_view_proj(nv_scene_get(scene, scene->active_camera),
+    uniforms.view_proj = nv_renderer_camera_view_proj(nv_scene_get(scene, scene->active_camera),
                                           (f32)viewport.width / (f32)viewport.height);
     memcpy(uniforms.ambient, renderer->ambient, sizeof(renderer->ambient));
     NvNode* camera = nv_scene_get(scene, scene->active_camera);

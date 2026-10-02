@@ -21,10 +21,12 @@ for (let hi = 0xb0; hi <= 0xc8; ++hi) {
 const syllables = text.length;
 // Compatibility jamo (ㄱ to ㅣ): what an input method shows while a syllable is being composed.
 for (let c = 0x3131; c <= 0x318e; ++c) text += String.fromCodePoint(c);
-// Every non-ASCII character the Korean strings use, so none is missing even outside the table.
+// Every non-ASCII character the Korean strings use, so none is missing even outside the table. `strings` lists the tables
+// of every executable, separated by ":".
 let extra = 0;
-if (strings && existsSync(strings)) {
-  for (const ch of readFileSync(strings, 'utf8')) {
+for (const table of (strings || '').split(':').filter(Boolean)) {
+  if (!existsSync(table)) continue;
+  for (const ch of readFileSync(table, 'utf8')) {
     if (ch.codePointAt(0) > 0x7f && !text.includes(ch)) { text += ch; ++extra; }
   }
 }

@@ -199,10 +199,10 @@ internal void candidate_text(char* out, umm capacity, const char* label, const c
         copy_label(plain, sizeof(plain), label);
     }
     append_text(out, capacity, &used, plain, 0);
-    append_text(out, capacity, &used, strings_find_korean(plain), 0);
+    append_text(out, capacity, &used, nv_strings_find_korean(plain), 0);
     append_text(out, capacity, &used, section, 0);
     if (section && section[0])
-        append_text(out, capacity, &used, strings_find_korean(section), 0);
+        append_text(out, capacity, &used, nv_strings_find_korean(section), 0);
     append_text(out, capacity, &used, keywords, 0);
 }
 

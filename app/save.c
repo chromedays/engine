@@ -158,11 +158,11 @@ u32 save_scene_layout(NvScene* scene)
 internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view)
 {
     nv_chunk_begin(w, TAG_VIEW);
-    nv_chunk_f32(w, TAG_YAW, view->camera_yaw);
-    nv_chunk_f32(w, TAG_PTCH, view->camera_pitch);
-    nv_chunk_f32(w, TAG_DIST, view->camera_distance);
+    nv_chunk_f32(w, TAG_YAW, view->orbit.yaw);
+    nv_chunk_f32(w, TAG_PTCH, view->orbit.pitch);
+    nv_chunk_f32(w, TAG_DIST, view->orbit.distance);
     nv_chunk_u32(w, TAG_FOLW, view->follow_selection);
-    nv_chunk_f32s(w, TAG_ORBT, &view->orbit_point.x, 3);
+    nv_chunk_f32s(w, TAG_ORBT, &view->orbit.target.x, 3);
     nv_chunk_f32s(w, TAG_PAN, &view->pan.x, 3);
     u32 path[SAVE_MAX_PATH];
     u32 length = view->selected.index ? path_of(scene, view->selected.index, path) : 0;
@@ -295,7 +295,7 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_DKRW, (u32)(app->docks.right_width + 0.5f));
     nv_chunk_u32(&w, TAG_DKBH, (u32)(app->docks.bottom_height + 0.5f));
     nv_chunk_u32(&w, TAG_DKBO, app->docks.bottom_open);
-    nv_chunk_u32(&w, TAG_LANG, (u32)strings_language());
+    nv_chunk_u32(&w, TAG_LANG, (u32)nv_strings_language());
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
@@ -352,7 +352,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_f32s(r, edit, TAG_EXPO, &post.exposure, 1);
     nv_chunk_read_u32s(r, edit, TAG_BLOM, (u32*)&post.bloom, 1);
     nv_chunk_read_f32s(r, edit, TAG_BLMI, &post.bloom_intensity, 1);
-    Resolution resolution = app->resolution;
+    NvResolution resolution = app->resolution;
     u32 mode = (u32)resolution.mode;
     nv_chunk_read_u32s(r, edit, TAG_RSMD, &mode, 1);
     nv_chunk_read_u32s(r, edit, TAG_RSCL, &resolution.divisor, 1);
@@ -367,7 +367,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_DKRW, &dock_right, 1);
     nv_chunk_read_u32s(r, edit, TAG_DKBH, &dock_bottom, 1);
     read_bool(r, edit, TAG_DKBO, &bottom_open);
-    u32 language = (u32)strings_language(); // a save without the tag keeps the browser's language
+    u32 language = (u32)nv_strings_language(); // a save without the tag keeps the browser's language
     nv_chunk_read_u32s(r, edit, TAG_LANG, &language, 1);
     if (!apply)
         return;
@@ -393,13 +393,13 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     app->renderer.post = post;
     // The modes and counts the View tab offers; anything else is the device's default (the phone
     // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
-    resolution.mode = mode == RESOLUTION_FIXED ? RESOLUTION_FIXED : RESOLUTION_SCALE;
-    resolution.fixed_fit = fit == FIT_VIEWPORT ? FIT_VIEWPORT : fit == FIT_STRETCH ? FIT_STRETCH : FIT_WHOLE;
+    resolution.mode = mode == NV_RESOLUTION_FIXED ? NV_RESOLUTION_FIXED : NV_RESOLUTION_SCALE;
+    resolution.fixed_fit = fit == NV_FIT_VIEWPORT ? NV_FIT_VIEWPORT : fit == NV_FIT_STRETCH ? NV_FIT_STRETCH : NV_FIT_WHOLE;
     if (resolution.divisor < 1 || resolution.divisor > 4)
         resolution.divisor = app->ui_mode == UI_PHONE ? 2 : 1;
-    if (resolution.fixed_width < RESOLUTION_MIN || resolution.fixed_width > RESOLUTION_MAX)
+    if (resolution.fixed_width < NV_RESOLUTION_MIN || resolution.fixed_width > NV_RESOLUTION_MAX)
         resolution.fixed_width = 1280;
-    if (resolution.fixed_height < RESOLUTION_MIN || resolution.fixed_height > RESOLUTION_MAX)
+    if (resolution.fixed_height < NV_RESOLUTION_MIN || resolution.fixed_height > NV_RESOLUTION_MAX)
         resolution.fixed_height = 720;
     app->resolution = resolution;
     // Docks: within what the splitters allow (ui_desktop.c clamps again to the window).
@@ -408,7 +408,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     app->docks.bottom_height = nv_clamp_f32((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
     app->docks.bottom_open = bottom_open;
     // The two languages the View tab offers; anything else is English.
-    strings_set_language(language == LANG_KO ? LANG_KO : LANG_EN);
+    nv_strings_set_language(language == NV_LANGUAGE_KO ? NV_LANGUAGE_KO : NV_LANGUAGE_EN);
 }
 
 internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)
@@ -417,11 +417,11 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     if (!chunk.data)
         return;
     SceneView v = *view;
-    nv_chunk_read_f32s(r, chunk, TAG_YAW, &v.camera_yaw, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_PTCH, &v.camera_pitch, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_DIST, &v.camera_distance, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_YAW, &v.orbit.yaw, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_PTCH, &v.orbit.pitch, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_DIST, &v.orbit.distance, 1);
     read_bool(r, chunk, TAG_FOLW, &v.follow_selection);
-    nv_chunk_read_f32s(r, chunk, TAG_ORBT, &v.orbit_point.x, 3);
+    nv_chunk_read_f32s(r, chunk, TAG_ORBT, &v.orbit.target.x, 3);
     nv_chunk_read_f32s(r, chunk, TAG_PAN, &v.pan.x, 3);
     u32 path[SAVE_MAX_PATH];
     u32 length = 0;
@@ -432,8 +432,8 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
         others_size = 0;
     if (!apply)
         return;
-    v.camera_pitch = nv_clamp_f32(v.camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
-    v.camera_distance = nv_clamp_f32(v.camera_distance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+    v.orbit.pitch = nv_clamp_f32(v.orbit.pitch, v.orbit.min_pitch, v.orbit.max_pitch);
+    v.orbit.distance = nv_clamp_f32(v.orbit.distance, v.orbit.min_distance, v.orbit.max_distance);
     // A selection path only means something while the tree is the one it was saved from.
     if (has_selection && nodes_match) {
         u32 index = length ? node_at(scene, path, length) : 0;

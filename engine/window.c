@@ -4,6 +4,7 @@
 #include <emscripten/html5.h>
 
 #include <math.h>
+#include <stdio.h>
 
 void nv_window_create(NvWindow* window, const char* title)
 {
@@ -29,6 +30,35 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height)
 
     *width = (u32)new_width;
     *height = (u32)new_height;
+}
+
+// `what` 0 is the bytes after the browser unpacked the files, 1 the bytes that crossed the network (0 from the cache); -1 when
+// the browser does not say.
+EM_JS(double, js_download_bytes, (int what), {
+    const target = Module["nvTarget"];
+    const names = [target + ".wasm", target + ".data", target + ".js"];
+    let decoded = 0, sent = 0, found = 0;
+    for (const entry of performance.getEntriesByType("resource")) {
+        const path = new URL(entry.name).pathname;
+        if (!names.some((name) => path.endsWith("/" + name))) continue;
+        ++found;
+        decoded += entry.decodedBodySize;
+        sent += entry.transferSize;
+    }
+    if (!found || !decoded) return -1;
+    return what == 0 ? decoded : sent;
+});
+
+void nv_window_download_text(char* out, umm capacity)
+{
+    f64 unpacked = js_download_bytes(0), sent = js_download_bytes(1);
+    f64 mb = 1048576.0;
+    if (unpacked < 0.0)
+        out[0] = 0;
+    else if (sent > 0.0)
+        snprintf(out, capacity, "%.1f MB downloaded", sent / mb);
+    else
+        snprintf(out, capacity, "%.1f MB from cache", unpacked / mb);
 }
 
 f64 nv_time_seconds(void)

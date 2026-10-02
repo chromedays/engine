@@ -17,7 +17,7 @@ target_link_options(gpu_format_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME gpu_format_test COMMAND gpu_format_test)
 
 # The Korean UI strings: every wrapped English text has a row, and rows keep their printf conversions.
-add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs)
+add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs app)
 
 # nv_utf8_fit and nv_utf8_trim: text cut to fit stays valid UTF-8.
 add_executable(utf8_test utf8_test.c)
@@ -36,3 +36,23 @@ add_executable(base_test base_test.c)
 target_include_directories(base_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_options(base_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME base_test COMMAND base_test)
+
+# The mesh primitives in engine/mesh.h: no GPU, so nothing from the WebGPU port is needed.
+add_executable(mesh_test mesh_test.c ${PROJECT_SOURCE_DIR}/engine/mesh.c)
+target_include_directories(mesh_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_options(mesh_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME mesh_test COMMAND mesh_test)
+
+# The scene's resolution and the rays through its image (engine/renderer_cpu.c): no GPU is used, but renderer.h includes the
+# WebGPU header, which the port provides (as for gpu_format_test); nothing is linked from it.
+add_executable(resolution_test resolution_test.c ${PROJECT_SOURCE_DIR}/engine/renderer_cpu.c ${PROJECT_SOURCE_DIR}/engine/scene.c)
+target_include_directories(resolution_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_options(resolution_test PRIVATE --use-port=emdawnwebgpu)
+target_link_options(resolution_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME resolution_test COMMAND resolution_test)
+
+# The orbit camera in engine/camera.h: no GPU, so nothing from the WebGPU port is needed.
+add_executable(camera_test camera_test.c ${PROJECT_SOURCE_DIR}/engine/camera.c)
+target_include_directories(camera_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_options(camera_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME camera_test COMMAND camera_test)

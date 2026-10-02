@@ -122,9 +122,7 @@ void stress_build(App* app)
         .scene = scene,
         .camera = camera,
         .focus = stress->grid_group,
-        .camera_yaw = 0.45f,
-        .camera_pitch = 0.42f,
-        .camera_distance = 28.0f,
+        .orbit = {.yaw = 0.45f, .pitch = 0.42f, .distance = 28.0f, ORBIT_LIMITS},
         .follow_selection = false,
     };
     app_set_home(&app->views[SCENE_STRESS]);
@@ -399,7 +397,7 @@ EM_JS(void, js_user_agent, (char* out, int size), {
 internal void resolution_text(App* app, char* out, umm size)
 {
     const NvSceneOutput* scene = &app->layout.scene;
-    if (app->resolution.mode == RESOLUTION_FIXED) {
+    if (app->resolution.mode == NV_RESOLUTION_FIXED) {
         if (scene->pixel_width != scene->pixel_height)
             snprintf(out, size, "%u x %u fixed, stretched %.2fx%.2f", scene->width, scene->height, (f64)scene->pixel_width,
                      (f64)scene->pixel_height);

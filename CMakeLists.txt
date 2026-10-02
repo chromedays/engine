@@ -76,6 +76,22 @@ function(nv_setup_executable target)
     install(FILES ${files} DESTINATION ${destination} COMPONENT web)
 endfunction()
 
+# Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in the target's binary
+# directory (cmake/version.cmake rewrites it on every build, so it is never the commit of an older configure), and the build
+# type as NV_BUILD_NAME. Shown on build labels and in benchmark reports.
+#   nv_add_version(<target>)
+function(nv_add_version target)
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/nv_version.h")
+    add_custom_target(${target}_version
+        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DOUTPUT=${header}
+                -P ${PROJECT_SOURCE_DIR}/cmake/version.cmake
+        BYPRODUCTS ${header}
+        COMMENT "Recording the commit")
+    add_dependencies(${target} ${target}_version)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
+endfunction()
+
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
 # here so cimgui's own install rules stay out of the web package.
 include(FetchContent)

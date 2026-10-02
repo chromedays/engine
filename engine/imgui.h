@@ -165,6 +165,16 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
 // first frame; returns false, keeping the built-in font, if `ttf` is no font.
 bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, void* fallback, u32 fallback_size, f32 pixel_size);
 
+// The UI font (docs/specs/fonts.md, korean.md): Inter with Pretendard's Hangul behind it, 14 px, read from /assets/fonts/ into
+// `arena` for good, since ImGui keeps pointing at the bytes. A file that is missing or no font is logged as a warning and the
+// built-in font stays (false).
+b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
+
+// Copies `text` into `out`, cut and ended with "..." if it is wider than `room` pixels. The cut is the longest one that fits
+// (a binary search over the text's UTF-8 characters), never inside a character. Call between nv_imgui_new_frame and
+// nv_imgui_render, since it measures with the UI font.
+void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
+
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds);
 
 // Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be
