@@ -23,7 +23,8 @@
 | 분대 단위 배치 | AI 상대 (적 배치는 스테이지 데이터에 고정) |
 | 유닛당 무기 여러 개, 고유 능력 | 시간 조작 (일시정지, 배속) |
 | 투사체 실제 시뮬레이션, 방어력, 범위 피해, 아군 피해 | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
-| 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | 저장, undo, 한국어 UI |
+| 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | 저장, undo |
+| 한국어와 영어 UI (문자열 장치를 엔진으로 옮김) | |
 | 에디터와 따로인 실행 파일 `autobattler` | 게임 UI (지금은 ImGui 패널 하나) |
 
 ### 규칙
@@ -307,6 +308,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
 | `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(지형지물, 적 배치) |
 | `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
+| `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
 | 공간 격자, 흐름장 | 열린 질문 2: `engine/`(`nv/spatial.h`, `nv/flow.h`) 또는 `autobattler/` |
 
 ### 실행 파일
@@ -334,6 +336,41 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 - **디버그 내보내기:** `_battle_debug(n)`(단계, 틱, 결과, 유닛 수, 해시), `_battle_debug_deploy(def, x, row)`,
   `_battle_debug_start()`, `_battle_debug_run(ticks)`.
 
+### UI 문자열 (엔진으로 옮김)
+
+결정(2026-10-02): `app/`의 `T()`, `TL()`과 언어 선택을 엔진 모듈로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 에디터 앱과
+게임이 같은 장치를 쓴다. 동작과 규칙은 `docs/specs/korean.md` 그대로다(영어 원문이 키, printf 변환 유지, `TL()`의 `###` id).
+
+```c
+// nv/strings.h
+typedef enum NvLanguage { NV_LANGUAGE_EN, NV_LANGUAGE_KO, NV_LANGUAGE_COUNT } NvLanguage;
+typedef struct NvStringPair { const char* english; const char* korean; } NvStringPair;
+
+#define NV_STRINGS_MAX 4096 // pairs per executable
+
+// The executable's table, kept (not copied). Called once at start, before any T().
+void nv_strings_set_table(const NvStringPair* pairs, u32 count);
+NvLanguage nv_strings_language(void);
+void nv_strings_set_language(NvLanguage language);
+NvLanguage nv_strings_browser_language(void); // from navigator.language: Korean if it starts with "ko"
+const char* nv_strings_find_korean(const char* english); // or NULL
+const char* nv_strings_text(const char* english);
+const char* nv_strings_label(const char* english);
+
+// NOTE: Short on purpose, since they wrap every UI text: the one exception to the naming rules.
+#define T(english)  nv_strings_text(english)
+#define TL(english) nv_strings_label(english)
+```
+
+| 항목 | 변경 |
+|---|---|
+| 엔진 | `engine/include/nv/strings.h`, `engine/src/strings.c`: 지금 `app/strings.c`의 조회 코드(해시 표, `T`, `TL`, 언어). 상태는 파일 전역이다(`T()`는 문맥 없이 어디서나 불리므로). 해시 표는 `NV_STRINGS_MAX`에 맞춘 고정 크기 |
+| 에디터 앱 | `app/strings.c`는 표만 남기고 시작할 때 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어지고 `#include <nv/strings.h>`가 된다. `Language`, `LANG_*`, `strings_*`는 `NvLanguage`, `NV_LANGUAGE_*`, `nv_strings_*`가 된다. 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 그대로이므로 `SAVE_VERSION`은 바뀌지 않는다 |
+| 게임 | `autobattler/strings.c`에 자기 표. 브라우저 언어로 시작하고, Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다 |
+| 테스트 | `tests/strings_test.mjs`가 `app/`과 `autobattler/`을 각각 자기 `strings.c`에 대해 검사한다 |
+| 글꼴 | `tools/subset_hangul.sh`가 두 표의 문자를 합쳐 한글 서브셋 하나를 만든다. 두 실행 파일이 `assets/fonts/`를 같이 쓴다 |
+| 문서 | `korean.md`(경로, 엔진 API), `AGENTS.md`의 UI 문자열 줄, `CODING_STANDARD.md`의 이름 규칙에 `T`/`TL` 예외 |
+
 ### 서드파티 후보
 
 | 후보 | 무엇 | 언어, 라이선스 | 판단 |
@@ -357,14 +394,18 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   유닛을 맞히지 않는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 실드가 적 투사체를 막고 아군 것은
   통과시킨다; 박격포의 최소 사거리; 60초에 끝나고 남은 가치로 판정한다.
 
+`tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다.
+
 Playwright(Release, Debug, 데스크톱과 폰 크기): `autobattler/` 페이지를 열고, 배치를 탭으로 놓고 지우고, Start에서 결과까지 가고,
 assert와 WebGPU 오류가 없는지 본다.
 
 ### 단계
 
-1. **시뮬레이션:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. 화면 없음.
-2. **실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널, 배치 입력.
-3. **확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
+1. **문자열을 엔진으로:** `nv/strings.h`, 에디터 앱의 변경, `strings_test.mjs`, 문서. 에디터 앱이 전과 같게 동작하는지
+   확인(한국어 전환, 검색, 저장의 `LANG`).
+2. **시뮬레이션:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. 화면 없음.
+3. **실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 문자열 표, 배치 입력.
+4. **확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
 
 ### 열린 질문
 
@@ -376,10 +417,9 @@ assert와 WebGPU 오류가 없는지 본다.
 5. **대형 유닛의 통로:** 흐름장은 칸 하나 너비를 기준으로 하므로 Fortress가 1칸 틈에 낄 수 있다. 이번 단계는 스테이지에
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. **수치:** 위 표의 값은 출발점이다. 바꾸고 싶은 것이 있는가?
-7. **UI 문자열:** `T()`와 한국어 표는 `app/`의 것이다. 프로토타입은 영어만 쓸까, 아니면 문자열 표를 엔진으로 옮겨 함께
-   쓸까?
-8. **에셋:** 프로토타입에 필요한 것은 UI 폰트뿐이다. `assets/` 전체를 함께 내려받을까, 아니면 `assets/fonts/`만 넣을까
-   (`nv_setup_executable`의 `ASSETS`는 폴더 하나를 받는다)?
+7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
+8. **에셋:** 프로토타입에 필요한 것은 UI 글꼴(Inter와 한글 서브셋)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
+   `assets/fonts/`만 넣을까(`nv_setup_executable`의 `ASSETS`는 폴더 하나를 받는다)? 추천: `assets/fonts/`만.
 
 ## English
 
@@ -401,7 +441,8 @@ The point is to settle the rules and the game object structure before finding ou
 | Deployment by squad | An AI opponent (the enemy deployment is fixed in the stage data) |
 | Several weapons per unit, special abilities | Time controls (pause, speed-up) |
 | Simulated projectiles, armor, area damage, friendly fire | Mass rendering and animation (one mesh node each) |
-| One round, ended by a wipe-out or a 60-second time limit | Saving, undo, a Korean UI |
+| One round, ended by a wipe-out or a 60-second time limit | Saving, undo |
+| A Korean and English UI (the string mechanism moves to the engine) | |
 | An executable of its own, `autobattler`, apart from the editor | A game UI (one ImGui panel for now) |
 
 ### Rules
@@ -697,6 +738,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 | `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
 | `autobattler/battle_defs.c` | The unit definition table and one stage (props, enemy deployment) |
 | `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
+| `autobattler/strings.c` | The game's Korean table (see "UI strings") |
 | Spatial grid, flow field | Open question 2: `engine/` (`nv/spatial.h`, `nv/flow.h`) or `autobattler/` |
 
 ### Executable
@@ -726,6 +768,42 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 - **Debug exports:** `_battle_debug(n)` (phase, tick, outcome, unit counts, hash), `_battle_debug_deploy(def, x, row)`,
   `_battle_debug_start()`, `_battle_debug_run(ticks)`.
 
+### UI strings (moved to the engine)
+
+Decided (2026-10-02): `T()`, `TL()` and language selection move from `app/` to an engine module, and each executable keeps
+its own Korean table. The editor app and the game share the mechanism. Behavior and rules stay as in `docs/specs/korean.md`
+(the English text is the key, printf conversions are kept, `TL()`'s `###` id).
+
+```c
+// nv/strings.h
+typedef enum NvLanguage { NV_LANGUAGE_EN, NV_LANGUAGE_KO, NV_LANGUAGE_COUNT } NvLanguage;
+typedef struct NvStringPair { const char* english; const char* korean; } NvStringPair;
+
+#define NV_STRINGS_MAX 4096 // pairs per executable
+
+// The executable's table, kept (not copied). Called once at start, before any T().
+void nv_strings_set_table(const NvStringPair* pairs, u32 count);
+NvLanguage nv_strings_language(void);
+void nv_strings_set_language(NvLanguage language);
+NvLanguage nv_strings_browser_language(void); // from navigator.language: Korean if it starts with "ko"
+const char* nv_strings_find_korean(const char* english); // or NULL
+const char* nv_strings_text(const char* english);
+const char* nv_strings_label(const char* english);
+
+// NOTE: Short on purpose, since they wrap every UI text: the one exception to the naming rules.
+#define T(english)  nv_strings_text(english)
+#define TL(english) nv_strings_label(english)
+```
+
+| Topic | Change |
+|---|---|
+| Engine | `engine/include/nv/strings.h`, `engine/src/strings.c`: the lookup code now in `app/strings.c` (the hash table, `T`, `TL`, the language). Its state is file-global (`T()` is called from anywhere, with no context). The hash table has a fixed size, made for `NV_STRINGS_MAX` |
+| Editor app | `app/strings.c` keeps only its table and calls `nv_strings_set_table` at start. `app/strings.h` goes; `#include <nv/strings.h>` replaces it. `Language`, `LANG_*` and `strings_*` become `NvLanguage`, `NV_LANGUAGE_*` and `nv_strings_*`. The `LANG` save tag's values (0 English, 1 Korean) stay, so `SAVE_VERSION` does not change |
+| Game | Its own table in `autobattler/strings.c`. It starts in the browser's language and switches with a Language combo in the Battle panel (not saved). Every text in the panel goes through `T()`/`TL()` |
+| Tests | `tests/strings_test.mjs` checks `app/` and `autobattler/`, each against its own `strings.c` |
+| Font | `tools/subset_hangul.sh` makes one Hangul subset from the characters of both tables. Both executables share `assets/fonts/` |
+| Docs | `korean.md` (paths, the engine API), the UI strings line in `AGENTS.md`, and the `T`/`TL` exception in the naming rules of `CODING_STANDARD.md` |
+
 ### Third-party candidates
 
 | Candidate | What it is | Language, license | Judgment |
@@ -749,14 +827,18 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   does not hit air units; a Wasp flies over props; a Ranger jumps a low wall; a shield stops enemy projectiles and lets
   friendly ones through; the mortar's minimum range; the battle ends at 60 seconds and is judged by remaining value.
 
+`tests/strings_test.mjs` checks `autobattler/`'s strings too.
+
 Playwright (Release and Debug, desktop and phone sizes): open the `autobattler/` page, place and remove squads by tapping, go
 from Start to a result, and check for no asserts and no WebGPU errors.
 
 ### Phases
 
-1. **Simulation:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. No view.
-2. **Executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel, deployment input.
-3. **Checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and `autobattler.md`.
+1. **Strings to the engine:** `nv/strings.h`, the editor app's changes, `strings_test.mjs`, docs. Check that the editor app
+   behaves as before (switching to Korean, search, the `LANG` save tag).
+2. **Simulation:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. No view.
+3. **Executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its string table, deployment input.
+4. **Checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and `autobattler.md`.
 
 ### Open questions
 
@@ -768,7 +850,6 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 5. **Passages for large units:** the flow field assumes a one-cell width, so a Fortress can get stuck in a one-cell gap. This
    step keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
 6. **Numbers:** the table values are a starting point. Anything to change?
-7. **UI strings:** `T()` and the Korean table belong to `app/`. Does the prototype use English only, or does the string
-   table move to the engine to be shared?
-8. **Assets:** the prototype needs only the UI font. Ship the whole `assets/` directory, or only `assets/fonts/`
-   (`ASSETS` in `nv_setup_executable` takes one directory)?
+7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
+8. **Assets:** the prototype needs only the UI fonts (Inter and the Hangul subset). Ship the whole `assets/` directory, or
+   only `assets/fonts/` (`ASSETS` in `nv_setup_executable` takes one directory)? Recommended: only `assets/fonts/`.
