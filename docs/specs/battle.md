@@ -302,7 +302,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 | 파일 | 내용 |
 |---|---|
-| `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. `nv_setup_executable(autobattler)`이므로 설치 위치는 `<prefix>/autobattler/` |
+| `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. 설치 구성 요소 `autobattler`의 `<prefix>/`에 설치한다("페이지" 참고) |
 | `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 이펙트, 카메라, 프레임 루프(고정 틱 누산기) |
 | `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
 | `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(지형지물, 적 배치) |
@@ -311,8 +311,15 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 실행 파일
 
-- **페이지:** CI가 설치하는 대로 Pages의 `release/autobattler/`, `debug/autobattler/`, 다른 브랜치는 `<branch>/autobattler/`.
-  에디터 앱과 따로 내려받는다. 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
+- **페이지:** 기본 브랜치의 Release는 Pages의 `autobattler/release/`, Debug는 `autobattler/debug/`, 다른 브랜치의 Debug는
+  `autobattler/<branch>/`(`/`는 `-`가 된다). 에디터 앱의 폴더(`release/`, `debug/`, `<branch>/`)는 그대로다. 에디터 앱과 따로
+  내려받는다.
+  - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
+  - `nv_setup_executable`에 `COMPONENT <name>` 인수를 더한다(기본값 `web`). `autobattler`는
+    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 앱의 `web` 패키지에 섞이지 않는다.
+  - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
+    stage가 기본 브랜치에서는 `autobattler/release`, `autobattler/debug`를, 다른 브랜치에서는 `autobattler/<branch>`를
+    바꾼다. `autobattler`라는 이름의 브랜치는 `release`, `debug`처럼 게시하지 않는다(그 폴더를 덮어쓰므로).
 - **화면:** 캔버스 전체가 전장이고 ImGui 창 하나(Battle 패널)가 위에 뜬다. 에디터의 도크, 검색, 팔레트, 저장, undo,
   선택, 콘솔 탭은 없다. 씬 해상도는 캔버스와 같게(`NvSceneOutput`의 `pixel_size` 1) 시작한다.
 - **카메라:** 플레이어 진영 뒤 위에서 비스듬히 보는 시점. `NvImgui.view`의 드래그로 팬, 휠과 핀치로 줌, 전장 밖으로 나가지
@@ -685,7 +692,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 | File | Contents |
 |---|---|
-| `autobattler/CMakeLists.txt` | The `autobattler` executable. Set up with `nv_setup_executable(autobattler)`, so it installs into `<prefix>/autobattler/` |
+| `autobattler/CMakeLists.txt` | The `autobattler` executable, installed into `<prefix>/` of the `autobattler` install component (see "Page") |
 | `autobattler/main.c` | Window, GPU, renderer, ImGui, effects, camera, the frame loop (a fixed-tick accumulator) |
 | `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
 | `autobattler/battle_defs.c` | The unit definition table and one stage (props, enemy deployment) |
@@ -694,8 +701,15 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 ### Executable
 
-- **Page:** as CI installs it, at `release/autobattler/` and `debug/autobattler/` on Pages, and `<branch>/autobattler/` for
-  other branches. Downloaded apart from the editor app. The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
+- **Page:** the default branch's Release at `autobattler/release/` on Pages and its Debug at `autobattler/debug/`; other
+  branches' Debug at `autobattler/<branch>/` (`/` becomes `-`). The editor app's folders (`release/`, `debug/`, `<branch>/`)
+  stay as they are. Downloaded apart from the editor app.
+  - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
+  - `nv_setup_executable` gets a `COMPONENT <name>` argument (default `web`). The game is
+    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the app's `web` package.
+  - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
+    and stage replaces `autobattler/release` and `autobattler/debug` for the default branch, `autobattler/<branch>` for others.
+    A branch named `autobattler` is not published, like `release` and `debug` (it would replace that folder).
 - **Screen:** the whole canvas is the battlefield, with one ImGui window (the Battle panel) over it. None of the editor's docks,
   search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the canvas (`pixel_size` 1 in
   `NvSceneOutput`).
