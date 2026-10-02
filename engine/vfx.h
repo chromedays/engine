@@ -11,9 +11,9 @@
 // the game clock's dt and nv_vfx_burst or nv_vfx_emit where something happens. Set NvRenderer.vfx and
 // the renderer records the passes in nv_renderer_draw.
 
-#include "nv/base.h"
-#include "nv/gpu.h"
-#include "nv/math.h"
+#include "engine/base.h"
+#include "engine/gpu.h"
+#include "engine/math.h"
 
 #define NV_VFX_MAX_EFFECTS             1024
 #define NV_VFX_MAX_EMITTERS            4096

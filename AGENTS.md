@@ -17,15 +17,14 @@ WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emd
 There is no native build.
 
 ```
-engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
-                           imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
-                           gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation),
-                           chunk.h (tagged binary files), storage.h (files kept in IndexedDB),
-                           log.h (the log ring the Console tab shows),
-                           vfx.h (effects: compute particles, trails, beams, decals)
-engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c, log.c,
-                           vfx.c and vfx_cpu.c (the effects; vfx_cpu holds the GPU-free parts tests run),
-                           anim.cpp (the ozz wrapper; our only C++ file)
+engine/                    each module's header and source side by side, included as <engine/name.h>:
+                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.c/.h, gpu.c/.h,
+                           imgui.c/.h (Dear ImGui, ImGuizmo), renderer.c/.h (meshes, materials, skinning, debug lines),
+                           gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
+                           C++ file), chunk.c/.h (tagged binary files), storage.c/.h (files kept in IndexedDB),
+                           log.c/.h (the log ring the Console tab shows),
+                           vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
+                           GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
@@ -75,7 +74,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `nv_imgui_new_frame` and `nv_imgui_render`.
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
-  in `engine/src/imgui.c`.
+  in `engine/imgui.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Inter
   Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`) with a Hangul fallback, not
   ImGui's built-in one.
@@ -162,10 +161,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
   rows, node, clip and texture names and the benchmark's copied table stay English. Hangul that is not
   among KS X 1001's 2,350 syllables needs `tools/subset_hangul.sh` run again. Text copied into a fixed
-  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`nv/base.h`), never in the middle of a character. The desktop types
+  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`engine/base.h`), never in the middle of a character. The desktop types
   through the text agent too (an input method composes there); a key that types no text is kept from it
   in `on_key`.
-- Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
+- Report through `nv_log(level, source, format, ...)` (`engine/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output
   (`Module.print`, `printErr`, uncaught errors, `Module.nvLog` for `EM_JS` code) is queued in
@@ -216,7 +215,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   end. A shader writes linear light that may exceed 1; never apply a transfer curve in a scene shader. The MSAA resolve
   averages in linear space. Bloom (`renderer.c`: `update_bloom`, `record_bloom`) is a 6-level chain between the scene
   pass and the upscale pass, remade only when the scene's size changes.
-- Effects (`nv/vfx.h`, `engine/src/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
+- Effects (`engine/vfx.h`, `engine/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
   passes recorded in `nv_renderer_draw` (emit, simulate, prepare; the free list, two alive lists and a visible list).
   The app registers effects once (`nv_vfx_add_effect`, see `app/effects.c`), calls `nv_vfx_update(dt)` with the game
   clock's dt every frame (0 pauses them) and `nv_vfx_burst`, `nv_vfx_emit`, `nv_vfx_trail`, `nv_vfx_beam` and
@@ -241,7 +240,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
   camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay
   standard 0..1. The shadow map keeps standard depth, since its projection is orthographic.
-- In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
+- In `engine/anim.cpp`, ozz headers are included before engine headers: `engine/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
   Assert on `nv_anim_find_joint` results.

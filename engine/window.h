@@ -1,6 +1,6 @@
 #pragma once
 
-#include "nv/base.h"
+#include "engine/base.h"
 
 // NOTE: The window is the page's <canvas>; its size follows the canvas's CSS layout.
 typedef struct NvWindow {

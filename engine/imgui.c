@@ -1,6 +1,6 @@
-#include "nv/imgui.h"
-#include "nv/math.h"
-#include "nv/window.h"
+#include "engine/imgui.h"
+#include "engine/math.h"
+#include "engine/window.h"
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>

@@ -1,10 +1,10 @@
 #pragma once
 
 // Skeletal animation: skeletons, clips and animators, backed by ozz-animation. The C++ side lives in
-// engine/src/anim.cpp; everything here is plain C.
+// engine/anim.cpp; everything here is plain C.
 
-#include "nv/renderer.h"
-#include "nv/scene.h"
+#include "engine/renderer.h"
+#include "engine/scene.h"
 
 #define NV_MAX_SKELETONS   8
 #define NV_MAX_CLIPS       64

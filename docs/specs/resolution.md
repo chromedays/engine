@@ -101,7 +101,7 @@
 
 ### 변경
 
-- **렌더러 (`nv/renderer.h`, `engine/src/renderer.c`).** `nv_renderer_draw`가 뷰포트 사각형 하나 대신 씬의 해상도와
+- **렌더러 (`engine/renderer.h`, `engine/renderer.c`).** `nv_renderer_draw`가 뷰포트 사각형 하나 대신 씬의 해상도와
   이미지 사각형을 받는다; 투영의 종횡비는 해상도의 것이다. `update_scene_targets`가 (위의 반올림으로) 크기를 정하는
   씬 색 타깃과 MSAA와 깊이 타깃; 업스케일 파이프라인 (전체 화면 삼각형과 최근접 샘플러); 씬 타깃으로의 씬 패스,
   그다음 캔버스로의 업스케일 패스; 업스케일 패스를 위한 세 번째 타임스탬프 쌍. `nv_renderer_view_ray`와
@@ -265,7 +265,7 @@ default docks (viewport 680 × 552), about 13 MB against 32 MB.
 
 ### Changes
 
-- **Renderer (`nv/renderer.h`, `engine/src/renderer.c`).** `nv_renderer_draw` takes the scene's
+- **Renderer (`engine/renderer.h`, `engine/renderer.c`).** `nv_renderer_draw` takes the scene's
   resolution and the image rectangle instead of one viewport rectangle; the projection's aspect
   ratio is the resolution's. The scene color target and the MSAA and depth targets, sized by
   `update_scene_targets` (with the rounding above); the upscale pipeline (a full-screen triangle and

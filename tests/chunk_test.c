@@ -1,7 +1,7 @@
-// Checks nv/chunk.h without a browser: a round trip, and that malformed input fails the reader
+// Checks engine/chunk.h without a browser: a round trip, and that malformed input fails the reader
 // instead of reading out of bounds. Runs under Node (ctest).
 
-#include "nv/chunk.h"
+#include "engine/chunk.h"
 
 #include <stdio.h>
 #include <math.h>

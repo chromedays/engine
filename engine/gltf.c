@@ -1,5 +1,5 @@
-#include "nv/gltf.h"
-#include "nv/log.h"
+#include "engine/gltf.h"
+#include "engine/log.h"
 
 #include <cgltf.h>
 #include <emscripten/emscripten.h>

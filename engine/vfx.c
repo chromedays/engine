@@ -1,6 +1,6 @@
-#include "nv/vfx.h"
-#include "nv/log.h"
-#include "vfx_cpu.h"
+#include "engine/vfx.h"
+#include "engine/log.h"
+#include "engine/vfx_cpu.h"
 
 #include <math.h>
 #include <stdio.h>

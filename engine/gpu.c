@@ -1,6 +1,6 @@
-#include "nv/gpu.h"
-#include "nv/log.h"
-#include "nv/window.h"
+#include "engine/gpu.h"
+#include "engine/log.h"
+#include "engine/window.h"
 
 #include <emscripten/emscripten.h>
 

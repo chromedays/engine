@@ -5,17 +5,17 @@
 // and change them. main.c owns the showcase and the frame, stress.c the stress scene and its
 // benchmark, ui.c the panel.
 
-#include <nv/anim.h>
-#include <nv/chunk.h>
-#include <nv/gltf.h>
-#include <nv/gpu.h>
-#include <nv/imgui.h>
-#include <nv/log.h>
-#include <nv/renderer.h>
-#include <nv/scene.h>
-#include <nv/storage.h>
-#include <nv/vfx.h>
-#include <nv/window.h>
+#include <engine/anim.h>
+#include <engine/chunk.h>
+#include <engine/gltf.h>
+#include <engine/gpu.h>
+#include <engine/imgui.h>
+#include <engine/log.h>
+#include <engine/renderer.h>
+#include <engine/scene.h>
+#include <engine/storage.h>
+#include <engine/vfx.h>
+#include <engine/window.h>
 
 #include "strings.h"
 

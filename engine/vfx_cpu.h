@@ -4,7 +4,7 @@
 // (tests/vfx_test.c): how a frame's bursts split into workgroup jobs, and where the next slot of a
 // ring buffer goes. Private to the engine.
 
-#include "nv/base.h"
+#include "engine/base.h"
 
 // One burst as the emit shader reads it: an emitter fired at a point.
 typedef struct NvVfxBurst {

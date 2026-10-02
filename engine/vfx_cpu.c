@@ -1,4 +1,4 @@
-#include "vfx_cpu.h"
+#include "engine/vfx_cpu.h"
 
 u32 nv_vfx_split_bursts(NvVfxBurst* bursts, u32 burst_count, u32 max_jobs, u32* jobs, u32* bursts_used, u32* lost)
 {

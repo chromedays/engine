@@ -1,7 +1,7 @@
-// C API over ozz-animation (see nv/anim.h). This is the one C++ file of ours: it stays a thin
+// C API over ozz-animation (see engine/anim.h). This is the one C++ file of ours: it stays a thin
 // translation layer, and nothing C++ crosses the header.
 
-// IMPORTANT: ozz headers come first. nv/base.h defines `internal` as a macro, which would break
+// IMPORTANT: ozz headers come first. engine/base.h defines `internal` as a macro, which would break
 // ozz's `internal::` namespace.
 #include "ozz/animation/offline/animation_builder.h"
 #include "ozz/animation/offline/motion_extractor.h"
@@ -24,8 +24,8 @@
 #include "ozz/base/memory/allocator.h"
 
 extern "C" {
-#include "nv/anim.h"
-#include "nv/log.h"
+#include "engine/anim.h"
+#include "engine/log.h"
 }
 
 #include <cmath>

@@ -213,7 +213,7 @@ Chunks
 
 ### 엔진 변경
 
-- **청크 (`nv/chunk.h`, `engine/src/chunk.c`).**
+- **청크 (`engine/chunk.h`, `engine/chunk.c`).**
   - `NV_TAG(a, b, c, d)`가 태그를 만든다.
   - `NvChunkWriter`는 아레나 버퍼에 덧붙인다: `nv_chunk_begin(tag)`과 `nv_chunk_end` (크기를 채워 넣음), 그리고 필드:
     `nv_chunk_u32s`, `nv_chunk_f32s`, `nv_chunk_string`.
@@ -221,7 +221,7 @@ Chunks
     또는 문자열로 읽기. 잘못된 크기의 필드는 리더를 실패로 표시한다; 실패 뒤에는 모든 읽기가 0을 돌려주므로, 로더는
     끝에서 한 번 확인한다.
   - `nv_crc32`, 그리고 헤더 도우미.
-- **저장소 (`nv/storage.h`, `engine/src/storage.c`).**
+- **저장소 (`engine/storage.h`, `engine/storage.c`).**
   - `nv_storage_init`은 `/nv-save`에 IDBFS를 마운트하고, 영구 저장소를 요청하고, IndexedDB로부터의 첫 동기화를
     기다린다 (`wgpuInstanceWaitAny`처럼 Asyncify를 통해).
   - `nv_storage_write(name, bytes, size)`는 임시 파일과 이름 바꾸기를 거쳐 쓴다.
@@ -231,7 +231,7 @@ Chunks
     저장소가 없으면 앱은 지금처럼 돌고 아무것도 저장되지 않는다고 말한다. `nv_storage_init`은 마운트 전에 IndexedDB를
     확인한다: Emscripten의 IDBFS는 그것이 없으면 런타임 전체를 중단시킨다.
   - `nv_storage_flush_then_reload`는 호출을 덮는 flush 뒤에 페이지를 새로고침한다 (Reset).
-- **창 (`nv/window.h`).** `NvWindow`가 페이지가 숨겨질 때를 알리므로, 앱이 그때 저장할 수 있다.
+- **창 (`engine/window.h`).** `NvWindow`가 페이지가 숨겨질 때를 알리므로, 앱이 그때 저장할 수 있다.
 - **링크 플래그.** `-lidbfs.js`.
 
 ### 앱 변경
@@ -256,7 +256,7 @@ Chunks
 
 ### 단계
 
-1. **형식:** `nv/chunk.h`, 그리고 상태 전체를 메모리 안의 바이트로 저장하고 불러오기. 왕복을 확인한다: 저장, 불러오기,
+1. **형식:** `engine/chunk.h`, 그리고 상태 전체를 메모리 안의 바이트로 저장하고 불러오기. 왕복을 확인한다: 저장, 불러오기,
    다시 저장, 바이트 비교. Node용으로 빌드해 `ctest` (CI에서도)가 실행하는 `tests/chunk_test.c`가 리더의 경계 검사를
    다룬다: 모든 잘림, 모든 뒤집힌 비트, 너무 많이 주장하는 청크, 잘못된 필드 크기, 공간이 떨어진 writer.
 2. **자동 저장:** IDBFS, `nv_storage_*`, 타이머와 페이지 숨김 저장, 시작할 때 불러오기, View 탭의 Autosave 섹션,
@@ -495,7 +495,7 @@ name the skeleton does not have leaves the attachment as built.
 
 ### Engine changes
 
-- **Chunks (`nv/chunk.h`, `engine/src/chunk.c`).**
+- **Chunks (`engine/chunk.h`, `engine/chunk.c`).**
   - `NV_TAG(a, b, c, d)` builds a tag.
   - `NvChunkWriter` appends to an arena buffer: `nv_chunk_begin(tag)` and `nv_chunk_end` (which
     patches the size), and fields: `nv_chunk_u32s`, `nv_chunk_f32s`, `nv_chunk_string`.
@@ -504,7 +504,7 @@ name the skeleton does not have leaves the attachment as built.
     reader as failed; after a failure, every read returns zero, so the loader checks once at the
     end.
   - `nv_crc32`, and the header helpers.
-- **Storage (`nv/storage.h`, `engine/src/storage.c`).**
+- **Storage (`engine/storage.h`, `engine/storage.c`).**
   - `nv_storage_init` mounts IDBFS at `/nv-save`, asks for persistent storage, and waits for the
     first sync from IndexedDB (through Asyncify, like `wgpuInstanceWaitAny`).
   - `nv_storage_write(name, bytes, size)` writes through a temporary file and a rename.
@@ -515,7 +515,7 @@ name the skeleton does not have leaves the attachment as built.
     `nv_storage_init` checks for IndexedDB before mounting: Emscripten's IDBFS aborts the whole
     runtime when it is missing.
   - `nv_storage_flush_then_reload` reloads the page after the flush that covers the call (Reset).
-- **Window (`nv/window.h`).** `NvWindow` reports when the page becomes hidden, so the app can save
+- **Window (`engine/window.h`).** `NvWindow` reports when the page becomes hidden, so the app can save
   then.
 - **Link flags.** `-lidbfs.js`.
 
@@ -545,7 +545,7 @@ name the skeleton does not have leaves the attachment as built.
 
 ### Phases
 
-1. **Format:** `nv/chunk.h`, and saving and loading the whole state to bytes in memory. A round
+1. **Format:** `engine/chunk.h`, and saving and loading the whole state to bytes in memory. A round
    trip is checked: save, load, save again, and compare the bytes. `tests/chunk_test.c`, built for
    Node and run by `ctest` (also in CI), covers the reader's bounds checks: every truncation, every
    flipped bit, chunks that claim too much, wrong field sizes, and a writer that runs out of room.

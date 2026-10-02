@@ -33,7 +33,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 좌표 | 오른손, Y 위 (`nv/math.h`). 전장 중심이 원점, 플레이어 진영은 +Z, 적 진영은 -Z |
+| 좌표 | 오른손, Y 위 (`engine/math.h`). 전장 중심이 원점, 플레이어 진영은 +Z, 적 진영은 -Z |
 | 칸 | 2 m 정사각형. 전장은 32칸(X) × 48행(Z) = 64 m × 96 m. 행 0이 플레이어 쪽 끝 |
 | 배치 구역 | 플레이어: 행 0–13, 적: 행 34–47. 가운데 20행은 배치할 수 없다 |
 | 지형지물 | 칸에 맞춘 상자 (칸 범위와 높이). 부서지지 않는다. 지상 이동을 막고, 상자를 지나는 투사체를 멈춘다. 그 칸에는 배치할 수 없다 |
@@ -309,7 +309,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(지형지물, 적 배치) |
 | `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
 | `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
-| 공간 격자, 흐름장 | 열린 질문 2: `engine/`(`nv/spatial.h`, `nv/flow.h`) 또는 `autobattler/` |
+| 공간 격자, 흐름장 | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
 
 ### 실행 파일
 
@@ -338,7 +338,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### UI 문자열 (엔진으로 옮김)
 
-결정(2026-10-02): `T()`, `TL()`과 언어 선택을 엔진(`nv/strings.h`)으로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 자세한
+결정(2026-10-02): `T()`, `TL()`과 언어 선택을 엔진(`engine/strings.h`)으로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 자세한
 내용은 `docs/specs/shared.md`의 "UI 문자열"이다. 게임은 `autobattler/strings.c`에 자기 표를 두고, 브라우저 언어로 시작하며,
 Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다.
 
@@ -352,7 +352,7 @@ Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 �
 | 정의 데이터: C 표 (추천, 이번 단계) | `battle_defs.c`의 표 | C17 | 바꾸면 다시 빌드해야 한다 |
 | 정의 데이터: JSON + cJSON | 텍스트 파일, 파서 | C, MIT | 사람이 읽기 쉽다. 할당자를 우리 아레나로 바꿔야 한다 |
 | 정의 데이터: JSON + jsmn | 토크나이저만 | C, MIT | 할당이 없다. 값 해석은 우리 몫 |
-| 정의 데이터: `nv/chunk.h` | 우리 바이너리 형식 | C17 | 의존성이 없지만 편집기가 필요하다 |
+| 정의 데이터: `engine/chunk.h` | 우리 바이너리 형식 | C17 | 의존성이 없지만 편집기가 필요하다 |
 
 ### 테스트
 
@@ -380,7 +380,7 @@ assert와 WebGPU 오류가 없는지 본다.
 ### 열린 질문
 
 1. **정의 데이터 형식:** 이번 단계는 C 표로 하고 파일 형식은 밸런스 작업 전에 따로 정할까, 아니면 지금 정할까?
-2. **공간 격자와 흐름장의 위치:** `autobattler.md`대로 엔진(`nv/spatial.h`, `nv/flow.h`)인가, 아니면 `autobattler/`에서 먼저
+2. **공간 격자와 흐름장의 위치:** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면 `autobattler/`에서 먼저
    쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. **시간 제한 판정:** 남은 가치 비교가 맞는가?
 4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가?
@@ -421,7 +421,7 @@ The point is to settle the rules and the game object structure before finding ou
 
 | Topic | Value |
 |---|---|
-| Coordinates | Right-handed, Y up (`nv/math.h`). The field is centered on the origin; the player's side is +Z, the enemy's −Z |
+| Coordinates | Right-handed, Y up (`engine/math.h`). The field is centered on the origin; the player's side is +Z, the enemy's −Z |
 | Cells | 2 m squares. The field is 32 cells (X) × 48 rows (Z) = 64 m × 96 m. Row 0 is the player's edge |
 | Deployment zones | Player: rows 0–13; enemy: rows 34–47. The 20 rows between take no deployment |
 | Props | Boxes aligned to cells (a cell range and a height). Indestructible. They block ground movement and stop projectiles that pass through the box. Their cells take no deployment |
@@ -709,7 +709,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 | `autobattler/battle_defs.c` | The unit definition table and one stage (props, enemy deployment) |
 | `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
 | `autobattler/strings.c` | The game's Korean table (see "UI strings") |
-| Spatial grid, flow field | Open question 2: `engine/` (`nv/spatial.h`, `nv/flow.h`) or `autobattler/` |
+| Spatial grid, flow field | Open question 2: `engine/` (`engine/spatial.h`, `engine/flow.h`) or `autobattler/` |
 
 ### Executable
 
@@ -740,7 +740,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 ### UI strings (moved to the engine)
 
-Decided (2026-10-02): `T()`, `TL()` and language selection move to the engine (`nv/strings.h`), and each executable keeps its
+Decided (2026-10-02): `T()`, `TL()` and language selection move to the engine (`engine/strings.h`), and each executable keeps its
 own Korean table. The details are in "UI strings" of `docs/specs/shared.md`. The game keeps its table in
 `autobattler/strings.c`, starts in the browser's language and switches with a Language combo in the Battle panel (not
 saved). Every text in the panel goes through `T()`/`TL()`.
@@ -755,7 +755,7 @@ saved). Every text in the panel goes through `T()`/`TL()`.
 | Definitions: C tables (recommended, this step) | Tables in `battle_defs.c` | C17 | A change needs a rebuild |
 | Definitions: JSON + cJSON | Text files, a parser | C, MIT | Easy to read; its allocator must be pointed at our arenas |
 | Definitions: JSON + jsmn | A tokenizer only | C, MIT | No allocation; interpreting values is ours |
-| Definitions: `nv/chunk.h` | Our binary format | C17 | No dependency, but needs an editor |
+| Definitions: `engine/chunk.h` | Our binary format | C17 | No dependency, but needs an editor |
 
 ### Tests
 
@@ -784,7 +784,7 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 ### Open questions
 
 1. **Definition data format:** C tables for this step and a file format decided separately before balancing, or decide now?
-2. **Where the spatial grid and flow field go:** the engine (`nv/spatial.h`, `nv/flow.h`), as `autobattler.md` says, or
+2. **Where the spatial grid and flow field go:** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md` says, or
    `autobattler/` first, moving them when a second use appears?
 3. **Time-limit judgment:** is comparing remaining value right?
 4. **Squads:** units act on their own after the start (proposed), or keep a formation?

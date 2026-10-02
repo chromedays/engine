@@ -1,9 +1,9 @@
 #pragma once
 
-#include "nv/math.h"
+#include "engine/math.h"
 
 #define NV_MAX_NODES     16384
-#define NV_MAX_ANIMATORS 256 // animator ids index tables in nv/anim.h and nv/renderer.h
+#define NV_MAX_ANIMATORS 256 // animator ids index tables in engine/anim.h and engine/renderer.h
 #define NV_NODE_NAME_MAX 32
 
 // NOTE: Slot 0 is never used, so a zeroed id means "no node". `gen` catches ids that outlived
@@ -11,7 +11,7 @@
 typedef struct NvNodeId     { u32 index, gen; } NvNodeId;
 typedef struct NvMeshId     { u32 index; } NvMeshId;     // 0 = no mesh
 typedef struct NvMaterialId { u32 index; } NvMaterialId; // 0 = default material
-typedef struct NvAnimatorId { u32 index; } NvAnimatorId; // 0 = not animated (see nv/anim.h)
+typedef struct NvAnimatorId { u32 index; } NvAnimatorId; // 0 = not animated (see engine/anim.h)
 
 typedef enum NvProjection {
     NV_PROJECTION_NONE, // node has no camera

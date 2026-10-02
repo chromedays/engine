@@ -57,7 +57,7 @@
 
 | 주제 | 결정 |
 |---|---|
-| 모듈 | `nv/vfx.h`, `engine/src/vfx.c`: 효과 표, 파티클, 선분 (궤적과 빔), 데칼. 렌더러는 `NvRenderer.vfx`가 있으면 씬 패스 안에서 그것을 그린다. HDR, 톤 매핑, bloom은 렌더러에 들어간다 (`renderer.c`) |
+| 모듈 | `engine/vfx.h`, `engine/vfx.c`: 효과 표, 파티클, 선분 (궤적과 빔), 데칼. 렌더러는 `NvRenderer.vfx`가 있으면 씬 패스 안에서 그것을 그린다. HDR, 톤 매핑, bloom은 렌더러에 들어간다 (`renderer.c`) |
 | 시각 | `nv_vfx_update(vfx, dt)`가 효과의 시각을 진행한다. 앱은 게임 시각의 dt를 넘기므로, 일시정지는 효과를 멈추고 슬로 모션은 효과를 느리게 한다 (`autobattler.md`의 9번) |
 | 효과와 이미터 | 효과는 이미터 최대 8개의 묶음이다 (폭발 = 섬광 + 불꽃 + 연기 + 파편). 이미터는 파티클 흐름 하나로, `NvVfxEmitterDesc`의 행이다: 한 번에 나오는 수, 수명 범위, 속도 범위와 원뿔, 중력, 공기 저항, 난류, 지면 충돌 (높이, 반발, 마찰), 크기 시작과 끝, 색 세 점 (시작, 중간, 끝; HDR 값 허용), 모양, 블렌드 모드, 속도 방향 늘이기, 효과 안에서의 시작 지연. 효과 최대 1,024개 (`NV_VFX_MAX_EFFECTS`), 이미터 최대 4,096개 (`NV_VFX_MAX_EMITTERS`). 이미터 표는 GPU의 스토리지 버퍼 하나 (이미터당 약 128바이트, 최대 512 KB)라서 수를 늘리는 비용이 작다. 앱이 시작할 때 등록한다. 데이터 파일은 `autobattler.md`의 4번 (데이터 기반 정의)에서 다룬다 |
 | 호출 | `nv_vfx_burst(vfx, effect, position, direction, scale)`: 한 번에 터뜨리기. `nv_vfx_emit(vfx, effect, from, to, count)`: 이번 틱에 움직인 구간을 따라 고르게 내보내기 (미사일 연기 궤적). 핸들도 해제도 없다: 모든 것은 수명이 끝나면 사라진다 |
@@ -199,7 +199,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 - **선분은 가산 블렌딩만**, 데칼은 알파 블렌딩만 한다 (궤적과 빔은 빛이다).
 - **MSAA resolve는 이제 선형 공간에서 평균**한다 (씬 타깃이 HDR 선형이므로). 이전 sRGB 평균과 가장자리의 색이 아주 조금 다르다.
 - **통계**: 파티클의 살아 있는 수, 보이는 수, 버려진 수는 GPU에서 읽어 한두 프레임 늦다. 선분과 데칼의 살아 있는 수는 CPU가 만료 시각 배열로 8프레임마다 센다.
-- **효과의 CPU 쪽 순수 함수** (버스트를 작업 그룹 작업으로 나누기, 링의 슬롯 할당)는 `engine/src/vfx_cpu.h`, `vfx_cpu.c`에 있고 `tests/vfx_test.c`가 Node에서 시험한다.
+- **효과의 CPU 쪽 순수 함수** (버스트를 작업 그룹 작업으로 나누기, 링의 슬롯 할당)는 `engine/vfx_cpu.h`, `vfx_cpu.c`에 있고 `tests/vfx_test.c`가 Node에서 시험한다.
 - **스트레스 씬**: Effects 워크로드 (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); 통계 행 (살아 있는 수, 보이는 수, 버려진 수, 선분, 데칼, GPU bloom과 파티클 패스);
   벤치마크 단계 여섯 (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500)과 열 (GPU bloom / 파티클 ms, 평균 살아 있는 수). 단계마다 빈 하늘에서 시작한다.
 - **Debug export**: `_app_debug_vfx(n)` (0 살아 있는 수, 1 보이는 수, 2 버려진 수, 3 효과 수, 4 선분, 5 데칼), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
@@ -219,9 +219,9 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 ### 변경
 
-- **엔진.** `nv/vfx.h`, `engine/src/vfx.c` (효과와 이미터 표, 버스트 큐, 파티클 버퍼, emit, simulate, prepare compute 패스, 선분과 데칼 링, 그리기), `nv/renderer.h`와
+- **엔진.** `engine/vfx.h`, `engine/vfx.c` (효과와 이미터 표, 버스트 큐, 파티클 버퍼, emit, simulate, prepare compute 패스, 선분과 데칼 링, 그리기), `engine/renderer.h`와
   `renderer.c` (`RGBA16Float` 씬 타깃, `NvPostSettings`, 업스케일 패스의 노출과 톤 매핑과 bloom 합성, bloom 체인과 그 패스,
-  타임스탬프 10개, 첫 compute 파이프라인), `engine/src/gpu.c` (큰 파티클 용량을 위한 장치 한도 요청), `engine/src/imgui.c` (float 텍스처 미리보기 확인).
+  타임스탬프 10개, 첫 compute 파이프라인), `engine/gpu.c` (큰 파티클 용량을 위한 장치 한도 요청), `engine/imgui.c` (float 텍스처 미리보기 확인).
 - **앱.** View 탭의 Post-processing과 Effects 섹션 (`app/ui.c`), 쇼케이스의 시험 효과 정의 (`app/main.c`), 저장 태그
   (`app/save.c`, `save.md`), 스트레스 워크로드와 통계와 벤치마크 (`app/stress.c`), 한국어 문자열 (`app/strings.c`),
   Debug export.
@@ -329,7 +329,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 
 | Topic | Decision |
 |---|---|
-| Module | `nv/vfx.h`, `engine/src/vfx.c`: the effect table, particles, segments (trails and beams), decals. The renderer draws it inside the scene pass when `NvRenderer.vfx` is set. HDR, tone mapping and bloom go in the renderer (`renderer.c`) |
+| Module | `engine/vfx.h`, `engine/vfx.c`: the effect table, particles, segments (trails and beams), decals. The renderer draws it inside the scene pass when `NvRenderer.vfx` is set. HDR, tone mapping and bloom go in the renderer (`renderer.c`) |
 | Time | `nv_vfx_update(vfx, dt)` advances the effects' clock. The app passes the game clock's dt, so a pause freezes effects and slow motion slows them (item 9 of `autobattler.md`) |
 | Effects and emitters | An effect is a group of at most 8 emitters (an explosion = flash + sparks + smoke + debris). An emitter is one stream of particles, a row of `NvVfxEmitterDesc`: the count per burst, lifetime range, speed range and cone, gravity, drag, turbulence, ground collision (height, restitution, friction), start and end size, three colors (start, middle, end; HDR values allowed), shape, blend mode, stretching along velocity, a start delay within the effect. At most 1,024 effects (`NV_VFX_MAX_EFFECTS`) and 4,096 emitters (`NV_VFX_MAX_EMITTERS`). The emitter table is one GPU storage buffer (about 128 bytes per emitter, 512 KB at most), so raising the counts costs little. The app registers them at start. Data files are item 4 of `autobattler.md` (data-driven definitions) |
 | Calls | `nv_vfx_burst(vfx, effect, position, direction, scale)`: one burst. `nv_vfx_emit(vfx, effect, from, to, count)`: spread evenly along the stretch moved this tick (a missile's smoke trail). No handles and nothing to free: everything disappears when its lifetime ends |
@@ -471,7 +471,7 @@ All five phases are built. What differs from the spec or was not in it:
 - **Segments are additive only** and decals alpha blended only (trails and beams are light).
 - **The MSAA resolve now averages in linear space** (the scene target is linear HDR). Edge colors differ very slightly from the earlier sRGB average.
 - **Stats**: the particles' alive, visible and dropped counts are read back from the GPU and are a frame or two late. The live segments and decals are counted on the CPU every 8 frames from an array of expiry times.
-- **The effects' pure CPU functions** (splitting bursts into workgroup jobs, allocating ring slots) are in `engine/src/vfx_cpu.h` and `vfx_cpu.c`, and `tests/vfx_test.c` tests them under Node.
+- **The effects' pure CPU functions** (splitting bursts into workgroup jobs, allocating ring slots) are in `engine/vfx_cpu.h` and `vfx_cpu.c`, and `tests/vfx_test.c` tests them under Node.
 - **The stress scene**: an Effects workload (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); stats rows (alive, visible, dropped, segments, decals, GPU bloom and particle passes);
   six benchmark steps (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500) and columns (GPU bloom / particle ms, average alive). Each step starts from an empty sky.
 - **Debug exports**: `_app_debug_vfx(n)` (0 alive, 1 visible, 2 dropped, 3 effect count, 4 segments, 5 decals), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
@@ -492,9 +492,9 @@ All decided on 2026-10-01.
 
 ### Changes
 
-- **Engine.** `nv/vfx.h`, `engine/src/vfx.c` (the effect and emitter tables, the burst queue, particle buffers, the emit, simulate and prepare compute passes, segment and decal rings, drawing);
-  `nv/renderer.h` and `renderer.c` (`RGBA16Float` scene targets, `NvPostSettings`, exposure, tone mapping and the bloom
-  composite in the upscale pass, the bloom chain and its passes, 10 timestamps, the first compute pipelines); `engine/src/gpu.c` (device limits raised for large particle capacities); `engine/src/imgui.c` (float texture previews
+- **Engine.** `engine/vfx.h`, `engine/vfx.c` (the effect and emitter tables, the burst queue, particle buffers, the emit, simulate and prepare compute passes, segment and decal rings, drawing);
+  `engine/renderer.h` and `renderer.c` (`RGBA16Float` scene targets, `NvPostSettings`, exposure, tone mapping and the bloom
+  composite in the upscale pass, the bloom chain and its passes, 10 timestamps, the first compute pipelines); `engine/gpu.c` (device limits raised for large particle capacities); `engine/imgui.c` (float texture previews
   checked).
 - **App.** The View tab's Post-processing and Effects sections (`app/ui.c`), the showcase's test effect definitions
   (`app/main.c`), the save tags (`app/save.c`, `save.md`), the stress workload, stats and benchmark (`app/stress.c`), Korean

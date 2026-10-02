@@ -44,7 +44,7 @@
 
 ### 옮기는 것
 
-#### 1. UI 문자열 (`nv/strings.h`)
+#### 1. UI 문자열 (`engine/strings.h`)
 
 `battle.md`의 "UI 문자열" 절에서 이리로 옮긴다. 정한 대로다:
 
@@ -67,13 +67,13 @@ const char* nv_strings_label(const char* english);
 #define TL(english) nv_strings_label(english)
 ```
 
-- `engine/src/strings.c`: 지금 `app/strings.c`의 해시 표, `T`, `TL`, 언어. 상태는 파일 전역이다.
+- `engine/strings.c`: 지금 `app/strings.c`의 해시 표, `T`, `TL`, 언어. 상태는 파일 전역이다.
 - `app/strings.c`는 표(`NvStringPair` 배열)만 남기고, `main`이 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어진다.
 - 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 `NV_LANGUAGE_*`의 값과 같다.
 - `tests/strings_test.mjs`는 폴더 목록을 받아 폴더마다 자기 `strings.c`에 대해 검사한다. 지금은 `app/` 하나이고, 게임이
   `autobattler/`를 더한다. `tools/subset_hangul.sh`도 표 목록을 받는다.
 
-#### 2. 메시 기본형 (`nv/mesh.h`)
+#### 2. 메시 기본형 (`engine/mesh.h`)
 
 ```c
 // Appends to `data`, whose arrays hold `vertex_capacity` and `index_capacity`; asserts on overflow.
@@ -81,11 +81,11 @@ void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacit
 void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
-- `engine/src/mesh.c`: GPU 없는 코드라 ctest로 검사한다. `NvMeshData`의 count를 늘린다.
+- `engine/mesh.c`: GPU 없는 코드라 ctest로 검사한다. `NvMeshData`의 count를 늘린다.
 - 앱: `app_box_mesh`, `create_sword_mesh`, `create_ground_mesh`가 이것을 쓴다. 꼭짓점 순서와 값이 같으므로 화면이 같다.
 - 게임: 유닛 큐브, 지형지물 상자, 64 × 96 m 전장.
 
-#### 3. UI 글꼴 (`nv/imgui.h`)
+#### 3. UI 글꼴 (`engine/imgui.h`)
 
 ```c
 // Inter with the Hangul subset behind it, from /assets/fonts/ (docs/specs/fonts.md), read into `arena`
@@ -99,7 +99,7 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 - 경로와 크기(14 px)는 `fonts.md`가 정한 UI 글꼴이므로 엔진에 둔다. 앱의 `read_asset`, `load_font`, `fit_text`는 없어진다.
 - 로그 출처는 `"imgui"`가 된다(지금은 `"app"`). 테스트가 출처로 찾는 것은 없다.
 
-#### 4. 씬 해상도 (`nv/renderer.h`)
+#### 4. 씬 해상도 (`engine/renderer.h`)
 
 ```c
 typedef enum NvResolutionMode { NV_RESOLUTION_SCALE, NV_RESOLUTION_FIXED } NvResolutionMode;
@@ -122,14 +122,14 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
 ```
 
-- `engine/src/renderer_cpu.c`: GPU 없는 렌더러 코드(`vfx_cpu.c`와 같은 방식). `nv_renderer_scene_output`과
+- `engine/renderer_cpu.c`: GPU 없는 렌더러 코드(`vfx_cpu.c`와 같은 방식). `nv_renderer_scene_output`과
   `nv_renderer_view_ray`가 여기로 와서 ctest로 검사한다. `nv_renderer_camera_matrices`도 GPU를 쓰지 않으면 함께 온다.
 - 열거형의 값 순서가 지금과 같으므로 저장 태그 `RSMD`, `RSFT`의 값이 같은 뜻이다.
 - 앱: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX`, `scene_output`이 없어진다. `pick`은
   `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 앱에 남는다(도크 배치).
 - 게임: 폰에서 divisor 2, 배치 입력의 탭.
 
-#### 5. 궤도 카메라 (`nv/camera.h`)
+#### 5. 궤도 카메라 (`engine/camera.h`)
 
 ```c
 typedef struct NvOrbitCamera {
@@ -148,13 +148,13 @@ NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_nod
 void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
-- `engine/src/camera.c`, GPU 없음, ctest로 검사한다.
+- `engine/camera.c`, GPU 없음, ctest로 검사한다.
 - 앱: `SceneView`의 `camera_yaw`, `camera_pitch`, `camera_distance`, `orbit_point`가 `NvOrbitCamera orbit` 하나가 된다.
   선택 따라가기, `pan`, 홈, 초점, 기즈모 중 멈춤은 앱에 남는다. `CAMERA_*` 한계는 `orbit`의 필드가 된다.
 - 저장: 태그는 그대로이고, 쓰고 읽는 필드 경로만 바뀐다(`view->orbit.yaw`).
 - 게임: 피치와 요를 고정하고, 팬 결과를 지면에 투영(y를 0으로)해 전장 안으로 제한한다.
 
-#### 6. 내려받은 크기 (`nv/window.h`)
+#### 6. 내려받은 크기 (`engine/window.h`)
 
 ```c
 // "3.2 MB downloaded" or "3.2 MB from cache" for this page's own files; empty when the browser does not say.
@@ -169,25 +169,25 @@ void nv_window_download_text(char* out, umm capacity);
 - 루트 `CMakeLists.txt`에 `nv_add_version(<target>)`: `<target>_version` 타깃, 그 타깃 폴더의 `nv_version.h`, include 경로,
   `NV_BUILD_NAME`. `app/CMakeLists.txt`의 같은 코드가 이 한 줄이 된다. `cmake/version.cmake`는 그대로다.
 
-#### 8. 작은 도우미 (`nv/base.h`, `nv/math.h`, `nv/window.h`)
+#### 8. 작은 도우미 (`engine/base.h`, `engine/math.h`, `engine/window.h`)
 
 ```c
-// nv/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
+// engine/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
 #define NV_FNV1A_SEED 2166136261u
 static inline u32 nv_fnv1a(u32 hash, const void* bytes, umm size);
 
-// nv/math.h
+// engine/math.h
 static inline f32 nv_clamp_f32(f32 value, f32 lo, f32 hi);
 static inline u32 nv_clamp_u32(u32 value, u32 lo, u32 hi);
 
-// nv/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
+// engine/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
 // generator (the step uses increment | 1); nv_random_seed picks a sequence.
 typedef struct NvRandom { u64 state, increment; } NvRandom;
 void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
 u32 nv_random_u32(NvRandom* random);
 f32 nv_random_f32(NvRandom* random); // [0, 1)
 
-// nv/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
+// engine/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
 f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
@@ -196,7 +196,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 - `effects.c`의 xorshift는 `NvRandom`이 된다. 스트레스 씬 이펙트의 무작위 순서가 바뀌지만 저장되지도, 값으로 검사되지도
   않는다 (열린 질문 4).
 - 게임: 결정론의 해시와 시드 난수(`battle.md`의 "결정론").
-- `nv_fnv1a`의 구현은 `engine/src/base.c`가 없으므로 `static inline`으로 헤더에 둔다.
+- `nv_fnv1a`의 구현은 `engine/base.c`가 없으므로 `static inline`으로 헤더에 둔다.
 
 ### 바뀌지 않는 것
 
@@ -229,11 +229,11 @@ ctest(Node), 새 파일:
 각 단계는 커밋 하나이고, 끝마다 앱이 전과 같은지 위 검사로 확인한다.
 
 1. **도우미:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
-2. **메시:** `nv/mesh.h`, `mesh_test.c`.
+2. **메시:** `engine/mesh.h`, `mesh_test.c`.
 3. **해상도와 탭:** `NvResolution`, `renderer_cpu.c`, `nv_renderer_tap_ray`, `resolution_test.c`.
-4. **카메라:** `nv/camera.h`, `camera_test.c`, `SceneView`의 변경.
+4. **카메라:** `engine/camera.h`, `camera_test.c`, `SceneView`의 변경.
 5. **페이지와 글꼴:** `nv_imgui_load_ui_font`, `nv_imgui_fit_text`, `nv_window_download_text`, `nv_add_version`.
-6. **문자열:** `nv/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
+6. **문자열:** `engine/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
 7. **문서:** `AGENTS.md`(구조 목록의 새 헤더, UI 문자열 줄), `CODING_STANDARD.md`(`T`/`TL` 예외), `korean.md`,
    `resolution.md`, `fonts.md`의 이름과 경로. `battle.md`는 이 스펙을 선행 작업으로 가리킨다.
 
@@ -246,7 +246,7 @@ ctest(Node), 새 파일:
    글꼴, 기본값)를 엔진 함수 하나로 묶을까?
 4. **난수:** `effects.c`를 `NvRandom`으로 바꿔 스트레스 이펙트의 무작위 순서가 바뀌는 것이 괜찮은가? 아니면 xorshift를
    그대로 둘까?
-5. **카메라 모듈:** 새 모듈 `nv/camera.h`(추천)인가, `nv/scene.h`에 둘까?
+5. **카메라 모듈:** 새 모듈 `engine/camera.h`(추천)인가, `engine/scene.h`에 둘까?
 
 ## English
 
@@ -292,7 +292,7 @@ and save format do not change.
 
 ### What moves
 
-#### 1. UI strings (`nv/strings.h`)
+#### 1. UI strings (`engine/strings.h`)
 
 Moved here from the "UI strings" section of `battle.md`, as decided:
 
@@ -315,14 +315,14 @@ const char* nv_strings_label(const char* english);
 #define TL(english) nv_strings_label(english)
 ```
 
-- `engine/src/strings.c`: the hash table, `T`, `TL` and the language now in `app/strings.c`. Its state is file-global.
+- `engine/strings.c`: the hash table, `T`, `TL` and the language now in `app/strings.c`. Its state is file-global.
 - `app/strings.c` keeps only its table (an `NvStringPair` array), and `main` calls `nv_strings_set_table`. `app/strings.h`
   goes.
 - The `LANG` save tag's values (0 English, 1 Korean) equal those of `NV_LANGUAGE_*`.
 - `tests/strings_test.mjs` takes a list of folders and checks each against its own `strings.c`. For now that is `app/`;
   the game adds `autobattler/`. `tools/subset_hangul.sh` takes a list of tables too.
 
-#### 2. Mesh primitives (`nv/mesh.h`)
+#### 2. Mesh primitives (`engine/mesh.h`)
 
 ```c
 // Appends to `data`, whose arrays hold `vertex_capacity` and `index_capacity`; asserts on overflow.
@@ -330,12 +330,12 @@ void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacit
 void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
-- `engine/src/mesh.c`: GPU-free, so ctest checks it. It grows the counts in `NvMeshData`.
+- `engine/mesh.c`: GPU-free, so ctest checks it. It grows the counts in `NvMeshData`.
 - App: `app_box_mesh`, `create_sword_mesh` and `create_ground_mesh` use it. Vertex order and values are the same, so the
   screen is too.
 - Game: unit cubes, prop boxes, the 64 × 96 m field.
 
-#### 3. UI font (`nv/imgui.h`)
+#### 3. UI font (`engine/imgui.h`)
 
 ```c
 // Inter with the Hangul subset behind it, from /assets/fonts/ (docs/specs/fonts.md), read into `arena`
@@ -350,7 +350,7 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
   `load_font` and `fit_text` go.
 - The log source becomes `"imgui"` (now `"app"`). No test looks messages up by source.
 
-#### 4. Scene resolution (`nv/renderer.h`)
+#### 4. Scene resolution (`engine/renderer.h`)
 
 ```c
 typedef enum NvResolutionMode { NV_RESOLUTION_SCALE, NV_RESOLUTION_FIXED } NvResolutionMode;
@@ -373,14 +373,14 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
 ```
 
-- `engine/src/renderer_cpu.c`: the renderer's GPU-free code (the way `vfx_cpu.c` works). `nv_renderer_scene_output` and
+- `engine/renderer_cpu.c`: the renderer's GPU-free code (the way `vfx_cpu.c` works). `nv_renderer_scene_output` and
   `nv_renderer_view_ray` move there so ctest can check them; `nv_renderer_camera_matrices` comes too if it uses no GPU.
 - The enum value order is unchanged, so the `RSMD` and `RSFT` save tags keep their meaning.
 - App: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX` and `scene_output` go. `pick` starts with
   `nv_renderer_tap_ray`. `ui_rect` stays in the app (dock layout).
 - Game: divisor 2 on phones, taps for deployment.
 
-#### 5. Orbit camera (`nv/camera.h`)
+#### 5. Orbit camera (`engine/camera.h`)
 
 ```c
 typedef struct NvOrbitCamera {
@@ -399,14 +399,14 @@ NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_nod
 void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
-- `engine/src/camera.c`, GPU-free, checked by ctest.
+- `engine/camera.c`, GPU-free, checked by ctest.
 - App: `SceneView`'s `camera_yaw`, `camera_pitch`, `camera_distance` and `orbit_point` become one `NvOrbitCamera orbit`.
   Following the selection, `pan`, home, focus and holding still during a gizmo drag stay in the app. The `CAMERA_*` limits
   become fields of `orbit`.
 - Save: the tags stay; only the field paths written and read change (`view->orbit.yaw`).
 - Game: pitch and yaw fixed, the pan projected onto the ground (y set to 0) and kept over the field.
 
-#### 6. Downloaded size (`nv/window.h`)
+#### 6. Downloaded size (`engine/window.h`)
 
 ```c
 // "3.2 MB downloaded" or "3.2 MB from cache" for this page's own files; empty when the browser does not say.
@@ -422,25 +422,25 @@ void nv_window_download_text(char* out, umm capacity);
   folder, the include path and `NV_BUILD_NAME`. The same code in `app/CMakeLists.txt` becomes this one line.
   `cmake/version.cmake` stays as it is.
 
-#### 8. Small helpers (`nv/base.h`, `nv/math.h`, `nv/window.h`)
+#### 8. Small helpers (`engine/base.h`, `engine/math.h`, `engine/window.h`)
 
 ```c
-// nv/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
+// engine/base.h: FNV-1a, chainable: nv_fnv1a(NV_FNV1A_SEED, bytes, size).
 #define NV_FNV1A_SEED 2166136261u
 static inline u32 nv_fnv1a(u32 hash, const void* bytes, umm size);
 
-// nv/math.h
+// engine/math.h
 static inline f32 nv_clamp_f32(f32 value, f32 lo, f32 hi);
 static inline u32 nv_clamp_u32(u32 value, u32 lo, u32 hi);
 
-// nv/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
+// engine/math.h: PCG32 (O'Neill, pcg-random.org; the formula is cited in a comment). A zeroed NvRandom is a valid
 // generator (the step uses increment | 1); nv_random_seed picks a sequence.
 typedef struct NvRandom { u64 state, increment; } NvRandom;
 void nv_random_seed(NvRandom* random, u64 seed, u64 sequence);
 u32 nv_random_u32(NvRandom* random);
 f32 nv_random_f32(NvRandom* random); // [0, 1)
 
-// nv/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
+// engine/window.h: CSS pixels to framebuffer pixels, 1 before the browser says.
 f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
@@ -449,7 +449,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 - `effects.c`'s xorshift becomes `NvRandom`. The random order of the stress scene's effects changes, but it is neither saved
   nor checked by value (open question 4).
 - Game: the hash and seeded random numbers of determinism (`battle.md`, "Determinism").
-- There is no `engine/src/base.c`, so `nv_fnv1a` is `static inline` in the header.
+- There is no `engine/base.c`, so `nv_fnv1a` is `static inline` in the header.
 
 ### What does not change
 
@@ -485,11 +485,11 @@ run the same steps and are compared:
 Each phase is one commit, and each ends by checking with the steps above that the app is as before.
 
 1. **Helpers:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
-2. **Meshes:** `nv/mesh.h`, `mesh_test.c`.
+2. **Meshes:** `engine/mesh.h`, `mesh_test.c`.
 3. **Resolution and taps:** `NvResolution`, `renderer_cpu.c`, `nv_renderer_tap_ray`, `resolution_test.c`.
-4. **Camera:** `nv/camera.h`, `camera_test.c`, the `SceneView` change.
+4. **Camera:** `engine/camera.h`, `camera_test.c`, the `SceneView` change.
 5. **Page and font:** `nv_imgui_load_ui_font`, `nv_imgui_fit_text`, `nv_window_download_text`, `nv_add_version`.
-6. **Strings:** `nv/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
+6. **Strings:** `engine/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
 7. **Docs:** `AGENTS.md` (the new headers in the layout list, the UI strings line), `CODING_STANDARD.md` (the `T`/`TL`
    exception), and the names and paths in `korean.md`, `resolution.md` and `fonts.md`. `battle.md` points to this spec as
    the work that comes first.
@@ -504,4 +504,4 @@ Each phase is one commit, and each ends by checking with the steps above that th
    GPU, renderer, ImGui, font, defaults) into one engine function?
 4. **Random numbers:** is it fine that switching `effects.c` to `NvRandom` changes the random order of the stress effects, or
    keep its xorshift?
-5. **Camera module:** a new module, `nv/camera.h` (recommended), or in `nv/scene.h`?
+5. **Camera module:** a new module, `engine/camera.h` (recommended), or in `engine/scene.h`?

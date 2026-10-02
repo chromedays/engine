@@ -1,9 +1,9 @@
-// The autosave's contents: the app state as chunks (nv/chunk.h), and loading it back. What is
+// The autosave's contents: the app state as chunks (engine/chunk.h), and loading it back. What is
 // saved, tag by tag, is listed in docs/specs/save.md; keep the two in step.
 
 #include "app.h"
 
-#include <nv/chunk.h>
+#include <engine/chunk.h>
 
 #include <math.h>
 #include <string.h>

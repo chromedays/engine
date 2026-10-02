@@ -26,8 +26,10 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - 우리 코드는 C17이고 `-Wall -Wextra`에서 경고 없이 컴파일된다. 유일한 예외는 C API가 없는 C++
   라이브러리의 래퍼다. 그 파일은 C++이고, C 헤더를 통해 `extern "C"` 함수만 내보내며, 가능한 한 얇게
   유지한다(현재는 ozz-animation 래퍼).
-- 공개 헤더는 모듈마다 하나씩 `engine/include/nv/`에, 소스는 `engine/src/`에 둔다.
-- 모든 파일이 `nv/base.h`를 (직접 또는 다른 nv 헤더를 통해) 포함한다.
+- 엔진 모듈은 헤더 하나와 소스 하나이고, 둘 다 `engine/`에 나란히 둔다(`engine/scene.h`, `engine/scene.c`). include 경로는
+  저장소 루트이므로 `#include <engine/scene.h>`로 포함한다. 엔진 안에서만 쓰는 헤더는 맨 위 주석에 그렇게 적고(지금은
+  `engine/vfx_cpu.h`), 앱은 포함하지 않는다.
+- 모든 파일이 `engine/base.h`를 (직접 또는 다른 엔진 헤더를 통해) 포함한다.
 
 ### 이름 짓기
 
@@ -41,7 +43,7 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 
 ### 타입과 키워드
 
-- `nv/base.h`의 별칭을 쓴다: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32`(true/false), `umm`(메모리 크기와
+- `engine/base.h`의 별칭을 쓴다: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32`(true/false), `umm`(메모리 크기와
   메모리 인덱스). `int`나 `bool`은 외부 API가 요구하는 곳(Emscripten 콜백 시그니처, ImGui의 `bool*`
   매개변수)에서만 쓴다.
 - `static`은 의도에 따라 다르게 쓴다:
@@ -74,7 +76,7 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 
 - 플랫폼이 요구하는 것: Emscripten과 그 WebGPU 포트(`emdawnwebgpu`).
 - 디버그와 도구 UI에는 cimgui(C API)를 통한 Dear ImGui: 즉시 모드 UI 라이브러리를 만드는 것은 이
-  프로젝트의 목적이 아니다. 플랫폼과 렌더러 백엔드는 우리가 C로 작성한다(`engine/src/imgui.c`).
+  프로젝트의 목적이 아니다. 플랫폼과 렌더러 백엔드는 우리가 C로 작성한다(`engine/imgui.c`).
 - 뷰포트의 트랜스폼 기즈모에는 cimguizmo(C API)를 통한 ImGuizmo: ImGui의 draw list로 그리므로 렌더러
   작업이 필요 없고, C API 덕분에 `anim.cpp`가 우리의 유일한 C++ 파일로 남는다. 두 라이브러리가 ImGui
   컨텍스트 하나를 공유하도록 cimgui 라이브러리 안에 함께 빌드한다.
@@ -114,8 +116,10 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 - Our code is C17 and compiles warning-free with `-Wall -Wextra`. The one exception is the wrapper
   around a C++ library that has no C API: that file is C++, exposes only `extern "C"` functions
   through a C header, and stays as thin as possible (currently the ozz-animation wrapper).
-- Public headers live in `engine/include/nv/`, one per module; sources in `engine/src/`.
-- `nv/base.h` is included (directly or through another nv header) by every file.
+- An engine module is one header and one source, side by side in `engine/` (`engine/scene.h`, `engine/scene.c`). The
+  include path is the repository root, so they are included as `#include <engine/scene.h>`. A header only the engine uses
+  says so in its top comment (now `engine/vfx_cpu.h`), and the app does not include it.
+- `engine/base.h` is included (directly or through another engine header) by every file.
 
 ### Naming
 
@@ -129,7 +133,7 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 ### Types and keywords
 
-- Use the aliases from `nv/base.h`: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32` (true/false),
+- Use the aliases from `engine/base.h`: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32` (true/false),
   `umm` (memory sizes and indices into memory). Use `int` or `bool` only where an external API
   demands it (Emscripten callback signatures, ImGui's `bool*` parameters).
 - `static` is spelled by intent:
@@ -163,7 +167,7 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 - What the platform requires: Emscripten and its WebGPU port (`emdawnwebgpu`).
 - Dear ImGui, through cimgui (its C API), for debug and tool UI: writing an immediate-mode UI
   library is not the point of this project. Its platform and renderer backends are ours
-  (`engine/src/imgui.c`), in C.
+  (`engine/imgui.c`), in C.
 - ImGuizmo, through cimguizmo (its C API), for the transform gizmo in the viewport: it draws with
   ImGui's draw lists, so it needs no renderer work, and its C API keeps `anim.cpp` our only C++
   file. It is built into the cimgui library so both share one ImGui context.

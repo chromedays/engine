@@ -1,5 +1,5 @@
 // The effects the app fires and the View tab's Effects section (docs/specs/vfx.md). The engine
-// (nv/vfx.h) simulates and draws the particles; this file says what an explosion, sparks, smoke and
+// (engine/vfx.h) simulates and draws the particles; this file says what an explosion, sparks, smoke and
 // a missile's trail are made of, and the buttons that fire them at a point beside the orbit point.
 
 #include "app.h"

@@ -22,9 +22,9 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 ### 구성
 
 ```
-engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h
-engine/src/          구현 (anim.cpp는 ozz-animation을 감싼다; 나머지는 모두 C)
+engine/              모듈마다 헤더와 소스가 나란히: base.h, math.h, scene.h, window.h, gpu.h, imgui.h,
+                     renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h와 그 .c
+                     (anim.cpp는 ozz-animation을 감싼다; 나머지는 모두 C). `#include <engine/scene.h>`
 app/                 앱: 쇼케이스 씬 (행성과 달, 검을 든 애니메이션 캐릭터), 벤치마크가 있는 스트레스 씬
                      (View 탭에서 고름), 그리고 에디터 (노드 트리, 인스펙터, 뷰 설정, 스트레스 워크로드),
                      데스크톱 UI (뷰포트 둘레의 도크)와 폰 UI (탭 패널 하나), 둘 다 위쪽 가운데에 Play / Stop.
@@ -97,9 +97,9 @@ Live:
 ### Layout
 
 ```
-engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h
-engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
+engine/              each module's header and source side by side: base.h, math.h, scene.h, window.h,
+                     gpu.h, imgui.h, renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h and
+                     their .c (anim.cpp wraps ozz-animation; everything else is C). `#include <engine/scene.h>`
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor (node tree, inspector, view settings, stress workloads), with a

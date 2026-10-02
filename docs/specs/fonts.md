@@ -25,7 +25,7 @@
 Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: TrueType (TTF)이나 OpenType 파일을 고정 크기
 없이 한 번 불러오면, 글리프는 처음 그려질 때 그려지는 크기와 device pixel ratio로 래스터화되고, 글꼴은
 언제든 크기를 바꿀 수 있다 (`style.FontSizeBase`, `PushFont(font, size)`). 글리프 비트맵은
-`engine/src/imgui.c`가 이미 처리하는 텍스처 요청 (`ImGuiBackendFlags_RendererHasTextures`)으로 GPU에 가므로,
+`engine/imgui.c`가 이미 처리하는 텍스처 요청 (`ImGuiBackendFlags_RendererHasTextures`)으로 GPU에 가므로,
 수천 개 글리프가 있는 글꼴 (한글)도 쓴 글리프만큼만 든다. 글꼴은 합칠 수 있다: 라틴 문자용 글꼴 하나와 한글
 폴백용 글꼴 하나. 글꼴 파일의 바이트는 쓰는 동안 메모리에 남아 있어야 한다.
 
@@ -51,7 +51,7 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
   견본 (아래)에서 이유가 보이면 Roboto. 다운로드에 1 MB 미만을 더한다.
 - **필요할 때 가져오기**: 사용자가 "Korean text"를 켤 때만, 어떤 라틴 글꼴을 고르든 그 뒤의 한글 폴백으로
   **Pretendard**. 포함하면 모든 첫 로딩에 약 2 MB가 들고, 에디터 자체의 텍스트는 영어다: 한글은 사용자가
-  입력한 이름에만 보인다. 한 번 가져오면 브라우저 저장소에 둔다 (`nv/storage.h`, 저장처럼) 그래서 한 번만
+  입력한 이름에만 보인다. 한 번 가져오면 브라우저 저장소에 둔다 (`engine/storage.h`, 저장처럼) 그래서 한 번만
   다운로드된다.
 - **기본값**: 견본에서 고른 크기의 Inter. 모두가 보는 하나의 변화이므로 지금이 아니라 스크린샷을 보고
   정한다.
@@ -80,7 +80,7 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 
 ### 변경
 
-- **엔진 (`nv/imgui.h`, `engine/src/imgui.c`).** 글꼴 테이블, `nv_imgui_set_font`, 한글 폴백 합치기, 메모리에서
+- **엔진 (`engine/imgui.h`, `engine/imgui.c`).** 글꼴 테이블, `nv_imgui_set_font`, 한글 폴백 합치기, 메모리에서
   불러오기, 저장소 캐시가 있는 가져오기 도우미 (`EM_JS`).
 - **앱.** `app/ui.c`의 Font 섹션 (View 탭), `app/save.c`의 `FONT`, `FSIZ`, `KRFN` 태그, `app/ui_desktop.c`,
   `app/ui_phone.c`, `app/console.c`의 고정 크기 중 글꼴을 따라가야 하는 것은 글꼴 높이로 표현,
@@ -112,7 +112,7 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
   `assets/fonts/Inter-LICENSE.txt`, Git LFS에 저장 (`*.ttf`).
 - 패키지는 이제 `assets/` 디렉터리 전체를 `/assets`로 미리 불러온다 (전에는 `assets/quaternius`), 그래서
   glTF 파일은 `/assets/quaternius/*.glb`에, 글꼴은 `/assets/fonts/`에 있다.
-- `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`nv/imgui.h`)는 메모리에서 글꼴을 동적 글꼴 (크기 0)로
+- `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`engine/imgui.h`)는 메모리에서 글꼴을 동적 글꼴 (크기 0)로
   추가하고, `io->FontDefault`로 만들고, `style.FontSizeBase`를 설정한다; 바이트는 앱의 영구 아레나에 남는다.
   `app/main.c` (`load_font`)는 `nv_imgui_init` 뒤, 첫 프레임 전에 파일을 읽고, 파일이 없으면 Console 경고를
   기록하고 내장 글꼴을 유지한다.
@@ -155,7 +155,7 @@ Dear ImGui 1.92 (the version we build) has dynamic fonts: a TrueType (TTF) or Op
 loaded once with no fixed size, glyphs are rasterized when first drawn, at the size and the device
 pixel ratio they are drawn at, and the font can change size at any time (`style.FontSizeBase`,
 `PushFont(font, size)`). Glyph bitmaps reach the GPU through the texture requests that
-`engine/src/imgui.c` already serves (`ImGuiBackendFlags_RendererHasTextures`), so a font with
+`engine/imgui.c` already serves (`ImGuiBackendFlags_RendererHasTextures`), so a font with
 thousands of glyphs (Hangul) costs only the glyphs used. Fonts can be merged: one face for Latin
 and another as the fallback for Hangul. The font file's bytes must stay in memory while it is used.
 
@@ -182,7 +182,7 @@ Recommendation:
 - **Fetched on demand**: **Pretendard** as the Hangul fallback behind whichever Latin face is
   chosen, only when the user turns "Korean text" on. It would cost about 2 MB of every first load
   if it were bundled, and the editor's own text is English: Hangul only shows in names the user
-  types. Once fetched it is kept in browser storage (`nv/storage.h`, as the save is) so it is
+  types. Once fetched it is kept in browser storage (`engine/storage.h`, as the save is) so it is
   downloaded once.
 - **Default**: Inter, at a size picked from the specimen. This is the one change everyone sees, so
   it is decided by looking at screenshots, not now.
@@ -212,7 +212,7 @@ Recommendation:
 
 ### Changes
 
-- **Engine (`nv/imgui.h`, `engine/src/imgui.c`).** The face table, `nv_imgui_set_font`, the Hangul
+- **Engine (`engine/imgui.h`, `engine/imgui.c`).** The face table, `nv_imgui_set_font`, the Hangul
   fallback merge, loading from memory, the fetch helper (`EM_JS`) with its storage cache.
 - **App.** A Font section in `app/ui.c` (View tab), the `FONT`, `FSIZ` and `KRFN` tags in
   `app/save.c`, fixed sizes in `app/ui_desktop.c`, `app/ui_phone.c` and `app/console.c` expressed
@@ -248,7 +248,7 @@ Every phase is checked in Release and Debug in headless Chromium, the desktop UI
   `assets/fonts/Inter-LICENSE.txt`, stored in Git LFS (`*.ttf`).
 - The package now preloads the whole `assets/` directory as `/assets` (it was `assets/quaternius`),
   so the glTF files are at `/assets/quaternius/*.glb` and the font at `/assets/fonts/`.
-- `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`nv/imgui.h`) adds the font from memory as a
+- `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`engine/imgui.h`) adds the font from memory as a
   dynamic font (size 0), makes it `io->FontDefault` and sets `style.FontSizeBase`; the bytes stay
   in the app's permanent arena. `app/main.c` (`load_font`) reads the file after `nv_imgui_init` and
   before the first frame, and logs a Console warning and keeps the built-in font if it is missing.

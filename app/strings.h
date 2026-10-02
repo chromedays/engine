@@ -3,7 +3,7 @@
 // The UI's languages (docs/specs/korean.md). Strings are written in English in the code, wrapped in
 // T() (text) or TL() (a widget label); the table in strings.c holds the Korean for each.
 
-#include <nv/base.h>
+#include <engine/base.h>
 
 typedef enum Language {
     LANG_EN,

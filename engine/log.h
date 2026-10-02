@@ -3,7 +3,7 @@
 // The page's log: what the engine, the app and the page report, kept in one fixed ring so the app
 // can show it (docs/specs/console.md). Messages also go to the browser console.
 
-#include "nv/base.h"
+#include "engine/base.h"
 
 typedef enum NvLogLevel {
     NV_LOG_INFO,

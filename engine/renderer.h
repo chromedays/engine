@@ -1,8 +1,8 @@
 #pragma once
 
-#include "nv/gpu.h"
-#include "nv/vfx.h"
-#include "nv/scene.h"
+#include "engine/gpu.h"
+#include "engine/vfx.h"
+#include "engine/scene.h"
 
 #define NV_MAX_MESHES        256
 #define NV_MAX_MATERIALS     256
@@ -147,7 +147,7 @@ typedef struct NvRenderStats {
 } NvRenderStats;
 
 // Draws an NvScene: meshes with a base color material, lit by the first directional light, seen
-// through the scene's active camera. Tables are indexed by the ids in nv/scene.h; slot 0 of each
+// through the scene's active camera. Tables are indexed by the ids in engine/scene.h; slot 0 of each
 // is the default (no mesh, white material, white texture).
 typedef struct NvRenderer {
     NvGpu* gpu;

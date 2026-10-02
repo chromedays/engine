@@ -3,9 +3,9 @@
 // glTF loading through cgltf. Files are read with fopen; on the web they come from the assets
 // preloaded with nv_setup_executable(... ASSETS ...).
 
-#include "nv/anim.h"
-#include "nv/renderer.h"
-#include "nv/scene.h"
+#include "engine/anim.h"
+#include "engine/renderer.h"
+#include "engine/scene.h"
 
 #define NV_GLTF_MAX_MESH_NODES 32
 
