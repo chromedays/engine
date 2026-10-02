@@ -5,7 +5,8 @@
 
 ## 한국어
 
-상태: 초안 (2026-10-02). 구현 전에 "열린 질문"을 합의한다.
+상태: 초안 (2026-10-02). 구현 전에 "열린 질문"을 합의한다. 선행 작업인 엔진 구조 평탄화(`engine/include/nv/`와
+`engine/src/`를 `engine/` 하나로)는 끝났다(`c3e0de4`).
 
 ### 목표
 
@@ -20,6 +21,10 @@
   지켜서, 저장된 값이 같은 뜻으로 읽히게 한다.
 - **엔진은 `App`을 모른다.** 옮긴 코드는 `App`, `SceneView`, 검색, 저장을 참조하지 않는다. 앱에 남는 쪽이 엔진 함수를 부른다.
 - **새 서드파티는 없다.**
+- **파일 배치는 평평한 엔진을 따른다.** 새 모듈은 `engine/<이름>.h`와 `engine/<이름>.c`가 나란히 있고
+  `#include <engine/<이름>.h>`로 포함한다. 소스는 `engine/CMakeLists.txt`의 목록에 더한다. 테스트는 소스를
+  `${PROJECT_SOURCE_DIR}/engine/<이름>.c`로 빌드하고 include 경로는 저장소 루트다. GPU 없는 모듈의 헤더는 WebGPU 헤더를
+  끌어오지 않게 해서, 테스트가 포트 없이 빌드되게 한다.
 
 ### 조사 결과
 
@@ -68,7 +73,9 @@ const char* nv_strings_label(const char* english);
 ```
 
 - `engine/strings.c`: 지금 `app/strings.c`의 해시 표, `T`, `TL`, 언어. 상태는 파일 전역이다.
-- `app/strings.c`는 표(`NvStringPair` 배열)만 남기고, `main`이 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어진다.
+- `app/strings.c`는 표(`NvStringPair` 배열)만 남기고, `main`이 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어지고
+  `app/app.h`가 `#include <engine/strings.h>`를 한다. 엔진 헤더는 언제나 폴더와 함께 포함하므로, 앱의 `strings.c`나 POSIX의
+  `<strings.h>`와 섞이지 않는다.
 - 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 `NV_LANGUAGE_*`의 값과 같다.
 - `tests/strings_test.mjs`는 폴더 목록을 받아 폴더마다 자기 `strings.c`에 대해 검사한다. 지금은 `app/` 하나이고, 게임이
   `autobattler/`를 더한다. `tools/subset_hangul.sh`도 표 목록을 받는다.
@@ -81,7 +88,9 @@ void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacit
 void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
-- `engine/mesh.c`: GPU 없는 코드라 ctest로 검사한다. `NvMeshData`의 count를 늘린다.
+- `engine/mesh.h`가 `NvVertex`, `NvSkinnedVertex`, `NvMeshData`를 `engine/renderer.h`에서 넘겨받고, `renderer.h`는
+  `mesh.h`를 포함한다. 그래서 `mesh.h`와 `engine/mesh.c`는 GPU가 없고, ctest가 포트 없이 검사한다. 함수는 `NvMeshData`의
+  count를 늘린다.
 - 앱: `app_box_mesh`, `create_sword_mesh`, `create_ground_mesh`가 이것을 쓴다. 꼭짓점 순서와 값이 같으므로 화면이 같다.
 - 게임: 유닛 큐브, 지형지물 상자, 64 × 96 m 전장.
 
@@ -122,8 +131,10 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
 ```
 
-- `engine/renderer_cpu.c`: GPU 없는 렌더러 코드(`vfx_cpu.c`와 같은 방식). `nv_renderer_scene_output`과
+- `engine/renderer_cpu.c`: GPU 없는 렌더러 코드(`engine/vfx_cpu.c`와 같은 방식). `nv_renderer_scene_output`과
   `nv_renderer_view_ray`가 여기로 와서 ctest로 검사한다. `nv_renderer_camera_matrices`도 GPU를 쓰지 않으면 함께 온다.
+  선언은 `engine/renderer.h`에 남으므로 따로 헤더가 없다. `renderer.h`는 `engine/gpu.h`(WebGPU 헤더)를 포함하므로, 테스트는
+  `gpu_format_test`처럼 `--use-port=emdawnwebgpu`로 헤더만 받고 아무것도 링크하지 않는다.
 - 열거형의 값 순서가 지금과 같으므로 저장 태그 `RSMD`, `RSFT`의 값이 같은 뜻이다.
 - 앱: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX`, `scene_output`이 없어진다. `pick`은
   `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 앱에 남는다(도크 배치).
@@ -138,17 +149,18 @@ typedef struct NvOrbitCamera {
     f32 min_pitch, max_pitch, min_distance, max_distance;
 } NvOrbitCamera;
 
-// Turns by orbit_x and orbit_y (pixels times `radians_per_pixel`) and dollies by `dolly`, within the limits.
-void nv_orbit_camera_turn(NvOrbitCamera* camera, const NvViewInput* input, f32 radians_per_pixel);
-// The world move for a pan of (pan_x, pan_y) CSS pixels: one pixel is the height the view covers at
-// the target divided by the image's height, along the camera's right and up axes.
-NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_node, NvSceneOutput output,
-                           f32 pixel_ratio, f32 pan_x, f32 pan_y);
+// Turns by yaw and pitch (radians) and dollies by `dolly` (the log of the distance factor), within the limits.
+void nv_orbit_camera_turn(NvOrbitCamera* camera, f32 yaw, f32 pitch, f32 dolly);
+// The world move for a pan of (pan_x, pan_y) pixels on an image `image_height` pixels high: one pixel is the
+// height the view covers at the target divided by the image's height, along the camera's right and up axes.
+NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_node, f32 image_height, f32 pan_x, f32 pan_y);
 // Sets the camera node's position, rotation and world matrix (a top-level node).
 void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
-- `engine/camera.c`, GPU 없음, ctest로 검사한다.
+- `engine/camera.h`는 `engine/scene.h`만 포함한다. 입력(`NvViewInput`, `engine/imgui.h`)과 해상도(`NvSceneOutput`,
+  `engine/renderer.h`)는 호출하는 쪽이 숫자로 바꿔 넘긴다: 앱은 `orbit_x * ORBIT_RADIANS_PER_PIXEL`, 이미지 높이는
+  `scene_output.height * pixel_height / pixel_ratio`. 그래서 `engine/camera.c`는 GPU가 없고 ctest가 포트 없이 검사한다.
 - 앱: `SceneView`의 `camera_yaw`, `camera_pitch`, `camera_distance`, `orbit_point`가 `NvOrbitCamera orbit` 하나가 된다.
   선택 따라가기, `pan`, 홈, 초점, 기즈모 중 멈춤은 앱에 남는다. `CAMERA_*` 한계는 `orbit`의 필드가 된다.
 - 저장: 태그는 그대로이고, 쓰고 읽는 필드 경로만 바뀐다(`view->orbit.yaw`).
@@ -207,7 +219,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 
 ### 테스트
 
-ctest(Node), 새 파일:
+ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_SOURCE_DIR}/engine/<이름>.c`와 함께 빌드한다:
 
 - `tests/mesh_test.c`: 상자 꼭짓점 24개와 인덱스 36개, 면마다 법선과 반시계 감기, 용량 assert(디버그), 평면.
 - `tests/resolution_test.c`: `nv_renderer_scene_output`의 Scale 1–4, Fixed의 세 맞춤, 너무 작은 뷰포트, 0 크기;
@@ -234,7 +246,7 @@ ctest(Node), 새 파일:
 4. **카메라:** `engine/camera.h`, `camera_test.c`, `SceneView`의 변경.
 5. **페이지와 글꼴:** `nv_imgui_load_ui_font`, `nv_imgui_fit_text`, `nv_window_download_text`, `nv_add_version`.
 6. **문자열:** `engine/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
-7. **문서:** `AGENTS.md`(구조 목록의 새 헤더, UI 문자열 줄), `CODING_STANDARD.md`(`T`/`TL` 예외), `korean.md`,
+7. **문서:** `AGENTS.md`(`engine/` 목록의 새 모듈 `mesh.c/.h`, `camera.c/.h`, `strings.c/.h`, `renderer_cpu.c`; UI 문자열 줄), `CODING_STANDARD.md`(`T`/`TL` 예외), `korean.md`,
    `resolution.md`, `fonts.md`의 이름과 경로. `battle.md`는 이 스펙을 선행 작업으로 가리킨다.
 
 ### 열린 질문
@@ -250,7 +262,8 @@ ctest(Node), 새 파일:
 
 ## English
 
-Status: draft (2026-10-02). The "Open questions" are agreed before it is built.
+Status: draft (2026-10-02). The "Open questions" are agreed before it is built. The work it needs first, flattening the
+engine (`engine/include/nv/` and `engine/src/` into one `engine/`), is done (`c3e0de4`).
 
 ### Goal
 
@@ -268,6 +281,10 @@ and save format do not change.
 - **The engine does not know `App`.** Moved code refers to no `App`, `SceneView`, search or save. The side that stays in the
   app calls the engine functions.
 - **No new third-party code.**
+- **Files follow the flat engine.** A new module is `engine/<name>.h` and `engine/<name>.c` side by side, included as
+  `#include <engine/<name>.h>`; its source joins the list in `engine/CMakeLists.txt`. Tests build sources as
+  `${PROJECT_SOURCE_DIR}/engine/<name>.c` with the repository root as the include path. A GPU-free module's header pulls in
+  no WebGPU header, so its test builds without the port.
 
 ### Survey
 
@@ -317,7 +334,8 @@ const char* nv_strings_label(const char* english);
 
 - `engine/strings.c`: the hash table, `T`, `TL` and the language now in `app/strings.c`. Its state is file-global.
 - `app/strings.c` keeps only its table (an `NvStringPair` array), and `main` calls `nv_strings_set_table`. `app/strings.h`
-  goes.
+  goes, and `app/app.h` does `#include <engine/strings.h>`. Engine headers are always included with their folder, so it is
+  never confused with the app's `strings.c` or POSIX's `<strings.h>`.
 - The `LANG` save tag's values (0 English, 1 Korean) equal those of `NV_LANGUAGE_*`.
 - `tests/strings_test.mjs` takes a list of folders and checks each against its own `strings.c`. For now that is `app/`;
   the game adds `autobattler/`. `tools/subset_hangul.sh` takes a list of tables too.
@@ -330,7 +348,9 @@ void nv_mesh_append_box(NvMeshData* data, u32 vertex_capacity, u32 index_capacit
 void nv_mesh_append_plane(NvMeshData* data, u32 vertex_capacity, u32 index_capacity, f32 half_x, f32 half_z); // y = 0, facing +Y
 ```
 
-- `engine/mesh.c`: GPU-free, so ctest checks it. It grows the counts in `NvMeshData`.
+- `engine/mesh.h` takes `NvVertex`, `NvSkinnedVertex` and `NvMeshData` over from `engine/renderer.h`, which includes
+  `mesh.h`. So `mesh.h` and `engine/mesh.c` have no GPU, and ctest checks them without the port. The functions grow the
+  counts in `NvMeshData`.
 - App: `app_box_mesh`, `create_sword_mesh` and `create_ground_mesh` use it. Vertex order and values are the same, so the
   screen is too.
 - Game: unit cubes, prop boxes, the 64 × 96 m field.
@@ -373,8 +393,10 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
 b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
 ```
 
-- `engine/renderer_cpu.c`: the renderer's GPU-free code (the way `vfx_cpu.c` works). `nv_renderer_scene_output` and
-  `nv_renderer_view_ray` move there so ctest can check them; `nv_renderer_camera_matrices` comes too if it uses no GPU.
+- `engine/renderer_cpu.c`: the renderer's GPU-free code (the way `engine/vfx_cpu.c` works). `nv_renderer_scene_output`
+  and `nv_renderer_view_ray` move there so ctest can check them; `nv_renderer_camera_matrices` comes too if it uses no GPU.
+  The declarations stay in `engine/renderer.h`, so it has no header of its own. `renderer.h` includes `engine/gpu.h` (the
+  WebGPU header), so the test, like `gpu_format_test`, takes the headers with `--use-port=emdawnwebgpu` and links nothing.
 - The enum value order is unchanged, so the `RSMD` and `RSFT` save tags keep their meaning.
 - App: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX` and `scene_output` go. `pick` starts with
   `nv_renderer_tap_ray`. `ui_rect` stays in the app (dock layout).
@@ -389,17 +411,19 @@ typedef struct NvOrbitCamera {
     f32 min_pitch, max_pitch, min_distance, max_distance;
 } NvOrbitCamera;
 
-// Turns by orbit_x and orbit_y (pixels times `radians_per_pixel`) and dollies by `dolly`, within the limits.
-void nv_orbit_camera_turn(NvOrbitCamera* camera, const NvViewInput* input, f32 radians_per_pixel);
-// The world move for a pan of (pan_x, pan_y) CSS pixels: one pixel is the height the view covers at
-// the target divided by the image's height, along the camera's right and up axes.
-NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_node, NvSceneOutput output,
-                           f32 pixel_ratio, f32 pan_x, f32 pan_y);
+// Turns by yaw and pitch (radians) and dollies by `dolly` (the log of the distance factor), within the limits.
+void nv_orbit_camera_turn(NvOrbitCamera* camera, f32 yaw, f32 pitch, f32 dolly);
+// The world move for a pan of (pan_x, pan_y) pixels on an image `image_height` pixels high: one pixel is the
+// height the view covers at the target divided by the image's height, along the camera's right and up axes.
+NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_node, f32 image_height, f32 pan_x, f32 pan_y);
 // Sets the camera node's position, rotation and world matrix (a top-level node).
 void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
-- `engine/camera.c`, GPU-free, checked by ctest.
+- `engine/camera.h` includes only `engine/scene.h`. The caller turns input (`NvViewInput`, `engine/imgui.h`) and the
+  resolution (`NvSceneOutput`, `engine/renderer.h`) into numbers: the app passes `orbit_x * ORBIT_RADIANS_PER_PIXEL`, and
+  the image height as `scene_output.height * pixel_height / pixel_ratio`. So `engine/camera.c` has no GPU, and ctest checks
+  it without the port.
 - App: `SceneView`'s `camera_yaw`, `camera_pitch`, `camera_distance` and `orbit_point` become one `NvOrbitCamera orbit`.
   Following the selection, `pan`, home, focus and holding still during a gizmo drag stay in the app. The `CAMERA_*` limits
   become fields of `orbit`.
@@ -460,7 +484,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 
 ### Tests
 
-ctest (Node), new files:
+ctest (Node), new files. `tests/CMakeLists.txt` builds each test with `${PROJECT_SOURCE_DIR}/engine/<name>.c`:
 
 - `tests/mesh_test.c`: a box's 24 vertices and 36 indices, each face's normal and counter-clockwise winding, the capacity
   assert (Debug), the plane.
@@ -490,7 +514,8 @@ Each phase is one commit, and each ends by checking with the steps above that th
 4. **Camera:** `engine/camera.h`, `camera_test.c`, the `SceneView` change.
 5. **Page and font:** `nv_imgui_load_ui_font`, `nv_imgui_fit_text`, `nv_window_download_text`, `nv_add_version`.
 6. **Strings:** `engine/strings.h`, `strings_test.mjs`, `subset_hangul.sh`.
-7. **Docs:** `AGENTS.md` (the new headers in the layout list, the UI strings line), `CODING_STANDARD.md` (the `T`/`TL`
+7. **Docs:** `AGENTS.md` (the new modules in the `engine/` list: `mesh.c/.h`, `camera.c/.h`, `strings.c/.h`,
+   `renderer_cpu.c`; the UI strings line), `CODING_STANDARD.md` (the `T`/`TL`
    exception), and the names and paths in `korean.md`, `resolution.md` and `fonts.md`. `battle.md` points to this spec as
    the work that comes first.
 
