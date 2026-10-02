@@ -140,12 +140,13 @@ internal u32 node_at(NvScene* scene, const u32* path, u32 length)
 u32 save_scene_layout(NvScene* scene)
 {
     // FNV-1a over every node's depth and name, in tree order.
-    u32 hash = 2166136261u;
+    u32 hash = NV_FNV1A_SEED;
     for (u32 index = scene->first_root; index; index = next_in_tree(scene, index)) {
-        hash = (hash ^ depth_of(scene, index)) * 16777619u;
-        for (const char* c = scene->nodes[index].name; *c; ++c)
-            hash = (hash ^ (u8)*c) * 16777619u;
-        hash = (hash ^ 0xFFu) * 16777619u; // ends the name
+        // NOTE: The depth goes in as one word, not as a byte: a saved layout hash depends on it.
+        hash = (hash ^ depth_of(scene, index)) * NV_FNV1A_PRIME;
+        const char* name = scene->nodes[index].name;
+        hash = nv_fnv1a(hash, name, strlen(name));
+        hash = (hash ^ 0xFFu) * NV_FNV1A_PRIME; // ends the name
     }
     return hash;
 }
@@ -328,11 +329,6 @@ internal b32 read_bool(NvChunkReader* r, NvChunk parent, u32 tag, bool* out)
     return 1;
 }
 
-internal f32 clamp(f32 v, f32 lo, f32 hi)
-{
-    return v < lo ? lo : v > hi ? hi : v;
-}
-
 internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
 {
     bool autosave = app->autosave, local = app->gizmo_local, snap = app->gizmo_snap;
@@ -384,16 +380,16 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
         shadows.size = 0;
     shadows.format = format == NV_SHADOW_FORMAT_DEPTH16 ? NV_SHADOW_FORMAT_DEPTH16 : NV_SHADOW_FORMAT_DEPTH32F;
     shadows.filter = filter == NV_SHADOW_FILTER_LOW ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH;
-    shadows.distance = clamp(shadows.distance, 5.0f, 100.0f);
+    shadows.distance = nv_clamp_f32(shadows.distance, 5.0f, 100.0f);
     shadows.show_box = shadows.show_box != 0;
     app->renderer.shadows = shadows;
     // The two counts the View tab offers; anything else is the default.
     app->renderer.msaa = msaa == 1 ? 1 : 4;
     // The tone mappers the View tab offers (anything else is PBR Neutral), exposure 0.25 to 4, bloom 0 to 0.2.
     post.tone = tone < NV_TONE_COUNT ? (NvToneMap)tone : NV_TONE_PBR_NEUTRAL;
-    post.exposure = clamp(post.exposure, 0.25f, 4.0f);
+    post.exposure = nv_clamp_f32(post.exposure, 0.25f, 4.0f);
     post.bloom = post.bloom != 0;
-    post.bloom_intensity = clamp(post.bloom_intensity, 0.0f, 0.2f);
+    post.bloom_intensity = nv_clamp_f32(post.bloom_intensity, 0.0f, 0.2f);
     app->renderer.post = post;
     // The modes and counts the View tab offers; anything else is the device's default (the phone
     // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
@@ -407,9 +403,9 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
         resolution.fixed_height = 720;
     app->resolution = resolution;
     // Docks: within what the splitters allow (ui_desktop.c clamps again to the window).
-    app->docks.left_width = clamp((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
-    app->docks.right_width = clamp((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
-    app->docks.bottom_height = clamp((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
+    app->docks.left_width = nv_clamp_f32((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
+    app->docks.right_width = nv_clamp_f32((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
+    app->docks.bottom_height = nv_clamp_f32((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
     app->docks.bottom_open = bottom_open;
     // The two languages the View tab offers; anything else is English.
     strings_set_language(language == LANG_KO ? LANG_KO : LANG_EN);
@@ -436,8 +432,8 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
         others_size = 0;
     if (!apply)
         return;
-    v.camera_pitch = clamp(v.camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
-    v.camera_distance = clamp(v.camera_distance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+    v.camera_pitch = nv_clamp_f32(v.camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
+    v.camera_distance = nv_clamp_f32(v.camera_distance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
     // A selection path only means something while the tree is the one it was saved from.
     if (has_selection && nodes_match) {
         u32 index = length ? node_at(scene, path, length) : 0;
@@ -495,7 +491,7 @@ internal void read_character_fields(NvChunkReader* r, NvChunk chunk, App* app, b
     app->turn_rate = turn;
     app->look_at = look_at;
     app->show_sword = sword;
-    app->blend_weight = clamp(blend_weight, 0.0f, 1.0f);
+    app->blend_weight = nv_clamp_f32(blend_weight, 0.0f, 1.0f);
     for (u32 i = 0; i < app->clip_count; ++i) {
         if (strcmp(nv_anim_clip_name(app->clips[i]), blend_name) == 0)
             app->blend_clip = (s32)i;
@@ -509,7 +505,7 @@ internal void read_character_fields(NvChunkReader* r, NvChunk chunk, App* app, b
         app->fade_seconds = 0.0f;
         app_play(app, clip);
     }
-    app->fade_seconds = clamp(fade, 0.0f, 1.0f);
+    app->fade_seconds = nv_clamp_f32(fade, 0.0f, 1.0f);
     if (has_time)
         animator->layers[0].time = time;
     animator->layers[0].speed = speed;
@@ -564,7 +560,7 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, App* app, u32 in
             node->attach.joint = (u32)found;
     }
     if (node->camera.projection)
-        node->camera.fov_y = clamp(n.camera.fov_y, 1.0f * NV_PI / 180.0f, 179.0f * NV_PI / 180.0f);
+        node->camera.fov_y = nv_clamp_f32(n.camera.fov_y, 1.0f * NV_PI / 180.0f, 179.0f * NV_PI / 180.0f);
     if (node->light.type) {
         node->light.color = n.light.color;
         node->light.intensity = n.light.intensity;

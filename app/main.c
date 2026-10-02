@@ -413,7 +413,7 @@ internal void apply_view_input(App* app, SceneView* view, const NvSceneOutput* s
         // covers at the orbit point, divided by the image's height in CSS pixels (the scene's height
         // times the screen pixels each of its pixels takes).
         NvNode* camera = nv_scene_get(view->scene, view->camera);
-        f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+        f32 pixel_ratio = nv_window_pixel_ratio(&app->window);
         f32 height = (f32)scene_output->height * scene_output->pixel_height / pixel_ratio;
         f32 meters = 2.0f * view->camera_distance * tanf(camera->camera.fov_y * 0.5f) / (height > 1.0f ? height : 1.0f);
         NvVec3 right = nv_quat_rotate(camera->rotation, nv_vec3(1, 0, 0));
@@ -443,7 +443,7 @@ internal void pick(App* app, const NvSceneOutput* scene_output)
         return;
     }
     SceneView* view = app_view(app);
-    f32 pixel_ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 pixel_ratio = nv_window_pixel_ratio(&app->window);
     f32 tap_x = in->tap_x * pixel_ratio, tap_y = in->tap_y * pixel_ratio;
     const NvRect* image = &scene_output->image;
     if (tap_x < (f32)image->x || tap_y < (f32)image->y || tap_x >= (f32)(image->x + image->width) ||
@@ -950,7 +950,7 @@ internal void frame(void* userdata)
 EMSCRIPTEN_KEEPALIVE float app_debug_layout(int region, int component)
 {
     App* app = &app_state;
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     const Layout* layout = &app->layout;
     const NvRect* rects[] = {&layout->viewport, &layout->top_bar, &layout->left, &layout->right, &layout->bottom, &layout->panel};
     if (region == 6) {
@@ -1006,7 +1006,7 @@ EMSCRIPTEN_KEEPALIVE float app_debug_project(float x, float y, float z, int axis
     NvVec3 p = nv_mat4_transform_point(view_projection, nv_vec3(x, y, z));
     f32 ndc_x = p.x / w, ndc_y = p.y / w;
     const NvSceneOutput* out = &app->layout.scene;
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     f32 screen_x = (f32)out->image.x + (ndc_x * 0.5f + 0.5f) * (f32)out->width * out->pixel_width;
     f32 screen_y = (f32)out->image.y + (0.5f - ndc_y * 0.5f) * (f32)out->height * out->pixel_height;
     return (axis ? screen_y : screen_x) / ratio;

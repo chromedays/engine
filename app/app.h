@@ -511,7 +511,7 @@ typedef struct Effects {
     Flight stress_flights[STRESS_MAX_MISSILES];
     u32 stress_flight_count;
     f32 swarm_carry, explosion_carry, decal_carry; // fractions of a burst not yet fired
-    u32 rng;
+    NvRandom rng;
 } Effects;
 
 typedef struct App {

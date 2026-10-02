@@ -294,19 +294,11 @@ Language strings_language(void) { return language; }
 void strings_set_language(Language value) { language = value < LANG_COUNT ? value : LANG_EN; }
 Language strings_browser_language(void) { return js_browser_is_korean() ? LANG_KO : LANG_EN; }
 
-internal u32 hash_text(const char* text, umm length)
-{
-    u32 hash = 2166136261u;
-    for (umm i = 0; i < length; ++i)
-        hash = (hash ^ (u8)text[i]) * 16777619u;
-    return hash;
-}
-
 internal void build_table(void)
 {
     table_built = 1;
     for (u32 i = 0; i < ENTRY_COUNT; ++i) {
-        u32 slot = hash_text(entries[i].english, strlen(entries[i].english)) & (TABLE_SIZE - 1);
+        u32 slot = nv_fnv1a(NV_FNV1A_SEED, entries[i].english, strlen(entries[i].english)) & (TABLE_SIZE - 1);
         while (table[slot])
             slot = (slot + 1) & (TABLE_SIZE - 1);
         table[slot] = (u16)(i + 1);
@@ -318,7 +310,7 @@ internal const Entry* find(const char* english, umm length)
 {
     if (!table_built)
         build_table();
-    u32 slot = hash_text(english, length) & (TABLE_SIZE - 1);
+    u32 slot = nv_fnv1a(NV_FNV1A_SEED, english, length) & (TABLE_SIZE - 1);
     while (table[slot]) {
         const Entry* entry = &entries[table[slot] - 1];
         if (strlen(entry->english) == length && memcmp(entry->english, english, length) == 0)

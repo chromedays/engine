@@ -12,6 +12,12 @@ typedef struct NvWindow {
 
 void nv_window_create(NvWindow* window, const char* title);
 
+// Device pixels per CSS pixel; 1 until the first nv_window_framebuffer_size has told us.
+static inline f32 nv_window_pixel_ratio(const NvWindow* window)
+{
+    return window->pixel_ratio > 0.0f ? window->pixel_ratio : 1.0f;
+}
+
 // NOTE: Returns the canvas size in device pixels and resizes its backing store to match.
 void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 

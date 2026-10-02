@@ -22,11 +22,11 @@ internal void tree_marks(App* app, SceneView* view)
 {
     Search* s = &app->search;
     NvScene* scene = view->scene;
-    u32 key = 2166136261u;
-    for (const char* c = s->queries[SEARCH_SCENE]; *c; ++c)
-        key = (key ^ (u8)*c) * 16777619u;
-    key = (key ^ scene->node_count) * 16777619u;
-    key = (key ^ (u32)app->shown) * 16777619u;
+    // Only a change detector, so the words are hashed by their bytes.
+    u32 shown = (u32)app->shown;
+    u32 key = nv_fnv1a(NV_FNV1A_SEED, s->queries[SEARCH_SCENE], strlen(s->queries[SEARCH_SCENE]));
+    key = nv_fnv1a(key, &scene->node_count, sizeof(scene->node_count));
+    key = nv_fnv1a(key, &shown, sizeof(shown));
     s32 frame = igGetFrameCount();
     if (key == s->tree_key && frame - s->tree_frame < 30)
         return;
@@ -375,11 +375,6 @@ internal void post_ui(App* app)
         igSliderFloat(TL("Bloom intensity"), &post->bloom_intensity, 0.0f, 0.2f, "%.3f", 0);
 }
 
-internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
-{
-    return value < lo ? lo : value > hi ? hi : value;
-}
-
 // The View tab's Resolution section (docs/specs/resolution.md).
 internal void resolution_ui(App* app)
 {
@@ -394,7 +389,7 @@ internal void resolution_ui(App* app)
 
     if (resolution->mode == RESOLUTION_SCALE) {
         const char* divisors[] = {T("1/1 (full)"), "1/2", "1/3", "1/4"};
-        s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
+        s32 index = (s32)nv_clamp_u32(resolution->divisor, 1, 4) - 1;
         if (search_row(app, "Scale", "divisor lower resolution pixel")) {
             if (igCombo_Str_arr(TL("Scale"), &index, divisors, 4, -1))
                 resolution->divisor = (u32)index + 1;
@@ -430,11 +425,11 @@ internal void resolution_ui(App* app)
             int width = (int)resolution->fixed_width, height = (int)resolution->fixed_height;
             if (search_row(app, "Width", "custom size")) {
                 if (igInputInt(TL("Width"), &width, 16, 128, 0))
-                    resolution->fixed_width = clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
+                    resolution->fixed_width = nv_clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
             }
             if (search_row(app, "Height", "custom size")) {
                 if (igInputInt(TL("Height"), &height, 16, 128, 0))
-                    resolution->fixed_height = clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
+                    resolution->fixed_height = nv_clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
             }
         }
     }
@@ -444,7 +439,7 @@ internal void resolution_ui(App* app)
 
     // What that comes to: the scene's pixels, and how big each one shows.
     const NvSceneOutput* scene = &app->layout.scene;
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     f32 pw = scene->pixel_width, ph = scene->pixel_height;
     b32 whole = pw == ph && pw >= 1.0f && pw == (f32)(u32)pw;
     if (whole) {
@@ -719,7 +714,7 @@ void ui_build_label(App* app)
     ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
     // The viewport's corner, in CSS pixels: below the phone's top bar, right of the desktop's left dock.
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     ImVec2_c pos = {(f32)app->layout.viewport.x / ratio + 6.0f, (f32)app->layout.viewport.y / ratio + 6.0f};
     f32 radius = igGetFontSize() * 0.3f;
     f32 badge_width = 0.0f;
@@ -869,8 +864,8 @@ internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewpor
         return out;
     }
     if (resolution->mode == RESOLUTION_FIXED) {
-        u32 width = clamp_u32(resolution->fixed_width, RESOLUTION_MIN, RESOLUTION_MAX);
-        u32 height = clamp_u32(resolution->fixed_height, RESOLUTION_MIN, RESOLUTION_MAX);
+        u32 width = nv_clamp_u32(resolution->fixed_width, RESOLUTION_MIN, RESOLUTION_MAX);
+        u32 height = nv_clamp_u32(resolution->fixed_height, RESOLUTION_MIN, RESOLUTION_MAX);
         out.width = width;
         out.height = height;
         f32 sx = (f32)viewport.width / (f32)width, sy = (f32)viewport.height / (f32)height;
@@ -892,14 +887,14 @@ internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewpor
             // The largest scale that fits keeping the aspect ratio: what FIT_VIEWPORT always does, and
             // FIT_WHOLE does when even the size itself does not fit.
             out.pixel_width = out.pixel_height = sx < sy ? sx : sy;
-            image_width = clamp_u32((u32)((f32)width * out.pixel_width + 0.5f), 1, viewport.width);
-            image_height = clamp_u32((u32)((f32)height * out.pixel_width + 0.5f), 1, viewport.height);
+            image_width = nv_clamp_u32((u32)((f32)width * out.pixel_width + 0.5f), 1, viewport.width);
+            image_height = nv_clamp_u32((u32)((f32)height * out.pixel_width + 0.5f), 1, viewport.height);
         }
         out.image = (NvRect){viewport.x + (viewport.width - image_width) / 2, viewport.y + (viewport.height - image_height) / 2,
                              image_width, image_height};
         return out;
     }
-    u32 divisor = clamp_u32(resolution->divisor, 1, 4);
+    u32 divisor = nv_clamp_u32(resolution->divisor, 1, 4);
     out.width = (viewport.width + divisor - 1) / divisor;
     out.height = (viewport.height + divisor - 1) / divisor;
     out.pixel_width = out.pixel_height = (f32)divisor;
@@ -908,7 +903,7 @@ internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewpor
 
 void app_layout(App* app)
 {
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     f32 width = (f32)app->gpu.width / ratio;
     f32 height = (f32)app->gpu.height / ratio;
     if (app->ui_mode == UI_PHONE)

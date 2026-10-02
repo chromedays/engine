@@ -9,6 +9,9 @@
 
 #define NV_PI 3.14159265358979323846f
 
+static inline f32 nv_clamp_f32(f32 value, f32 lo, f32 hi) { return value < lo ? lo : value > hi ? hi : value; }
+static inline u32 nv_clamp_u32(u32 value, u32 lo, u32 hi) { return value < lo ? lo : value > hi ? hi : value; }
+
 typedef struct NvVec3 { f32 x, y, z; } NvVec3;
 typedef struct NvQuat { f32 x, y, z, w; } NvQuat;
 typedef struct NvMat4 { f32 e[16]; } NvMat4;
@@ -296,4 +299,34 @@ static inline void nv_mat4_decompose(NvMat4 m, NvVec3* translation, NvQuat* rota
     // every frame) cannot drift: a quaternion slightly off unit length skews nv_mat4_trs.
     f32 length = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
     *rotation = (NvQuat){q.x / length, q.y / length, q.z / length, q.w / length};
+}
+
+// PCG32 (XSH RR 64/32), after M. E. O'Neill, "PCG: A Family of Simple Fast Space-Efficient Statistically Good
+// Algorithms for Random Number Generation" (pcg-random.org). A zeroed NvRandom is a valid generator: the step uses
+// `increment | 1`, which is odd for any value. nv_random_seed picks a stream (`sequence`) and a start in it (`seed`);
+// the same seed and sequence give the same numbers on every run, which battles and tests rely on.
+typedef struct NvRandom { u64 state, increment; } NvRandom;
+
+static inline u32 nv_random_u32(NvRandom* random)
+{
+    u64 old = random->state;
+    random->state = old * 6364136223846793005ull + (random->increment | 1);
+    u32 xorshifted = (u32)(((old >> 18) ^ old) >> 27);
+    u32 rotation = (u32)(old >> 59);
+    return (xorshifted >> rotation) | (xorshifted << ((0u - rotation) & 31));
+}
+
+static inline void nv_random_seed(NvRandom* random, u64 seed, u64 sequence)
+{
+    random->state = 0;
+    random->increment = (sequence << 1) | 1;
+    nv_random_u32(random);
+    random->state += seed;
+    nv_random_u32(random);
+}
+
+// In [0, 1): the top 24 bits, which a f32 holds exactly.
+static inline f32 nv_random_f32(NvRandom* random)
+{
+    return (f32)(nv_random_u32(random) >> 8) * (1.0f / 16777216.0f);
 }

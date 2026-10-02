@@ -348,7 +348,7 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
 // popups (a combo's list can reach over the viewport) keep their input.
 internal b32 in_view(NvImgui* imgui, f32 x, f32 y)
 {
-    f32 ratio = imgui->window->pixel_ratio > 0.0f ? imgui->window->pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(imgui->window);
     NvRect r = imgui->view_rect;
     f32 px = x * ratio;
     f32 py = y * ratio;
@@ -1114,7 +1114,7 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
             release_preview(slot);
     }
     ImGuiIO* io = igGetIO_Nil();
-    f32 scale = imgui->window->pixel_ratio > 0.0f ? imgui->window->pixel_ratio : 1.0f;
+    f32 scale = nv_window_pixel_ratio(imgui->window);
     io->DisplaySize = (ImVec2_c){(f32)imgui->gpu->width / scale, (f32)imgui->gpu->height / scale};
     io->DisplayFramebufferScale = (ImVec2_c){scale, scale};
     io->DeltaTime = delta_seconds > 0.0f ? delta_seconds : 1.0f / 60.0f;

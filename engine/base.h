@@ -68,6 +68,18 @@ static inline void nv_arena_reset(NvArena* arena)
 #define NV_PUSH_STRUCT(arena, type)       ((type*)nv_arena_push((arena), sizeof(type), _Alignof(type)))
 #define NV_PUSH_ARRAY(arena, count, type) ((type*)nv_arena_push((arena), (count) * sizeof(type), _Alignof(type)))
 
+// FNV-1a over `size` bytes, continuing from `hash`: nv_fnv1a(NV_FNV1A_SEED, bytes, size) hashes one run, and passing a
+// result back in hashes several runs as one.
+#define NV_FNV1A_SEED  2166136261u
+#define NV_FNV1A_PRIME 16777619u
+static inline u32 nv_fnv1a(u32 hash, const void* bytes, umm size)
+{
+    const u8* p = (const u8*)bytes;
+    for (umm i = 0; i < size; ++i)
+        hash = (hash ^ p[i]) * NV_FNV1A_PRIME;
+    return hash;
+}
+
 // How many of the first `limit` bytes of the UTF-8 `text` to keep so no character is cut in the
 // middle: a name that does not fit is shortened by whole characters (a Hangul syllable is 3 bytes).
 static inline u32 nv_utf8_fit(const char* text, u32 limit)

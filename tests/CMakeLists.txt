@@ -30,3 +30,9 @@ add_executable(vfx_test vfx_test.c ${PROJECT_SOURCE_DIR}/engine/vfx_cpu.c)
 target_include_directories(vfx_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_options(vfx_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME vfx_test COMMAND vfx_test)
+
+# The small helpers in engine/base.h and engine/math.h: FNV-1a, clamps, PCG32, the pixel ratio.
+add_executable(base_test base_test.c)
+target_include_directories(base_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_options(base_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME base_test COMMAND base_test)
