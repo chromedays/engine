@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 초안 (2026-10-02). 구현 전에 "열린 질문"을 합의한다. 선행 작업인 엔진 구조 평탄화(`engine/include/nv/`와
+상태: 합의됨, 구현 전 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 선행 작업인 엔진 구조 평탄화(`engine/include/nv/`와
 `engine/src/`를 `engine/` 하나로)는 끝났다(`c3e0de4`).
 
 ### 목표
@@ -17,7 +17,8 @@
 
 - **옮기는 기준은 `AGENTS.md`의 "다른 앱도 쓸까?"이고, 그 다른 앱은 `battle.md`다.** 코딩 표준의 "두 번째로 필요할 때
   뽑는다"에 따라, 게임이 지금 쓸 것만 옮긴다. 언젠가 쓸지도 모르는 것은 남긴다.
-- **동작을 바꾸지 않는다.** 저장 태그와 그 값, `SAVE_VERSION`, 디버그 내보내기, 화면의 픽셀이 그대로다. 열거형의 값 순서를
+- **동작을 바꾸지 않는다.** 저장 태그와 그 값, `SAVE_VERSION`, 디버그 내보내기, 화면의 픽셀이 그대로다(예외 하나: 해결된
+  질문 4). 열거형의 값 순서를
   지켜서, 저장된 값이 같은 뜻으로 읽히게 한다.
 - **엔진은 `App`을 모른다.** 옮긴 코드는 `App`, `SceneView`, 검색, 저장을 참조하지 않는다. 앱에 남는 쪽이 엔진 함수를 부른다.
 - **새 서드파티는 없다.**
@@ -41,11 +42,11 @@
 | `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | 커밋 해시와 제목 헤더 | **옮김** (CMake 함수): 게임 페이지도 어느 커밋인지 보여 준다 |
 | 중복된 작은 도우미 | `clampf`(ui_desktop.c), `clamp`(save.c), `clamp_u32`(ui.c), FNV-1a 세 곳(strings.c, save.c, ui.c), xorshift(effects.c), `pixel_ratio > 0 ? … : 1` 일곱 곳 | **옮김**: 게임은 FNV-1a 해시와 시드 난수가 필요하다 |
 | `app/ui.c`: `ui_build_label` | 빌드 표시와 콘솔 배지 | 남김: 배지가 콘솔 탭과 묶여 있다. 게임은 `nv_imgui_fit_text`로 제 표시를 그린다 |
-| `app/effects.c` | 폭발, 불꽃, 연기, 미사일 궤적의 정의 | 남김: 내용(content)이다. 게임은 무기마다 제 이펙트를 정의한다 (열린 질문 1) |
-| `app/console.c` | Console 탭 | 남김: 게임 스펙에 없다. 로그 링은 이미 엔진에 있다 (열린 질문 2) |
+| `app/effects.c` | 폭발, 불꽃, 연기, 미사일 궤적의 정의 | 남김: 내용(content)이다. 게임은 무기마다 제 이펙트를 정의한다 (해결된 질문 1) |
+| `app/console.c` | Console 탭 | 남김: 게임 스펙에 없다. 로그 링은 이미 엔진에 있다 (해결된 질문 2) |
 | `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | 저장, undo, 선택, 검색과 팔레트, 단축키, 도크, 폰 패널, Textures 탭, 스트레스 씬 | 남김: 에디터만의 것 |
 | `app/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | 렌더러 설정 위젯 | 남김: `search_row`에 묶여 있고 게임 스펙에 없다 |
-| `app/main.c`: `frame`, `main`의 초기화, `FrameTimes` | 프레임 순서, 아레나, 기본값, 시간 재기 | 남김: 실행 파일마다 짧고 다르다. 프레임워크로 만들지 않는다 (열린 질문 3) |
+| `app/main.c`: `frame`, `main`의 초기화, `FrameTimes` | 프레임 순서, 아레나, 기본값, 시간 재기 | 남김: 실행 파일마다 짧고 다르다. 프레임워크로 만들지 않는다 (해결된 질문 3) |
 
 ### 옮기는 것
 
@@ -206,7 +207,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 - 앱의 `clampf`, `clamp`, `clamp_u32`, 세 FNV-1a 루프, 일곱 `pixel_ratio` 식이 이것을 쓴다. `save.c`의 장면 배치 해시는
   같은 값을 내야 한다(저장의 노드가 그 해시로 맞춰지므로): 테스트가 지금 값과 비교한다.
 - `effects.c`의 xorshift는 `NvRandom`이 된다. 스트레스 씬 이펙트의 무작위 순서가 바뀌지만 저장되지도, 값으로 검사되지도
-  않는다 (열린 질문 4).
+  않는다 (해결된 질문 4).
 - 게임: 결정론의 해시와 시드 난수(`battle.md`의 "결정론").
 - `nv_fnv1a`의 구현은 `engine/base.c`가 없으므로 `static inline`으로 헤더에 둔다.
 
@@ -249,20 +250,21 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 7. **문서:** `AGENTS.md`(`engine/` 목록의 새 모듈 `mesh.c/.h`, `camera.c/.h`, `strings.c/.h`, `renderer_cpu.c`; UI 문자열 줄), `CODING_STANDARD.md`(`T`/`TL` 예외), `korean.md`,
    `resolution.md`, `fonts.md`의 이름과 경로. `battle.md`는 이 스펙을 선행 작업으로 가리킨다.
 
-### 열린 질문
+### 해결된 질문
 
-1. **이펙트 정의:** `effects.c`의 폭발, 불꽃, 연기, 미사일 궤적은 앱에 남기고 게임이 제 것을 정의한다(추천). 아니면 엔진의
-   기본 이펙트 모음으로 옮길까?
-2. **Console 탭:** 게임에는 없다(`battle.md`). 폰에서 디버깅하려면 필요할 수 있다. 나중에 게임이 원할 때 옮긴다(추천)?
-3. **프레임과 초기화:** 실행 파일마다 `main`과 `frame`을 직접 쓴다(추천). 아니면 공통 시작 코드(창, GPU, 렌더러, ImGui,
-   글꼴, 기본값)를 엔진 함수 하나로 묶을까?
-4. **난수:** `effects.c`를 `NvRandom`으로 바꿔 스트레스 이펙트의 무작위 순서가 바뀌는 것이 괜찮은가? 아니면 xorshift를
-   그대로 둘까?
-5. **카메라 모듈:** 새 모듈 `engine/camera.h`(추천)인가, `engine/scene.h`에 둘까?
+모두 2026-10-02에 추천대로 정했다.
+
+1. **이펙트 정의:** `app/effects.c`의 폭발, 불꽃, 연기, 미사일 궤적은 앱에 남는다. 내용이므로 게임은 무기마다 제 이펙트를
+   정의한다.
+2. **Console 탭:** 지금은 옮기지 않는다. 게임이 원할 때 옮긴다. 로그 링은 이미 엔진에 있다.
+3. **프레임과 초기화:** 실행 파일마다 `main`과 `frame`을 직접 쓴다. 공통 시작 코드를 엔진 함수로 묶지 않는다.
+4. **난수:** `effects.c`는 `NvRandom`을 쓴다. 스트레스 씬 이펙트의 무작위 순서가 바뀌는 것은 "동작을 바꾸지 않는다"의 유일한
+   예외다: 저장되지도, 값으로 검사되지도 않는다.
+5. **카메라 모듈:** 새 모듈 `engine/camera.h`, `engine/camera.c`.
 
 ## English
 
-Status: draft (2026-10-02). The "Open questions" are agreed before it is built. The work it needs first, flattening the
+Status: agreed, not built yet (2026-10-02). Changes to this spec are agreed first. The work it needs first, flattening the
 engine (`engine/include/nv/` and `engine/src/` into one `engine/`), is done (`c3e0de4`).
 
 ### Goal
@@ -277,7 +279,7 @@ and save format do not change.
   coding standard's "pull it out the second time it is needed", only what the game uses now moves. What it might use some
   day stays.
 - **Behavior does not change.** Save tags and their values, `SAVE_VERSION`, debug exports and the pixels on screen stay the
-  same. Enum value order is kept, so saved values read with the same meaning.
+  same (one exception: resolved question 4). Enum value order is kept, so saved values read with the same meaning.
 - **The engine does not know `App`.** Moved code refers to no `App`, `SceneView`, search or save. The side that stays in the
   app calls the engine functions.
 - **No new third-party code.**
@@ -301,11 +303,11 @@ and save format do not change.
 | `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | The commit hash and subject header | **Moves** (a CMake function): the game's page also shows its commit |
 | Repeated small helpers | `clampf` (ui_desktop.c), `clamp` (save.c), `clamp_u32` (ui.c), FNV-1a in three places (strings.c, save.c, ui.c), xorshift (effects.c), `pixel_ratio > 0 ? … : 1` in seven places | **Move**: the game needs an FNV-1a hash and seeded random numbers |
 | `app/ui.c`: `ui_build_label` | The build label and the Console badge | Stays: the badge is tied to the Console tab. The game draws its own label with `nv_imgui_fit_text` |
-| `app/effects.c` | What an explosion, sparks, smoke and a missile trail are made of | Stays: it is content. The game defines its own effects per weapon (open question 1) |
-| `app/console.c` | The Console tab | Stays: not in the game's spec. The log ring is already in the engine (open question 2) |
+| `app/effects.c` | What an explosion, sparks, smoke and a missile trail are made of | Stays: it is content. The game defines its own effects per weapon (resolved question 1) |
+| `app/console.c` | The Console tab | Stays: not in the game's spec. The log ring is already in the engine (resolved question 2) |
 | `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | Saving, undo, selection, search and palette, shortcuts, docks, the phone panel, the Textures tab, the stress scene | Stay: editor only |
 | `app/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | Renderer setting widgets | Stay: tied to `search_row`, and not in the game's spec |
-| `app/main.c`: `frame`, the setup in `main`, `FrameTimes` | Frame order, arenas, defaults, timing | Stay: short and different in each executable. No framework (open question 3) |
+| `app/main.c`: `frame`, the setup in `main`, `FrameTimes` | Frame order, arenas, defaults, timing | Stay: short and different in each executable. No framework (resolved question 3) |
 
 ### What moves
 
@@ -471,7 +473,7 @@ f32 nv_window_pixel_ratio(const NvWindow* window);
 - The app's `clampf`, `clamp`, `clamp_u32`, the three FNV-1a loops and the seven `pixel_ratio` expressions use these. The
   scene layout hash in `save.c` must give the same value (saved nodes are matched by it): a test compares it with today's.
 - `effects.c`'s xorshift becomes `NvRandom`. The random order of the stress scene's effects changes, but it is neither saved
-  nor checked by value (open question 4).
+  nor checked by value (resolved question 4).
 - Game: the hash and seeded random numbers of determinism (`battle.md`, "Determinism").
 - There is no `engine/base.c`, so `nv_fnv1a` is `static inline` in the header.
 
@@ -519,14 +521,15 @@ Each phase is one commit, and each ends by checking with the steps above that th
    exception), and the names and paths in `korean.md`, `resolution.md` and `fonts.md`. `battle.md` points to this spec as
    the work that comes first.
 
-### Open questions
+### Resolved questions
 
-1. **Effect definitions:** keep `effects.c`'s explosion, sparks, smoke and missile trail in the app and let the game define
-   its own (recommended), or move them to the engine as a set of default effects?
-2. **Console tab:** the game has none (`battle.md`). Debugging on a phone may need it. Move it later, when the game wants it
-   (recommended)?
-3. **Frame and setup:** each executable writes its own `main` and `frame` (recommended), or bundle the common start (window,
-   GPU, renderer, ImGui, font, defaults) into one engine function?
-4. **Random numbers:** is it fine that switching `effects.c` to `NvRandom` changes the random order of the stress effects, or
-   keep its xorshift?
-5. **Camera module:** a new module, `engine/camera.h` (recommended), or in `engine/scene.h`?
+All settled as recommended on 2026-10-02.
+
+1. **Effect definitions:** `app/effects.c`'s explosion, sparks, smoke and missile trail stay in the app. They are content, so
+   the game defines its own effects per weapon.
+2. **Console tab:** not moved now; it moves when the game wants it. The log ring is already in the engine.
+3. **Frame and setup:** each executable writes its own `main` and `frame`. The common start is not bundled into an engine
+   function.
+4. **Random numbers:** `effects.c` uses `NvRandom`. The changed random order of the stress scene's effects is the one exception
+   to "behavior does not change": it is neither saved nor checked by value.
+5. **Camera module:** a new module, `engine/camera.h` and `engine/camera.c`.
