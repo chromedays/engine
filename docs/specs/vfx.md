@@ -62,7 +62,7 @@
 | 효과와 이미터 | 효과는 이미터 최대 8개의 묶음이다 (폭발 = 섬광 + 불꽃 + 연기 + 파편). 이미터는 파티클 흐름 하나로, `NvVfxEmitterDesc`의 행이다: 한 번에 나오는 수, 수명 범위, 속도 범위와 원뿔, 중력, 공기 저항, 난류, 지면 충돌 (높이, 반발, 마찰), 크기 시작과 끝, 색 세 점 (시작, 중간, 끝; HDR 값 허용), 모양, 블렌드 모드, 속도 방향 늘이기, 효과 안에서의 시작 지연. 효과 최대 1,024개 (`NV_VFX_MAX_EFFECTS`), 이미터 최대 4,096개 (`NV_VFX_MAX_EMITTERS`). 이미터 표는 GPU의 스토리지 버퍼 하나 (이미터당 약 128바이트, 최대 512 KB)라서 수를 늘리는 비용이 작다. 앱이 시작할 때 등록한다. 데이터 파일은 `autobattler.md`의 4번 (데이터 기반 정의)에서 다룬다 |
 | 호출 | `nv_vfx_burst(vfx, effect, position, direction, scale)`: 한 번에 터뜨리기. `nv_vfx_emit(vfx, effect, from, to, count)`: 이번 틱에 움직인 구간을 따라 고르게 내보내기 (미사일 연기 궤적). 핸들도 해제도 없다: 모든 것은 수명이 끝나면 사라진다 |
 | 그리기 순서 | 씬 패스 안에서: 불투명 메시 → 데칼 → 디버그 라인 → 선분 → 알파 파티클 → 가산 파티클. 모두 깊이 테스트를 하고 깊이를 쓰지 않는다 |
-| 정렬 | 가산 블렌딩은 순서와 무관하므로 정렬하지 않는다. 알파 파티클은 6단계에서 GPU로 정렬한다 (아래 "GPU 정렬"). 그 전까지 순서 오류는 숨기지 않고 드러낸다 (파티클의 "정렬" 참고). 파티클과 선분, 데칼 사이의 순서는 정렬로 고쳐지지 않는다: 순서와 무관한 투명도 (OIT)의 영역이고 범위 밖 |
+| 정렬 | 이 스펙에서는 하지 않는다. 가산 블렌딩은 순서와 무관하다. 알파 블렌딩 (연기)의 순서 오류는 숨기지 않고 드러낸다: 정렬이 필요하다는 것이 화면에서 분명히 보이게 하여 다음 단계에서 고친다 (파티클의 "정렬" 참고). 순서와 무관한 투명도 (OIT)는 범위 밖 |
 | 조명과 그림자 | 효과는 빛을 받지 않고 (unlit) 그림자를 드리우지도 받지도 않는다. picking에 걸리지 않는다 |
 | MSAA와 해상도 | 효과는 씬 패스 안에 그리므로 씬의 해상도와 샘플 수를 따른다 (`resolution.md`, `msaa.md`) |
 | 서드파티 | 없음 |
@@ -87,7 +87,7 @@
 | 비용 | compute는 살아 있는 파티클마다 매 프레임 상태 32바이트를 읽고 쓰고, 그리기가 다시 읽는다: 2M이면 프레임당 약 190 MB, 60 fps에서 초당 약 11 GB. 대역폭은 용량이 아니라 실제로 살아 있는 수에 비례한다: 용량을 2M으로 잡아도 살아 있는 파티클이 적으면 메모리 96 MB만 든다. 2M이 모두 살아 있으면 데스크톱 GPU에는 감당할 만하지만 폰에는 크다. 폰에서도 같은 2M을 쓰되, 실제로 감당하는 수는 스트레스 씬으로 재고, 폰 브라우저가 96 MB 할당을 거부하거나 탭을 종료하는지 함께 확인한다. 그다음 한계는 겹친 큰 가산 파티클의 fill rate다. compute 패스에 타임스탬프 쌍을 하나 더하고, 둘 다 스트레스 씬으로 잰다 |
 | 모양 | 첫 단계는 텍스처 없이 셰이더가 그린다: 부드러운 원, 고리 (충격파), 속도로 늘인 줄 (불꽃), 노이즈 덩어리 (연기). 스프라이트 아틀라스는 나중에 같은 모양 번호 자리에 더한다 |
 | 카메라 정렬 | 사각형은 카메라를 향한다. 늘이기가 켜진 이미터는 상태의 속도를 화면 공간으로 옮긴 방향으로 늘인다 |
-| 정렬 | 알파 파티클의 목록 순서는 atomic 때문에 프레임마다 바뀌므로, 정렬 없이 겹친 연기는 깜박인다. 이 결함은 알려진 문제로 남기고 숨기지 않는다: 불투명도를 낮춰 가리지 않으며, 시험 효과 **Smoke**는 불투명도가 높고 색이 서로 다른 파티클을 겹쳐서 순서 오류가 분명히 보이게 만든다. 코드에는 `// TODO:`로 표시하고, 6단계 (GPU 정렬)가 그것을 지운다. 같은 시험 효과가 고치기 전과 후를 비교하는 데 쓰인다 |
+| 정렬 | 알파 파티클의 목록 순서는 atomic 때문에 프레임마다 바뀌므로, 정렬 없이 겹친 연기는 깜박인다. 이 결함은 알려진 문제로 남기고 숨기지 않는다: 불투명도를 낮춰 가리지 않으며, 시험 효과 **Smoke**는 불투명도가 높고 색이 서로 다른 파티클을 겹쳐서 순서 오류가 분명히 보이게 만든다. 코드에는 `// TODO:`로 표시한다. GPU 정렬 (bitonic 또는 radix, compute)이 다음 단계다 |
 
 #### 궤적과 빔
 
@@ -96,27 +96,6 @@
 | 형태 | 둘 다 카메라를 향한 선분 인스턴스다: 끝점 둘, 폭, 색, 생성 시각, 수명. 용량은 앱이 정한다 (기본 262,144; 선분 하나 48바이트, 12 MB). 링 버퍼: CPU가 새 선분만 올리고, 가득 차면 가장 오래된 것을 덮어쓴다. 시뮬레이션이 없으므로 compute를 쓰지 않는다 |
 | 궤적 | `nv_vfx_trail(vfx, style, from, to)`: 앱이 미사일의 이번 틱 이동 구간마다 부른다. 구간마다 선분 하나가 생기고 수명 동안 가늘어지며 흐려진다. 연기 궤적은 같은 구간에 `nv_vfx_emit`을 함께 쓴다 |
 | 빔 | `nv_vfx_beam(vfx, style, from, to, seconds)`: 레이저처럼 두 점 사이에 일정 시간 유지되는 선분. 셰이더가 결을 흐르게 하고 깜박이게 한다. 움직이는 유닛을 따라가야 하면 앱이 매 틱 짧은 수명으로 다시 부른다 |
-
-#### GPU 정렬
-
-| 주제 | 결정 |
-|---|---|
-| 대상 | 보이는 목록의 알파 구간만. 가산 구간은 정렬하지 않는다 |
-| 키 | 카메라까지의 거리 (뷰 공간 깊이)를 32비트 정수 키로 바꾼 것. 먼 것부터 그리도록 내림차순. 값은 파티클 번호 |
-| 시점 | 프레임마다 simulate 다음, prepare 전. 정렬된 보이는 목록을 그리기가 그대로 읽는다 |
-| 알고리즘 | 6단계를 시작할 때, 5단계의 스트레스 측정 (보이는 알파 파티클이 실제로 몇 개인가)으로 고른다. 예상: bitonic으로 시작하고, 측정이 요구하면 radix로 바꾼다. 후보는 아래 표 |
-| 개수 | 보이는 수는 GPU에만 있다. 간접 dispatch로 그 수만큼만 정렬한다 (bitonic은 2의 거듭제곱으로 채운 크기) |
-| 비용 표시 | 정렬 패스에 타임스탬프 쌍을 하나 더한다 (`NV_TIMESTAMP_COUNT` 10 → 12). Stress 탭과 벤치마크가 보여 준다 |
-| 끄기 | View 탭 Effects 섹션의 **Sort alpha particles** 체크박스 (기본 켜짐; 저장 안 함, 비교와 측정용). 꺼지면 정렬 전의 순서 오류가 다시 보인다 |
-
-| 후보 | 무엇인가 | 언어, 라이선스 | 맞음 | 장단점 |
-|---|---|---|---|---|
-| bitonic 정렬 (직접 작성) | 비교와 교환을 정해진 순서로 반복하는 정렬. 작은 블록은 workgroup 메모리 안에서, 큰 단계는 전역 패스로 | WGSL | 단순하고, WebGPU core 기능만 쓴다. AMD 2014 토크가 다룬 방식 | O(n log² n): 수가 많으면 패스가 늘고 느려진다. 크기를 2의 거듭제곱으로 채운다 |
-| radix 정렬 (직접 작성, 참고 구현을 따름) | 키를 몇 비트씩 나눠 세고, 누적하고, 흩어 놓는 패스를 반복 | WGSL | 수가 많을 때 빠르다 (O(n)) | 패스가 여럿이고 (count, scan, scatter) 구현이 복잡하다. 빠른 구현은 웨이브 연산에 기댄다 |
-| AMD FidelityFX Parallel Sort | 최적화된 radix 정렬 | HLSL, MIT | radix의 참고 구현 | Shader Model 6.0의 웨이브 연산을 쓰는데, WebGPU에서 그에 해당하는 `subgroups`는 선택 기능이라 모든 기기, 특히 폰에서 보장되지 않는다. WGSL로 옮겨야 한다 |
-| Wicked Engine `wiGPUSortLib` | 엔진의 GPU radix 정렬 | HLSL, MIT | 파티클 정렬에 실제로 쓰이는 구현 | 같은 이유로 옮겨야 한다. 구조만 참고한다 |
-
-어느 것도 라이브러리로 들이지 않는다: 직접 작성하고, radix를 고르면 위의 구현을 참고로 쓴다.
 
 #### 데칼
 
@@ -135,7 +114,7 @@
 | 톤 매핑 | 업스케일 패스에서 한다: 노출을 곱하고, 톤 매핑하고, 캔버스의 sRGB 뷰에 쓴다. 선택지: **Clamp** (지금의 모습: 1에서 자름), **PBR Neutral** (Khronos; 0.76 아래는 거의 그대로이고 밝은 쪽만 부드럽게 누름), **ACES** (Narkowicz의 근사식; 대비가 강한 영화풍). 기본값은 **PBR Neutral**: 지금 쇼케이스의 모습을 거의 유지하면서 밝은 효과를 부드럽게 누른다. Clamp는 지금과 같은 모습이 필요할 때 고른다 |
 | bloom | Jimenez 2014 방식: 씬 색에서 시작해 반씩 줄이는 다운샘플 6단계 (13탭 필터, 첫 단계는 반짝이는 점을 막는 Karis 평균), 그다음 텐트 필터로 올라오며 더한다. 업스케일 패스가 결과를 세기 (기본 0.04)만큼 섞는다. 임계값은 두지 않는다: HDR 값이 큰 곳만 눈에 띄게 번진다. 각 단계는 작은 렌더 패스다 (compute 없음) |
 | bloom 타깃 | `RGBA16Float` 밉 체인, 씬 해상도의 1/2부터. 씬 타깃처럼 64로 올림하고 충분히 크면 유지한다 |
-| 비용 표시 | bloom 패스들에 타임스탬프 쌍 하나를 더한다 (파티클 compute 패스와 정렬의 쌍과 함께 `NV_TIMESTAMP_COUNT` 6 → 12). Stress 탭과 벤치마크가 그것을 보여 준다 |
+| 비용 표시 | bloom 패스들에 타임스탬프 쌍 하나를 더한다 (파티클 compute 패스의 쌍과 함께 `NV_TIMESTAMP_COUNT` 6 → 10). Stress 탭과 벤치마크가 그것을 보여 준다 |
 | Textures 탭 | 렌더 타깃 그룹에 bloom 체인의 단계들이 나온다. `RGBA16Float`는 필터링 가능하므로 기존 미리보기 경로로 보인다 (값은 잘려서 보인다) |
 
 #### 앱
@@ -215,18 +194,18 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 - **스프라이트:** 첫 단계는 셰이더가 그리는 모양이고 에셋이 없다. 텍스처 아틀라스 (예: Kenney Particle Pack, CC0)는 나중에 같은
   모양 번호 자리에 더한다.
 - **톤 매핑 기본값:** PBR Neutral.
-- **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 한다. 알파 파티클의 GPU 정렬도 마지막 단계 (6단계)로 포함한다.
+- **범위:** 다섯 부분 (HDR과 톤 매핑, bloom, 파티클, 궤적과 빔, 데칼)을 이 스펙 하나로 한다.
 - **기본 용량:** 동시에 살아 있는 최대 파티클 수는 데스크톱과 폰 모두 2M (약 96 MB). 스트레스 씬의 측정으로 다시 정할 수 있다.
 
 ### 변경
 
 - **엔진.** `nv/vfx.h`, `engine/src/vfx.c` (효과와 이미터 표, 버스트 큐, 파티클 버퍼, emit, simulate, prepare compute 패스, 선분과 데칼 링, 그리기), `nv/renderer.h`와
   `renderer.c` (`RGBA16Float` 씬 타깃, `NvPostSettings`, 업스케일 패스의 노출과 톤 매핑과 bloom 합성, bloom 체인과 그 패스,
-  타임스탬프 12개, 첫 compute 파이프라인), `engine/src/gpu.c` (큰 파티클 용량을 위한 장치 한도 요청), `engine/src/imgui.c` (float 텍스처 미리보기 확인).
+  타임스탬프 10개, 첫 compute 파이프라인), `engine/src/gpu.c` (큰 파티클 용량을 위한 장치 한도 요청), `engine/src/imgui.c` (float 텍스처 미리보기 확인).
 - **앱.** View 탭의 Post-processing과 Effects 섹션 (`app/ui.c`), 쇼케이스의 시험 효과 정의 (`app/main.c`), 저장 태그
   (`app/save.c`, `save.md`), 스트레스 워크로드와 통계와 벤치마크 (`app/stress.c`), 한국어 문자열 (`app/strings.c`),
   Debug export.
-- **테스트.** `tests/vfx_test.c` (Node): 버스트를 작업 그룹 작업으로 나누기 (지연, 경계), 선분과 데칼 링의 할당과 덮어쓰기. GPU 쪽 (emit, simulate, 목록, 정렬)은 브라우저 테스트로 확인한다.
+- **테스트.** `tests/vfx_test.c` (Node): 버스트를 작업 그룹 작업으로 나누기 (지연, 경계), 선분과 데칼 링의 할당과 덮어쓰기. GPU 쪽 (emit, simulate, 목록)은 브라우저 테스트로 확인한다.
 - **문서.** `msaa.md`와 `resolution.md` (씬 타깃 형식), `textures.md`, `stress.md`, `save.md`, `AGENTS.md`, README.
 
 ### 단계
@@ -243,9 +222,6 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 4. **궤적, 빔, 데칼:** 선분과 데칼 링, 시험 버튼 (Missile, Laser, Scorch). 확인: 스크린샷, 수명 끝의 흐려짐, 데칼이 지면에서
    깜박이지 않음 (z-fighting).
 5. **비용과 문서:** 스트레스 워크로드, 통계, 벤치마크, 폰 크기 확인, 위의 문서들.
-6. **GPU 정렬:** 5단계의 측정으로 알고리즘을 고르고, 정렬 패스, 타임스탬프, **Sort alpha particles** 체크박스를 더한다. 확인: 시험 효과
-   **Smoke**에서 정렬을 켜면 깜박임이 사라지고 끄면 돌아온다 (같은 카메라의 연속 프레임 스크린샷 비교); 정렬된 목록의 키가 내림차순이다
-   (Debug export로 읽어 확인); 보이는 수가 0, 1, 2의 거듭제곱 경계, 최대일 때 오류 없음; 정렬 시간이 Stress 탭에 보인다; `// TODO:`를 지운다.
 
 모든 단계는 헤드리스 Chromium에서 Release와 Debug로, 데스크톱과 폰 크기에서 확인한다. SwiftShader의 시간은 의미가 없다; 실제
 비용은 장치에서 나온다.
@@ -253,7 +229,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 ### 범위 밖
 
 - 끌어당기는 점, 파티클끼리의 상호작용, 지면 외의 충돌 (유닛, 지형).
-- 순서와 무관한 투명도 (OIT; 파티클, 선분, 데칼 사이의 순서), 소프트 파티클 (깊이 읽기가 필요).
+- GPU 정렬 (다음 단계), 순서와 무관한 투명도 (OIT), 소프트 파티클 (깊이 읽기가 필요).
 - 빛을 받는 파티클, 그림자를 드리우는 파티클, 열기 왜곡 (굴절).
 - 메시와 지형에 투영하는 데칼.
 - 효과 편집기와 효과 데이터 파일 (`autobattler.md`의 4번에서).
@@ -269,9 +245,8 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
   `emittedparticle_finishUpdateCS.hlsl`. 같은 구조에 번갈아 쓰는 살아 있는 목록, 1스레드 간접 인자 패스, simulate 안의
   frustum culling, GPU radix 정렬 (`wiGPUSortLib`)이 더해져 있다. 코드를 가져오지 않고 구조만 참고한다. 다른 점: 이미터마다
   버퍼와 dispatch가 따로이고 (우리는 전역 풀 하나), 스레드마다 전역 atomic을 한다 (우리는 작업 그룹 단위).
-- **GPU 정렬 (6단계):** AMD FidelityFX Parallel Sort ([GPUOpen](https://gpuopen.com/fidelityfx-parallel-sort/), MIT), Wicked
-  Engine `wiGPUSortLib` (MIT). 둘 다 radix이고 구조만 참고한다.
-- **나중 단계:** Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of Tsushima", GDC 2021
+- **나중 단계:** AMD FidelityFX Parallel Sort ([GPUOpen](https://gpuopen.com/fidelityfx-parallel-sort/), MIT; GPU 정렬),
+  Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of Tsushima", GDC 2021
   ([GDC Vault](https://gdcvault.com/play/1027124/Blowing-from-the-West-Simulating); 바람장), Brandon Whitley, "The Destiny
   Particle Architecture", SIGGRAPH 2017 ([요약](https://80.lv/articles/siggraph-the-destiny-particle-architecture); 데이터 기반
   저작).
@@ -339,7 +314,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Effects and emitters | An effect is a group of at most 8 emitters (an explosion = flash + sparks + smoke + debris). An emitter is one stream of particles, a row of `NvVfxEmitterDesc`: the count per burst, lifetime range, speed range and cone, gravity, drag, turbulence, ground collision (height, restitution, friction), start and end size, three colors (start, middle, end; HDR values allowed), shape, blend mode, stretching along velocity, a start delay within the effect. At most 1,024 effects (`NV_VFX_MAX_EFFECTS`) and 4,096 emitters (`NV_VFX_MAX_EMITTERS`). The emitter table is one GPU storage buffer (about 128 bytes per emitter, 512 KB at most), so raising the counts costs little. The app registers them at start. Data files are item 4 of `autobattler.md` (data-driven definitions) |
 | Calls | `nv_vfx_burst(vfx, effect, position, direction, scale)`: one burst. `nv_vfx_emit(vfx, effect, from, to, count)`: spread evenly along the stretch moved this tick (a missile's smoke trail). No handles and nothing to free: everything disappears when its lifetime ends |
 | Draw order | Inside the scene pass: opaque meshes → decals → debug lines → segments → alpha particles → additive particles. All test depth and none write it |
-| Sorting | Additive blending does not depend on order and is not sorted. Alpha particles are sorted on the GPU in phase 6 ("GPU sorting" below). Until then their order errors are shown, not hidden (see "Sorting" under Particles). Order between particles, segments and decals is not fixed by sorting: that is order-independent transparency (OIT), out of scope |
+| Sorting | None in this spec. Additive blending does not depend on order. Order errors in alpha blending (smoke) are shown, not hidden, so the need for sorting is plain on screen and gets fixed in a next step (see "Sorting" under Particles). Order-independent transparency (OIT) is out of scope |
 | Lighting and shadows | Effects are unlit, cast and receive no shadows, and are not pickable |
 | MSAA and resolution | Effects are drawn in the scene pass, so they follow the scene's resolution and sample count (`resolution.md`, `msaa.md`) |
 | Third-party | None |
@@ -364,7 +339,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Cost | Compute reads and writes 32 bytes of state per living particle every frame, and drawing reads it again: about 190 MB per frame at 2M, about 11 GB/s at 60 fps. Bandwidth follows the number actually alive, not the capacity: with 2M capacity and few particles alive, only the 96 MB of memory is spent. With all 2M alive it is fine for a desktop GPU and heavy for a phone. Phones use the same 2M; the count a phone really sustains is measured with the stress scene, along with whether a phone browser refuses the 96 MB or kills the tab. The next limit is the fill rate of large overlapping additive particles. A timestamp pair is added for the compute passes; both are measured with the stress scene |
 | Shapes | The first step draws them in the shader with no texture: a soft disc, a ring (shockwave), a streak stretched by velocity (sparks), a noisy puff (smoke). A sprite atlas comes later in the same shape-number slots |
 | Facing | Quads face the camera. Emitters with stretching are lengthened along the state's velocity taken to screen space |
-| Sorting | The living list's order changes every frame with the atomics, so overlapping unsorted smoke flickers. This defect stays a known issue and is not hidden: opacity is not lowered to mask it, and the **Smoke** test effect overlaps highly opaque particles of different colors so order errors are plain to see. The code marks it with `// TODO:`, which phase 6 (GPU sorting) removes. The same test effect compares before and after the fix |
+| Sorting | The living list's order changes every frame with the atomics, so overlapping unsorted smoke flickers. This defect stays a known issue and is not hidden: opacity is not lowered to mask it, and the **Smoke** test effect overlaps highly opaque particles of different colors so order errors are plain to see. The code marks it with `// TODO:`. GPU sorting (bitonic or radix, in compute) is the next step |
 
 #### Trails and beams
 
@@ -373,27 +348,6 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Form | Both are camera-facing segment instances: two end points, width, color, birth time, lifetime. Capacity set by the app (262,144 by default; 48 bytes a segment, 12 MB). A ring buffer: the CPU uploads only new segments and, when full, overwrites the oldest. Nothing is simulated, so no compute |
 | Trails | `nv_vfx_trail(vfx, style, from, to)`: the app calls it for each stretch a missile moved this tick. Each stretch adds a segment that thins and fades over its lifetime. A smoke trail adds `nv_vfx_emit` on the same stretch |
 | Beams | `nv_vfx_beam(vfx, style, from, to, seconds)`: a segment held between two points for a time, like a laser; the shader scrolls and flickers it. When it must follow moving units, the app calls it again each tick with a short lifetime |
-
-#### GPU sorting
-
-| Topic | Decision |
-|---|---|
-| What | Only the visible list's alpha range. The additive range is not sorted |
-| Key | The distance to the camera (view-space depth) turned into a 32-bit integer key, descending so the farthest draws first. The value is the particle index |
-| When | Every frame after simulate and before prepare. Drawing reads the sorted visible list as it is |
-| Algorithm | Chosen when phase 6 starts, from phase 5's stress measurements (how many alpha particles are actually visible). Expected: start with bitonic, switch to radix if the measurements ask for it. Candidates in the table below |
-| Count | The visible count lives on the GPU only. An indirect dispatch sorts only that many (bitonic: padded to a power of two) |
-| Cost shown | One more timestamp pair around the sort passes (`NV_TIMESTAMP_COUNT` 10 → 12). The Stress tab and the benchmark show it |
-| Turning it off | A **Sort alpha particles** checkbox in the View tab's Effects section (on by default; not saved, for comparing and measuring). Off shows the unsorted order errors again |
-
-| Candidate | What it is | Language, license | Fit | Trade-offs |
-|---|---|---|---|---|
-| Bitonic sort (ours) | Compare-and-swap in a fixed order: small blocks in workgroup memory, large steps as global passes | WGSL | Simple, WebGPU core only. The method the AMD 2014 talk covers | O(n log² n): passes grow and it slows at large counts. The size is padded to a power of two |
-| Radix sort (ours, following a reference) | Repeated passes that count a few bits of the key, scan and scatter | WGSL | Fast at large counts (O(n)) | Several passes (count, scan, scatter) and a complex implementation; fast versions lean on wave operations |
-| AMD FidelityFX Parallel Sort | An optimized radix sort | HLSL, MIT | A reference for radix | Uses Shader Model 6.0 wave operations; their WebGPU counterpart, `subgroups`, is an optional feature, not guaranteed on every device and especially phones. Needs a port to WGSL |
-| Wicked Engine `wiGPUSortLib` | The engine's GPU radix sort | HLSL, MIT | An implementation actually used for particles | Needs a port for the same reasons; only its structure is followed |
-
-None of these comes in as a library: we write it, and if radix is chosen, the implementations above serve as references.
 
 #### Decals
 
@@ -412,7 +366,7 @@ None of these comes in as a library: we write it, and if radix is chosen, the im
 | Tone mapping | Done in the upscale pass: multiply by the exposure, tone map, write to the canvas's sRGB view. Choices: **Clamp** (today's look: cut at 1), **PBR Neutral** (Khronos; nearly unchanged below 0.76, only the bright end is compressed smoothly), **ACES** (Narkowicz's fit; a contrasty film look). The default is **PBR Neutral**: it keeps today's showcase nearly as it looks while compressing bright effects smoothly. Clamp is there when exactly today's look is wanted |
 | Bloom | Jimenez 2014: six downsample steps halving from the scene color (a 13-tap filter, with a Karis average on the first step against fireflies), then summed back up with a tent filter. The upscale pass mixes the result in by an intensity (0.04 by default). No threshold: only places with large HDR values spread visibly. Each step is a small render pass (no compute) |
 | Bloom targets | An `RGBA16Float` mip chain starting at 1/2 of the scene's resolution, rounded up to 64 and kept while large enough, like the scene targets |
-| Cost shown | One more timestamp pair around the bloom passes (`NV_TIMESTAMP_COUNT` 6 → 12 with the particle compute passes' and the sort's pairs). The Stress tab and the benchmark show it |
+| Cost shown | One more timestamp pair around the bloom passes (`NV_TIMESTAMP_COUNT` 6 → 10 with the particle compute passes' pair). The Stress tab and the benchmark show it |
 | Textures tab | The bloom chain's steps are listed under Render targets. `RGBA16Float` is filterable, so the existing preview path shows them (values shown clipped) |
 
 #### App
@@ -492,8 +446,7 @@ All decided on 2026-10-01.
 - **Sprites:** the first step draws shapes in the shader, with no assets. A texture atlas (for example Kenney's Particle Pack,
   CC0) comes later in the same shape-number slots.
 - **Tone mapping default:** PBR Neutral.
-- **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec, plus GPU
-  sorting of alpha particles as the last phase (phase 6).
+- **Scope:** the five parts (HDR and tone mapping, bloom, particles, trails and beams, decals) in this one spec.
 - **Default capacity:** at most 2M particles alive at once on both the desktop and a phone (about 96 MB); may be revised
   with the stress scene's measurements.
 
@@ -501,12 +454,12 @@ All decided on 2026-10-01.
 
 - **Engine.** `nv/vfx.h`, `engine/src/vfx.c` (the effect and emitter tables, the burst queue, particle buffers, the emit, simulate and prepare compute passes, segment and decal rings, drawing);
   `nv/renderer.h` and `renderer.c` (`RGBA16Float` scene targets, `NvPostSettings`, exposure, tone mapping and the bloom
-  composite in the upscale pass, the bloom chain and its passes, 12 timestamps, the first compute pipelines); `engine/src/gpu.c` (device limits raised for large particle capacities); `engine/src/imgui.c` (float texture previews
+  composite in the upscale pass, the bloom chain and its passes, 10 timestamps, the first compute pipelines); `engine/src/gpu.c` (device limits raised for large particle capacities); `engine/src/imgui.c` (float texture previews
   checked).
 - **App.** The View tab's Post-processing and Effects sections (`app/ui.c`), the showcase's test effect definitions
   (`app/main.c`), the save tags (`app/save.c`, `save.md`), the stress workload, stats and benchmark (`app/stress.c`), Korean
   strings (`app/strings.c`), Debug exports.
-- **Tests.** `tests/vfx_test.c` (Node): splitting bursts into workgroup jobs (delays, edges), allocating and overwriting in the segment and decal rings. The GPU side (emit, simulate, lists, sorting) is checked in browser tests.
+- **Tests.** `tests/vfx_test.c` (Node): splitting bursts into workgroup jobs (delays, edges), allocating and overwriting in the segment and decal rings. The GPU side (emit, simulate, lists) is checked in browser tests.
 - **Docs.** `msaa.md` and `resolution.md` (the scene target format), `textures.md`, `stress.md`, `save.md`, `AGENTS.md`, README.
 
 ### Phases
@@ -527,11 +480,6 @@ All decided on 2026-10-01.
 4. **Trails, beams and decals:** the segment and decal rings, test buttons (Missile, Laser, Scorch). Checked: screenshots,
    fading at the end of a lifetime, no flicker of decals on the ground (z-fighting).
 5. **Cost and docs:** the stress workload, stats, benchmark, a phone-size check, the documents above.
-6. **GPU sorting:** the algorithm chosen from phase 5's measurements, the sort passes, the timestamps, the **Sort alpha
-   particles** checkbox. Checked: in the **Smoke** test effect the flicker goes away with sorting on and comes back with it
-   off (screenshots of consecutive frames from one camera); the sorted list's keys descend (read through a Debug export);
-   no errors with visible counts of 0, 1, at power-of-two edges and at the maximum; the sort time shows in the Stress tab;
-   the `// TODO:` is removed.
 
 Every phase is checked in Release and Debug in headless Chromium, at desktop and phone size. SwiftShader's timings mean
 nothing; real costs come from devices.
@@ -539,7 +487,7 @@ nothing; real costs come from devices.
 ### Out of scope
 
 - Attractors, particles interacting with each other, collisions other than the ground (units, terrain).
-- Order-independent transparency (OIT; order between particles, segments and decals), soft particles (they need to read depth).
+- GPU sorting (a next step), order-independent transparency (OIT), soft particles (they need to read depth).
 - Lit particles, particles casting shadows, heat distortion (refraction).
 - Decals projected onto meshes and terrain.
 - An effect editor and effect data files (item 4 of `autobattler.md`).
@@ -556,9 +504,8 @@ nothing; real costs come from devices.
   one-thread indirect-argument passes, frustum culling inside simulate and a GPU radix sort (`wiGPUSortLib`). Only the
   structure is followed; no code is taken. Differences: buffers and dispatches per emitter (ours: one global pool), and a
   global atomic per thread (ours: per workgroup).
-- **GPU sorting (phase 6):** AMD FidelityFX Parallel Sort ([GPUOpen](https://gpuopen.com/fidelityfx-parallel-sort/), MIT),
-  Wicked Engine's `wiGPUSortLib` (MIT). Both are radix sorts; only their structure is followed.
-- **Later steps:** Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of Tsushima", GDC 2021
+- **Later steps:** AMD FidelityFX Parallel Sort ([GPUOpen](https://gpuopen.com/fidelityfx-parallel-sort/), MIT; GPU sorting),
+  Bill Rockenbeck, "Blowing from the West: Simulating Wind in Ghost of Tsushima", GDC 2021
   ([GDC Vault](https://gdcvault.com/play/1027124/Blowing-from-the-West-Simulating); wind fields), Brandon Whitley, "The
   Destiny Particle Architecture", SIGGRAPH 2017 ([summary](https://80.lv/articles/siggraph-the-destiny-particle-architecture);
   data-driven authoring).
