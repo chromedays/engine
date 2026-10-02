@@ -115,6 +115,25 @@ typedef struct NvShadowSettings {
     b32 show_box; // draw the light's box as debug lines
 } NvShadowSettings;
 
+// The scene is rendered in linear HDR (docs/specs/vfx.md): colors above 1 are kept until the upscale
+// pass multiplies by the exposure, tone maps and writes the canvas.
+#define NV_SCENE_FORMAT WGPUTextureFormat_RGBA16Float
+
+typedef enum NvToneMap {
+    NV_TONE_CLAMP,       // cut at 1: what the renderer showed before HDR
+    NV_TONE_PBR_NEUTRAL, // Khronos PBR Neutral: nearly unchanged below 0.76, bright colors compressed, hue kept
+    NV_TONE_ACES,        // Narkowicz's fit of the ACES filmic curve
+    NV_TONE_COUNT,
+} NvToneMap;
+
+// Set by the app each frame, like the shadow settings.
+typedef struct NvPostSettings {
+    NvToneMap tone;
+    f32 exposure;        // multiplies the scene color before tone mapping
+    b32 bloom;
+    f32 bloom_intensity; // how much of the bloom is added back
+} NvPostSettings;
+
 // What the last nv_renderer_draw did.
 typedef struct NvRenderStats {
     u32 draws;          // mesh draw calls, one per mesh node
@@ -170,7 +189,7 @@ typedef struct NvRenderer {
     u32 target_width, target_height;
     u32 scene_width, scene_height;    // the resolution of the last frame
     WGPUTexture scene_color;
-    WGPUTextureView scene_color_view; // the sRGB view: rendered to and sampled through it
+    WGPUTextureView scene_color_view; // NV_SCENE_FORMAT, linear: rendered to and sampled through it
     WGPURenderPipeline upscale_pipeline;
     WGPUBuffer upscale_buffer;
     WGPUBindGroup upscale_group;      // for the current scene_color_view
@@ -185,6 +204,9 @@ typedef struct NvRenderer {
     WGPUTextureView msaa_color_view;
     u32 msaa_width, msaa_height;
     WGPUTextureFormat msaa_format;
+
+    // Tone mapping and bloom, applied by the upscale pass.
+    NvPostSettings post;
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.

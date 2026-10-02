@@ -297,6 +297,21 @@ internal void msaa_ui(App* app)
     }
 }
 
+// The View tab's Post-processing section (docs/specs/vfx.md): tone mapping and exposure, then bloom.
+internal void post_ui(App* app)
+{
+    NvPostSettings* post = &app->renderer.post;
+    search_section(app, "Post-processing");
+    const char* tones[NV_TONE_COUNT] = {T("Clamp"), T("PBR Neutral"), T("ACES")};
+    s32 tone = (s32)post->tone;
+    if (search_row(app, "Tone mapping", "hdr clamp pbr neutral aces filmic")) {
+        if (igCombo_Str_arr(TL("Tone mapping"), &tone, tones, NV_TONE_COUNT, -1))
+            post->tone = (NvToneMap)tone;
+    }
+    if (search_row(app, "Exposure", "brightness hdr"))
+        igSliderFloat(TL("Exposure"), &post->exposure, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+}
+
 internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
 {
     return value < lo ? lo : value > hi ? hi : value;
@@ -562,6 +577,7 @@ void ui_view_tab(App* app)
             igSliderFloat(TL("Planet orbit"), &app->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
     }
     msaa_ui(app);
+    post_ui(app);
     resolution_ui(app);
     shadow_ui(app);
     save_ui(app);

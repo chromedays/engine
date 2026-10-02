@@ -299,7 +299,7 @@ internal void create_pipelines(NvRenderer* renderer)
     };
 
     WGPUColorTargetState color_target = WGPU_COLOR_TARGET_STATE_INIT;
-    color_target.format = gpu->surface_format;
+    color_target.format = NV_SCENE_FORMAT;
     WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
     fragment.module = module;
     fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
@@ -355,7 +355,7 @@ internal void create_pipelines(NvRenderer* renderer)
     blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
     blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
     WGPUColorTargetState debug_target = WGPU_COLOR_TARGET_STATE_INIT;
-    debug_target.format = gpu->surface_format;
+    debug_target.format = NV_SCENE_FORMAT;
     debug_target.blend = &blend;
     WGPUFragmentState debug_fragment = WGPU_FRAGMENT_STATE_INIT;
     debug_fragment.module = debug_module;
@@ -497,6 +497,7 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->clear_color[1] = 0.02f;
     renderer->clear_color[2] = 0.035f;
     renderer->clear_color[3] = 1.0f;
+    renderer->post = (NvPostSettings){.tone = NV_TONE_CLAMP, .exposure = 1.0f, .bloom = 0, .bloom_intensity = 0.04f};
 
     create_layouts(renderer);
     renderer->msaa = 1;
@@ -728,10 +729,10 @@ internal void release_texture(WGPUTexture* texture, WGPUTextureView* view)
     *texture = NULL;
 }
 
-// A color texture made like the canvas: the canvas's own format with the sRGB render format as a
-// view format, and the view in that format, so what is drawn through it and what is sampled through
-// it are linear, and a resolve and the canvas agree on the encoding (a texture created directly in
-// the sRGB format resolved too dark in Chromium on SwiftShader; docs/specs/msaa.md).
+// A color target in the scene's HDR format (NV_SCENE_FORMAT, linear): what the scene pass draws, what it
+// resolves into and what the upscale pass samples. The canvas still gets the sRGB view format at the
+// end, in the upscale pass, so the tone mapped value is encoded by the canvas's own view
+// (docs/specs/vfx.md; before HDR the scene targets were made like the canvas, see msaa.md).
 internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 height, u32 samples, WGPUTextureUsage usage,
                                   WGPUTexture* texture, WGPUTextureView* view)
 {
@@ -739,22 +740,15 @@ internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 
     desc.label = (WGPUStringView){label, WGPU_STRLEN};
     desc.usage = usage;
     desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = gpu->config_format;
+    desc.format = NV_SCENE_FORMAT;
     desc.sampleCount = samples;
-    WGPUTextureFormat view_format = gpu->surface_format;
-    if (view_format != gpu->config_format) {
-        desc.viewFormatCount = 1;
-        desc.viewFormats = &view_format;
-    }
     *texture = wgpuDeviceCreateTexture(gpu->device, &desc);
-    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.format = gpu->surface_format;
-    *view = wgpuTextureCreateView(*texture, &view_desc);
+    *view = wgpuTextureCreateView(*texture, NULL);
 }
 
 internal f64 target_megabytes(u32 width, u32 height, u32 samples)
 {
-    return (f64)width * (f64)height * 4.0 * (f64)samples / (1024.0 * 1024.0);
+    return (f64)width * (f64)height * (f64)nv_gpu_format_bytes(NV_SCENE_FORMAT) * (f64)samples / (1024.0 * 1024.0);
 }
 
 internal const char* upscale_shader =
@@ -762,7 +756,9 @@ internal const char* upscale_shader =
     "    origin: vec2f,\n"
     "    block: vec2f,\n"
     "    size: vec2f,\n"
-    "    pad2: vec2f,\n"
+    "    exposure: f32,\n"
+    "    tone: f32,\n"
+    "    bloom: vec4f,\n" // x: intensity (0 = off)
     "}\n"
     "@group(0) @binding(0) var<uniform> p: Params;\n"
     "@group(0) @binding(1) var scene: texture_2d<f32>;\n"
@@ -771,12 +767,45 @@ internal const char* upscale_shader =
     "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
     "    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);\n"
     "}\n"
+    "\n"
+    // Khronos PBR Neutral tone mapper (github.com/KhronosGroup/ToneMapping, Apache-2.0): colors whose
+    // brightest channel is below 0.76 change by at most 0.04, brighter ones are compressed toward 1
+    // by their peak so the hue stays, and the very bright lose saturation toward white.
+    "fn tone_pbr_neutral(input: vec3f) -> vec3f {\n"
+    "    let start_compression = 0.8 - 0.04;\n"
+    "    let desaturation = 0.15;\n"
+    "    var color = input;\n"
+    "    let x = min(color.r, min(color.g, color.b));\n"
+    "    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);\n"
+    "    color -= vec3f(offset);\n"
+    "    let peak = max(color.r, max(color.g, color.b));\n"
+    "    if (peak < start_compression) { return color; }\n"
+    "    let d = 1.0 - start_compression;\n"
+    "    let new_peak = 1.0 - d * d / (peak + d - start_compression);\n"
+    "    color *= new_peak / peak;\n"
+    "    let g = 1.0 - 1.0 / (desaturation * (peak - new_peak) + 1.0);\n"
+    "    return mix(color, new_peak * vec3f(1.0), g);\n"
+    "}\n"
+    "\n"
+    // Krzysztof Narkowicz's fit of the ACES filmic curve.
+    "fn tone_aces(x: vec3f) -> vec3f {\n"
+    "    return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0.0), vec3f(1.0));\n"
+    "}\n"
+    "\n"
+    "fn tone_map(color: vec3f) -> vec3f {\n"
+    "    let c = max(color * p.exposure, vec3f(0.0));\n"
+    "    if (p.tone > 1.5) { return tone_aces(c); }\n"
+    "    if (p.tone > 0.5) { return clamp(tone_pbr_neutral(c), vec3f(0.0), vec3f(1.0)); }\n"
+    "    return clamp(c, vec3f(0.0), vec3f(1.0));\n"
+    "}\n"
+    "\n"
     "@fragment\n"
     "fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
     "    // Nearest: the scene pixel under this screen pixel, counted from the image's corner.\n"
     "    let t = vec2i(floor((pos.xy - p.origin) / p.block));\n"
     "    let c = clamp(t, vec2i(0), vec2i(p.size) - vec2i(1));\n"
-    "    return textureLoad(scene, c, 0);\n"
+    "    let color = textureLoad(scene, c, 0);\n"
+    "    return vec4f(tone_map(color.rgb), 1.0);\n"
     "}\n";
 
 internal void create_upscale_pipeline(NvRenderer* renderer)
@@ -798,7 +827,7 @@ internal void create_upscale_pipeline(NvRenderer* renderer)
     desc.fragment = &fragment;
     renderer->upscale_pipeline = wgpuDeviceCreateRenderPipeline(gpu->device, &desc);
     wgpuShaderModuleRelease(module);
-    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 32);
+    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 48);
 }
 
 // Keeps the scene's targets: the color target the upscale pass samples, the multisampled color
@@ -820,11 +849,11 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
     u32 need_width = round_up_64(width), need_height = round_up_64(height);
     b32 large_enough = renderer->target_width >= width && renderer->target_height >= height;
     b32 too_large = (u64)renderer->target_width * renderer->target_height > 2ull * need_width * need_height;
-    b32 resized = !renderer->scene_color || !large_enough || too_large || renderer->msaa_format != gpu->surface_format;
+    b32 resized = !renderer->scene_color || !large_enough || too_large || renderer->msaa_format != NV_SCENE_FORMAT;
     if (resized) {
         renderer->target_width = need_width;
         renderer->target_height = need_height;
-        renderer->msaa_format = gpu->surface_format;
+        renderer->msaa_format = NV_SCENE_FORMAT;
         release_texture(&renderer->scene_color, &renderer->scene_color_view);
         create_color_target(gpu, "scene color", need_width, need_height, 1,
                             WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding, &renderer->scene_color,
@@ -833,7 +862,7 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
             wgpuBindGroupRelease(renderer->upscale_group);
         WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(renderer->upscale_pipeline, 0);
         WGPUBindGroupEntry entries[2] = {
-            {.binding = 0, .buffer = renderer->upscale_buffer, .size = 32},
+            {.binding = 0, .buffer = renderer->upscale_buffer, .size = 48},
             {.binding = 1, .textureView = renderer->scene_color_view},
         };
         WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
@@ -842,8 +871,8 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
         group_desc.entries = entries;
         renderer->upscale_group = wgpuDeviceCreateBindGroup(gpu->device, &group_desc);
         wgpuBindGroupLayoutRelease(layout);
-        nv_log(NV_LOG_INFO, "nv", "scene color target: %ux%u %s (%.1f MB) for a scene of %ux%u, shown with the nearest filter", need_width,
-               need_height, nv_gpu_format_name(gpu->surface_format), target_megabytes(need_width, need_height, 1), width, height);
+        nv_log(NV_LOG_INFO, "nv", "scene color target: %ux%u %s, linear HDR (%.1f MB) for a scene of %ux%u, tone mapped and shown with the nearest filter",
+               need_width, need_height, nv_gpu_format_name(NV_SCENE_FORMAT), target_megabytes(need_width, need_height, 1), width, height);
     }
 
     // The multisampled color target.
@@ -856,7 +885,7 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
         renderer->msaa_width = renderer->target_width;
         renderer->msaa_height = renderer->target_height;
         nv_log(NV_LOG_INFO, "nv", "msaa color target: %ux%u %s x%u samples (%.1f MB), resolved into the scene color target",
-               renderer->target_width, renderer->target_height, nv_gpu_format_name(gpu->surface_format), samples,
+               renderer->target_width, renderer->target_height, nv_gpu_format_name(NV_SCENE_FORMAT), samples,
                target_megabytes(renderer->target_width, renderer->target_height, samples));
     }
 
@@ -1317,7 +1346,11 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     // The upscale pass: the scene color target, shown with the nearest filter in the image's
     // rectangle of the canvas. The canvas is cleared to black first, which is the bars around a
     // fixed size; the docks drawn later cover the rest.
-    f32 params[8] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height, 0.0f, 0.0f};
+    NvPostSettings* post = &renderer->post;
+    f32 exposure = post->exposure > 0.0f ? post->exposure : 1.0f;
+    f32 tone = (f32)(post->tone < NV_TONE_COUNT ? post->tone : NV_TONE_CLAMP);
+    f32 params[12] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height,
+                      exposure, tone, 0.0f, 0.0f, 0.0f, 0.0f};
     wgpuQueueWriteBuffer(queue, renderer->upscale_buffer, 0, params, sizeof(params));
     WGPURenderPassColorAttachment upscale_color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
     upscale_color.view = target;

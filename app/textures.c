@@ -186,7 +186,7 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
             .width = renderer->target_width,
             .height = renderer->target_height,
             .mip_count = 1,
-            .format = app->gpu.config_format,
+            .format = NV_SCENE_FORMAT,
             .in_use = 1,
             .preview = 1,
         };

@@ -937,6 +937,20 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_msaa(int samples)
     app_state.renderer.msaa = (u32)samples;
 }
 
+// The post-processing settings: 0 tone mapper, 1 exposure x1000, 2 bloom on, 3 bloom intensity x1000; the setter is
+// for tests that change them without the UI.
+EMSCRIPTEN_KEEPALIVE int app_debug_post(int which)
+{
+    const NvPostSettings* post = &app_state.renderer.post;
+    int values[4] = {(int)post->tone, (int)(post->exposure * 1000.0f + 0.5f), post->bloom, (int)(post->bloom_intensity * 1000.0f + 0.5f)};
+    return values[which];
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_set_post(int tone, float exposure, int bloom, float intensity)
+{
+    app_state.renderer.post = (NvPostSettings){.tone = (NvToneMap)tone, .exposure = exposure, .bloom = bloom != 0, .bloom_intensity = intensity};
+}
+
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
 EMSCRIPTEN_KEEPALIVE int app_debug_gizmo(int which)
 {
@@ -1408,6 +1422,8 @@ int main(void)
     };
     // Anti-aliasing (docs/specs/msaa.md): 4x MSAA everywhere; the View tab turns it off.
     app->renderer.msaa = 4;
+    // Tone mapping and bloom (docs/specs/vfx.md); the View tab changes them.
+    app->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
     // The phone shows the scene at half the pixels by default: its GPU is the limit.
     app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = touch ? 2 : 1, .fixed_width = 1280, .fixed_height = 720};
     app->imgui.view_grab = gizmo_grab;
