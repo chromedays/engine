@@ -14,6 +14,7 @@
 #include <nv/renderer.h>
 #include <nv/scene.h>
 #include <nv/storage.h>
+#include <nv/vfx.h>
 #include <nv/window.h>
 
 #include "strings.h"
@@ -464,6 +465,19 @@ typedef enum JumpPhase {
     JUMP_LAND,
 } JumpPhase;
 
+// A test missile in flight: it leaves a trail and explodes where its life ends.
+typedef struct Flight {
+    NvVec3 pos, vel;
+    f32 life;
+} Flight;
+
+// The effects the app fires (effects.c).
+typedef struct Effects {
+    NvVfxEffectId explosion, sparks, smoke, missile;
+    Flight flights[8];
+    u32 flight_count;
+} Effects;
+
 typedef struct App {
     NvWindow window;
     NvGpu gpu;
@@ -581,6 +595,10 @@ typedef struct App {
     b32 request_reset;  // open the Reset confirmation (the palette asks; the top bar draws it)
     char download_text[64]; // what the page downloaded, for the build label ("0.9 MB downloaded"); empty = unknown
     Search search;
+
+    // Effects (effects.c, docs/specs/vfx.md).
+    NvVfx vfx;
+    Effects effects;
 } App;
 
 // main.c
@@ -598,6 +616,14 @@ void app_focus_selection(App* app); // F: the orbit point moves to the selected 
 void app_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
 NvMeshId app_box_mesh(App* app, NvVec3 half);
 SceneView* app_view(App* app); // the shown scene's view
+
+// effects.c
+void effects_init(App* app);               // makes the particle system and registers the effects
+void effects_update(App* app, f32 dt);     // each frame, before drawing
+void effects_clear(App* app);              // Play and Stop: every live effect goes
+void effects_fire(App* app, u32 which);    // 0 explosion, 1 sparks, 2 smoke, 3 missile, beside the orbit point
+NvVec3 effects_test_point(App* app);
+void effects_ui(App* app);                 // the View tab's Effects section
 
 // stress.c
 void stress_build(App* app);

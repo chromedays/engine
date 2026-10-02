@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nv/gpu.h"
+#include "nv/vfx.h"
 #include "nv/scene.h"
 
 #define NV_MAX_MESHES        256
@@ -115,9 +116,6 @@ typedef struct NvShadowSettings {
     b32 show_box; // draw the light's box as debug lines
 } NvShadowSettings;
 
-// The scene is rendered in linear HDR (docs/specs/vfx.md): colors above 1 are kept until the upscale
-// pass multiplies by the exposure, tone maps and writes the canvas.
-#define NV_SCENE_FORMAT WGPUTextureFormat_RGBA16Float
 #define NV_BLOOM_LEVELS 6
 
 typedef enum NvToneMap {
@@ -209,6 +207,10 @@ typedef struct NvRenderer {
     // Tone mapping and bloom, applied by the upscale pass.
     NvPostSettings post;
 
+    // Particles (docs/specs/vfx.md), set by the app: the renderer records their compute passes before the
+    // shadow pass and draws them at the end of the scene pass. NULL draws none.
+    NvVfx* vfx;
+
     // Bloom (docs/specs/vfx.md): a chain of NV_BLOOM_LEVELS mips, each half the last, starting at half the
     // scene targets' size. The scene color is downsampled into it (13 taps, a Karis average on the first
     // step), then each level is added back into the one above with a tent filter; the upscale pass
@@ -224,6 +226,7 @@ typedef struct NvRenderer {
     WGPUTexture bloom_dummy;                         // 1x1 black, bound while there is no chain
     WGPUTextureView bloom_dummy_view;
     b32 bloom_recorded;                              // this frame's bloom passes wrote timestamps
+    b32 particles_recorded;                          // ... and the particle passes
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.
@@ -269,6 +272,7 @@ typedef struct NvRenderer {
     f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
     f64 gpu_upscale_ms;     // latest upscale pass time; 0 without timestamps
     f64 gpu_bloom_ms;       // latest time of all the bloom passes; 0 without timestamps or bloom
+    f64 gpu_particles_ms;   // latest time of the particle compute passes; 0 without timestamps or particles
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);

@@ -1523,6 +1523,25 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     if (renderer->debug_vertex_count)
         wgpuQueueWriteBuffer(queue, renderer->debug_buffer, 0, renderer->debug_vertices, renderer->debug_vertex_count * sizeof(NvDebugVertex));
 
+    // Particles: spawn, simulate, cull. The scene pass draws what they leave in the visible list.
+    renderer->particles_recorded = 0;
+    if (renderer->vfx) {
+        NvVec3 camera_right = nv_vec3(camera->world.e[0], camera->world.e[1], camera->world.e[2]);
+        NvVec3 camera_up = nv_vec3(camera->world.e[4], camera->world.e[5], camera->world.e[6]);
+        NvVfxFrame vfx_frame = {.view_proj = uniforms.view_proj,
+                                .camera_right = nv_vec3_normalize(camera_right),
+                                .camera_up = nv_vec3_normalize(camera_up),
+                                .samples = renderer->scene_samples};
+        WGPUPassTimestampWrites vfx_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
+        if (renderer->timestamp_copied) {
+            vfx_timestamps.querySet = renderer->timestamp_queries;
+            vfx_timestamps.beginningOfPassWriteIndex = 10;
+            vfx_timestamps.endOfPassWriteIndex = 11;
+        }
+        nv_vfx_compute(renderer->vfx, encoder, &vfx_frame, renderer->timestamp_copied ? &vfx_timestamps : NULL);
+        renderer->particles_recorded = renderer->timestamp_copied;
+    }
+
     // Shadow pass: every mesh's depth from the light, into the map the scene pass then samples.
     // WebGPU orders the two passes, so the scene pass sees what this one wrote.
     u32 shadow_draws = 0;
@@ -1653,6 +1672,8 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         wgpuRenderPassEncoderDraw(pass, renderer->debug_vertex_count, 1, 0, 0);
         renderer->debug_vertex_count = 0;
     }
+    if (renderer->vfx)
+        nv_vfx_draw(renderer->vfx, pass);
 
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
@@ -1726,6 +1747,8 @@ internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView mes
         if (ticks)
             renderer->gpu_upscale_ms = ticks[5] > ticks[4] ? (f64)(ticks[5] - ticks[4]) / 1.0e6 : 0.0;
         if (ticks)
+            renderer->gpu_particles_ms = renderer->vfx && ticks[11] > ticks[10] ? (f64)(ticks[11] - ticks[10]) / 1.0e6 : 0.0;
+        if (ticks)
             renderer->gpu_bloom_ms = renderer->bloom_texture && ticks[9] > ticks[6] ? (f64)(ticks[9] - ticks[6]) / 1.0e6 : 0.0;
         wgpuBufferUnmap(renderer->timestamp_readback);
     }
@@ -1734,6 +1757,8 @@ internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView mes
 
 void nv_renderer_end_frame(NvRenderer* renderer)
 {
+    if (renderer->vfx)
+        nv_vfx_end_frame(renderer->vfx);
     if (!renderer->timestamp_copied)
         return;
     renderer->timestamp_copied = 0;

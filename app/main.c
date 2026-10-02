@@ -754,6 +754,7 @@ void app_start_playing(App* app)
     app->moon_rotation = nv_scene_get(app->scene, app->moon)->rotation;
     app->play_time = 0.0f;
     app->orbit_angle = 0.0f;
+    effects_clear(app);
     app->playing = 1;
     restart_clip(app);
 }
@@ -770,6 +771,7 @@ void app_stop_playing(App* app)
     (void)problem;
     app->jump = JUMP_NONE;
     app->orbit_angle = 0.0f;
+    effects_clear(app);
     restart_clip(app);
 }
 
@@ -815,6 +817,7 @@ internal void frame(void* userdata)
     else
         stress_update(app, dt);
 
+    effects_update(app, dt);
     t = now_ms();
     nv_anim_update_scene(scene, dt);
     times->anim = now_ms() - t;
@@ -962,6 +965,20 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_sun(float intensity)
             return;
         }
     }
+}
+
+// The particle system: 0 alive, 1 visible, 2 dropped spawns, 3 effects registered; the second fires a test
+// effect (0 explosion, 1 sparks, 2 smoke, 3 missile) beside the orbit point.
+EMSCRIPTEN_KEEPALIVE int app_debug_vfx(int which)
+{
+    NvVfxStats stats = nv_vfx_stats(&app_state.vfx);
+    int values[4] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)app_state.vfx.effect_count - 1};
+    return values[which];
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_vfx_fire(int effect)
+{
+    effects_fire(&app_state, (u32)effect);
 }
 
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
@@ -1463,6 +1480,7 @@ int main(void)
         return 1;
     }
 
+    effects_init(app);
     app->orbit_speed = 0.7f;
     app->fade_seconds = 0.3f;
     app->turn_rate = 0.6f;

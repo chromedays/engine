@@ -585,6 +585,7 @@ void ui_view_tab(App* app)
     }
     msaa_ui(app);
     post_ui(app);
+    effects_ui(app);
     resolution_ui(app);
     shadow_ui(app);
     save_ui(app);
