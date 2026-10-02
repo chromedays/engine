@@ -22,6 +22,8 @@
 #define NV_VFX_MAX_DELAYED             4096             // bursts waiting for their delay
 #define NV_VFX_MAX_PARTICLES           (65535u * 64u)   // a dispatch has at most 65535 workgroups of 64
 #define NV_VFX_DEFAULT_PARTICLES       (2u * 1024u * 1024u)
+#define NV_VFX_DEFAULT_SEGMENTS        262144u          // trail and beam segments alive at once (80 bytes each)
+#define NV_VFX_DEFAULT_DECALS          16384u           // ground decals alive at once (48 bytes each)
 
 typedef enum NvVfxBlend {
     NV_VFX_BLEND_ADD,   // light: order does not matter
@@ -58,6 +60,24 @@ typedef struct NvVfxEmitterDesc {
     NvVfxBlend blend;
 } NvVfxEmitterDesc;
 
+// A trail or beam: a camera-facing strip between two points, additive, thinning and fading over its
+// life. A beam also scrolls and flickers.
+typedef struct NvVfxLineStyle {
+    f32 life;                 // seconds; a beam's is the `seconds` it is called with
+    f32 width_start, width_end; // meters, over the life
+    f32 colors[2][4];         // start, end: linear RGBA, may exceed 1 (bloom)
+    f32 flicker;              // 0 to 1: how much the brightness jumps from tick to tick
+    f32 scroll;               // bands of light running along the strip, in 1/s (0 = none)
+} NvVfxLineStyle;
+
+// A mark on the ground plane: alpha blended, fading over the last `fade` share of its life.
+typedef struct NvVfxDecalStyle {
+    f32 life;                 // seconds
+    f32 fade;                 // 0 to 1: the share of the life spent fading out
+    f32 color[4];             // linear RGBA
+    NvVfxShape shape;         // DISC, RING or PUFF
+} NvVfxDecalStyle;
+
 typedef struct NvVfxEffectDesc {
     char name[32];
     u32 emitter_count;
@@ -69,6 +89,8 @@ typedef struct NvVfxEffectId { u32 index; } NvVfxEffectId; // 0 = none
 // Chosen by the app per device; zero fields take the defaults.
 typedef struct NvVfxCapacity {
     u32 particles; // alive at once, all effects combined (clamped to what the device can bind)
+    u32 segments;  // trail and beam segments kept; when full the oldest are overwritten
+    u32 decals;    // decals kept; when full the oldest are overwritten
 } NvVfxCapacity;
 
 // What the GPU reported a frame or two ago.
@@ -77,6 +99,8 @@ typedef struct NvVfxStats {
     u32 visible;       // inside the camera's frustum, drawn
     u64 dropped;       // spawns refused because every slot was taken, ever
     u32 bursts_lost;   // bursts refused because a frame had too many, ever
+    u32 segments;      // trail and beam segments not yet expired (counted on the CPU)
+    u32 decals;        // decals not yet expired
 } NvVfxStats;
 
 // What the renderer gives the passes each frame.
@@ -127,6 +151,21 @@ typedef struct NvVfx {
     u32 pipeline_samples;                          // of the render pipelines that exist
     u32 parity;                                    // which alive list the next frame starts from
 
+    // Segments (trails and beams) and decals: ring buffers on the GPU, filled by the CPU. Nothing is
+    // simulated; the shaders age them from their birth time.
+    struct VfxRing {
+        u32 capacity, head, filled;   // slots, next slot to write, slots written at least once
+        u32 pending, pending_start;   // staged slots, and the ring slot of the first
+        void* staged;                 // [staging slots] as the shader reads them
+        f32* death;                   // [capacity]: effect time at which each slot expires
+        WGPUBuffer buffer;
+    } segments, decals;
+    WGPUShaderModule marks_module;
+    WGPUBindGroupLayout marks_layout;
+    WGPUBindGroup marks_group;
+    WGPURenderPipeline segment_pipeline, decal_pipeline;
+    u32 marks_frame;                  // counts frames, to count the live ones now and then
+
     NvVfxStats stats;
     b32 stats_mapping;
     b32 stats_copied;
@@ -152,7 +191,19 @@ void nv_vfx_burst(NvVfx* vfx, NvVfxEffectId effect, NvVec3 position, NvVec3 dire
 // missile's smoke between where it was and where it is.
 void nv_vfx_emit(NvVfx* vfx, NvVfxEffectId effect, NvVec3 from, NvVec3 to, u32 count);
 
-// Removes every particle (Play and Stop) and forgets the bursts not yet spawned.
+// A segment of a trail: call it for each stretch the missile moved this tick. It thins and fades
+// over `style->life`.
+void nv_vfx_trail(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, NvVec3 to);
+
+// A segment held for `seconds`, like a laser. To follow moving ends, call it again each tick with a
+// short lifetime.
+void nv_vfx_beam(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, NvVec3 to, f32 seconds);
+
+// A mark on the ground at `position` (its y is the ground's), turned by `angle` radians around y,
+// `size` meters across.
+void nv_vfx_decal(NvVfx* vfx, const NvVfxDecalStyle* style, NvVec3 position, f32 angle, f32 size);
+
+// Removes every particle, segment and decal (Play and Stop) and forgets the bursts not yet spawned.
 void nv_vfx_clear(NvVfx* vfx);
 
 // The latest numbers the GPU reported.
@@ -163,7 +214,10 @@ NvVfxStats nv_vfx_stats(const NvVfx* vfx);
 // scene pass's sample count changed.
 void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* frame, const WGPUPassTimestampWrites* timestamps);
 
-// Draws the visible particles into the scene pass: alpha blended, then additive.
+// Draws the decals into the scene pass: after the opaque meshes, before everything else.
+void nv_vfx_draw_decals(NvVfx* vfx, WGPURenderPassEncoder pass);
+
+// Draws the segments, then the visible particles (alpha blended, then additive) into the scene pass.
 void nv_vfx_draw(NvVfx* vfx, WGPURenderPassEncoder pass);
 
 // Starts reading the GPU's counters back; call after the frame's commands are submitted.

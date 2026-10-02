@@ -95,9 +95,24 @@ internal NvVfxEffectId make_missile(NvVfx* vfx)
     return nv_vfx_add_effect(vfx, &effect);
 }
 
+// The strips and the mark the test effects use: a thin hot trail behind a missile, a laser that
+// flickers and runs, and a scorch mark where something hit the ground.
+internal void make_styles(Effects* effects)
+{
+    effects->missile_trail = (NvVfxLineStyle){
+        .life = 0.9f, .width_start = 0.09f, .width_end = 0.0f,
+        .colors = {RGBA(4.0f, 2.2f, 0.7f, 0.9f), RGBA(0.6f, 0.2f, 0.05f, 0.0f)}};
+    effects->laser = (NvVfxLineStyle){
+        .life = 0.4f, .width_start = 0.12f, .width_end = 0.05f,
+        .colors = {RGBA(0.6f, 3.0f, 8.0f, 1.0f), RGBA(0.1f, 0.5f, 2.0f, 0.0f)}, .flicker = 0.35f, .scroll = 5.0f};
+    effects->scorch = (NvVfxDecalStyle){
+        .life = 12.0f, .fade = 0.4f, .color = RGBA(0.02f, 0.015f, 0.01f, 0.8f), .shape = NV_VFX_SHAPE_PUFF};
+}
+
 void effects_init(App* app)
 {
     Effects* effects = &app->effects;
+    make_styles(effects);
     nv_vfx_init(&app->vfx, &app->gpu, (NvVfxCapacity){0}, &app->permanent);
     effects->explosion = make_explosion(&app->vfx);
     effects->sparks = make_sparks(&app->vfx);
@@ -120,7 +135,14 @@ NvVec3 effects_test_point(App* app)
     return nv_vec3(view->orbit_point.x + right.x * 2.5f, 0.05f, view->orbit_point.z + right.z * 2.5f);
 }
 
-// Fires one of the test effects (0 explosion, 1 sparks, 2 smoke, 3 missile).
+// A scorch mark on the ground below `point`, turned at random.
+internal void scorch_at(App* app, NvVec3 point, f32 size)
+{
+    f32 angle = (f32)(app->vfx.random & 1023u) * (6.2831853f / 1024.0f);
+    nv_vfx_decal(&app->vfx, &app->effects.scorch, nv_vec3(point.x, 0.02f, point.z), angle, size);
+}
+
+// Fires one of the test effects (0 explosion, 1 sparks, 2 smoke, 3 missile, 4 laser, 5 scorch).
 void effects_fire(App* app, u32 which)
 {
     Effects* effects = &app->effects;
@@ -133,11 +155,19 @@ void effects_fire(App* app, u32 which)
     case 3:
         // A missile that climbs out of the ground toward a target some meters on, then explodes there.
         if (effects->flight_count < NV_ARRAY_COUNT(effects->flights)) {
-            NvVec3 from = nv_vec3_sub(point, nv_vec3(0.0f, 0.0f, 0.0f));
             effects->flights[effects->flight_count++] = (Flight){
-                .pos = nv_vec3_add(from, nv_vec3(-3.0f, 0.5f, 0.0f)), .vel = nv_vec3(4.0f, 2.0f, 0.0f), .life = 1.2f};
+                .pos = nv_vec3_add(point, nv_vec3(-3.0f, 0.5f, 0.0f)), .vel = nv_vec3(4.0f, 2.0f, 0.0f), .life = 1.2f};
         }
         break;
+    case 4: {
+        // A laser from above and to the side onto the ground: a beam, sparks where it hits and a mark.
+        NvVec3 from = nv_vec3_add(point, nv_vec3(-3.0f, 3.0f, -1.5f));
+        nv_vfx_beam(&app->vfx, &effects->laser, from, point, effects->laser.life);
+        nv_vfx_burst(&app->vfx, effects->sparks, point, up, 0.6f);
+        scorch_at(app, point, 0.9f);
+        break;
+    }
+    case 5: scorch_at(app, point, 2.0f); break;
     }
 }
 
@@ -160,10 +190,13 @@ void effects_update(App* app, f32 dt)
         flight->life -= dt;
         // About 60 particles per meter along the path, so the trail is unbroken at any frame rate.
         f32 length = sqrtf(nv_vec3_dot(nv_vec3_sub(flight->pos, before), nv_vec3_sub(flight->pos, before)));
-        if (dt > 0.0f)
+        if (dt > 0.0f) {
             nv_vfx_emit(&app->vfx, effects->missile, before, flight->pos, (u32)(length * 60.0f) + 1);
+            nv_vfx_trail(&app->vfx, &effects->missile_trail, before, flight->pos);
+        }
         if (flight->life <= 0.0f) {
             nv_vfx_burst(&app->vfx, effects->explosion, flight->pos, nv_vec3(0.0f, 1.0f, 0.0f), 0.8f);
+            scorch_at(app, flight->pos, 1.8f);
             *flight = effects->flights[--effects->flight_count];
         } else {
             ++i;
@@ -175,9 +208,9 @@ void effects_update(App* app, f32 dt)
 void effects_ui(App* app)
 {
     search_section(app, "Effects");
-    if (search_group(app, "Fire", "effect explosion sparks smoke missile test particles")) {
-        const char* names[4] = {TL("Explosion"), TL("Sparks"), TL("Smoke"), TL("Missile")};
-        for (u32 i = 0; i < 4; ++i) {
+    if (search_group(app, "Fire", "effect explosion sparks smoke missile laser scorch test particles")) {
+        const char* names[6] = {TL("Explosion"), TL("Sparks"), TL("Smoke"), TL("Missile"), TL("Laser"), TL("Scorch")};
+        for (u32 i = 0; i < 6; ++i) {
             if (i)
                 ui_same_line_if_fits(igCalcTextSize(names[i], NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
             if (igButton(names[i], (ImVec2_c){0, 0}))
@@ -189,5 +222,6 @@ void effects_ui(App* app)
     if (search_plain(app)) {
         NvVfxStats stats = nv_vfx_stats(&app->vfx);
         igText(T("Particles: %u alive, %u visible, %u dropped"), stats.alive, stats.visible, (u32)stats.dropped);
+        igText(T("Segments: %u, decals: %u"), stats.segments, stats.decals);
     }
 }

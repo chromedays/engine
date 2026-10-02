@@ -972,7 +972,8 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_sun(float intensity)
 EMSCRIPTEN_KEEPALIVE int app_debug_vfx(int which)
 {
     NvVfxStats stats = nv_vfx_stats(&app_state.vfx);
-    int values[4] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)app_state.vfx.effect_count - 1};
+    int values[6] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)app_state.vfx.effect_count - 1,
+                     (int)stats.segments, (int)stats.decals};
     return values[which];
 }
 

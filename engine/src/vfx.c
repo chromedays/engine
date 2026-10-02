@@ -39,13 +39,34 @@ typedef struct VfxFrameUniforms {
     u32 counts[4];
 } VfxFrameUniforms; // 240 bytes
 
+// What the segment and decal shaders read (docs/specs/vfx.md): written by the CPU into rings.
+typedef struct NvVfxGpuSegment {
+    f32 a[3];
+    f32 birth;
+    f32 b[3];
+    f32 life;
+    f32 color0[4], color1[4];
+    f32 width0, width1, flicker, scroll;
+} NvVfxGpuSegment; // 80 bytes
+
+typedef struct NvVfxGpuDecal {
+    f32 pos[3];
+    f32 angle;
+    f32 size, birth, life;
+    u32 shape; // the shape in the low 8 bits, the fade share times 255 above
+    f32 color[4];
+} NvVfxGpuDecal; // 48 bytes
+
 #define PARTICLE_BYTES 32
 #define EMITTER_BYTES 128
 #define COUNTERS_COUNT 16
 #define MAX_JOBS 65535u
+#define STAGE_SLOTS 4096u // segments or decals the CPU stages before one upload
 
 _Static_assert(sizeof(NvVfxGpuEmitter) == EMITTER_BYTES, "the shader reads 128-byte emitters");
 _Static_assert(sizeof(NvVfxBurst) == 64, "the shader reads 64-byte bursts");
+_Static_assert(sizeof(NvVfxGpuSegment) == 80, "the shader reads 80-byte segments");
+_Static_assert(sizeof(NvVfxGpuDecal) == 48, "the shader reads 48-byte decals");
 _Static_assert(sizeof(VfxFrameUniforms) == 240, "the shader reads a 240-byte frame");
 
 // WGSL: the frame's declarations, shared by both modules, then the compute passes and the draw.
@@ -423,6 +444,43 @@ global const char* vfx_compute_wgsl =
     "    atomicStore(&counters[C_STAT_DROPPED], atomicLoad(&counters[C_DROPPED]));\n"
     "}\n";
 
+// Shared by the particle and mark draws: the quad's corners and the shapes drawn in the fragment shader.
+global const char* vfx_shapes_wgsl =
+    "const CORNERS = array<vec2f, 6>(\n"
+    "    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),\n"
+    "    vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0));\n"
+    "\n"
+    "fn hash2(p: vec2i) -> f32 {\n"
+    "    return unit(pcg((u32(p.x) * 73856093u) ^ (u32(p.y) * 19349663u)));\n"
+    "}\n"
+    "\n"
+    "fn value_noise2(x: vec2f) -> f32 {\n"
+    "    let i = vec2i(floor(x));\n"
+    "    let f = fract(x);\n"
+    "    let u = f * f * (3.0 - 2.0 * f);\n"
+    "    return mix(mix(hash2(i), hash2(i + vec2i(1, 0)), u.x), mix(hash2(i + vec2i(0, 1)), hash2(i + vec2i(1, 1)), u.x), u.y);\n"
+    "}\n"
+    "\n"
+    "// How much of the quad's pixel is lit: 1 at the center of a disc, 0 outside.\n"
+    "fn shape_alpha(shape: u32, uv: vec2f, seed: u32) -> f32 {\n"
+    "    let r = length(uv);\n"
+    "    if (shape == 1u) {\n"
+    "        return smoothstep(0.55, 0.8, r) * (1.0 - smoothstep(0.8, 1.0, r));\n"
+    "    }\n"
+    "    if (shape == 2u) {\n"
+    "        let ax = clamp(1.0 - abs(uv.x), 0.0, 1.0);\n"
+    "        let ay = clamp(1.0 - abs(uv.y), 0.0, 1.0);\n"
+    "        return ax * ax * ay * ay * ay;\n"
+    "    }\n"
+    "    if (shape == 3u) {\n"
+    "        let offset = vec2f(f32(seed & 255u), f32((seed >> 8u) & 255u));\n"
+    "        let n = value_noise2(uv * 2.5 + offset) * 0.6 + value_noise2(uv * 5.0 + offset * 1.7) * 0.4;\n"
+    "        return smoothstep(0.0, 0.45, 1.0 - r + 0.55 * (n - 0.5));\n"
+    "    }\n"
+    "    let a = clamp(1.0 - r, 0.0, 1.0);\n"
+    "    return a * a * (3.0 - 2.0 * a);\n"
+    "}\n";
+
 global const char* vfx_render_wgsl =
     "@group(0) @binding(1) var<storage, read> particles: array<Particle>;\n"
     "@group(0) @binding(2) var<storage, read> visible: array<u32>;\n"
@@ -435,10 +493,6 @@ global const char* vfx_render_wgsl =
     "    @location(2) @interpolate(flat) shape: u32,\n"
     "    @location(3) @interpolate(flat) seed: u32,\n"
     "};\n"
-    "\n"
-    "const CORNERS = array<vec2f, 6>(\n"
-    "    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),\n"
-    "    vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0));\n"
     "\n"
     "// Vertex pulling: six vertices per visible particle, found by the vertex index. The additive list\n"
     "// starts at the front of the visible buffer and the alpha list at the back.\n"
@@ -504,37 +558,6 @@ global const char* vfx_render_wgsl =
     "    return shade(vi, true);\n"
     "}\n"
     "\n"
-    "fn hash2(p: vec2i) -> f32 {\n"
-    "    return unit(pcg((u32(p.x) * 73856093u) ^ (u32(p.y) * 19349663u)));\n"
-    "}\n"
-    "\n"
-    "fn value_noise2(x: vec2f) -> f32 {\n"
-    "    let i = vec2i(floor(x));\n"
-    "    let f = fract(x);\n"
-    "    let u = f * f * (3.0 - 2.0 * f);\n"
-    "    return mix(mix(hash2(i), hash2(i + vec2i(1, 0)), u.x), mix(hash2(i + vec2i(0, 1)), hash2(i + vec2i(1, 1)), u.x), u.y);\n"
-    "}\n"
-    "\n"
-    "// How much of the quad's pixel is lit: 1 at the center of a disc, 0 outside.\n"
-    "fn shape_alpha(shape: u32, uv: vec2f, seed: u32) -> f32 {\n"
-    "    let r = length(uv);\n"
-    "    if (shape == 1u) {\n"
-    "        return smoothstep(0.55, 0.8, r) * (1.0 - smoothstep(0.8, 1.0, r));\n"
-    "    }\n"
-    "    if (shape == 2u) {\n"
-    "        let ax = clamp(1.0 - abs(uv.x), 0.0, 1.0);\n"
-    "        let ay = clamp(1.0 - abs(uv.y), 0.0, 1.0);\n"
-    "        return ax * ax * ay * ay * ay;\n"
-    "    }\n"
-    "    if (shape == 3u) {\n"
-    "        let offset = vec2f(f32(seed & 255u), f32((seed >> 8u) & 255u));\n"
-    "        let n = value_noise2(uv * 2.5 + offset) * 0.6 + value_noise2(uv * 5.0 + offset * 1.7) * 0.4;\n"
-    "        return smoothstep(0.0, 0.45, 1.0 - r + 0.55 * (n - 0.5));\n"
-    "    }\n"
-    "    let a = clamp(1.0 - r, 0.0, 1.0);\n"
-    "    return a * a * (3.0 - 2.0 * a);\n"
-    "}\n"
-    "\n"
     "@fragment\n"
     "fn fs_add(in: VsOut) -> @location(0) vec4f {\n"
     "    let a = shape_alpha(in.shape, in.uv, in.seed) * in.color.a;\n"
@@ -543,6 +566,138 @@ global const char* vfx_render_wgsl =
     "\n"
     "@fragment\n"
     "fn fs_alpha(in: VsOut) -> @location(0) vec4f {\n"
+    "    return vec4f(in.color.rgb, shape_alpha(in.shape, in.uv, in.seed) * in.color.a);\n"
+    "}\n";
+
+// Trails, beams and decals: instances read from ring buffers, six vertices each. A slot that is not
+// born yet or has expired is moved outside the clip volume, so nothing is drawn for it.
+global const char* vfx_marks_wgsl =
+    "struct Segment {\n"
+    "    a: vec3f,\n"
+    "    birth: f32,\n"
+    "    b: vec3f,\n"
+    "    life: f32,\n"
+    "    color0: vec4f,\n"
+    "    color1: vec4f,\n"
+    "    width0: f32,\n"
+    "    width1: f32,\n"
+    "    flicker: f32,\n"
+    "    scroll: f32,\n"
+    "};\n"
+    "\n"
+    "struct Decal {\n"
+    "    pos: vec3f,\n"
+    "    angle: f32,\n"
+    "    size: f32,\n"
+    "    birth: f32,\n"
+    "    life: f32,\n"
+    "    shape: u32,\n"
+    "    color: vec4f,\n"
+    "};\n"
+    "\n"
+    "@group(0) @binding(1) var<storage, read> segments: array<Segment>;\n"
+    "@group(0) @binding(2) var<storage, read> decals: array<Decal>;\n"
+    "\n"
+    "const OUTSIDE = vec4f(2.0, 2.0, 2.0, 1.0);\n"
+    "\n"
+    "struct SegmentOut {\n"
+    "    @builtin(position) clip: vec4f,\n"
+    "    @location(0) uv: vec2f,      // x along the segment 0 to 1, y across -1 to 1\n"
+    "    @location(1) color: vec3f,   // already faded and flickered\n"
+    "    @location(2) bands: vec2f,   // x: length in meters, y: scroll phase (0 = no bands)\n"
+    "};\n"
+    "\n"
+    "@vertex\n"
+    "fn vs_segment(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> SegmentOut {\n"
+    "    var out: SegmentOut;\n"
+    "    out.clip = OUTSIDE;\n"
+    "    let s = segments[ii];\n"
+    "    let age = frame.times.y - s.birth;\n"
+    "    if (s.life <= 0.0 || age < 0.0 || age >= s.life) {\n"
+    "        return out;\n"
+    "    }\n"
+    "    let t = age / s.life;\n"
+    "    let corner = CORNERS[vi];\n"
+    "    let d = s.b - s.a;\n"
+    "    // The strip turns around its axis to face the camera.\n"
+    "    let toward = cross(frame.camera_right.xyz, frame.camera_up.xyz);\n"
+    "    var side = cross(d, toward);\n"
+    "    let side_length = length(side);\n"
+    "    if (side_length > 1.0e-6) {\n"
+    "        side = side / side_length;\n"
+    "    } else {\n"
+    "        side = frame.camera_right.xyz;\n"
+    "    }\n"
+    "    let width = mix(s.width0, s.width1, t);\n"
+    "    let along = corner.x * 0.5 + 0.5;\n"
+    "    let pos = mix(s.a, s.b, along) + side * (corner.y * width * 0.5);\n"
+    "    let color = mix(s.color0, s.color1, t);\n"
+    "    var flick = 1.0;\n"
+    "    if (s.flicker > 0.0) {\n"
+    "        flick = 1.0 - s.flicker * unit(pcg(u32(frame.times.y * 40.0) + ii * 7919u));\n"
+    "    }\n"
+    "    out.clip = frame.view_proj * vec4f(pos, 1.0);\n"
+    "    out.uv = vec2f(along, corner.y);\n"
+    "    out.color = color.rgb * (color.a * flick);\n"
+    "    out.bands = vec2f(length(d), frame.times.y * s.scroll);\n"
+    "    if (s.scroll == 0.0) {\n"
+    "        out.bands.y = 0.0;\n"
+    "    }\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+    "@fragment\n"
+    "fn fs_segment(in: SegmentOut) -> @location(0) vec4f {\n"
+    "    let across = 1.0 - in.uv.y * in.uv.y;\n"
+    "    var k = across * across;\n"
+    "    if (in.bands.y != 0.0) {\n"
+    "        k = k * (0.65 + 0.35 * sin(6.2831853 * (in.uv.x * in.bands.x * 2.0 - in.bands.y)));\n"
+    "    }\n"
+    "    return vec4f(in.color * k, 0.0);\n"
+    "}\n"
+    "\n"
+    "struct DecalOut {\n"
+    "    @builtin(position) clip: vec4f,\n"
+    "    @location(0) uv: vec2f,\n"
+    "    @location(1) color: vec4f,\n"
+    "    @location(2) @interpolate(flat) shape: u32,\n"
+    "    @location(3) @interpolate(flat) seed: u32,\n"
+    "};\n"
+    "\n"
+    "@vertex\n"
+    "fn vs_decal(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> DecalOut {\n"
+    "    var out: DecalOut;\n"
+    "    out.clip = OUTSIDE;\n"
+    "    let d = decals[ii];\n"
+    "    let age = frame.times.y - d.birth;\n"
+    "    if (d.life <= 0.0 || age < 0.0 || age >= d.life) {\n"
+    "        return out;\n"
+    "    }\n"
+    "    let corner = CORNERS[vi];\n"
+    "    let c = cos(d.angle);\n"
+    "    let s = sin(d.angle);\n"
+    "    let r = vec2f(corner.x * c - corner.y * s, corner.x * s + corner.y * c) * (d.size * 0.5);\n"
+    "    var pos = vec3f(d.pos.x + r.x, d.pos.y, d.pos.z + r.y);\n"
+    "    // Lifted off the ground a little, more with distance, where the depth buffer is coarser.\n"
+    "    // (A depth bias is not used: its size depends on the format and slope.)\n"
+    "    let w = (frame.view_proj * vec4f(pos, 1.0)).w;\n"
+    "    pos.y = pos.y + 0.002 + 0.0015 * max(w, 0.0);\n"
+    "    let t = age / d.life;\n"
+    "    let fade_share = f32(d.shape >> 8u) / 255.0;\n"
+    "    var fade = 1.0;\n"
+    "    if (fade_share > 0.0) {\n"
+    "        fade = clamp((1.0 - t) / fade_share, 0.0, 1.0);\n"
+    "    }\n"
+    "    out.clip = frame.view_proj * vec4f(pos, 1.0);\n"
+    "    out.uv = corner;\n"
+    "    out.color = vec4f(d.color.rgb, d.color.a * fade);\n"
+    "    out.shape = d.shape & 255u;\n"
+    "    out.seed = pcg(ii);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+    "@fragment\n"
+    "fn fs_decal(in: DecalOut) -> @location(0) vec4f {\n"
     "    return vec4f(in.color.rgb, shape_alpha(in.shape, in.uv, in.seed) * in.color.a);\n"
     "}\n";
 
@@ -555,11 +710,11 @@ internal WGPUBuffer create_buffer(NvGpu* gpu, const char* label, WGPUBufferUsage
     return wgpuDeviceCreateBuffer(gpu->device, &desc);
 }
 
-internal WGPUShaderModule create_module(WGPUDevice device, const char* label, const char* body)
+internal WGPUShaderModule create_module(WGPUDevice device, const char* label, const char* shared, const char* body)
 {
-    // The common declarations first, then the module's own.
+    // The common declarations first, then what the draws share (shapes, or nothing), then the module's own.
     local_persist char text[32768];
-    int length = snprintf(text, sizeof(text), "%s%s", vfx_common_wgsl, body);
+    int length = snprintf(text, sizeof(text), "%s%s%s", vfx_common_wgsl, shared, body);
     NV_ASSERT(length > 0 && (umm)length < sizeof(text));
     WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
     wgsl.code = (WGPUStringView){text, WGPU_STRLEN};
@@ -629,6 +784,10 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
         wgpuRenderPipelineRelease(vfx->add_pipeline);
     if (vfx->alpha_pipeline)
         wgpuRenderPipelineRelease(vfx->alpha_pipeline);
+    if (vfx->segment_pipeline)
+        wgpuRenderPipelineRelease(vfx->segment_pipeline);
+    if (vfx->decal_pipeline)
+        wgpuRenderPipelineRelease(vfx->decal_pipeline);
     WGPUPipelineLayoutDescriptor layout_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
     layout_desc.bindGroupLayoutCount = 1;
     layout_desc.bindGroupLayouts = &vfx->render_layout;
@@ -673,7 +832,104 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
             vfx->add_pipeline = pipeline;
     }
     wgpuPipelineLayoutRelease(layout);
+
+    // Segments add light; decals blend. Both are tested against the scene's depth and never write it.
+    WGPUPipelineLayoutDescriptor marks_layout_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
+    marks_layout_desc.bindGroupLayoutCount = 1;
+    marks_layout_desc.bindGroupLayouts = &vfx->marks_layout;
+    WGPUPipelineLayout marks_layout = wgpuDeviceCreatePipelineLayout(device, &marks_layout_desc);
+    for (u32 decal = 0; decal < 2; ++decal) {
+        WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
+        if (decal) {
+            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
+            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
+        } else {
+            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
+            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
+        }
+        WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
+        target.format = NV_SCENE_FORMAT;
+        target.blend = &blend;
+        WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
+        fragment.module = vfx->marks_module;
+        fragment.entryPoint = (WGPUStringView){decal ? "fs_decal" : "fs_segment", WGPU_STRLEN};
+        fragment.targetCount = 1;
+        fragment.targets = &target;
+        WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
+        depth.format = NV_SCENE_DEPTH_FORMAT;
+        depth.depthWriteEnabled = WGPUOptionalBool_False;
+        depth.depthCompare = WGPUCompareFunction_Greater;
+        WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+        desc.label = (WGPUStringView){decal ? "decals" : "trails and beams", WGPU_STRLEN};
+        desc.layout = marks_layout;
+        desc.vertex.module = vfx->marks_module;
+        desc.vertex.entryPoint = (WGPUStringView){decal ? "vs_decal" : "vs_segment", WGPU_STRLEN};
+        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        desc.primitive.cullMode = WGPUCullMode_None;
+        desc.depthStencil = &depth;
+        desc.multisample.count = samples;
+        desc.fragment = &fragment;
+        WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+        if (decal)
+            vfx->decal_pipeline = pipeline;
+        else
+            vfx->segment_pipeline = pipeline;
+    }
+    wgpuPipelineLayoutRelease(marks_layout);
     vfx->pipeline_samples = samples;
+}
+
+// A ring of segments or decals: the CPU stages new slots and uploads them in runs, and when the ring
+// is full the oldest are overwritten. `death` keeps when each slot expires, to count the live ones.
+internal void ring_init(NvVfx* vfx, struct VfxRing* ring, const char* label, u32 capacity, u32 slot_bytes, NvArena* arena)
+{
+    ring->capacity = capacity;
+    ring->staged = NV_PUSH_ARRAY(arena, (umm)STAGE_SLOTS * slot_bytes, u8);
+    ring->death = NV_PUSH_ARRAY(arena, capacity, f32);
+    ring->buffer = create_buffer(vfx->gpu, label, WGPUBufferUsage_Storage, (u64)capacity * slot_bytes);
+}
+
+internal void ring_flush(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes)
+{
+    if (!ring->pending)
+        return;
+    wgpuQueueWriteBuffer(vfx->gpu->queue, ring->buffer, (u64)ring->pending_start * slot_bytes, ring->staged, (umm)ring->pending * slot_bytes);
+    ring->pending = 0;
+}
+
+// The next slot to fill, staged (zeroed). The run being staged stays contiguous in the ring: it is
+// uploaded when full and when the ring wrapped, before the slot after the wrap is staged.
+internal void* ring_add(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes, f32 death)
+{
+    if (!ring->capacity)
+        return NULL;
+    if (ring->pending && (ring->pending == STAGE_SLOTS || ring->head == 0))
+        ring_flush(vfx, ring, slot_bytes);
+    if (!ring->pending)
+        ring->pending_start = ring->head;
+    u8* slot = (u8*)ring->staged + (umm)ring->pending * slot_bytes;
+    memset(slot, 0, slot_bytes);
+    ++ring->pending;
+    ring->death[ring->head] = death;
+    ring->head = ring->head + 1 == ring->capacity ? 0 : ring->head + 1;
+    if (ring->filled < ring->capacity)
+        ++ring->filled;
+    return slot;
+}
+
+internal void ring_clear(struct VfxRing* ring)
+{
+    ring->head = ring->filled = ring->pending = 0;
+    if (ring->death)
+        memset(ring->death, 0, (umm)ring->capacity * sizeof(f32));
+}
+
+internal u32 ring_live(const struct VfxRing* ring, f32 time)
+{
+    u32 live = 0;
+    for (u32 i = 0; i < ring->filled; ++i)
+        live += ring->death[i] > time;
+    return live;
 }
 
 void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
@@ -698,6 +954,15 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     }
     particles = (particles + 63u) & ~63u;
     vfx->capacity = particles;
+    u32 segments = capacity.segments ? capacity.segments : NV_VFX_DEFAULT_SEGMENTS;
+    u32 decals = capacity.decals ? capacity.decals : NV_VFX_DEFAULT_DECALS;
+    {
+        u64 binding = limits.maxStorageBufferBindingSize ? limits.maxStorageBufferBindingSize : (128ull << 20);
+        if ((u64)segments * sizeof(NvVfxGpuSegment) > binding)
+            segments = (u32)(binding / sizeof(NvVfxGpuSegment));
+        if ((u64)decals * sizeof(NvVfxGpuDecal) > binding)
+            decals = (u32)(binding / sizeof(NvVfxGpuDecal));
+    }
 
     vfx->emitter_descs = NV_PUSH_ARRAY(arena, NV_VFX_MAX_EMITTERS, NvVfxEmitterDesc);
     vfx->gpu_emitters = NV_PUSH_ARRAY(arena, NV_VFX_MAX_EMITTERS, NvVfxGpuEmitter);
@@ -725,8 +990,11 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     readback.size = 16;
     vfx->stats_buffer = wgpuDeviceCreateBuffer(device, &readback);
 
-    vfx->compute_module = create_module(device, "particle passes", vfx_compute_wgsl);
-    vfx->render_module = create_module(device, "particle draw", vfx_render_wgsl);
+    ring_init(vfx, &vfx->segments, "trail and beam segments", segments, sizeof(NvVfxGpuSegment), arena);
+    ring_init(vfx, &vfx->decals, "decals", decals, sizeof(NvVfxGpuDecal), arena);
+    vfx->compute_module = create_module(device, "particle passes", "", vfx_compute_wgsl);
+    vfx->render_module = create_module(device, "particle draw", vfx_shapes_wgsl, vfx_render_wgsl);
+    vfx->marks_module = create_module(device, "trails, beams and decals", vfx_shapes_wgsl, vfx_marks_wgsl);
 
     const WGPUBufferBindingType U = WGPUBufferBindingType_Uniform, RW = WGPUBufferBindingType_Storage,
                                 RO = WGPUBufferBindingType_ReadOnlyStorage;
@@ -737,6 +1005,8 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     const BindingKind prepare_b_kinds[] = {{6, RW}, {11, RW}};
     const BindingKind init_kinds[] = {{0, U}, {2, RW}, {6, RW}};
     const BindingKind render_kinds[] = {{0, U}, {1, RO}, {2, RO}, {3, RO}};
+    const BindingKind marks_kinds[] = {{0, U}, {1, RO}, {2, RO}};
+    vfx->marks_layout = create_layout(device, WGPUShaderStage_Vertex, marks_kinds, NV_ARRAY_COUNT(marks_kinds));
     vfx->layouts[0] = create_layout(device, WGPUShaderStage_Compute, emit_kinds, NV_ARRAY_COUNT(emit_kinds));
     vfx->layouts[1] = create_layout(device, WGPUShaderStage_Compute, simulate_kinds, NV_ARRAY_COUNT(simulate_kinds));
     vfx->layouts[2] = create_layout(device, WGPUShaderStage_Compute, prepare_a_kinds, NV_ARRAY_COUNT(prepare_a_kinds));
@@ -784,11 +1054,19 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
         vfx->render_group = create_group(device, vfx->render_layout, render_kinds, buffers, sizes, 4);
     }
 
+    {
+        const WGPUBuffer buffers[] = {vfx->frame_buffer, vfx->segments.buffer, vfx->decals.buffer};
+        const u64 sizes[] = {sizeof(VfxFrameUniforms), (u64)segments * sizeof(NvVfxGpuSegment), (u64)decals * sizeof(NvVfxGpuDecal)};
+        vfx->marks_group = create_group(device, vfx->marks_layout, marks_kinds, buffers, sizes, 3);
+    }
+
     vfx->clear_requested = 1; // fills the free list on the first frame
     vfx->effect_count = 1;    // slot 0 is none
     f64 megabytes = (f64)capacity_u64 * (PARTICLE_BYTES + 4 * 4) / (1024.0 * 1024.0);
     nv_log(NV_LOG_INFO, "nv", "particles: %u alive at most, %.1f MB of GPU buffers (state %u bytes, lists 16 bytes each), simulated by compute", particles, megabytes,
            PARTICLE_BYTES);
+    nv_log(NV_LOG_INFO, "nv", "trails, beams and decals: %u segments, %u decals kept, %.1f MB", segments, decals,
+           ((f64)segments * sizeof(NvVfxGpuSegment) + (f64)decals * sizeof(NvVfxGpuDecal)) / (1024.0 * 1024.0));
 }
 
 NvVfxEffectId nv_vfx_add_effect(NvVfx* vfx, const NvVfxEffectDesc* desc)
@@ -897,6 +1175,52 @@ void nv_vfx_emit(NvVfx* vfx, NvVfxEffectId effect, NvVec3 from, NvVec3 to, u32 c
     fire(vfx, effect, from, to, nv_vec3(0.0f, 1.0f, 0.0f), 1.0f, count ? count : 1);
 }
 
+internal void add_segment(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, NvVec3 to, f32 life)
+{
+    if (!(life > 0.0f))
+        return;
+    NvVfxGpuSegment* segment = ring_add(vfx, &vfx->segments, sizeof(NvVfxGpuSegment), vfx->time + life);
+    if (!segment)
+        return;
+    segment->a[0] = from.x, segment->a[1] = from.y, segment->a[2] = from.z;
+    segment->b[0] = to.x, segment->b[1] = to.y, segment->b[2] = to.z;
+    segment->birth = vfx->time;
+    segment->life = life;
+    memcpy(segment->color0, style->colors[0], sizeof(segment->color0));
+    memcpy(segment->color1, style->colors[1], sizeof(segment->color1));
+    segment->width0 = style->width_start;
+    segment->width1 = style->width_end;
+    segment->flicker = style->flicker;
+    segment->scroll = style->scroll;
+}
+
+void nv_vfx_trail(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, NvVec3 to)
+{
+    add_segment(vfx, style, from, to, style->life);
+}
+
+void nv_vfx_beam(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, NvVec3 to, f32 seconds)
+{
+    add_segment(vfx, style, from, to, seconds);
+}
+
+void nv_vfx_decal(NvVfx* vfx, const NvVfxDecalStyle* style, NvVec3 position, f32 angle, f32 size)
+{
+    if (!(style->life > 0.0f))
+        return;
+    NvVfxGpuDecal* decal = ring_add(vfx, &vfx->decals, sizeof(NvVfxGpuDecal), vfx->time + style->life);
+    if (!decal)
+        return;
+    decal->pos[0] = position.x, decal->pos[1] = position.y, decal->pos[2] = position.z;
+    decal->angle = angle;
+    decal->size = size;
+    decal->birth = vfx->time;
+    decal->life = style->life;
+    f32 fade = style->fade < 0.0f ? 0.0f : style->fade > 1.0f ? 1.0f : style->fade;
+    decal->shape = (u32)style->shape | ((u32)(fade * 255.0f) << 8);
+    memcpy(decal->color, style->color, sizeof(decal->color));
+}
+
 void nv_vfx_update(NvVfx* vfx, f32 dt)
 {
     // A tab that was hidden comes back with a long dt: do not age every particle at once.
@@ -906,8 +1230,13 @@ void nv_vfx_update(NvVfx* vfx, f32 dt)
         dt = 0.0f;
     vfx->dt = dt;
     vfx->time += dt;
-    if (vfx->time > 1.0e5f)
-        vfx->time = 0.0f; // keeps the float's precision; the delayed bursts are relative to it, so they are released
+    if (vfx->time > 1.0e5f) {
+        // Keeps the float's precision. The delayed bursts are relative to the clock, so they are released
+        // (below), and the segments and decals, whose times are of the old clock, are dropped.
+        vfx->time = 0.0f;
+        ring_clear(&vfx->segments);
+        ring_clear(&vfx->decals);
+    }
     for (u32 i = 0; i < vfx->delayed_count;) {
         if (vfx->delayed[i].release <= vfx->time || vfx->time == 0.0f) {
             NvVfxBurst burst = vfx->delayed[i].burst;
@@ -924,6 +1253,8 @@ void nv_vfx_clear(NvVfx* vfx)
     vfx->burst_count = 0;
     vfx->delayed_count = 0;
     vfx->clear_requested = 1;
+    ring_clear(&vfx->segments);
+    ring_clear(&vfx->decals);
 }
 
 NvVfxStats nv_vfx_stats(const NvVfx* vfx)
@@ -961,6 +1292,9 @@ void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* fr
     WGPUQueue queue = vfx->gpu->queue;
     if (vfx->pipeline_samples != frame->samples)
         create_render_pipelines(vfx, frame->samples);
+
+    ring_flush(vfx, &vfx->segments, sizeof(NvVfxGpuSegment));
+    ring_flush(vfx, &vfx->decals, sizeof(NvVfxGpuDecal));
 
     VfxFrameUniforms uniforms = {0};
     uniforms.view_proj = frame->view_proj;
@@ -1046,8 +1380,22 @@ void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* fr
     }
 }
 
+void nv_vfx_draw_decals(NvVfx* vfx, WGPURenderPassEncoder pass)
+{
+    if (!vfx->decals.filled)
+        return;
+    wgpuRenderPassEncoderSetPipeline(pass, vfx->decal_pipeline);
+    wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->marks_group, 0, NULL);
+    wgpuRenderPassEncoderDraw(pass, 6, vfx->decals.filled, 0, 0);
+}
+
 void nv_vfx_draw(NvVfx* vfx, WGPURenderPassEncoder pass)
 {
+    if (vfx->segments.filled) {
+        wgpuRenderPassEncoderSetPipeline(pass, vfx->segment_pipeline);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->marks_group, 0, NULL);
+        wgpuRenderPassEncoderDraw(pass, 6, vfx->segments.filled, 0, 0);
+    }
     wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->render_group, 0, NULL);
     // Alpha first (words 4 to 7 of the arguments), then additive (0 to 3).
     wgpuRenderPassEncoderSetPipeline(pass, vfx->alpha_pipeline);
@@ -1074,6 +1422,11 @@ internal void on_stats_mapped(WGPUMapAsyncStatus status, WGPUStringView message,
 
 void nv_vfx_end_frame(NvVfx* vfx)
 {
+    // Counting the live segments walks a ring of up to hundreds of thousands: now and then is enough.
+    if ((vfx->marks_frame++ & 7u) == 0) {
+        vfx->stats.segments = ring_live(&vfx->segments, vfx->time);
+        vfx->stats.decals = ring_live(&vfx->decals, vfx->time);
+    }
     if (!vfx->stats_copied)
         return;
     vfx->stats_copied = 0;

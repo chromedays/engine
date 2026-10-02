@@ -474,6 +474,8 @@ typedef struct Flight {
 // The effects the app fires (effects.c).
 typedef struct Effects {
     NvVfxEffectId explosion, sparks, smoke, missile;
+    NvVfxLineStyle missile_trail, laser;
+    NvVfxDecalStyle scorch;
     Flight flights[8];
     u32 flight_count;
 } Effects;

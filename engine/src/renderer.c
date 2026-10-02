@@ -1666,6 +1666,10 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         stats->skinned_draws += mesh->skinned;
     }
 
+    if (renderer->vfx) {
+        nv_vfx_draw_decals(renderer->vfx, pass);
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->frame_group, 0, NULL); // the decals bound their own
+    }
     if (renderer->debug_vertex_count) {
         wgpuRenderPassEncoderSetPipeline(pass, renderer->debug_pipeline);
         wgpuRenderPassEncoderSetVertexBuffer(pass, 0, renderer->debug_buffer, 0, WGPU_WHOLE_SIZE);
