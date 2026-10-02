@@ -1,5 +1,6 @@
 #include "nv/vfx.h"
 #include "nv/log.h"
+#include "vfx_cpu.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -14,15 +15,6 @@ typedef struct NvVfxGpuEmitter {
     u32 shape, blend, pad[2];
     f32 colors[3][4];
 } NvVfxGpuEmitter; // 128 bytes
-
-typedef struct NvVfxBurst {
-    f32 pos[3], scale;
-    f32 dir[3];
-    u32 count;
-    f32 end[3];
-    u32 emitter;
-    u32 seed, pad[3];
-} NvVfxBurst; // 64 bytes
 
 typedef struct NvVfxDelayed {
     NvVfxBurst burst;
@@ -716,6 +708,7 @@ internal WGPUShaderModule create_module(WGPUDevice device, const char* label, co
     local_persist char text[32768];
     int length = snprintf(text, sizeof(text), "%s%s%s", vfx_common_wgsl, shared, body);
     NV_ASSERT(length > 0 && (umm)length < sizeof(text));
+    (void)length;
     WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
     wgsl.code = (WGPUStringView){text, WGPU_STRLEN};
     WGPUShaderModuleDescriptor desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
@@ -905,15 +898,13 @@ internal void* ring_add(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes, f32 de
         return NULL;
     if (ring->pending && (ring->pending == STAGE_SLOTS || ring->head == 0))
         ring_flush(vfx, ring, slot_bytes);
+    u32 index = nv_vfx_ring_take(&ring->head, &ring->filled, ring->capacity);
     if (!ring->pending)
-        ring->pending_start = ring->head;
+        ring->pending_start = index;
     u8* slot = (u8*)ring->staged + (umm)ring->pending * slot_bytes;
     memset(slot, 0, slot_bytes);
     ++ring->pending;
-    ring->death[ring->head] = death;
-    ring->head = ring->head + 1 == ring->capacity ? 0 : ring->head + 1;
-    if (ring->filled < ring->capacity)
-        ++ring->filled;
+    ring->death[index] = death;
     return slot;
 }
 
@@ -1318,25 +1309,8 @@ void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* fr
     }
 
     // One job per workgroup of 64 particles: which burst, and the first particle of the burst it spawns.
-    u32 job_count = 0;
     u32 bursts_used = 0;
-    for (u32 b = 0; b < vfx->burst_count; ++b) {
-        u32 groups = (vfx->bursts[b].count + 63u) / 64u;
-        if (job_count + groups > MAX_JOBS) {
-            groups = MAX_JOBS - job_count;
-            vfx->bursts[b].count = groups * 64u;
-            if (!groups) {
-                ++vfx->stats.bursts_lost;
-                continue;
-            }
-        }
-        for (u32 g = 0; g < groups; ++g) {
-            vfx->jobs[job_count * 2] = b;
-            vfx->jobs[job_count * 2 + 1] = g * 64u;
-            ++job_count;
-        }
-        bursts_used = b + 1;
-    }
+    u32 job_count = nv_vfx_split_bursts(vfx->bursts, vfx->burst_count, MAX_JOBS, vfx->jobs, &bursts_used, &vfx->stats.bursts_lost);
     if (job_count) {
         wgpuQueueWriteBuffer(queue, vfx->burst_buffer, 0, vfx->bursts, (umm)bursts_used * sizeof(NvVfxBurst));
         wgpuQueueWriteBuffer(queue, vfx->job_buffer, 0, vfx->jobs, (umm)job_count * 8);

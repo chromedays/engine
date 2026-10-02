@@ -89,6 +89,7 @@
 
 만든 결과로는, 콤보, 저장 태그, Textures 항목이 단계 순서대로 왔다; 아래 메모는 빌드가 가르쳐 준 것이다:
 
+- **(`vfx.md` 이후) 4-샘플 색 타깃은 `RGBA16Float`이다** (`NV_SCENE_FORMAT`): 선형 HDR이라 resolve가 선형 공간에서 평균하고, sRGB 뷰 규칙은 캔버스 쪽에만 남았다. 아래는 그전의 기록이다.
 - **색 타깃은 캔버스처럼 만든다**: 캔버스 자체 형식 (`BGRA8Unorm`)에 sRGB 렌더 형식을 뷰 형식으로 두고, sRGB 뷰를
   통해 렌더링한다. sRGB 형식으로 직접 만든 텍스처는 SwiftShader 위의 Chromium에서 캔버스로 resolve될 때 약 한 단계
   어둡게 나왔다 (캔버스가 인코딩된 값을 기대하는 곳에 resolve가 선형 값을 썼다); 캔버스처럼 만들면 4×와 Off
@@ -204,6 +205,7 @@ SwiftShader's timings mean nothing; real costs come from devices.
 As built, the combo, the save tag and the Textures entries arrived in the order of the phases; the
 notes below are what the build taught:
 
+- **(After `vfx.md`) The 4-sample color target is `RGBA16Float`** (`NV_SCENE_FORMAT`): it is linear HDR, so the resolve averages in linear space and the sRGB view rule remains only on the canvas side. What follows is the earlier record.
 - **The color target is made like the canvas**: the canvas's own format (`BGRA8Unorm`) with the sRGB
   render format as a view format, rendered through the sRGB view. A texture created directly in the
   sRGB format resolved into the canvas about a stop too dark in Chromium on SwiftShader (the

@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 합의됨, 구현 전 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
+상태: 구현됨, 다섯 단계 모두 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 구현이 스펙과 다른 곳은 "구현 결과"에 있다.
 
 ### 목표
 
@@ -186,6 +186,26 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 `NvRenderer`에 `vfx` (포인터, NULL = 없음)와 `post` (`NvPostSettings`: 톤 매핑, 노출, bloom, bloom 세기)가 생기고, 앱이
 `shadows`처럼 설정한다.
 
+### 구현 결과
+
+다섯 단계 모두 구현했다. 스펙과 다르거나 스펙에 없던 것:
+
+- **타임스탬프는 12개**다 (10개가 아니라): 씬 0–1, 그림자 2–3, 업스케일 4–5, bloom 6–9 (첫 패스의 시작과 마지막 패스의 끝; WebGPU는 패스의 시작과 끝 인덱스를 둘 다 요구한다), 파티클 10–11.
+  `NvRenderer.gpu_bloom_ms`와 `gpu_particles_ms`로 읽는다.
+- **버스트 기록은 64바이트**다 (48바이트가 아니라): 끝점 (`nv_vfx_emit`의 `to`)이 들어간다. 선분은 **80바이트** (48이 아님; 두 색을 f32로 둔다)라서 기본 용량 262,144는 21 MB,
+  데칼은 48바이트라서 16,384개가 0.8 MB다. 파티클 하나는 상태 32바이트와 목록 16바이트다 (48바이트).
+- **데칼의 깊이 바이어스 대신** 정점 셰이더가 데칼을 지면 위로 띄운다 (2 mm + 카메라 거리의 0.15 %). 파이프라인 바이어스의 크기는 깊이 형식과 경사에 달려 있어서 reverse Z에서 믿기 어렵다.
+  데칼끼리는 깊이를 쓰지 않으므로 겹쳐도 깜박이지 않고, 링의 순서대로 블렌드된다.
+- **선분은 가산 블렌딩만**, 데칼은 알파 블렌딩만 한다 (궤적과 빔은 빛이다).
+- **MSAA resolve는 이제 선형 공간에서 평균**한다 (씬 타깃이 HDR 선형이므로). 이전 sRGB 평균과 가장자리의 색이 아주 조금 다르다.
+- **통계**: 파티클의 살아 있는 수, 보이는 수, 버려진 수는 GPU에서 읽어 한두 프레임 늦다. 선분과 데칼의 살아 있는 수는 CPU가 만료 시각 배열로 8프레임마다 센다.
+- **효과의 CPU 쪽 순수 함수** (버스트를 작업 그룹 작업으로 나누기, 링의 슬롯 할당)는 `engine/src/vfx_cpu.h`, `vfx_cpu.c`에 있고 `tests/vfx_test.c`가 Node에서 시험한다.
+- **스트레스 씬**: Effects 워크로드 (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); 통계 행 (살아 있는 수, 보이는 수, 버려진 수, 선분, 데칼, GPU bloom과 파티클 패스);
+  벤치마크 단계 여섯 (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500)과 열 (GPU bloom / 파티클 ms, 평균 살아 있는 수). 단계마다 빈 하늘에서 시작한다.
+- **Debug export**: `_app_debug_vfx(n)` (0 살아 있는 수, 1 보이는 수, 2 버려진 수, 3 효과 수, 4 선분, 5 데칼), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
+  `_app_debug_post`, `_app_debug_set_post`, `_app_debug_set_sun`.
+- **알려진 문제**: 정렬하지 않은 알파 파티클 (연기)의 순서 오류는 의도대로 보인다 (`app/effects.c`의 `// TODO:`). SwiftShader의 시간은 의미가 없어서 비용 수치는 장치에서 따로 잰다.
+
 ### 해결된 질문
 
 모두 2026-10-01에 정했다.
@@ -253,7 +273,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 ## English
 
-Status: agreed, not yet built (2026-10-01). Changes to this spec are agreed first.
+Status: built, all five phases (2026-10-02). Changes to this spec are agreed first. Where the build differs from the spec, see "As built".
 
 ### Goal
 
@@ -437,6 +457,26 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 `NvRenderer` gains `vfx` (a pointer, NULL = none) and `post` (`NvPostSettings`: tone, exposure, bloom, bloom_intensity), set
 by the app like `shadows`.
+
+### As built
+
+All five phases are built. What differs from the spec or was not in it:
+
+- **12 timestamps** (not 10): scene 0–1, shadow 2–3, upscale 4–5, bloom 6–9 (the first pass's start and the last pass's end; WebGPU wants both the start and
+  end index of a pass), particles 10–11. Read through `NvRenderer.gpu_bloom_ms` and `gpu_particles_ms`.
+- **A burst record is 64 bytes** (not 48): it carries the end point (`to` of `nv_vfx_emit`). A segment is **80 bytes** (not 48; its two colors are f32), so the default capacity of 262,144 is 21 MB, and
+  a decal is 48 bytes, so 16,384 of them are 0.8 MB. A particle is 32 bytes of state and 16 of lists (48 bytes).
+- **No depth bias for decals**: the vertex shader lifts a decal off the ground instead (2 mm plus 0.15 % of the distance to the camera). A pipeline bias's size depends on the depth format and the slope, which is hard to trust with reverse Z.
+  Decals do not write depth, so overlapping ones do not flicker; they blend in ring order.
+- **Segments are additive only** and decals alpha blended only (trails and beams are light).
+- **The MSAA resolve now averages in linear space** (the scene target is linear HDR). Edge colors differ very slightly from the earlier sRGB average.
+- **Stats**: the particles' alive, visible and dropped counts are read back from the GPU and are a frame or two late. The live segments and decals are counted on the CPU every 8 frames from an array of expiry times.
+- **The effects' pure CPU functions** (splitting bursts into workgroup jobs, allocating ring slots) are in `engine/src/vfx_cpu.h` and `vfx_cpu.c`, and `tests/vfx_test.c` tests them under Node.
+- **The stress scene**: an Effects workload (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); stats rows (alive, visible, dropped, segments, decals, GPU bloom and particle passes);
+  six benchmark steps (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500) and columns (GPU bloom / particle ms, average alive). Each step starts from an empty sky.
+- **Debug exports**: `_app_debug_vfx(n)` (0 alive, 1 visible, 2 dropped, 3 effect count, 4 segments, 5 decals), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
+  `_app_debug_post`, `_app_debug_set_post`, `_app_debug_set_sun`.
+- **Known issue**: the order errors of unsorted alpha particles (smoke) show, as intended (the `// TODO:` in `app/effects.c`). SwiftShader's timings mean nothing, so cost figures are measured separately on devices.
 
 ### Resolved questions
 

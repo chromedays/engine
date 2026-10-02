@@ -109,15 +109,31 @@ internal void make_styles(Effects* effects)
         .life = 12.0f, .fade = 0.4f, .color = RGBA(0.02f, 0.015f, 0.01f, 0.8f), .shape = NV_VFX_SHAPE_PUFF};
 }
 
+// Embers thrown up and falling back: what the stress scene's Effects workload fires in bursts to hold a
+// number of live particles. Small, additive, bouncing on the ground.
+internal NvVfxEffectId make_swarm(NvVfx* vfx)
+{
+    NvVfxEffectDesc effect = {.name = "Swarm", .emitter_count = 1};
+    effect.emitters[0] = (NvVfxEmitterDesc){
+        .count = 512, .life_min = 2.0f, .life_max = 3.0f, .speed_min = 2.0f, .speed_max = 10.0f, .cone = 1.2f,
+        .gravity = 6.0f, .drag = 0.3f, .use_ground = 1, .ground = 0.02f, .restitution = 0.4f, .friction = 0.3f,
+        .size_start = 0.05f, .size_end = 0.03f,
+        .colors = {RGBA(3.0f, 1.4f, 0.4f, 1.0f), RGBA(1.5f, 0.5f, 0.1f, 0.8f), RGBA(0.3f, 0.08f, 0.02f, 0.0f)},
+        .shape = NV_VFX_SHAPE_DISC, .blend = NV_VFX_BLEND_ADD};
+    return nv_vfx_add_effect(vfx, &effect);
+}
+
 void effects_init(App* app)
 {
     Effects* effects = &app->effects;
+    effects->rng = 0x9E3779B9u;
     make_styles(effects);
     nv_vfx_init(&app->vfx, &app->gpu, (NvVfxCapacity){0}, &app->permanent);
     effects->explosion = make_explosion(&app->vfx);
     effects->sparks = make_sparks(&app->vfx);
     effects->smoke = make_smoke(&app->vfx);
     effects->missile = make_missile(&app->vfx);
+    effects->swarm = make_swarm(&app->vfx);
     app->renderer.vfx = &app->vfx;
 }
 
@@ -175,6 +191,117 @@ void effects_clear(App* app)
 {
     nv_vfx_clear(&app->vfx);
     app->effects.flight_count = 0;
+    app->effects.stress_flight_count = 0;
+    app->effects.swarm_carry = app->effects.explosion_carry = app->effects.decal_carry = 0.0f;
+}
+
+//
+// The stress scene's Effects workload
+//
+
+internal f32 random01(Effects* effects)
+{
+    u32 x = effects->rng;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    effects->rng = x;
+    return (f32)(x >> 8) * (1.0f / 16777216.0f);
+}
+
+// A point on the ground in the field around the orbit point.
+internal NvVec3 field_point(App* app, f32 height)
+{
+    Effects* effects = &app->effects;
+    NvVec3 orbit = app_view(app)->orbit_point;
+    return nv_vec3(orbit.x + (random01(effects) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (random01(effects) * 2.0f - 1.0f) * 12.0f);
+}
+
+internal void new_flight(App* app, Flight* flight)
+{
+    Effects* effects = &app->effects;
+    f32 angle = random01(effects) * 6.2831853f;
+    f32 speed = 6.0f + random01(effects) * 4.0f;
+    flight->pos = field_point(app, 0.3f);
+    flight->vel = nv_vec3(cosf(angle) * speed, 3.0f + random01(effects) * 2.0f, sinf(angle) * speed);
+    flight->life = 1.2f + random01(effects) * 0.8f;
+}
+
+void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
+{
+    Effects* effects = &app->effects;
+    NvVfx* vfx = &app->vfx;
+    if (dt > 0.1f)
+        dt = 0.1f;
+    b32 on = want->effects_on;
+    u32 missiles = on ? (u32)want->effect_missiles : 0;
+    if (missiles > STRESS_MAX_MISSILES)
+        missiles = STRESS_MAX_MISSILES;
+    u32 beams = on ? (u32)want->effect_beams : 0;
+    if (beams > STRESS_MAX_BEAMS)
+        beams = STRESS_MAX_BEAMS;
+
+    // Missiles that fly, leave a trail and smoke, and start again from another point when their time is up.
+    if (effects->stress_flight_count > missiles)
+        effects->stress_flight_count = missiles;
+    while (effects->stress_flight_count < missiles) {
+        Flight* flight = &effects->stress_flights[effects->stress_flight_count++];
+        new_flight(app, flight);
+        flight->life *= random01(effects); // out of step with each other
+    }
+    for (u32 i = 0; i < effects->stress_flight_count; ++i) {
+        Flight* flight = &effects->stress_flights[i];
+        NvVec3 before = flight->pos;
+        flight->vel.y -= 4.0f * dt;
+        flight->pos = nv_vec3_add(flight->pos, nv_vec3_scale(flight->vel, dt));
+        flight->life -= dt;
+        if (dt > 0.0f) {
+            NvVec3 step = nv_vec3_sub(flight->pos, before);
+            // A thinner smoke than the Missile button's: 2,000 of them would fill the particle buffer.
+            nv_vfx_emit(vfx, effects->missile, before, flight->pos, (u32)(sqrtf(nv_vec3_dot(step, step)) * 12.0f) + 1);
+            nv_vfx_trail(vfx, &effects->missile_trail, before, flight->pos);
+        }
+        if (flight->life <= 0.0f || flight->pos.y < 0.05f)
+            new_flight(app, flight);
+    }
+
+    // Beams: each is held by calling again every frame with a short life, between fixed points of its own.
+    for (u32 i = 0; i < beams; ++i) {
+        u32 h = i * 2654435761u + 12345u;
+        NvVec3 orbit = app_view(app)->orbit_point;
+        f32 ax = (f32)(h & 1023u) / 1023.0f, az = (f32)((h >> 10) & 1023u) / 1023.0f;
+        f32 bx = (f32)((h >> 20) & 1023u) / 1023.0f, bz = (f32)((h * 40503u >> 8) & 1023u) / 1023.0f;
+        NvVec3 from = nv_vec3(orbit.x + (ax * 2.0f - 1.0f) * 16.0f, 7.0f, orbit.z + (az * 2.0f - 1.0f) * 12.0f);
+        NvVec3 to = nv_vec3(orbit.x + (bx * 2.0f - 1.0f) * 16.0f, 0.05f, orbit.z + (bz * 2.0f - 1.0f) * 12.0f);
+        nv_vfx_beam(vfx, &effects->laser, from, to, dt * 1.5f + 0.02f);
+    }
+
+    if (!on)
+        return;
+
+    // Particles: embers in bursts of 512, at the rate that replaces what dies (they live about 2.5 s).
+    f32 rate = (f32)want->effect_particles / 2.5f;
+    effects->swarm_carry += rate * dt / 512.0f;
+    u32 limit = 4000; // bursts a frame
+    while (effects->swarm_carry >= 1.0f) {
+        effects->swarm_carry -= 1.0f;
+        if (limit) {
+            nv_vfx_burst(vfx, effects->swarm, field_point(app, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
+            --limit;
+        }
+    }
+    effects->explosion_carry += (f32)want->effect_explosions * dt;
+    for (u32 n = 0; effects->explosion_carry >= 1.0f && n < 300; ++n) {
+        effects->explosion_carry -= 1.0f;
+        nv_vfx_burst(vfx, effects->explosion, field_point(app, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
+    }
+    if (effects->explosion_carry > 1.0f)
+        effects->explosion_carry = 0.0f;
+    effects->decal_carry += (f32)want->effect_decals * dt;
+    for (u32 n = 0; effects->decal_carry >= 1.0f && n < 2000; ++n) {
+        effects->decal_carry -= 1.0f;
+        scorch_at(app, field_point(app, 0.0f), 0.6f + random01(effects) * 1.2f);
+    }
 }
 
 void effects_update(App* app, f32 dt)

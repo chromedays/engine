@@ -21,12 +21,15 @@ engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, 
                            imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
                            gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation),
                            chunk.h (tagged binary files), storage.h (files kept in IndexedDB),
-                           log.h (the log ring the Console tab shows)
+                           log.h (the log ring the Console tab shows),
+                           vfx.h (effects: compute particles, trails, beams, decals)
 engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c, log.c,
+                           vfx.c and vfx_cpu.c (the effects; vfx_cpu holds the GPU-free parts tests run),
                            anim.cpp (the ozz wrapper; our only C++ file)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
+                           effects.c (the effect definitions and the Effects workload),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), app.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
@@ -192,6 +195,24 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
   does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
   Debug builds export `_app_debug_scene`, `_app_debug_set_resolution` and `_app_debug_project`.
+- The scene renders in linear HDR (`docs/specs/vfx.md`): the scene targets are `NV_SCENE_FORMAT`
+  (`RGBA16Float`) and every pipeline of the scene pass targets it. Exposure, tone mapping (`NvPostSettings.tone`:
+  Clamp, PBR Neutral, ACES) and the bloom composite happen in the upscale pass; the canvas's sRGB view encodes at the
+  end. A shader writes linear light that may exceed 1; never apply a transfer curve in a scene shader. The MSAA resolve
+  averages in linear space. Bloom (`renderer.c`: `update_bloom`, `record_bloom`) is a 6-level chain between the scene
+  pass and the upscale pass, remade only when the scene's size changes.
+- Effects (`nv/vfx.h`, `engine/src/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
+  passes recorded in `nv_renderer_draw` (emit, simulate, prepare; the free list, two alive lists and a visible list).
+  The app registers effects once (`nv_vfx_add_effect`, see `app/effects.c`), calls `nv_vfx_update(dt)` with the game
+  clock's dt every frame (0 pauses them) and `nv_vfx_burst`, `nv_vfx_emit`, `nv_vfx_trail`, `nv_vfx_beam` and
+  `nv_vfx_decal` where things happen; `NvRenderer.vfx` makes the renderer run and draw them. Draw order in the scene
+  pass: opaque meshes, decals, debug lines, segments, alpha particles, additive particles; none write depth. A pass
+  binds only the buffers it uses (an indirect-argument buffer cannot be bound where it is also read as arguments).
+  Segments and decals are rings the CPU stages and uploads in runs; their shaders drop an expired slot by moving it
+  outside the clip volume. Alpha particles are unsorted on purpose (`// TODO:` in `app/effects.c`). Stats come back
+  a frame or two late. Debug builds export `Module._app_debug_vfx(n)`, `_app_debug_vfx_fire(effect)`,
+  `_app_debug_set_effects(...)`, `_app_debug_post` and `_app_debug_set_post(...)`; the scene's post settings are saved
+  (`TONE`, `EXPO`, `BLOM`, `BLMI`).
 - The scene pass is multisampled by default (`docs/specs/msaa.md`): the app sets `NvRenderer.msaa`
   (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
   4-sample color target (made like the canvas: its own format with the sRGB view format, rendered

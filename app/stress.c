@@ -107,10 +107,12 @@ void stress_build(App* app)
     };
 
     local_persist const BenchmarkStep steps[] = {
-        {"Cubes 250", 250, 0},   {"Cubes 1000", 1000, 0}, {"Cubes 4000", 4000, 0},
-        {"Cubes 8000", 8000, 0}, {"Cubes 16000", 16000, 0}, {"Crowd 8", 0, 8},
-        {"Crowd 32", 0, 32},     {"Crowd 60", 0, 60},     {"Crowd 120", 0, 120},
-        {"Crowd 200", 0, 200},
+        {"Cubes 250", 250, 0, 0, 0, 0},   {"Cubes 1000", 1000, 0, 0, 0, 0}, {"Cubes 4000", 4000, 0, 0, 0, 0},
+        {"Cubes 8000", 8000, 0, 0, 0, 0}, {"Cubes 16000", 16000, 0, 0, 0, 0}, {"Crowd 8", 0, 8, 0, 0, 0},
+        {"Crowd 32", 0, 32, 0, 0, 0},     {"Crowd 60", 0, 60, 0, 0, 0},     {"Crowd 120", 0, 120, 0, 0, 0},
+        {"Crowd 200", 0, 200, 0, 0, 0},
+        {"Particles 250k", 0, 0, 250000, 0, 0}, {"Particles 1M", 0, 0, 1000000, 0, 0}, {"Particles 2M", 0, 0, 2000000, 0, 0},
+        {"Missiles 500", 0, 0, 0, 500, 0}, {"Missiles 2000", 0, 0, 0, 2000, 0}, {"Beams 500", 0, 0, 0, 0, 500},
     };
     NV_ASSERT(NV_ARRAY_COUNT(steps) <= STRESS_MAX_STEPS);
     memcpy(stress->steps, steps, sizeof(steps));
@@ -272,6 +274,7 @@ void stress_update(App* app, f32 dt)
     update_grid(stress, grid, colors);
     if (want->churn_on)
         churn(stress, (u32)want->churn_count);
+    effects_stress_update(app, want, dt);
 }
 
 void stress_draw_bones(App* app)
@@ -307,7 +310,12 @@ internal void start_step(App* app, u32 step, f64 now)
         .crowd_on = s->crowd > 0,
         .crowd_count = s->crowd,
         .churn_count = stress->before_benchmark.churn_count,
+        .effects_on = s->particles > 0 || s->missiles > 0 || s->beams > 0,
+        .effect_particles = s->particles,
+        .effect_missiles = s->missiles,
+        .effect_beams = s->beams,
     };
+    effects_clear(app); // every step starts from an empty sky
     stress->benchmark_step = step;
     stress->benchmark_step_start = now;
     stress->results[step] = (BenchmarkResult){0};
@@ -361,6 +369,9 @@ void stress_after_frame(App* app)
     sum->gpu += t->gpu;
     sum->gpu_shadow += t->gpu_shadow;
     sum->gpu_upscale += t->gpu_upscale;
+    sum->gpu_bloom += t->gpu_bloom;
+    sum->gpu_particles += t->gpu_particles;
+    result->particles += (f64)nv_vfx_stats(&app->vfx).alive;
     if (t->frame > result->worst_frame)
         result->worst_frame = t->frame;
     ++result->frames;
@@ -369,7 +380,8 @@ void stress_after_frame(App* app)
         return;
     f64 n = (f64)result->frames;
     *sum = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                        sum->gpu_shadow / n, sum->gpu_upscale / n};
+                        sum->gpu_shadow / n, sum->gpu_upscale / n, sum->gpu_bloom / n, sum->gpu_particles / n};
+    result->particles /= n;
     stress->result_count = stress->benchmark_step + 1;
     if (stress->benchmark_step + 1 < stress->step_count)
         start_step(app, stress->benchmark_step + 1, now);
@@ -422,15 +434,15 @@ internal void copy_results(App* app)
     used += (umm)snprintf(text + used, sizeof(text) - used,
                           "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
                           "shadows: %s\nanti-aliasing: %s\nresolution: %s\n\n"
-                          "step        frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale\n",
+                          "step            frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale  bloom  particles  alive\n",
                           NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no",
                           shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off", stress->benchmark_resolution);
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
-        used += (umm)snprintf(text + used, sizeof(text) - used, "%-11s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f\n",
+        used += (umm)snprintf(text + used, sizeof(text) - used, "%-15s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f  %5.2f  %9.2f  %5.0f\n",
                               stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, app_load(&r->average),
                               r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
-                              r->average.gpu_shadow, r->average.gpu_upscale);
+                              r->average.gpu_shadow, r->average.gpu_upscale, r->average.gpu_bloom, r->average.gpu_particles, r->particles);
     }
     igSetClipboardText(text);
 }
@@ -473,6 +485,8 @@ internal void stats_section(App* app)
         stat(stats, &count, "GPU scene pass", "%.2f", a->gpu);
         stat(stats, &count, "GPU shadow pass", "%.2f", a->gpu_shadow);
         stat(stats, &count, "GPU upscale pass", "%.2f", a->gpu_upscale);
+        stat(stats, &count, "GPU bloom passes", "%.2f", a->gpu_bloom);
+        stat(stats, &count, "GPU particle passes", "%.2f", a->gpu_particles);
     } else {
         stat_text(stats, &count, "GPU passes", "no timestamps");
     }
@@ -490,6 +504,12 @@ internal void stats_section(App* app)
     stat(stats, &count, "Material changes", "%.0f", (f64)r->material_changes);
     stat(stats, &count, "Mesh changes", "%.0f", (f64)r->mesh_changes);
     stat(stats, &count, "Shadow draws", "%.0f", (f64)r->shadow_draws);
+    NvVfxStats effects = nv_vfx_stats(&app->vfx);
+    stat(stats, &count, "Particles alive", "%.0f", (f64)effects.alive);
+    stat(stats, &count, "Particles visible", "%.0f", (f64)effects.visible);
+    stat(stats, &count, "Particles dropped", "%.0f", (f64)effects.dropped);
+    stat(stats, &count, "Segments", "%.0f", (f64)effects.segments);
+    stat(stats, &count, "Decals", "%.0f", (f64)effects.decals);
     stat_text(stats, &count, "Anti-aliasing", app->renderer.scene_samples > 1 ? "MSAA 4x" : "off");
     char resolution[64];
     resolution_text(app, resolution, sizeof(resolution));
@@ -548,6 +568,18 @@ internal void workloads_section(App* app)
         igSliderInt(TL("Cubes / frame"), &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
     if (search_row(app, "Crowd bones", "workload skeleton debug"))
         igCheckbox(TL("Crowd bones"), &w->show_bones);
+    if (search_row(app, "Fire effects", "workload particles vfx"))
+        igCheckbox(TL("Fire effects"), &w->effects_on);
+    if (search_row(app, "Live particles", "workload effects vfx count"))
+        igSliderInt(TL("Live particles"), &w->effect_particles, 0, STRESS_MAX_PARTICLES, "%d", ImGuiSliderFlags_Logarithmic);
+    if (search_row(app, "Explosions / s", "workload effects vfx"))
+        igSliderInt(TL("Explosions / s"), &w->effect_explosions, 0, STRESS_MAX_EXPLOSIONS, "%d", 0);
+    if (search_row(app, "Missiles in flight", "workload effects vfx trails"))
+        igSliderInt(TL("Missiles in flight"), &w->effect_missiles, 0, STRESS_MAX_MISSILES, "%d", 0);
+    if (search_row(app, "Beams", "workload effects vfx laser"))
+        igSliderInt(TL("Beams"), &w->effect_beams, 0, STRESS_MAX_BEAMS, "%d", 0);
+    if (search_row(app, "Decals / s", "workload effects vfx scorch"))
+        igSliderInt(TL("Decals / s"), &w->effect_decals, 0, STRESS_MAX_DECALS, "%d", 0);
     if (search_plain(app))
         igTextDisabled(T("Built: %u cubes, %u links, %u of %u characters"), stress->grid_built, stress->chain_built,
                        stress->crowd_active, stress->crowd_created);
@@ -577,13 +609,15 @@ internal void benchmark_section(App* app)
     igText(T("Shadows: %s"), shadows);
     igText(T("Anti-aliasing: %s"), stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
     igText(T("Resolution: %s"), stress->benchmark_resolution);
-    if (igBeginTable("results", 6, flags, (ImVec2_c){0, 0}, 0.0f)) {
+    if (igBeginTable("results", 8, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
         igTableSetupColumn("Load %", 0, 0.0f, 0);
         igTableSetupColumn("Worst", 0, 0.0f, 0);
         igTableSetupColumn("CPU a/s/d", 0, 0.0f, 0);
         igTableSetupColumn("GPU sc/sh/up", 0, 0.0f, 0);
+        igTableSetupColumn("GPU bl/pt", 0, 0.0f, 0);
+        igTableSetupColumn("Alive", 0, 0.0f, 0);
         igTableHeadersRow();
         for (u32 i = 0; i < stress->result_count; ++i) {
             const BenchmarkResult* r = &stress->results[i];
@@ -603,6 +637,13 @@ internal void benchmark_section(App* app)
                 igText("%.2f/%.2f/%.2f", r->average.gpu, r->average.gpu_shadow, r->average.gpu_upscale);
             else
                 igTextDisabled("-");
+            igTableNextColumn();
+            if (app->gpu.has_timestamps)
+                igText("%.2f/%.2f", r->average.gpu_bloom, r->average.gpu_particles);
+            else
+                igTextDisabled("-");
+            igTableNextColumn();
+            igText("%.0f", r->particles);
         }
         igEndTable();
     }

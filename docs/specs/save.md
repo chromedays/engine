@@ -111,6 +111,10 @@ Chunks
 | `SHDS` | f32 | 그림자 거리, 미터, 불러올 때 5..100로 제한 | 30 |
 | `SHBX` | u32 | 빛 상자 표시 | 0 |
 | `MSAA` | u32 | 안티앨리어싱: 픽셀당 샘플, 1 (꺼짐) 또는 4 (`msaa.md`); 다른 값은 4로 불러옴 | 4 |
+| `TONE` | u32 | 톤 매핑: 0 Clamp, 1 PBR Neutral, 2 ACES (`vfx.md`); 다른 값은 PBR Neutral로 불러옴 | 1 |
+| `EXPO` | f32 | 노출 (배율), 불러올 때 0.25..4로 제한 | 1 |
+| `BLOM` | u32 | bloom 켜짐 | 1 |
+| `BLMI` | f32 | bloom 세기, 불러올 때 0..0.2로 제한 | 0.04 |
 | `RSMD` | u32 | 해상도 모드: 0 scale, 1 fixed (`resolution.md`); 다른 값은 0으로 불러옴 | 0 |
 | `RSCL` | u32 | scale 모드의 제수, 1–4; 다른 값은 장치 기본값으로 불러옴 | 데스크톱 UI에서 1, 폰 UI에서 2 |
 | `RSFT` | u32 | fixed 모드의 맞춤: 0 정수 배, 1 뷰포트에 맞춤, 2 늘림; 다른 값은 0으로 불러옴 | 0 |
@@ -383,6 +387,10 @@ describe created nodes; older builds will skip them.
 | `SHDS` | f32 | shadow distance, meters, clamped to 5..100 on load | 30 |
 | `SHBX` | u32 | show the light box | 0 |
 | `MSAA` | u32 | anti-aliasing: samples per pixel, 1 (off) or 4 (`msaa.md`); anything else loads as 4 | 4 |
+| `TONE` | u32 | tone mapping: 0 Clamp, 1 PBR Neutral, 2 ACES (`vfx.md`); anything else loads as PBR Neutral | 1 |
+| `EXPO` | f32 | exposure (a multiplier), clamped to 0.25..4 on load | 1 |
+| `BLOM` | u32 | bloom on | 1 |
+| `BLMI` | f32 | bloom intensity, clamped to 0..0.2 on load | 0.04 |
 | `RSMD` | u32 | resolution mode: 0 scale, 1 fixed (`resolution.md`); anything else loads as 0 | 0 |
 | `RSCL` | u32 | scale mode's divisor, 1 to 4; anything else loads as the device's default | 1 on the desktop UI, 2 on the phone UI |
 | `RSFT` | u32 | fixed mode's fit: 0 whole multiples, 1 fit to the viewport, 2 stretch; anything else loads as 0 | 0 |

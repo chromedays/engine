@@ -676,7 +676,7 @@ internal f64 now_ms(void)
 f64 app_load(const FrameTimes* t)
 {
     f64 cpu = t->anim + t->scene + t->draw + t->ui;
-    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale;
+    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale + t->gpu_bloom + t->gpu_particles;
     f64 busy = cpu > gpu ? cpu : gpu;
     return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
 }
@@ -694,6 +694,8 @@ internal void accumulate_times(App* app, f64 now)
     sum->gpu += t->gpu;
     sum->gpu_shadow += t->gpu_shadow;
     sum->gpu_upscale += t->gpu_upscale;
+    sum->gpu_bloom += t->gpu_bloom;
+    sum->gpu_particles += t->gpu_particles;
     if (t->frame > app->window_worst_frame)
         app->window_worst_frame = t->frame;
     ++app->window_frames;
@@ -701,7 +703,8 @@ internal void accumulate_times(App* app, f64 now)
         return;
     f64 n = (f64)app->window_frames;
     app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                                      sum->gpu_shadow / n, sum->gpu_upscale / n};
+                                      sum->gpu_shadow / n, sum->gpu_upscale / n,
+                                      sum->gpu_bloom / n, sum->gpu_particles / n};
     app->shown_worst_frame = app->window_worst_frame;
     *sum = (FrameTimes){0};
     app->window_worst_frame = 0.0;
@@ -843,6 +846,8 @@ internal void frame(void* userdata)
     times->gpu = app->renderer.gpu_ms;
     times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
     times->gpu_upscale = app->renderer.gpu_upscale_ms;
+    times->gpu_bloom = app->renderer.post.bloom ? app->renderer.gpu_bloom_ms : 0.0;
+    times->gpu_particles = app->renderer.gpu_particles_ms;
     t = now_ms();
     nv_imgui_render(&app->imgui, encoder, target);
     times->ui += now_ms() - t;
@@ -975,6 +980,18 @@ EMSCRIPTEN_KEEPALIVE int app_debug_vfx(int which)
     int values[6] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)app_state.vfx.effect_count - 1,
                      (int)stats.segments, (int)stats.decals};
     return values[which];
+}
+
+// Sets the stress scene's Effects workload: particles kept, explosions a second, missiles, beams, decals a second.
+EMSCRIPTEN_KEEPALIVE void app_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
+{
+    StressWorkloads* want = &app_state.stress.want;
+    want->effects_on = particles || explosions || missiles || beams || decals;
+    want->effect_particles = particles;
+    want->effect_explosions = explosions;
+    want->effect_missiles = missiles;
+    want->effect_beams = beams;
+    want->effect_decals = decals;
 }
 
 EMSCRIPTEN_KEEPALIVE void app_debug_vfx_fire(int effect)

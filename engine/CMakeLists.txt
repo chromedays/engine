@@ -9,6 +9,7 @@ add_library(nv STATIC
     src/scene.c
     src/storage.c
     src/vfx.c
+    src/vfx_cpu.c
     src/window.c)
 
 target_include_directories(nv PUBLIC include)

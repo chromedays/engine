@@ -23,7 +23,7 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 
 ```
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h, chunk.h, storage.h, log.h
+                     gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h
 engine/src/          구현 (anim.cpp는 ozz-animation을 감싼다; 나머지는 모두 C)
 app/                 앱: 쇼케이스 씬 (행성과 달, 검을 든 애니메이션 캐릭터), 벤치마크가 있는 스트레스 씬
                      (View 탭에서 고름), 그리고 에디터 (노드 트리, 인스펙터, 뷰 설정, 스트레스 워크로드),
@@ -33,7 +33,10 @@ app/                 앱: 쇼케이스 씬 (행성과 달, 검을 든 애니메�
                      하나; 크기, 형식, 필터는 View 탭에서), 가장자리는 4x MSAA로 부드럽게 한다 (View 탭
                      설정). 씬은 뷰포트 픽셀의 분수로, 또는 검은 띠가 있는 고정 크기로 렌더링할 수 있다.
                      Console 탭은 엔진과 페이지가 보고하는 것 (경고, 오류)을 나열하고, Textures 탭은 사용
-                     중인 텍스처 (머티리얼 맵, 그림자 맵, 깊이 타깃)를 밉과 채널과 함께 보여 준다
+                     중인 텍스처 (머티리얼 맵, 그림자 맵, 깊이 타깃)를 밉과 채널과 함께 보여 준다.
+                     씬은 선형 HDR로 그려 톤 매핑 (Clamp, PBR Neutral, ACES)과 bloom을 거치고, compute 셰이더가
+                     시뮬레이션하는 GPU 파티클 (기본 200만 개), 궤적, 빔, 지면 데칼이 있다 (View 탭의 Effects와
+                     스트레스 씬의 Fire effects 워크로드)
 assets/              바이너리 에셋 (Git LFS)
 tests/               브라우저가 필요 없는 테스트 (Node에서 ctest로 실행)
 tools/               오프라인 에셋 스크립트
@@ -95,7 +98,7 @@ Live:
 
 ```
 engine/include/nv/   public API: base.h, math.h, scene.h, window.h, gpu.h, imgui.h, renderer.h,
-                     gltf.h, anim.h, chunk.h, storage.h, log.h
+                     gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h
 engine/src/          implementation (anim.cpp wraps ozz-animation; everything else is C)
 app/                 the app: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
@@ -109,7 +112,10 @@ app/                 the app: a showcase scene (a planet and moon, an animated c
                      fraction of the viewport's pixels or at a fixed size with black bars. A
                      Console tab lists what the engine and the page report (warnings, errors),
                      and a Textures tab shows the textures in use (material maps, shadow map,
-                     depth target) with their mips and channels
+                     depth target) with their mips and channels. The scene is drawn in linear HDR through tone
+                     mapping (Clamp, PBR Neutral, ACES) and bloom, with GPU particles simulated by compute
+                     shaders (2 million by default), trails, beams and ground decals (the View tab's Effects
+                     and the stress scene's Fire effects workload)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts

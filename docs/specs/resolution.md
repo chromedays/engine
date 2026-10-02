@@ -139,8 +139,8 @@
 - 업스케일 셰이더는 샘플러가 아니라 `textureLoad`로 씬 색 타깃을 읽는다 (화면 픽셀 아래의 텍셀, 이미지 모서리부터
   `pixel_size` 블록 단위로 셈): 그것이 정확한 최근접 필터링이고, 줄어든 고정 크기가 픽셀을 고르게 버리게 하는 것이기도
   하다.
-- 씬 색 타깃은 캔버스처럼 만들고 (`BGRA8Unorm`에 sRGB 뷰 형식), Textures 탭은 다른 `Unorm` 텍스처와 같은 경로로
-  미리 본다 (그 바이트는 디스플레이 인코딩이다), 그리고 그것이 맞게 나왔다.
+- 씬 색 타깃은 처음에 캔버스처럼 만들었고 (`BGRA8Unorm`에 sRGB 뷰 형식), Textures 탭은 다른 `Unorm` 텍스처와 같은 경로로
+  미리 보았다 (그 바이트는 디스플레이 인코딩이다), 그리고 그것이 맞게 나왔다. **지금은 `RGBA16Float` 선형 HDR이다** (`vfx.md`): 업스케일 패스가 노출과 톤 매핑을 적용하고 sRGB 캔버스 뷰가 인코딩한다.
 - Debug 빌드에서 1280 × 800, 1920 × 1080, 390 × 664 (터치)로 확인: 제수마다의 씬 크기; 1/2과 1/4에서 고른 2 × 2와
   4 × 4 블록; 1/1의 첫 프레임이 이전 빌드의 것과 정적 영역에서 같음, MSAA 켜고 끄고; 1320 × 832 뷰포트에서 검은 띠와
   함께 필러박스와 레터박스된 1280 × 720; ×2로 고른 블록으로 보인 640 × 360; 세로 크기; 종횡비를 유지하며 0.32로 줄어든
@@ -314,9 +314,9 @@ As built:
 - The upscale shader reads the scene color target with `textureLoad` (the texel under the screen
   pixel, counted from the image's corner in blocks of `pixel_size`), not a sampler: that is exact
   nearest filtering, and also what lets a shrunk fixed size drop pixels evenly.
-- The scene color target is made like the canvas (`BGRA8Unorm` with the sRGB view format), and the
-  Textures tab previews it through the same path as other `Unorm` textures (their bytes are
-  display-encoded), which came out right.
+- The scene color target was first made like the canvas (`BGRA8Unorm` with the sRGB view format), and the
+  Textures tab previewed it through the same path as other `Unorm` textures (their bytes are
+  display-encoded), which came out right. **It is now linear HDR `RGBA16Float`** (`vfx.md`): the upscale pass applies exposure and tone mapping and the sRGB canvas view encodes.
 - Checked in a Debug build at 1280 × 800, 1920 × 1080 and 390 × 664 (touch): the scene size for each
   divisor; even 2 × 2 and 4 × 4 blocks at 1/2 and 1/4; the first frame at 1/1 equal to the
   previous build's in the static regions, with MSAA on and off; 1280 × 720 pillarboxed and

@@ -22,7 +22,7 @@
 |---|---|---|---|---|
 | 머티리얼 텍스처 (glTF base color: `T_Hair_1_BaseColor`, `T_Eye_Brown`, `T_Superhero_Male_Dark`)와 1×1 흰색 기본값 (슬롯 0) | `NvRenderer.textures[256]`, `nv_renderer_add_texture` | `RGBA8UnormSrgb` (흰색: `RGBA8Unorm`), 전체 밉 체인 | `TextureBinding`, `CopyDst` | 예, 새 bind group을 통해; 하지만 렌더러가 이름, 크기, 형식, 밉 수를 보관하지 않는다 |
 | 그림자 맵 | `NvRenderer.shadow_texture` | `Depth32Float` 또는 `Depth16Unorm`, 512²–2048², 꺼지면 1×1 자리 표시자 | `RenderAttachment`, `TextureBinding` | 아니요: ImGui의 셰이더는 필터링 샘플러와 `texture_2d<f32>`를 받고, 깊이 형식은 필터링할 수 없다 |
-| 씬 색 타깃 | `NvRenderer.scene_color` | `BGRA8Unorm` (캔버스의 형식, 그 sRGB 뷰로 렌더링), 씬 해상도를 64로 올림 (`resolution.md`) | `RenderAttachment`, `TextureBinding` | 예: 업스케일 패스가 샘플링한다; 씬이 채운 부분이 보인다 |
+| 씬 색 타깃 | `NvRenderer.scene_color` | `RGBA16Float` (선형 HDR, `NV_SCENE_FORMAT`; `vfx.md`), 씬 해상도를 64로 올림 (`resolution.md`) | `RenderAttachment`, `TextureBinding` | 예: 업스케일 패스가 샘플링한다; 씬이 채운 부분이 보인다 |
 | 씬 깊이 타깃 | `NvRenderer.depth_texture` | `Depth32Float`, 씬 해상도를 64로 올림, reverse Z, MSAA에서 4샘플 (`msaa.md`, `resolution.md`) | `RenderAttachment`; 탭이 보이는 동안 `TextureBinding` 추가 | 탭이 보이는 동안 예 (다중 샘플 텍스처의 샘플 0) |
 | 스왑체인 (캔버스) | `NvGpu.current_texture` | `BGRA8Unorm`에 `BGRA8UnormSrgb` 뷰 (브라우저별) | `RenderAttachment` | 아니요, 그럴 수도 없다: ImGui 패스가 그 안에 그리고 있다 |
 | ImGui 글꼴 아틀라스 | `NvImgui.textures[16]` | `RGBA8Unorm` | `TextureBinding`, `CopyDst` | 예 (ImGui 자체의 것) |
@@ -147,7 +147,7 @@ replacing textures, and textures of past frames (no capture, as RenderDoc does n
 |---|---|---|---|---|
 | Material textures (glTF base color: `T_Hair_1_BaseColor`, `T_Eye_Brown`, `T_Superhero_Male_Dark`) and the 1×1 white default (slot 0) | `NvRenderer.textures[256]`, `nv_renderer_add_texture` | `RGBA8UnormSrgb` (white: `RGBA8Unorm`), full mip chain | `TextureBinding`, `CopyDst` | Yes, through a new bind group; but the renderer keeps no name, size, format or mip count |
 | Shadow map | `NvRenderer.shadow_texture` | `Depth32Float` or `Depth16Unorm`, 512² to 2048², or a 1×1 placeholder when off | `RenderAttachment`, `TextureBinding` | No: ImGui's shader takes `texture_2d<f32>` with a filtering sampler, and a depth format cannot be filtered |
-| Scene color target | `NvRenderer.scene_color` | `BGRA8Unorm` (the canvas's format, rendered through its sRGB view), the scene's resolution rounded up to 64 (`resolution.md`) | `RenderAttachment`, `TextureBinding` | Yes: the upscale pass samples it; the part the scene fills is shown |
+| Scene color target | `NvRenderer.scene_color` | `RGBA16Float` (linear HDR, `NV_SCENE_FORMAT`; `vfx.md`), the scene's resolution rounded up to 64 (`resolution.md`) | `RenderAttachment`, `TextureBinding` | Yes: the upscale pass samples it; the part the scene fills is shown |
 | Scene depth target | `NvRenderer.depth_texture` | `Depth32Float`, the scene's resolution rounded up to 64, reverse Z, 4 samples with MSAA (`msaa.md`, `resolution.md`) | `RenderAttachment`; plus `TextureBinding` while the tab is shown | Yes while the tab is shown (sample 0 of a multisampled texture) |
 | Swapchain (the canvas) | `NvGpu.current_texture` | `BGRA8Unorm` with a `BGRA8UnormSrgb` view (per browser) | `RenderAttachment` | No, and it cannot be: the ImGui pass is drawing into it |
 | ImGui font atlas | `NvImgui.textures[16]` | `RGBA8Unorm` | `TextureBinding`, `CopyDst` | Yes (it is ImGui's own) |

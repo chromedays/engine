@@ -38,6 +38,7 @@
 | Material variety | 그리드가 머티리얼 하나 또는 최대 256개의 서로 다른 색을 쓴다 | 256 | bind group 전환 |
 | Churn | 매 프레임 그리드 큐브 K개를 제거하고 다시 추가 | 256/프레임 | 프리 리스트, 세대 id |
 | Bone overlay | 모든 crowd 캐릭터의 뼈 라인 | ~12800 라인 | 디버그 라인 |
+| Fire effects | 살아 있는 파티클 N개 (0–4M; 작은 불씨 버스트로 유지), 초당 폭발 (0–200), 날아가는 미사일 (0–2,000; 궤적과 연기), 빔 (0–500), 초당 데칼 (0–2,000) | 위와 같음 | compute 파티클 패스, 선분과 데칼 그리기, bloom, fill rate (`vfx.md`) |
 
 스트레스 씬에도 카메라, 태양, 지면이 있다. 큰 워크로드는 Scene 탭에서 접힌 채로 시작하는 그룹 노드 ("grid", "chain",
 "crowd") 아래에 있다. 그렇지 않으면 트리가 매 프레임 수천 행을 그려 측정을 왜곡할 것이다. Scene 탭의 검색 상자는 그래도
@@ -132,6 +133,7 @@ workloads together stay under `NV_MAX_NODES`.
 | Material variety | the grid uses one material, or up to 256 distinct colors | 256 | bind group switches |
 | Churn | K grid cubes removed and added again every frame | 256/frame | free list, generation ids |
 | Bone overlay | bone lines for every crowd character | ~12800 lines | debug lines |
+| Fire effects | N live particles (0–4M, held by embers fired in bursts), explosions per second (0–200), missiles in flight (0–2,000; trails and smoke), beams (0–500), decals per second (0–2,000) | as listed | the compute particle passes, drawing segments and decals, bloom, fill rate (`vfx.md`) |
 
 The stress scene also has a camera, a sun and a ground. Big workloads sit under group nodes
 ("grid", "chain", "crowd") that start collapsed in the Scene tab. Otherwise the tree would draw
