@@ -338,38 +338,9 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### UI 문자열 (엔진으로 옮김)
 
-결정(2026-10-02): `app/`의 `T()`, `TL()`과 언어 선택을 엔진 모듈로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 에디터 앱과
-게임이 같은 장치를 쓴다. 동작과 규칙은 `docs/specs/korean.md` 그대로다(영어 원문이 키, printf 변환 유지, `TL()`의 `###` id).
-
-```c
-// nv/strings.h
-typedef enum NvLanguage { NV_LANGUAGE_EN, NV_LANGUAGE_KO, NV_LANGUAGE_COUNT } NvLanguage;
-typedef struct NvStringPair { const char* english; const char* korean; } NvStringPair;
-
-#define NV_STRINGS_MAX 4096 // pairs per executable
-
-// The executable's table, kept (not copied). Called once at start, before any T().
-void nv_strings_set_table(const NvStringPair* pairs, u32 count);
-NvLanguage nv_strings_language(void);
-void nv_strings_set_language(NvLanguage language);
-NvLanguage nv_strings_browser_language(void); // from navigator.language: Korean if it starts with "ko"
-const char* nv_strings_find_korean(const char* english); // or NULL
-const char* nv_strings_text(const char* english);
-const char* nv_strings_label(const char* english);
-
-// NOTE: Short on purpose, since they wrap every UI text: the one exception to the naming rules.
-#define T(english)  nv_strings_text(english)
-#define TL(english) nv_strings_label(english)
-```
-
-| 항목 | 변경 |
-|---|---|
-| 엔진 | `engine/include/nv/strings.h`, `engine/src/strings.c`: 지금 `app/strings.c`의 조회 코드(해시 표, `T`, `TL`, 언어). 상태는 파일 전역이다(`T()`는 문맥 없이 어디서나 불리므로). 해시 표는 `NV_STRINGS_MAX`에 맞춘 고정 크기 |
-| 에디터 앱 | `app/strings.c`는 표만 남기고 시작할 때 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어지고 `#include <nv/strings.h>`가 된다. `Language`, `LANG_*`, `strings_*`는 `NvLanguage`, `NV_LANGUAGE_*`, `nv_strings_*`가 된다. 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 그대로이므로 `SAVE_VERSION`은 바뀌지 않는다 |
-| 게임 | `autobattler/strings.c`에 자기 표. 브라우저 언어로 시작하고, Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다 |
-| 테스트 | `tests/strings_test.mjs`가 `app/`과 `autobattler/`을 각각 자기 `strings.c`에 대해 검사한다 |
-| 글꼴 | `tools/subset_hangul.sh`가 두 표의 문자를 합쳐 한글 서브셋 하나를 만든다. 두 실행 파일이 `assets/fonts/`를 같이 쓴다 |
-| 문서 | `korean.md`(경로, 엔진 API), `AGENTS.md`의 UI 문자열 줄, `CODING_STANDARD.md`의 이름 규칙에 `T`/`TL` 예외 |
+결정(2026-10-02): `T()`, `TL()`과 언어 선택을 엔진(`nv/strings.h`)으로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 자세한
+내용은 `docs/specs/shared.md`의 "UI 문자열"이다. 게임은 `autobattler/strings.c`에 자기 표를 두고, 브라우저 언어로 시작하며,
+Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다.
 
 ### 서드파티 후보
 
@@ -401,8 +372,7 @@ assert와 WebGPU 오류가 없는지 본다.
 
 ### 단계
 
-1. **문자열을 엔진으로:** `nv/strings.h`, 에디터 앱의 변경, `strings_test.mjs`, 문서. 에디터 앱이 전과 같게 동작하는지
-   확인(한국어 전환, 검색, 저장의 `LANG`).
+1. **선행:** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
 2. **시뮬레이션:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. 화면 없음.
 3. **실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 문자열 표, 배치 입력.
 4. **확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
@@ -770,39 +740,10 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 ### UI strings (moved to the engine)
 
-Decided (2026-10-02): `T()`, `TL()` and language selection move from `app/` to an engine module, and each executable keeps
-its own Korean table. The editor app and the game share the mechanism. Behavior and rules stay as in `docs/specs/korean.md`
-(the English text is the key, printf conversions are kept, `TL()`'s `###` id).
-
-```c
-// nv/strings.h
-typedef enum NvLanguage { NV_LANGUAGE_EN, NV_LANGUAGE_KO, NV_LANGUAGE_COUNT } NvLanguage;
-typedef struct NvStringPair { const char* english; const char* korean; } NvStringPair;
-
-#define NV_STRINGS_MAX 4096 // pairs per executable
-
-// The executable's table, kept (not copied). Called once at start, before any T().
-void nv_strings_set_table(const NvStringPair* pairs, u32 count);
-NvLanguage nv_strings_language(void);
-void nv_strings_set_language(NvLanguage language);
-NvLanguage nv_strings_browser_language(void); // from navigator.language: Korean if it starts with "ko"
-const char* nv_strings_find_korean(const char* english); // or NULL
-const char* nv_strings_text(const char* english);
-const char* nv_strings_label(const char* english);
-
-// NOTE: Short on purpose, since they wrap every UI text: the one exception to the naming rules.
-#define T(english)  nv_strings_text(english)
-#define TL(english) nv_strings_label(english)
-```
-
-| Topic | Change |
-|---|---|
-| Engine | `engine/include/nv/strings.h`, `engine/src/strings.c`: the lookup code now in `app/strings.c` (the hash table, `T`, `TL`, the language). Its state is file-global (`T()` is called from anywhere, with no context). The hash table has a fixed size, made for `NV_STRINGS_MAX` |
-| Editor app | `app/strings.c` keeps only its table and calls `nv_strings_set_table` at start. `app/strings.h` goes; `#include <nv/strings.h>` replaces it. `Language`, `LANG_*` and `strings_*` become `NvLanguage`, `NV_LANGUAGE_*` and `nv_strings_*`. The `LANG` save tag's values (0 English, 1 Korean) stay, so `SAVE_VERSION` does not change |
-| Game | Its own table in `autobattler/strings.c`. It starts in the browser's language and switches with a Language combo in the Battle panel (not saved). Every text in the panel goes through `T()`/`TL()` |
-| Tests | `tests/strings_test.mjs` checks `app/` and `autobattler/`, each against its own `strings.c` |
-| Font | `tools/subset_hangul.sh` makes one Hangul subset from the characters of both tables. Both executables share `assets/fonts/` |
-| Docs | `korean.md` (paths, the engine API), the UI strings line in `AGENTS.md`, and the `T`/`TL` exception in the naming rules of `CODING_STANDARD.md` |
+Decided (2026-10-02): `T()`, `TL()` and language selection move to the engine (`nv/strings.h`), and each executable keeps its
+own Korean table. The details are in "UI strings" of `docs/specs/shared.md`. The game keeps its table in
+`autobattler/strings.c`, starts in the browser's language and switches with a Language combo in the Battle panel (not
+saved). Every text in the panel goes through `T()`/`TL()`.
 
 ### Third-party candidates
 
@@ -834,8 +775,8 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 
 ### Phases
 
-1. **Strings to the engine:** `nv/strings.h`, the editor app's changes, `strings_test.mjs`, docs. Check that the editor app
-   behaves as before (switching to Korean, search, the `LANG` save tag).
+1. **First:** `docs/specs/shared.md` (strings, meshes, resolution and taps, the camera, the font, the version and helpers move
+   to the engine).
 2. **Simulation:** `spatial`, `flow`, `battle.c`, `battle_defs.c`, `battle_test.c`. No view.
 3. **Executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its string table, deployment input.
 4. **Checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and `autobattler.md`.
