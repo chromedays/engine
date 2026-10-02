@@ -27,7 +27,7 @@
 #endif
 
 #define APP_MAX_CLIPS 16
-#define SELECTION_MAX 64 // selected nodes at once, the primary included (docs/specs/selection.md)
+#define SELECTION_MAX 256 // selected nodes at once, the primary included (docs/specs/selection.md)
 #define TREE_ROWS_MAX 4096 // Scene tab rows a Shift+click range can reach
 
 #define STRESS_MAX_GRID     16000
@@ -148,7 +148,10 @@ typedef enum SceneKind {
 
 // Undo and redo (docs/specs/undo.md): steps hold a scope's bytes before and after one edit.
 #define UNDO_MAX_STEPS 128
-#define UNDO_MAX_BYTES NV_KILOBYTES(16) // the Node scope holds every selected node (docs/specs/selection.md)
+// The Node scope holds every selected node: a node writes at most about 220 bytes (its name, transform,
+// color, joint, camera and light fields with their headers), so a step is sized for SELECTION_MAX nodes.
+#define UNDO_NODE_BYTES 256
+#define UNDO_MAX_BYTES (SELECTION_MAX * UNDO_NODE_BYTES)
 #define UNDO_LABEL_MAX 64
 
 // Parts of the showcase that undo snapshots separately (docs/specs/undo.md).

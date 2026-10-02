@@ -27,12 +27,12 @@ Recommendation: a primary node plus a list of others. No third-party library.
 
 | Topic | Decision |
 |---|---|
-| State | `SceneView.selected` is the primary node: shown in the Inspector, followed by the camera, the start of a Shift range. `SceneView.others` holds up to 63 more (`SELECTION_MAX` 64 in all), without duplicates and never the primary. Nothing selected means no primary and no others |
+| State | `SceneView.selected` is the primary node: shown in the Inspector, followed by the camera, the start of a Shift range. `SceneView.others` holds up to 255 more (`SELECTION_MAX` 256 in all), without duplicates and never the primary. Nothing selected means no primary and no others |
 | Primary | The node picked last. Adding a node makes it the primary; removing the primary makes the most recently added other the primary |
 | Viewport, desktop | A click selects only the mesh under it, or clears the selection on empty space, as today. Ctrl+click or Shift+click (Cmd counts as Ctrl on macOS) adds the node under the pointer, or removes it if it is selected; on empty space it does nothing. A character's meshes stand for its root, as today. The keys count as they were when the button went down: a tap is decided a few frames later (`gizmo.md`), by which time they may be up |
 | Scene tab, desktop | A click selects only that node. Ctrl+click adds or removes it. Shift+click selects the rows from the range's anchor (the node last clicked without Shift) to the clicked one, in the order the tree shows them, and makes the clicked one the primary. Rows hidden in a closed group are not part of a range |
 | Phone | The phone has no modifier keys. A **Multi** toggle in the top bar, between Find and Redo, makes every tap add or remove, in the viewport and in the Scene tab; a tap on empty space then does nothing. It stays on until tapped again, and is not saved |
-| Limit | Adding a 65th node does nothing and logs a warning once |
+| Limit | Adding a 257th node does nothing and logs a warning once. The limit comes from fixed arrays, not from the scene (`NV_MAX_NODES` is 16384): the undo steps (128 of them, each holding the nodes before and after) and the stack buffers of the save's selection tag grow with it, and the stack is 64 KB. Raising it further needs a smaller undo record (only the changed nodes and fields) first |
 | Inspector | Shows and edits the primary node only. With more than one node selected, a line above it says "N selected" with a **Keep one** button, which keeps only the primary |
 | Clearing | Esc (desktop) clears everything, as today. The Inspector's Keep one keeps the primary |
 | Outline | Every selected node gets its mesh boxes. The primary's are cyan, as today; the others' are a darker blue |
@@ -40,7 +40,7 @@ Recommendation: a primary node plus a list of others. No third-party library.
 | Gizmo, several nodes | The gizmo sits at the average of the selected nodes' world positions. Move: every node moves by the drag. Rotate and scale: around that point. Axes: world, or the primary's rotation when Local is on; scale uses the primary's rotation. The active camera is left out (the orbit camera owns it), and so is a node whose parent or other ancestor is selected, since it already moves with that ancestor |
 | Applying a drag | At the first frame of a drag, each moving node's world matrix and the gizmo's matrix are kept. Each frame the gizmo's change since then (current × inverse of the start) is applied to every kept world matrix, which then goes back to the node's position, rotation and scale through its parent (`gizmo.md`'s write-back). So snapping, and rotation and scale around the center, do not drift over a long drag |
 | Camera follow | Follows the primary, as today; still holds still while the gizmo drags |
-| Undo | The Node scope (`undo.md`) covers every selected node: its bytes are each node's fields in a container, in selection order. A multi-node gizmo drag is one step. The label is "name Field" for one node changed, "N nodes Field" for several. Undoing or redoing a step selects the nodes it holds, the first as the primary. Selecting or deselecting a node still commits without a step. The step size grows to 16 KB (64 nodes of about 150 bytes) |
+| Undo | The Node scope (`undo.md`) covers every selected node: its bytes are each node's fields in a container, in selection order. A multi-node gizmo drag is one step. The label is "name Field" for one node changed, "N nodes Field" for several. Undoing or redoing a step selects the nodes it holds, the first as the primary. Selecting or deselecting a node still commits without a step. The step size grows to 64 KB (`SELECTION_MAX` nodes at `UNDO_NODE_BYTES` 256 each: a node writes about 150 bytes, 220 at most) |
 | Save | `SELN` stays the primary's path. A new `VIEW` tag, `SELO` (u32[]), holds the others' paths, each as its length followed by its indices; missing or broken: no others. No `SAVE_VERSION` change: older saves have no `SELO` |
 | Stale nodes | Each frame, selected nodes that no longer exist (the stress scene removes nodes when its counts drop) leave the selection; a missing primary is replaced as above. (This also fixes an assert when the selected stress node was removed.) |
 | Play / Stop | As today: the selection is not scene content and is kept |
@@ -85,7 +85,7 @@ Playwright, Release and Debug, desktop mouse and phone touch sizes:
 - The Inspector shows the primary and "3 selected"; Keep one keeps the primary.
 - The save round trip keeps the others (`_app_debug_save_round_trip`); a reload restores them.
 - The stress scene: selecting grid cubes, then lowering the grid count, drops them without an assert.
-- No WebGPU errors, nothing logged at warning level except the 65th-node warning when tested.
+- No WebGPU errors, nothing logged at warning level except the 257th-node warning when tested.
 
 ## Phases
 

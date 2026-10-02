@@ -1086,6 +1086,12 @@ EMSCRIPTEN_KEEPALIVE int app_debug_undo_done(void)
     return (int)app_state.undo.done;
 }
 
+// The bytes the undo's Node scope holds for the selected nodes, for checking UNDO_NODE_BYTES.
+EMSCRIPTEN_KEEPALIVE int app_debug_undo_node_bytes(void)
+{
+    return (int)app_state.undo.committed_size[SAVE_SCOPE_NODE];
+}
+
 // For tests, the Console tab (docs/specs/console.md). Module._app_debug_log(level, n) adds an "app"
 // message "test message n", and _app_debug_log_lines(level, n) one of three lines; strings from the page
 // go through Module.nvLog. _app_debug_wgpu_error() makes WebGPU report a validation error.

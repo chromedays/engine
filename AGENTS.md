@@ -118,7 +118,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   (`driven_fields` in `app/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._app_debug_undo_steps()`
   and `_app_debug_undo_done()` for tests.
 - The selection (`docs/specs/selection.md`) is `SceneView.selected`, the primary node (picked last: the
-  Inspector edits it, the camera follows it), plus up to 63 `others`. Change it only through
+  Inspector edits it, the camera follows it), plus up to 255 `others`. Change it only through
   `app/selection.c` (`selection_set`, `selection_add`, `selection_toggle`, `selection_keep_primary`),
   never by assigning `selected`, so the others and the Shift+click anchor stay consistent; read it with
   `selection_count` / `selection_get` / `selection_has`. Ctrl or Shift+click (viewport and Scene tab)
