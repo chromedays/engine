@@ -35,7 +35,7 @@ typedef struct Command {
 internal void run_save(App* app) { save_now(app, 1); }
 internal void run_undo(App* app) { app->undo.request = -1; }
 internal void run_redo(App* app) { app->undo.request = 1; }
-internal void run_deselect(App* app) { app_view(app)->selected = (NvNodeId){0}; }
+internal void run_deselect(App* app) { selection_set(app_view(app), (NvNodeId){0}); }
 internal void run_play(App* app)
 {
     if (app->playing)

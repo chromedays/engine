@@ -361,6 +361,8 @@ internal void view_tap(NvImgui* imgui, f32 x, f32 y)
     imgui->view_pending.tapped = 1;
     imgui->view_pending.tap_x = x;
     imgui->view_pending.tap_y = y;
+    // As they were at the press: a tap can be decided frames after the keys were let go.
+    imgui->view_pending.tap_mods = imgui->view_press_mods;
 }
 
 // A press in the view drags the camera: left orbits, right and middle pan. A left press that does
@@ -376,6 +378,8 @@ internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEve
         imgui->view_moved = 0;
         imgui->view_press_x = imgui->view_mouse_x = x;
         imgui->view_press_y = imgui->view_mouse_y = y;
+        imgui->view_press_mods = (event->ctrlKey || event->metaKey ? ImGuiMod_Ctrl : 0) |
+                                 (event->shiftKey ? ImGuiMod_Shift : 0) | (event->altKey ? ImGuiMod_Alt : 0);
         if (imgui->view_grab && event->button == 0) {
             imgui->view_grab_wait = 2;
             imgui->view_tap_held = 0;
@@ -496,6 +500,7 @@ internal b32 view_touch(NvImgui* imgui, int event_type, const EmscriptenTouchEve
             imgui->view_moved = 0;
             imgui->view_press_x = (f32)first->clientX;
             imgui->view_press_y = (f32)first->clientY;
+            imgui->view_press_mods = 0;
             if (imgui->view_grab) {
                 // ImGui learns where the finger is, so the app can tell what is under it.
                 ImGuiIO_AddMousePosEvent(igGetIO_Nil(), imgui->view_press_x, imgui->view_press_y);

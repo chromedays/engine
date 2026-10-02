@@ -79,10 +79,10 @@ touch. Rotation becomes editable in the inspector.
 | Zoom | Wheel / two-finger pinch |
 | Pan | Right or middle drag / two-finger drag; moves the orbit point off the focused node |
 | Follow | The camera orbits the selection; a per-scene "Camera follows selection" checkbox in the View tab (off by default) turns it on; while off, the camera stays put and panning moves its orbit point |
-| Select | Click / tap: a ray from the camera picks the nearest mesh node |
+| Select | Click / tap: a ray from the camera picks the nearest mesh node. Ctrl / Shift+click, or the phone's Multi toggle, add and remove instead (`selection.md`) |
 | Deselect | Click / tap where no mesh is hit |
 | Characters | Picking a skinned mesh selects its parent, the character root |
-| Selection outline | The picked node's mesh boxes, drawn as debug lines |
+| Selection outline | The picked node's mesh boxes, drawn as debug lines (every selected node's since `selection.md`) |
 | Rotation | Inspector edits it as Euler angles in degrees (yaw, pitch, roll) |
 | Gizmo | A later step: see `gizmo.md` |
 | Third-party | None |

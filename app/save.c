@@ -52,6 +52,7 @@
 #define TAG_ORBT NV_TAG('O', 'R', 'B', 'T')
 #define TAG_PAN  NV_TAG('P', 'A', 'N', ' ')
 #define TAG_SELN NV_TAG('S', 'E', 'L', 'N')
+#define TAG_SELO NV_TAG('S', 'E', 'L', 'O') // the other selected nodes' paths (docs/specs/selection.md)
 // CHAR
 #define TAG_CLIP NV_TAG('C', 'L', 'I', 'P')
 #define TAG_CTIM NV_TAG('C', 'T', 'I', 'M')
@@ -165,6 +166,18 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     u32 path[SAVE_MAX_PATH];
     u32 length = view->selected.index ? path_of(scene, view->selected.index, path) : 0;
     nv_chunk_u32s(w, TAG_SELN, path, length);
+    // The others: each path as its length, then its indices.
+    u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
+    u32 count = 0;
+    for (u32 i = 0; i < view->other_count; ++i) {
+        u32 other_length = path_of(scene, view->others[i].index, &others[count + 1]);
+        if (!other_length)
+            continue;
+        others[count] = other_length;
+        count += 1 + other_length;
+    }
+    if (count)
+        nv_chunk_u32s(w, TAG_SELO, others, count);
     nv_chunk_end(w);
 }
 
@@ -417,6 +430,10 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     u32 path[SAVE_MAX_PATH];
     u32 length = 0;
     b32 has_selection = nv_chunk_read_u32_list(r, chunk, TAG_SELN, path, SAVE_MAX_PATH, &length);
+    u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
+    u32 others_size = 0;
+    if (!nv_chunk_read_u32_list(r, chunk, TAG_SELO, others, NV_ARRAY_COUNT(others), &others_size))
+        others_size = 0;
     if (!apply)
         return;
     v.camera_pitch = clamp(v.camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
@@ -425,6 +442,18 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     if (has_selection && nodes_match) {
         u32 index = length ? node_at(scene, path, length) : 0;
         v.selected = index ? (NvNodeId){index, scene->nodes[index].gen} : (NvNodeId){0};
+        v.other_count = 0;
+        v.range_anchor = v.selected;
+        // The others' paths, each its length and then its indices; a broken list gives none.
+        b32 broken = 0;
+        for (u32 at = 0; at < others_size && !broken; at += 1 + others[at])
+            broken = others[at] == 0 || others[at] > SAVE_MAX_PATH || at + 1 + others[at] > others_size;
+        for (u32 at = 0; v.selected.index && !broken && at < others_size; at += 1 + others[at]) {
+            u32 other = node_at(scene, &others[at + 1], others[at]);
+            NvNodeId id = other ? (NvNodeId){other, scene->nodes[other].gen} : (NvNodeId){0};
+            if (id.index && !selection_has(&v, id) && v.other_count < SELECTION_MAX - 1)
+                v.others[v.other_count++] = id;
+        }
     }
     v.panned_for = v.selected;
     *view = v;
@@ -636,13 +665,18 @@ u32 save_driven_fields(App* app, u32 node)
     return driven_fields(app, node);
 }
 
-u32 save_write_scope(App* app, SaveScope scope, u32 node, void* buffer, u32 capacity)
+u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
     switch (scope) {
     case SAVE_SCOPE_NODE:
-        write_node_fields(&w, app, node, 1);
+        // Each node's fields in a container of its own, in the order given.
+        for (u32 i = 0; i < node_count; ++i) {
+            nv_chunk_begin(&w, TAG_NODE);
+            write_node_fields(&w, app, nodes[i].index, 1);
+            nv_chunk_end(&w);
+        }
         break;
     case SAVE_SCOPE_CHARACTER:
         write_character_fields(&w, app, 1);
@@ -658,13 +692,22 @@ u32 save_write_scope(App* app, SaveScope scope, u32 node, void* buffer, u32 capa
     return w.overflow ? 0 : w.size;
 }
 
-internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, u32 node, b32 apply)
+internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, b32 apply)
 {
     NvChunkReader r = {0};
     switch (scope) {
-    case SAVE_SCOPE_NODE:
-        read_node_fields(&r, chunk, app, node, apply);
-        break;
+    case SAVE_SCOPE_NODE: {
+        // One container per node, in the order the nodes are given.
+        NvChunk child = {0};
+        u32 read = 0;
+        while (nv_chunk_next(&r, chunk, &child)) {
+            if (child.tag != TAG_NODE || read == node_count)
+                return 0;
+            read_node_fields(&r, child, app, nodes[read++].index, apply);
+        }
+        if (read != node_count)
+            return 0;
+    } break;
     case SAVE_SCOPE_CHARACTER:
         read_character_fields(&r, chunk, app, apply);
         break;
@@ -689,12 +732,12 @@ internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, u32 node, b32 
     return !r.failed;
 }
 
-b32 save_apply_scope(App* app, SaveScope scope, u32 node, const void* bytes, u32 size)
+b32 save_apply_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size)
 {
     NvChunk chunk = {.size = size, .data = bytes};
-    if (!read_scope(chunk, app, scope, node, 0))
+    if (!read_scope(chunk, app, scope, nodes, node_count, 0))
         return 0;
-    read_scope(chunk, app, scope, node, 1);
+    read_scope(chunk, app, scope, nodes, node_count, 1);
     return 1;
 }
 
@@ -802,7 +845,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
         return TAG_KIND_CONTAINER;
     case TAG_MSAA: case TAG_TONE: case TAG_BLOM: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
     case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO: case TAG_LANG:
-    case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN:
+    case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN: case TAG_SELO:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
         return TAG_KIND_U32;
     case TAG_BONE: // a u32 in SCNE (show bones)

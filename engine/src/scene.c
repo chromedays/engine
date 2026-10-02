@@ -110,6 +110,11 @@ NvNode* nv_scene_get(NvScene* scene, NvNodeId id)
     return node;
 }
 
+b32 nv_scene_alive(NvScene* scene, NvNodeId id)
+{
+    return id.index && id.index <= scene->node_count && scene->nodes[id.index].gen == id.gen && (id.gen & 1);
+}
+
 void nv_scene_update(NvScene* scene)
 {
     // NOTE: Pre-order walk using the parent links instead of a stack, so a parent's world matrix

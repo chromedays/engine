@@ -106,7 +106,7 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 | Space | World or local, for translate and rotate (scale is always local) |
 | Snap | Off by default; when on: 0.5 m, 15°, 0.1 |
 | Controls | In the Inspector, above the transform fields: an operation radio (Move / Rotate / Scale), a Local checkbox and a Snap checkbox. On the desktop UI, W / E / R also switch the operation, X flips Local and World, and Ctrl held during a drag turns the Snap box around (`shortcuts.md`; W / E / R once needed the pointer over the viewport, now only that no field holds the keyboard) |
-| Which nodes | The selected node, unless it is the active camera (the orbit camera owns it). Characters work: root motion keeps adding to the moved position |
+| Which nodes | The selected node, unless it is the active camera (the orbit camera owns it). Characters work: root motion keeps adding to the moved position. Several selected nodes move together around their center (`selection.md`) |
 | Parents and joints | The gizmo edits the world matrix. The result goes back to `local` through the inverse of parent world × `attach.joint_model` |
 | Write-back | Our own `nv_mat4_decompose` (translation, quaternion, scale), not ImGuizmo's Euler-degree decomposition. Shear from non-uniform scale under a rotated parent is dropped |
 | Camera follow | While the gizmo drags, the camera holds still even when it follows the selection; following the dragged node would move the pointer's ray with it and the drag would run away |

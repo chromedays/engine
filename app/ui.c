@@ -44,10 +44,60 @@ internal void tree_marks(App* app, SceneView* view)
     }
 }
 
+// Notes a row in the order the tree draws them; a Shift+click range runs over last frame's rows.
+internal void tree_row(App* app, u32 index)
+{
+#if !defined(NDEBUG)
+    if (app->tree_row_count[0] < NV_ARRAY_COUNT(app->tree_row_rects)) {
+        ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
+        f32* r = app->tree_row_rects[app->tree_row_count[0]];
+        r[0] = min.x, r[1] = min.y, r[2] = max.x, r[3] = max.y;
+    }
+#endif
+    if (app->tree_row_count[0] < TREE_ROWS_MAX)
+        app->tree_rows[0][app->tree_row_count[0]++] = index;
+}
+
+internal s32 find_row(App* app, u32 index)
+{
+    for (u32 i = 0; i < app->tree_row_count[1]; ++i) {
+        if (app->tree_rows[1][i] == index)
+            return (s32)i;
+    }
+    return -1;
+}
+
+// A click on a row (docs/specs/selection.md): only that node; with Ctrl, or the phone's Multi
+// toggle, added or removed; with Shift, the rows from the range's anchor to it.
 internal void tree_select(App* app, SceneView* view, u32 index)
 {
-    view->selected = (NvNodeId){index, view->scene->nodes[index].gen};
+    NvScene* scene = view->scene;
+    NvNodeId id = {index, scene->nodes[index].gen};
+    ImGuiIO* io = igGetIO_Nil();
     app->open_inspector = 1;
+    if (app->multi_select || (io->KeyCtrl && !io->KeyShift)) {
+        selection_toggle(app, view, id);
+        return;
+    }
+    s32 from = io->KeyShift ? find_row(app, view->range_anchor.index) : -1;
+    s32 to = find_row(app, index);
+    if (from < 0 || to < 0) {
+        selection_set(view, id);
+        return;
+    }
+    // From the clicked row towards the anchor, so a range longer than the selection holds keeps the
+    // clicked end; the clicked node ends up the primary.
+    NvNodeId anchor = view->range_anchor;
+    selection_set(view, (NvNodeId){0});
+    s32 step = from < to ? -1 : 1;
+    for (s32 i = to;; i += step) {
+        u32 row = app->tree_rows[1][i];
+        selection_add(app, view, (NvNodeId){row, scene->nodes[row].gen});
+        if (i == from)
+            break;
+    }
+    selection_add(app, view, id);
+    view->range_anchor = anchor;
 }
 
 // Below the depth the tree draws: the matches under `index`, flat, so a match at the end of the
@@ -67,9 +117,10 @@ internal void tree_deep_matches(App* app, SceneView* view, u32 index)
         if ((s->tree[n] & TREE_SELF) && listed < TREE_DEEP_MAX) {
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
                                        ImGuiTreeNodeFlags_SpanAvailWidth;
-            if (view->selected.index == n && view->selected.gen == scene->nodes[n].gen)
+            if (selection_has(view, (NvNodeId){n, scene->nodes[n].gen}))
                 flags |= ImGuiTreeNodeFlags_Selected;
             igTreeNodeEx_Ptr((void*)(umm)n, flags, "%s", scene->nodes[n].name);
+            tree_row(app, n);
             if (igIsItemClicked(ImGuiMouseButton_Left))
                 tree_select(app, view, n);
             ImVec2_c min = igGetItemRectMin();
@@ -123,7 +174,7 @@ internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
         flags |= ImGuiTreeNodeFlags_DefaultOpen;
     if (!children)
         flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-    if (view->selected.index == id.index && view->selected.gen == id.gen)
+    if (selection_has(view, id))
         flags |= ImGuiTreeNodeFlags_Selected;
     // While filtering, the way to a match is open, and parents that do not match are grey.
     b32 self = !filtering || (s->tree[index] & TREE_SELF);
@@ -141,6 +192,7 @@ internal void node_tree(App* app, SceneView* view, u32 index, u32 depth)
                              : igTreeNodeEx_Ptr((void*)(umm)index, flags, "%s", node->name);
     if (filtering && !self)
         igPopStyleColor(1);
+    tree_row(app, index);
     if (igIsItemClicked(ImGuiMouseButton_Left) && !igIsItemToggledOpen())
         tree_select(app, view, index);
     if (filtering && self) {
@@ -158,6 +210,10 @@ void ui_scene_tab(App* app)
 {
     Search* s = &app->search;
     SceneView* view = app_view(app);
+    // Last frame's rows are the ones a click this frame can range over.
+    memcpy(app->tree_rows[1], app->tree_rows[0], app->tree_row_count[0] * sizeof(u32));
+    app->tree_row_count[1] = app->tree_row_count[0];
+    app->tree_row_count[0] = 0;
     search_panel_begin(app, SEARCH_SCENE);
     s->tree_filtering = search_active(app);
     s->tree_drawn = 0;
@@ -462,6 +518,15 @@ void ui_inspector_tab(App* app)
             igTextDisabled(T("Select a node in the Scene tab."));
         search_panel_end(app);
         return;
+    }
+    // Several nodes selected: the Inspector edits the primary (docs/specs/selection.md).
+    u32 selected = selection_count(view);
+    if (selected > 1 && search_plain(app)) {
+        igTextDisabled(T("%u selected"), selected);
+        igSameLine(0.0f, -1.0f);
+        if (igSmallButton(TL("Keep one")))
+            selection_keep_primary(view);
+        igSetItemTooltip("%s", T("Keep only the node shown here selected"));
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
     if (search_row(app, "Name", "node rename"))

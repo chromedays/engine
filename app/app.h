@@ -28,6 +28,8 @@
 #endif
 
 #define APP_MAX_CLIPS 16
+#define SELECTION_MAX 256 // selected nodes at once, the primary included (docs/specs/selection.md)
+#define TREE_ROWS_MAX 4096 // Scene tab rows a Shift+click range can reach
 
 #define STRESS_MAX_GRID     16000
 #define STRESS_MAX_CHAIN    1000
@@ -152,12 +154,15 @@ typedef enum SceneKind {
 
 // Undo and redo (docs/specs/undo.md): steps hold a scope's bytes before and after one edit.
 #define UNDO_MAX_STEPS 128
-#define UNDO_MAX_BYTES 1024
+// The Node scope holds every selected node: a node writes at most about 220 bytes (its name, transform,
+// color, joint, camera and light fields with their headers), so a step is sized for SELECTION_MAX nodes.
+#define UNDO_NODE_BYTES 256
+#define UNDO_MAX_BYTES (SELECTION_MAX * UNDO_NODE_BYTES)
 #define UNDO_LABEL_MAX 64
 
 // Parts of the showcase that undo snapshots separately (docs/specs/undo.md).
 typedef enum SaveScope {
-    SAVE_SCOPE_NODE,      // one node
+    SAVE_SCOPE_NODE,      // the selected nodes
     SAVE_SCOPE_CHARACTER, // the character's playback and controls
     SAVE_SCOPE_SCENE,     // planet orbit speed, show bones
     SAVE_SCOPE_COUNT,
@@ -165,7 +170,8 @@ typedef enum SaveScope {
 
 typedef struct UndoStep {
     SaveScope scope;
-    NvNodeId node; // SAVE_SCOPE_NODE
+    NvNodeId nodes[SELECTION_MAX]; // SAVE_SCOPE_NODE, in selection order (the primary first)
+    u32 node_count;
     u32 before_size;
     u32 after_size;
     u8 before[UNDO_MAX_BYTES];
@@ -182,8 +188,9 @@ typedef struct Undo {
     // Each scope as last committed; an idle frame that finds it changed takes a step.
     u8 committed[SAVE_SCOPE_COUNT][UNDO_MAX_BYTES];
     u32 committed_size[SAVE_SCOPE_COUNT];
-    NvNodeId committed_node; // the node SAVE_SCOPE_NODE's bytes are of
-    u32 committed_driven;    // its driven fields then
+    NvNodeId committed_nodes[SELECTION_MAX]; // the nodes SAVE_SCOPE_NODE's bytes are of
+    u32 committed_node_count;
+    u32 committed_driven[SELECTION_MAX];      // their driven fields then
     u8 current[UNDO_MAX_BYTES];
 } Undo;
 
@@ -283,7 +290,12 @@ typedef struct SceneView {
     NvScene* scene;
     NvNodeId camera;
     NvNodeId focus;    // orbited while nothing is selected
-    NvNodeId selected; // shown in the inspector; the camera orbits it
+    // The selection (docs/specs/selection.md): the primary node, picked last, is shown in the
+    // inspector and the camera orbits it; `others` are the rest, oldest first, never the primary.
+    NvNodeId selected;
+    NvNodeId others[SELECTION_MAX - 1];
+    u32 other_count;
+    NvNodeId range_anchor; // where a Shift+click range in the Scene tab starts
     f32 camera_yaw;      // radians
     f32 camera_pitch;    // radians, looking down
     f32 camera_distance; // meters
@@ -599,6 +611,21 @@ typedef struct App {
     bool gizmo_local; // local axes for Move and Rotate (Scale always uses them)
     bool gizmo_snap;
     b32 gizmo_shown;  // drawn last frame, so ImGuizmo's hit test is current
+    // A gizmo drag over several nodes (docs/specs/selection.md): the nodes it moves, their world
+    // matrices and the gizmo's matrix when it started, and the gizmo's matrix now.
+    NvNodeId gizmo_nodes[SELECTION_MAX];
+    NvMat4 gizmo_start_world[SELECTION_MAX];
+    u32 gizmo_node_count;
+    NvMat4 gizmo_start;
+    NvMat4 gizmo_matrix;
+    bool multi_select;  // the phone's Multi toggle: taps add and remove (docs/specs/selection.md)
+    // The Scene tab's rows in the order drawn, this frame's and last frame's, for Shift+click ranges.
+    u32 tree_rows[2][TREE_ROWS_MAX];
+    u32 tree_row_count[2];
+#if !defined(NDEBUG)
+    f32 tree_row_rects[64][4]; // the first rows' rects last frame, CSS pixels (x0, y0, x1, y1), for tests
+#endif
+    b32 selection_full_warned;
     b32 open_inspector; // switch to the Inspector tab on the next frame
     b32 open_stress;    // switch to the Stress tab on the next frame
     b32 open_console;   // switch to the Console tab on the next frame
@@ -650,7 +677,17 @@ NvVec3 effects_test_point(App* app);
 void effects_ui(App* app);
 // The Effects workload of the stress scene: keeps the asked numbers of particles, explosions,
 // missiles, beams and decals going. Call each frame while the stress scene is shown.
-void effects_stress_update(App* app, const StressWorkloads* want, f32 dt);                 // the View tab's Effects section
+void effects_stress_update(App* app, const StressWorkloads* want, f32 dt);
+
+// selection.c (docs/specs/selection.md)
+u32 selection_count(SceneView* view);
+NvNodeId selection_get(SceneView* view, u32 i); // 0 is the primary, then the others
+b32 selection_has(SceneView* view, NvNodeId id);
+void selection_set(SceneView* view, NvNodeId id);              // only this node; 0 clears
+void selection_add(App* app, SceneView* view, NvNodeId id);    // adds it as the primary
+void selection_toggle(App* app, SceneView* view, NvNodeId id); // adds it, or removes it if selected
+void selection_keep_primary(SceneView* view);
+void selection_prune(SceneView* view); // drops nodes that no longer exist
 
 // stress.c
 void stress_build(App* app);
@@ -752,10 +789,11 @@ const char* save_load(App* app, const void* bytes, u32 size);
 const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts);
 // Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
 // (docs/specs/undo.md). Values the app drives every frame are left out.
+// The Node scope holds each of `nodes` in a container, in order; the other scopes ignore them.
 // Returns the size written, or 0 if it did not fit.
-u32 save_write_scope(App* app, SaveScope scope, u32 node, void* buffer, u32 capacity);
+u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity);
 // Applies the fields present. Returns 0, changing nothing, if the bytes are malformed.
-b32 save_apply_scope(App* app, SaveScope scope, u32 node, const void* bytes, u32 size);
+b32 save_apply_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size);
 // Which parts of a node's transform the app drives (bit 0 position, bit 1 rotation).
 u32 save_driven_fields(App* app, u32 node);
 const char* save_field_label(u32 tag); // "Position", "Clip", ...

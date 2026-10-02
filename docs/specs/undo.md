@@ -98,7 +98,7 @@ undoable (Undo and Redo are off while it is shown).
 
 | Scope | Holds (the save's fields) | Left out, because the app drives them |
 |---|---|---|
-| **Node** (the selected node) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform. (Until Edit and Play modes, `play.md`, also the look target's transform, the planet's and the moon's spin, and a walking character's transform; in Edit mode those no longer move by themselves, so they are undoable like any node) |
+| **Node** (the selected nodes, each in a container, in selection order: `selection.md`) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform. (Until Edit and Play modes, `play.md`, also the look target's transform, the planet's and the moon's spin, and a walking character's transform; in Edit mode those no longer move by themselves, so they are undoable like any node) |
 | **Character** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | the clip's time, which the save no longer writes either |
 | **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones | the orbit angle (it only runs while playing) |
 | While playing | Nothing: undo is off, and Stop puts the scene back to the last commit | |
@@ -112,11 +112,11 @@ while they are being typed in (Dear ImGui's); the finished edit is then one step
 | Topic | Decision |
 |---|---|
 | When a step is taken | At the first frame that is idle after a change: no ImGui item active, no gizmo in use, no popup open. The scopes' bytes are compared with the committed ones; each scope that differs becomes a step (committed bytes before, current bytes after), then becomes the committed bytes |
-| Selection | Selecting another node commits its bytes as they are, without a step. Only the selected node is compared, since only it can be edited. So does a change in which of its fields are driven (root motion turned on or off), so that change is not mistaken for an edit |
+| Selection | Selecting another node commits its bytes as they are, without a step. Only the selected nodes are compared, since only they can be edited (the Inspector edits the primary, the gizmo all of them: `selection.md`). So does a change in which of their fields are driven (root motion turned on or off), so that change is not mistaken for an edit. A gizmo drag over several nodes is one step, labeled "N nodes Field" when more than one changed |
 | Undo / redo | Undo applies the step's before-bytes through the save reader, which only touches the fields present; redo applies the after-bytes. The applied bytes become the committed ones, so an undo is not recorded as a new edit. A new step after an undo drops the steps that could have been redone |
-| Undo shows what it changed | A node step selects its node, so the Inspector (and a following camera) show the change |
+| Undo shows what it changed | A node step selects its nodes (the first as the primary), so the Inspector (and a following camera) show the change |
 | History | In memory, 128 steps; the oldest is dropped when full. It is not saved: a reload starts with no history. The state after an undo is autosaved as usual |
-| Step size | Before and after are at most 1 KB each (a node is about 120 bytes); a scope that does not fit is not recorded and asserts in Debug |
+| Step size | Before and after are at most 64 KB each (a node is about 150 bytes, 220 at most, and up to 256 are selected: `UNDO_MAX_BYTES`; 1 KB before `selection.md`); a scope that does not fit is not recorded and asserts in Debug |
 | Keys | Ctrl+Z undo; Ctrl+Shift+Z and Ctrl+Y redo (Cmd counts as Ctrl on macOS). Not while a text field is being edited. Desktop UI only since `shortcuts.md`: the keys live in its table and ask through `Undo.request` |
 | UI | Undo and Redo, disabled when there is nothing to do, while playing, or while the stress scene is shown (`layout.md`): on the desktop UI the Edit menu, each item labeled with what it would change ("Undo: character Position") and showing its shortcut; on the phone UI two buttons at the top bar's left and right ends, without the labels. (Originally a row above the panel's tabs.) The buttons only ask; the undo happens at the frame's end, after the edit in progress (if any) has become a step |
 | Tests | Debug builds expose `Module._app_debug_undo_steps()` and `Module._app_debug_undo_done()` |

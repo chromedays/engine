@@ -105,7 +105,9 @@ app/                 the app: a showcase scene (a planet and moon, an animated c
                      editor (node tree, inspector, view settings, stress workloads), with a
                      desktop UI (docks around the viewport) and a phone UI (one tabbed panel),
                      Play / Stop at the top center of both. It
-                     autosaves the showcase to the browser (IndexedDB), has undo and redo, and
+                     autosaves the showcase to the browser (IndexedDB), has undo and redo,
+                     multiple selection (Ctrl / Shift+click, or Multi on a phone) moved together
+                     by the gizmo, and
                      Edit and Play modes (Play runs the showcase; Stop puts it back). The sun
                      casts shadows (one shadow map; size, format and filter in the View tab), and edges are
                      smoothed with 4x MSAA (a View tab setting). The scene can render at a

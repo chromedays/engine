@@ -426,9 +426,10 @@ internal void apply_view_input(App* app, SceneView* view, const NvSceneOutput* s
     }
 }
 
-// A tap in the viewport selects the mesh under it, or clears the selection. A character's meshes
-// stand for the character, so they select its root. A tap on a bar around a fixed-size image
-// (docs/specs/resolution.md) does nothing.
+// A tap in the viewport selects the mesh under it, or clears the selection. With Ctrl or Shift held,
+// or the phone's Multi toggle on, it adds the mesh or removes it, and empty space changes nothing
+// (docs/specs/selection.md). A character's meshes stand for the character, so they select its root.
+// A tap on a bar around a fixed-size image (docs/specs/resolution.md) does nothing.
 internal void pick(App* app, const NvSceneOutput* scene_output)
 {
     const NvViewInput* in = &app->imgui.view;
@@ -456,20 +457,19 @@ internal void pick(App* app, const NvSceneOutput* scene_output)
             hit = (NvNodeId){node->parent, view->scene->nodes[node->parent].gen};
         app->open_inspector = 1;
     }
-    view->selected = hit;
+    if (app->multi_select || (in->tap_mods & (ImGuiMod_Ctrl | ImGuiMod_Shift)))
+        selection_toggle(app, view, hit);
+    else
+        selection_set(view, hit);
 }
 
-// The selected node's mesh boxes, and those of its mesh children (a character's meshes).
-internal void draw_selection(App* app)
+// A node's mesh boxes, and those of its mesh children (a character's meshes).
+internal void draw_node_boxes(App* app, NvScene* scene, NvNodeId id, NvVec3 color)
 {
-    SceneView* view = app_view(app);
-    if (!view->selected.index)
-        return;
-    NvScene* scene = view->scene;
-    NvNode* selected = nv_scene_get(scene, view->selected);
+    NvNode* selected = nv_scene_get(scene, id);
     u32 nodes[17];
     u32 count = 0;
-    nodes[count++] = view->selected.index;
+    nodes[count++] = id.index;
     if (!selected->mesh.index) {
         for (u32 child = selected->first_child; child && count < NV_ARRAY_COUNT(nodes); child = scene->nodes[child].next_sibling)
             nodes[count++] = child;
@@ -490,10 +490,20 @@ internal void draw_selection(App* app)
         for (u32 c = 0; c < 8; ++c) {
             for (u32 bit = 1; bit < 8; bit <<= 1) {
                 if (!(c & bit))
-                    nv_renderer_debug_line(&app->renderer, corners[c], corners[c | bit], nv_vec3(0.3f, 0.85f, 1.0f));
+                    nv_renderer_debug_line(&app->renderer, corners[c], corners[c | bit], color);
             }
         }
     }
+}
+
+// Every selected node's boxes: the primary's cyan, the others' a darker blue.
+internal void draw_selection(App* app)
+{
+    SceneView* view = app_view(app);
+    for (u32 i = 0; i < view->other_count; ++i)
+        draw_node_boxes(app, view->scene, view->others[i], nv_vec3(0.15f, 0.4f, 0.85f));
+    if (view->selected.index)
+        draw_node_boxes(app, view->scene, view->selected, nv_vec3(0.3f, 0.85f, 1.0f));
 }
 
 // Where the camera orbits when it follows: the selected node, or the view's focus. Cameras and
@@ -575,17 +585,88 @@ internal b32 gizmo_grab(void* data)
     return app->gizmo_shown && ImGuizmo_IsOver_OPERATION(gizmo_imguizmo_operation(app));
 }
 
-// The transform gizmo on the selected node. ImGuizmo edits the world matrix; the result goes back
-// to the node's position, rotation and scale, which nv_scene_update turns into `world` next frame.
+// Puts a world matrix back into the node's position, rotation and scale, which nv_scene_update turns
+// into `world` next frame: world = parent world * joint (for attached nodes) * local.
+internal void set_node_world(NvScene* scene, NvNode* node, NvMat4 world)
+{
+    NvMat4 parent = node->parent ? scene->nodes[node->parent].world : nv_mat4_identity();
+    if (node->attach.animator.index)
+        parent = nv_mat4_mul(parent, node->attach.joint_model);
+    NvMat4 local = nv_mat4_mul(nv_mat4_inverse(parent), world);
+    NvVec3 position, scale;
+    NvQuat rotation;
+    // A scale dragged to (almost) nothing cannot be split back into a rotation.
+    f32 smallest = 1.0e-4f;
+    for (u32 column = 0; column < 3; ++column) {
+        const f32* c = &local.e[column * 4];
+        if (c[0] * c[0] + c[1] * c[1] + c[2] * c[2] < smallest * smallest)
+            return;
+    }
+    nv_mat4_decompose(local, &position, &rotation, &scale);
+    node->position = position;
+    node->rotation = rotation;
+    node->scale = scale;
+}
+
+// The nodes the gizmo moves: the selected ones, without the active camera (the orbit camera's to
+// move) and without those under a selected node, which already move with it.
+internal u32 gizmo_targets(SceneView* view, NvNodeId* out)
+{
+    NvScene* scene = view->scene;
+    u32 count = 0;
+    for (u32 i = 0; i < selection_count(view); ++i) {
+        NvNodeId id = selection_get(view, i);
+        if (id.index == scene->active_camera.index)
+            continue;
+        b32 under_selected = 0;
+        for (u32 p = scene->nodes[id.index].parent; p && !under_selected; p = scene->nodes[p].parent)
+            under_selected = selection_has(view, (NvNodeId){p, scene->nodes[p].gen});
+        if (!under_selected)
+            out[count++] = id;
+    }
+    return count;
+}
+
+// Where the gizmo sits: on the node itself when it moves one node; for several, at their average
+// position, with world axes or the primary's rotation (docs/specs/selection.md).
+internal NvMat4 gizmo_pivot(App* app, NvScene* scene, const NvNodeId* nodes, u32 count)
+{
+    if (count == 1)
+        return nv_scene_get(scene, nodes[0])->world;
+    NvVec3 center = nv_vec3(0, 0, 0);
+    for (u32 i = 0; i < count; ++i)
+        center = nv_vec3_add(center, nv_mat4_translation(nv_scene_get(scene, nodes[i])->world));
+    center = nv_vec3_scale(center, 1.0f / (f32)count);
+    NvQuat rotation = nv_quat_identity();
+    if (app->gizmo_local || app->gizmo_operation == GIZMO_SCALE) {
+        // The primary's rotation, or the first moving node's when the primary is the camera.
+        NvNodeId primary = app_view(app)->selected;
+        NvNodeId axes = primary.index != scene->active_camera.index ? primary : nodes[0];
+        NvVec3 position, scale;
+        nv_mat4_decompose(nv_scene_get(scene, axes)->world, &position, &rotation, &scale);
+    }
+    return nv_mat4_trs(center, rotation, nv_vec3(1, 1, 1));
+}
+
+// The transform gizmo on the selection. ImGuizmo edits a world matrix: for one node its own, for
+// several the pivot's, whose change since the drag started moves every node.
 internal void draw_gizmo(App* app, const NvSceneOutput* scene_output)
 {
     SceneView* view = app_view(app);
     NvScene* scene = view->scene;
     app->gizmo_shown = 0;
-    // The active camera is the orbit camera's to move.
-    if (!view->selected.index || view->selected.index == scene->active_camera.index)
+    // While a drag runs, the nodes it started with stay its nodes; otherwise the selection's.
+    if (!ImGuizmo_IsUsingAny()) {
+        app->gizmo_node_count = gizmo_targets(view, app->gizmo_nodes);
+        if (!app->gizmo_node_count)
+            return;
+        for (u32 i = 0; i < app->gizmo_node_count; ++i)
+            app->gizmo_start_world[i] = nv_scene_get(scene, app->gizmo_nodes[i])->world;
+        app->gizmo_start = gizmo_pivot(app, scene, app->gizmo_nodes, app->gizmo_node_count);
+        app->gizmo_matrix = app->gizmo_start;
+    }
+    if (!app->gizmo_node_count)
         return;
-    NvNode* node = nv_scene_get(scene, view->selected);
 
     NvMat4 view_matrix, projection;
     nv_renderer_camera_matrices(scene, *scene_output, &view_matrix, &projection);
@@ -615,30 +696,25 @@ internal void draw_gizmo(App* app, const NvSceneOutput* scene_output)
     else if (app->gizmo_operation == GIZMO_SCALE)
         snap[0] = 0.1f;
 
-    NvMat4 world = node->world;
     MODE mode = (app->gizmo_local || app->gizmo_operation == GIZMO_SCALE) ? LOCAL : WORLD;
-    if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, world.e, NULL,
-                             snap_now ? snap : NULL, NULL, NULL))
+    if (!ImGuizmo_Manipulate(view_matrix.e, projection.e, gizmo_imguizmo_operation(app), mode, app->gizmo_matrix.e,
+                             NULL, snap_now ? snap : NULL, NULL, NULL))
         return;
 
-    // world = parent world * joint (for attached nodes) * local, as in nv_scene_update.
-    NvMat4 parent = node->parent ? scene->nodes[node->parent].world : nv_mat4_identity();
-    if (node->attach.animator.index)
-        parent = nv_mat4_mul(parent, node->attach.joint_model);
-    NvMat4 local = nv_mat4_mul(nv_mat4_inverse(parent), world);
-    NvVec3 position, scale;
-    NvQuat rotation;
-    // A scale dragged to (almost) nothing cannot be split back into a rotation.
-    f32 smallest = 1.0e-4f;
-    for (u32 column = 0; column < 3; ++column) {
-        const f32* c = &local.e[column * 4];
-        if (c[0] * c[0] + c[1] * c[1] + c[2] * c[2] < smallest * smallest)
-            return;
+    // One node takes the gizmo's matrix as it is. Several take its change since the drag started,
+    // applied to where each was then, so nothing drifts over a long drag.
+    if (app->gizmo_node_count == 1) {
+        NvNodeId id = app->gizmo_nodes[0];
+        if (nv_scene_alive(scene, id))
+            set_node_world(scene, nv_scene_get(scene, id), app->gizmo_matrix);
+        return;
     }
-    nv_mat4_decompose(local, &position, &rotation, &scale);
-    node->position = position;
-    node->rotation = rotation;
-    node->scale = scale;
+    NvMat4 change = nv_mat4_mul(app->gizmo_matrix, nv_mat4_inverse(app->gizmo_start));
+    for (u32 i = 0; i < app->gizmo_node_count; ++i) {
+        NvNodeId id = app->gizmo_nodes[i];
+        if (nv_scene_alive(scene, id))
+            set_node_world(scene, nv_scene_get(scene, id), nv_mat4_mul(change, app->gizmo_start_world[i]));
+    }
 }
 
 internal void draw_bones(App* app)
@@ -811,6 +887,7 @@ internal void frame(void* userdata)
     // IMPORTANT: Before the panel, so ImGuizmo's full-screen window (created on the first frame)
     // stays behind the panel.
     ImGuizmo_BeginFrame();
+    selection_prune(app_view(app));
     app_build_ui(app);
     times->ui = now_ms() - t;
 
@@ -819,6 +896,7 @@ internal void frame(void* userdata)
         update_showcase(app, dt);
     else
         stress_update(app, dt);
+    selection_prune(app_view(app)); // the stress scene may have removed selected nodes
 
     effects_update(app, dt);
     t = now_ms();
@@ -1068,6 +1146,12 @@ EMSCRIPTEN_KEEPALIVE int app_debug_undo_steps(void)
 EMSCRIPTEN_KEEPALIVE int app_debug_undo_done(void)
 {
     return (int)app_state.undo.done;
+}
+
+// The bytes the undo's Node scope holds for the selected nodes, for checking UNDO_NODE_BYTES.
+EMSCRIPTEN_KEEPALIVE int app_debug_undo_node_bytes(void)
+{
+    return (int)app_state.undo.committed_size[SAVE_SCOPE_NODE];
 }
 
 // For tests, the Console tab (docs/specs/console.md). Module._app_debug_log(level, n) adds an "app"
@@ -1344,10 +1428,74 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_chain(int links)
         app_state.stress.want.chain_count = links;
 }
 
+// Sets the stress scene's grid to `cubes` cubes (0 = off).
+EMSCRIPTEN_KEEPALIVE void app_debug_set_grid(int cubes)
+{
+    app_state.stress.want.grid_on = cubes > 0;
+    if (cubes > 0)
+        app_state.stress.want.grid_count = cubes;
+}
+
 // The selected node's index in the shown scene; 0 = none.
 EMSCRIPTEN_KEEPALIVE int app_debug_selected_node(void)
 {
     return (int)app_view(&app_state)->selected.index;
+}
+
+// The selection (docs/specs/selection.md): how many nodes, and the i-th one's index (0 = the primary).
+EMSCRIPTEN_KEEPALIVE int app_debug_selection_count(void)
+{
+    return (int)selection_count(app_view(&app_state));
+}
+
+EMSCRIPTEN_KEEPALIVE int app_debug_selection(int i)
+{
+    SceneView* view = app_view(&app_state);
+    return i >= 0 && (u32)i < selection_count(view) ? (int)selection_get(view, (u32)i).index : 0;
+}
+
+// Selects node `index` of the shown scene: mode 0 only it (0 clears), 1 adds or removes it.
+EMSCRIPTEN_KEEPALIVE void app_debug_select(int index, int mode)
+{
+    SceneView* view = app_view(&app_state);
+    NvNodeId id = index > 0 ? (NvNodeId){(u32)index, view->scene->nodes[index].gen} : (NvNodeId){0};
+    if (mode)
+        selection_toggle(&app_state, view, id);
+    else
+        selection_set(view, id);
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_set_multi(int on)
+{
+    app_state.multi_select = on != 0;
+}
+
+// The index of the shown scene's first live node named as the search buffer's text; 0 = none.
+EMSCRIPTEN_KEEPALIVE int app_debug_find_node(void)
+{
+    NvScene* scene = app_view(&app_state)->scene;
+    for (u32 i = 1; i <= scene->node_count; ++i) {
+        if ((scene->nodes[i].gen & 1) && strcmp(scene->nodes[i].name, app_state.search.debug_buffer) == 0)
+            return (int)i;
+    }
+    return 0;
+}
+
+// The Scene tab's k-th row last frame: component 0 its node index, 1 to 4 its rect (x0, y0, x1, y1).
+EMSCRIPTEN_KEEPALIVE float app_debug_tree_row(int k, int component)
+{
+    if (k < 0 || (u32)k >= app_state.tree_row_count[0] || k >= (int)NV_ARRAY_COUNT(app_state.tree_row_rects))
+        return 0.0f;
+    return component ? app_state.tree_row_rects[k][component - 1] : (f32)app_state.tree_rows[0][k];
+}
+
+// Node `index` of the shown scene: which 0 to 2 its world position, 3 to 5 its local position.
+EMSCRIPTEN_KEEPALIVE float app_debug_node(int index, int which)
+{
+    NvNode* node = &app_view(&app_state)->scene->nodes[index];
+    NvVec3 world = nv_mat4_translation(node->world);
+    f32 values[6] = {world.x, world.y, world.z, node->position.x, node->position.y, node->position.z};
+    return values[which];
 }
 
 // For tests: Module._app_debug_save_crc() is a CRC-32 of the save the state would write now, so a

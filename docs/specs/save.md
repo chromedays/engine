@@ -411,7 +411,8 @@ describe created nodes; older builds will skip them.
 | `FOLW` | u32 | `follow_selection` | 0 |
 | `ORBT` | f32[3] | `orbit_point` (where the camera looks while not following) | start value |
 | `PAN ` | f32[3] | `pan` (offset from the followed selection) | (0, 0, 0) |
-| `SELN` | u32[] | the selected node's path; empty = nothing selected | the start selection |
+| `SELN` | u32[] | the selected (primary) node's path; empty = nothing selected | the start selection |
+| `SELO` | u32[] | the other selected nodes' paths (`selection.md`), each as its length followed by its indices; written only when there are others | none; a broken list also gives none |
 
 `pan` is restored as belonging to the restored selection (`panned_for`). The view's `focus` and
 `camera` are fixed by the build and not saved.
