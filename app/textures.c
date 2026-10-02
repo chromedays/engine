@@ -191,6 +191,19 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
             .preview = 1,
         };
     }
+    if (renderer->bloom_texture && count < capacity) {
+        entries[count++] = (TextureEntry){
+            .kind = TEXTURE_BLOOM,
+            .texture = renderer->bloom_texture,
+            .name = "bloom",
+            .width = renderer->bloom_width,
+            .height = renderer->bloom_height,
+            .mip_count = NV_BLOOM_LEVELS,
+            .format = NV_SCENE_FORMAT,
+            .in_use = 1,
+            .preview = 1,
+        };
+    }
     if (renderer->msaa_color && count < capacity) {
         entries[count++] = (TextureEntry){
             .kind = TEXTURE_MSAA,

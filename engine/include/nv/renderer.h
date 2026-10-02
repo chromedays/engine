@@ -118,6 +118,7 @@ typedef struct NvShadowSettings {
 // The scene is rendered in linear HDR (docs/specs/vfx.md): colors above 1 are kept until the upscale
 // pass multiplies by the exposure, tone maps and writes the canvas.
 #define NV_SCENE_FORMAT WGPUTextureFormat_RGBA16Float
+#define NV_BLOOM_LEVELS 6
 
 typedef enum NvToneMap {
     NV_TONE_CLAMP,       // cut at 1: what the renderer showed before HDR
@@ -208,6 +209,22 @@ typedef struct NvRenderer {
     // Tone mapping and bloom, applied by the upscale pass.
     NvPostSettings post;
 
+    // Bloom (docs/specs/vfx.md): a chain of NV_BLOOM_LEVELS mips, each half the last, starting at half the
+    // scene targets' size. The scene color is downsampled into it (13 taps, a Karis average on the first
+    // step), then each level is added back into the one above with a tent filter; the upscale pass
+    // adds mip 0 to the scene. Made while `post.bloom` is on.
+    WGPUTexture bloom_texture;
+    WGPUTextureView bloom_views[NV_BLOOM_LEVELS]; // one mip level each
+    u32 bloom_width, bloom_height;                // of mip 0
+    WGPURenderPipeline bloom_down_first_pipeline, bloom_down_pipeline, bloom_up_pipeline;
+    WGPUBindGroupLayout bloom_layout;
+    WGPUBindGroup bloom_groups[NV_BLOOM_LEVELS + 1]; // by source: the scene color, then each mip
+    WGPUBuffer bloom_buffer;                         // one uniform block per pass, read with dynamic offsets
+    WGPUSampler bloom_sampler;                       // linear, clamped
+    WGPUTexture bloom_dummy;                         // 1x1 black, bound while there is no chain
+    WGPUTextureView bloom_dummy_view;
+    b32 bloom_recorded;                              // this frame's bloom passes wrote timestamps
+
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.
     NvShadowSettings shadows;
@@ -251,6 +268,7 @@ typedef struct NvRenderer {
     f64 gpu_ms;             // latest scene pass time; 0 without timestamps
     f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
     f64 gpu_upscale_ms;     // latest upscale pass time; 0 without timestamps
+    f64 gpu_bloom_ms;       // latest time of all the bloom passes; 0 without timestamps or bloom
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);

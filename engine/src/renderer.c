@@ -5,9 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#define NV_TIMESTAMP_COUNT 6 // scene (0, 1), shadow (2, 3), upscale (4, 5)
+#define NV_TIMESTAMP_COUNT 12 // scene (0, 1), shadow (2, 3), upscale (4, 5), bloom (6 to 9), particles (10, 11)
 
 internal void create_upscale_pipeline(NvRenderer* renderer);
+internal void create_bloom_pipelines(NvRenderer* renderer);
 
 #define NO_SKIN 0xFFFFFFFFu
 
@@ -504,6 +505,7 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     renderer->scene_samples = 1;
     create_pipelines(renderer);
     create_upscale_pipeline(renderer);
+    create_bloom_pipelines(renderer);
 
     WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
     sampler_desc.addressModeU = WGPUAddressMode_Repeat;
@@ -758,10 +760,13 @@ internal const char* upscale_shader =
     "    size: vec2f,\n"
     "    exposure: f32,\n"
     "    tone: f32,\n"
-    "    bloom: vec4f,\n" // x: intensity (0 = off)
+    "    bloom: vec4f,\n"     // x: intensity (0 = off), yz: the valid size of bloom mip 0 in texels
+    "    bloom_tex: vec4f,\n" // xy: the size of that mip's texture
     "}\n"
     "@group(0) @binding(0) var<uniform> p: Params;\n"
     "@group(0) @binding(1) var scene: texture_2d<f32>;\n"
+    "@group(0) @binding(2) var bloom_tex: texture_2d<f32>;\n"
+    "@group(0) @binding(3) var bloom_sampler: sampler;\n"
     "@vertex\n"
     "fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
     "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
@@ -804,8 +809,13 @@ internal const char* upscale_shader =
     "    // Nearest: the scene pixel under this screen pixel, counted from the image's corner.\n"
     "    let t = vec2i(floor((pos.xy - p.origin) / p.block));\n"
     "    let c = clamp(t, vec2i(0), vec2i(p.size) - vec2i(1));\n"
-    "    let color = textureLoad(scene, c, 0);\n"
-    "    return vec4f(tone_map(color.rgb), 1.0);\n"
+    "    var color = textureLoad(scene, c, 0).rgb;\n"
+    // Bloom mip 0 covers two scene pixels per texel; bilinear, kept inside what the chain wrote.
+    "    if (p.bloom.x > 0.0) {\n"
+    "        let q = clamp((vec2f(c) + vec2f(0.5)) * 0.5, vec2f(0.5), p.bloom.yz - vec2f(0.5));\n"
+    "        color += textureSampleLevel(bloom_tex, bloom_sampler, q / p.bloom_tex.xy, 0.0).rgb * p.bloom.x;\n"
+    "    }\n"
+    "    return vec4f(tone_map(color), 1.0);\n"
     "}\n";
 
 internal void create_upscale_pipeline(NvRenderer* renderer)
@@ -827,7 +837,321 @@ internal void create_upscale_pipeline(NvRenderer* renderer)
     desc.fragment = &fragment;
     renderer->upscale_pipeline = wgpuDeviceCreateRenderPipeline(gpu->device, &desc);
     wgpuShaderModuleRelease(module);
-    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 48);
+    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 64);
+}
+
+// The upscale pass's bind group: the scene color, and bloom mip 0 (a 1x1 black texture while there
+// is no chain, with the intensity 0 so it is not added).
+internal void rebuild_upscale_group(NvRenderer* renderer)
+{
+    NvGpu* gpu = renderer->gpu;
+    if (renderer->upscale_group)
+        wgpuBindGroupRelease(renderer->upscale_group);
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(renderer->upscale_pipeline, 0);
+    WGPUBindGroupEntry entries[4] = {
+        {.binding = 0, .buffer = renderer->upscale_buffer, .size = 64},
+        {.binding = 1, .textureView = renderer->scene_color_view},
+        {.binding = 2, .textureView = renderer->bloom_texture ? renderer->bloom_views[0] : renderer->bloom_dummy_view},
+        {.binding = 3, .sampler = renderer->bloom_sampler},
+    };
+    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    group_desc.layout = layout;
+    group_desc.entryCount = 4;
+    group_desc.entries = entries;
+    renderer->upscale_group = wgpuDeviceCreateBindGroup(gpu->device, &group_desc);
+    wgpuBindGroupLayoutRelease(layout);
+}
+
+// Bloom after Jorge Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
+// (SIGGRAPH 2014): a 13-tap downsample (the first step weights its groups of four taps by
+// 1 / (1 + luma), Karis's average, so a single very bright pixel does not flicker) and a 3x3 tent
+// upsample added into the level above. Every tap is clamped to what the level before it wrote, so the
+// padding of the scene targets does not bleed in.
+internal const char* bloom_shader =
+    "struct Pass {\n"
+    "    src_tex: vec2f,\n"    // the source texture's size in texels
+    "    src_region: vec2f,\n" // the part of it that holds the image
+    "}\n"
+    "@group(0) @binding(0) var<uniform> p: Pass;\n"
+    "@group(0) @binding(1) var src: texture_2d<f32>;\n"
+    "@group(0) @binding(2) var samp: sampler;\n"
+    "@vertex\n"
+    "fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
+    "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
+    "    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);\n"
+    "}\n"
+    "fn tap(q: vec2f) -> vec3f {\n"
+    "    let c = clamp(q, vec2f(0.5), p.src_region - vec2f(0.5));\n"
+    "    return textureSampleLevel(src, samp, c / p.src_tex, 0.0).rgb;\n"
+    "}\n"
+    "fn karis(c: vec3f) -> f32 {\n"
+    "    return 1.0 / (1.0 + dot(c, vec3f(0.2126, 0.7152, 0.0722)));\n"
+    "}\n"
+    // Two destination pixels are one source pixel apart on each axis, so the destination pixel's center
+    // is the corner shared by four source texels, and a bilinear tap there averages them.
+    "@fragment\n"
+    "fn fs_down_first(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "    let o = pos.xy * 2.0;\n"
+    "    let a = tap(o + vec2f(-2.0, -2.0)); let b = tap(o + vec2f(0.0, -2.0)); let c = tap(o + vec2f(2.0, -2.0));\n"
+    "    let d = tap(o + vec2f(-2.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(2.0, 0.0));\n"
+    "    let g = tap(o + vec2f(-2.0, 2.0));  let h = tap(o + vec2f(0.0, 2.0));  let i = tap(o + vec2f(2.0, 2.0));\n"
+    "    let j = tap(o + vec2f(-1.0, -1.0)); let k = tap(o + vec2f(1.0, -1.0));\n"
+    "    let l = tap(o + vec2f(-1.0, 1.0));  let m = tap(o + vec2f(1.0, 1.0));\n"
+    "    var g0 = (a + b + d + e) * (0.125 / 4.0);\n"
+    "    var g1 = (b + c + e + f) * (0.125 / 4.0);\n"
+    "    var g2 = (d + e + g + h) * (0.125 / 4.0);\n"
+    "    var g3 = (e + f + h + i) * (0.125 / 4.0);\n"
+    "    var g4 = (j + k + l + m) * (0.5 / 4.0);\n"
+    "    g0 *= karis(g0); g1 *= karis(g1); g2 *= karis(g2); g3 *= karis(g3); g4 *= karis(g4);\n"
+    "    return vec4f(max(g0 + g1 + g2 + g3 + g4, vec3f(0.0001)), 1.0);\n"
+    "}\n"
+    "@fragment\n"
+    "fn fs_down(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "    let o = pos.xy * 2.0;\n"
+    "    let a = tap(o + vec2f(-2.0, -2.0)); let b = tap(o + vec2f(0.0, -2.0)); let c = tap(o + vec2f(2.0, -2.0));\n"
+    "    let d = tap(o + vec2f(-2.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(2.0, 0.0));\n"
+    "    let g = tap(o + vec2f(-2.0, 2.0));  let h = tap(o + vec2f(0.0, 2.0));  let i = tap(o + vec2f(2.0, 2.0));\n"
+    "    let j = tap(o + vec2f(-1.0, -1.0)); let k = tap(o + vec2f(1.0, -1.0));\n"
+    "    let l = tap(o + vec2f(-1.0, 1.0));  let m = tap(o + vec2f(1.0, 1.0));\n"
+    "    let down = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;\n"
+    "    return vec4f(down, 1.0);\n"
+    "}\n"
+    // The destination is twice the source's size; the tent reaches one source texel around.
+    "@fragment\n"
+    "fn fs_up(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
+    "    let o = pos.xy * 0.5;\n"
+    "    let a = tap(o + vec2f(-1.0, 1.0));  let b = tap(o + vec2f(0.0, 1.0));  let c = tap(o + vec2f(1.0, 1.0));\n"
+    "    let d = tap(o + vec2f(-1.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(1.0, 0.0));\n"
+    "    let g = tap(o + vec2f(-1.0, -1.0)); let h = tap(o + vec2f(0.0, -1.0)); let i = tap(o + vec2f(1.0, -1.0));\n"
+    "    return vec4f((e * 4.0 + (b + d + f + h) * 2.0 + (a + c + g + i)) * (1.0 / 16.0), 0.0);\n"
+    "}\n";
+
+#define BLOOM_PASSES (2 * NV_BLOOM_LEVELS - 1) // six downsamples and five upsamples
+#define BLOOM_UNIFORM_STRIDE 256               // the uniform dynamic offset alignment WebGPU guarantees
+
+internal void create_bloom_pipelines(NvRenderer* renderer)
+{
+    NvGpu* gpu = renderer->gpu;
+    WGPUDevice device = gpu->device;
+    WGPUBindGroupLayoutEntry entries[3] = {
+        {.binding = 0, .visibility = WGPUShaderStage_Fragment,
+         .buffer = {.type = WGPUBufferBindingType_Uniform, .hasDynamicOffset = 1, .minBindingSize = 16}},
+        {.binding = 1, .visibility = WGPUShaderStage_Fragment,
+         .texture = {.sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D}},
+        {.binding = 2, .visibility = WGPUShaderStage_Fragment, .sampler = {.type = WGPUSamplerBindingType_Filtering}},
+    };
+    WGPUBindGroupLayoutDescriptor layout_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
+    layout_desc.entryCount = 3;
+    layout_desc.entries = entries;
+    renderer->bloom_layout = wgpuDeviceCreateBindGroupLayout(device, &layout_desc);
+    WGPUPipelineLayout pipeline_layout = create_pipeline_layout(device, &renderer->bloom_layout, 1);
+    WGPUShaderModule module = create_shader(device, bloom_shader);
+
+    const char* fragments[3] = {"fs_down_first", "fs_down", "fs_up"};
+    WGPURenderPipeline* pipelines[3] = {&renderer->bloom_down_first_pipeline, &renderer->bloom_down_pipeline, &renderer->bloom_up_pipeline};
+    const char* labels[3] = {"bloom downsample (first)", "bloom downsample", "bloom upsample"};
+    for (u32 i = 0; i < 3; ++i) {
+        // The upsample is added into the level it writes.
+        WGPUBlendState add = WGPU_BLEND_STATE_INIT;
+        add.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
+        add.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_One};
+        WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
+        target.format = NV_SCENE_FORMAT;
+        target.blend = i == 2 ? &add : NULL;
+        WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
+        fragment.module = module;
+        fragment.entryPoint = (WGPUStringView){fragments[i], WGPU_STRLEN};
+        fragment.targetCount = 1;
+        fragment.targets = &target;
+        WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+        desc.label = (WGPUStringView){labels[i], WGPU_STRLEN};
+        desc.layout = pipeline_layout;
+        desc.vertex.module = module;
+        desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
+        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+        desc.fragment = &fragment;
+        *pipelines[i] = wgpuDeviceCreateRenderPipeline(device, &desc);
+    }
+    wgpuShaderModuleRelease(module);
+    wgpuPipelineLayoutRelease(pipeline_layout);
+
+    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
+    sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
+    sampler_desc.magFilter = WGPUFilterMode_Linear;
+    sampler_desc.minFilter = WGPUFilterMode_Linear;
+    renderer->bloom_sampler = wgpuDeviceCreateSampler(device, &sampler_desc);
+    renderer->bloom_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, BLOOM_PASSES * BLOOM_UNIFORM_STRIDE);
+
+    WGPUTextureDescriptor dummy_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    dummy_desc.label = (WGPUStringView){"bloom placeholder", WGPU_STRLEN};
+    dummy_desc.usage = WGPUTextureUsage_TextureBinding;
+    dummy_desc.size = (WGPUExtent3D){1, 1, 1};
+    dummy_desc.format = NV_SCENE_FORMAT;
+    renderer->bloom_dummy = wgpuDeviceCreateTexture(device, &dummy_desc);
+    renderer->bloom_dummy_view = wgpuTextureCreateView(renderer->bloom_dummy, NULL);
+}
+
+internal void release_bloom_chain(NvRenderer* renderer)
+{
+    for (u32 i = 0; i <= NV_BLOOM_LEVELS; ++i) {
+        if (renderer->bloom_groups[i])
+            wgpuBindGroupRelease(renderer->bloom_groups[i]);
+        renderer->bloom_groups[i] = NULL;
+    }
+    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i) {
+        if (renderer->bloom_views[i])
+            wgpuTextureViewRelease(renderer->bloom_views[i]);
+        renderer->bloom_views[i] = NULL;
+    }
+    if (renderer->bloom_texture)
+        wgpuTextureRelease(renderer->bloom_texture);
+    renderer->bloom_texture = NULL;
+    renderer->bloom_width = renderer->bloom_height = 0;
+}
+
+// The pass bind groups by source: the scene color, then each bloom mip. Made again when either changed.
+internal void rebuild_bloom_groups(NvRenderer* renderer)
+{
+    if (!renderer->bloom_texture)
+        return;
+    for (u32 i = 0; i <= NV_BLOOM_LEVELS; ++i) {
+        if (renderer->bloom_groups[i])
+            wgpuBindGroupRelease(renderer->bloom_groups[i]);
+        WGPUBindGroupEntry entries[3] = {
+            {.binding = 0, .buffer = renderer->bloom_buffer, .size = 16},
+            {.binding = 1, .textureView = i == 0 ? renderer->scene_color_view : renderer->bloom_views[i - 1]},
+            {.binding = 2, .sampler = renderer->bloom_sampler},
+        };
+        WGPUBindGroupDescriptor desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        desc.layout = renderer->bloom_layout;
+        desc.entryCount = 3;
+        desc.entries = entries;
+        renderer->bloom_groups[i] = wgpuDeviceCreateBindGroup(renderer->gpu->device, &desc);
+    }
+}
+
+// Keeps the bloom chain while bloom is on, at half the size of the scene targets.
+internal void update_bloom(NvRenderer* renderer)
+{
+    NvGpu* gpu = renderer->gpu;
+    b32 want = renderer->post.bloom && renderer->post.bloom_intensity > 0.0f;
+    if (!want) {
+        if (renderer->bloom_texture) {
+            release_bloom_chain(renderer);
+            rebuild_upscale_group(renderer);
+            nv_log(NV_LOG_INFO, "nv", "bloom: off");
+        }
+        return;
+    }
+    u32 width = renderer->target_width / 2, height = renderer->target_height / 2;
+    if (renderer->bloom_texture && renderer->bloom_width == width && renderer->bloom_height == height)
+        return;
+    release_bloom_chain(renderer);
+    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"bloom", WGPU_STRLEN};
+    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    desc.size = (WGPUExtent3D){width, height, 1};
+    desc.format = NV_SCENE_FORMAT;
+    desc.mipLevelCount = NV_BLOOM_LEVELS;
+    renderer->bloom_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
+    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i) {
+        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+        view_desc.baseMipLevel = i;
+        view_desc.mipLevelCount = 1;
+        renderer->bloom_views[i] = wgpuTextureCreateView(renderer->bloom_texture, &view_desc);
+    }
+    renderer->bloom_width = width;
+    renderer->bloom_height = height;
+    rebuild_bloom_groups(renderer);
+    rebuild_upscale_group(renderer);
+    u64 bytes = nv_gpu_texture_bytes(width, height, NV_BLOOM_LEVELS, NV_SCENE_FORMAT);
+    nv_log(NV_LOG_INFO, "nv", "bloom chain: %ux%u %s, %u mips (%.1f MB), downsampled from the scene color and added back up", width, height,
+           nv_gpu_format_name(NV_SCENE_FORMAT), NV_BLOOM_LEVELS, (f64)bytes / (1024.0 * 1024.0));
+}
+
+// The size of bloom mip `level` for a scene of `width` x `height` pixels: half the last, rounded up.
+internal void bloom_region(u32 width, u32 height, u32 level, u32 out[2])
+{
+    for (u32 i = 0; i <= level; ++i) {
+        width = (width + 1) / 2;
+        height = (height + 1) / 2;
+    }
+    out[0] = width ? width : 1;
+    out[1] = height ? height : 1;
+}
+
+// Records the downsample and upsample passes, between the scene pass and the upscale pass.
+internal void record_bloom(NvRenderer* renderer, WGPUCommandEncoder encoder, u32 scene_width, u32 scene_height)
+{
+    u32 region[NV_BLOOM_LEVELS][2];
+    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i)
+        bloom_region(scene_width, scene_height, i, region[i]);
+
+    // Pass k writes `dst` from `src` (src 0 is the scene color, src n + 1 is mip n).
+    typedef struct BloomPass {
+        u32 dst, src;
+        WGPURenderPipeline pipeline;
+        b32 add;
+    } BloomPass;
+    BloomPass passes[BLOOM_PASSES];
+    u32 count = 0;
+    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i)
+        passes[count++] = (BloomPass){i, i, i == 0 ? renderer->bloom_down_first_pipeline : renderer->bloom_down_pipeline, 0};
+    for (s32 i = NV_BLOOM_LEVELS - 2; i >= 0; --i)
+        passes[count++] = (BloomPass){(u32)i, (u32)i + 2, renderer->bloom_up_pipeline, 1};
+    NV_ASSERT(count == BLOOM_PASSES);
+
+    local_persist f32 uniforms[BLOOM_PASSES * BLOOM_UNIFORM_STRIDE / sizeof(f32)];
+    memset(uniforms, 0, sizeof(uniforms));
+    for (u32 k = 0; k < count; ++k) {
+        f32* u = uniforms + k * BLOOM_UNIFORM_STRIDE / sizeof(f32);
+        u32 src = passes[k].src;
+        if (src == 0) {
+            u[0] = (f32)renderer->target_width;
+            u[1] = (f32)renderer->target_height;
+            u[2] = (f32)scene_width;
+            u[3] = (f32)scene_height;
+        } else {
+            u32 mip = src - 1;
+            u[0] = (f32)(renderer->bloom_width >> mip ? renderer->bloom_width >> mip : 1);
+            u[1] = (f32)(renderer->bloom_height >> mip ? renderer->bloom_height >> mip : 1);
+            u[2] = (f32)region[mip][0];
+            u[3] = (f32)region[mip][1];
+        }
+    }
+    wgpuQueueWriteBuffer(renderer->gpu->queue, renderer->bloom_buffer, 0, uniforms, sizeof(uniforms));
+
+    for (u32 k = 0; k < count; ++k) {
+        WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+        color.view = renderer->bloom_views[passes[k].dst];
+        color.loadOp = passes[k].add ? WGPULoadOp_Load : WGPULoadOp_Clear;
+        color.storeOp = WGPUStoreOp_Store;
+        WGPURenderPassDescriptor desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+        desc.label = (WGPUStringView){passes[k].add ? "bloom up" : "bloom down", WGPU_STRLEN};
+        desc.colorAttachmentCount = 1;
+        desc.colorAttachments = &color;
+        // The first pass starts the timing (queries 6 and 7) and the last ends it (8 and 9); a pass's
+        // timestamps must both be given, so the span is from 6 to 9.
+        WGPUPassTimestampWrites timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
+        if (renderer->timestamp_copied && (k == 0 || k == count - 1)) {
+            timestamps.querySet = renderer->timestamp_queries;
+            timestamps.beginningOfPassWriteIndex = k == 0 ? 6 : 8;
+            timestamps.endOfPassWriteIndex = k == 0 ? 7 : 9;
+            desc.timestampWrites = &timestamps;
+        }
+        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &desc);
+        u32 dst_w = region[passes[k].dst][0], dst_h = region[passes[k].dst][1];
+        wgpuRenderPassEncoderSetViewport(pass, 0.0f, 0.0f, (f32)dst_w, (f32)dst_h, 0.0f, 1.0f);
+        wgpuRenderPassEncoderSetScissorRect(pass, 0, 0, dst_w, dst_h);
+        wgpuRenderPassEncoderSetPipeline(pass, passes[k].pipeline);
+        u32 offset = k * BLOOM_UNIFORM_STRIDE;
+        wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->bloom_groups[passes[k].src], 1, &offset);
+        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
+        wgpuRenderPassEncoderEnd(pass);
+        wgpuRenderPassEncoderRelease(pass);
+    }
+    renderer->bloom_recorded = renderer->timestamp_copied;
 }
 
 // Keeps the scene's targets: the color target the upscale pass samples, the multisampled color
@@ -858,19 +1182,8 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
         create_color_target(gpu, "scene color", need_width, need_height, 1,
                             WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding, &renderer->scene_color,
                             &renderer->scene_color_view);
-        if (renderer->upscale_group)
-            wgpuBindGroupRelease(renderer->upscale_group);
-        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(renderer->upscale_pipeline, 0);
-        WGPUBindGroupEntry entries[2] = {
-            {.binding = 0, .buffer = renderer->upscale_buffer, .size = 48},
-            {.binding = 1, .textureView = renderer->scene_color_view},
-        };
-        WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        group_desc.layout = layout;
-        group_desc.entryCount = 2;
-        group_desc.entries = entries;
-        renderer->upscale_group = wgpuDeviceCreateBindGroup(gpu->device, &group_desc);
-        wgpuBindGroupLayoutRelease(layout);
+        rebuild_upscale_group(renderer);
+        rebuild_bloom_groups(renderer);
         nv_log(NV_LOG_INFO, "nv", "scene color target: %ux%u %s, linear HDR (%.1f MB) for a scene of %ux%u, tone mapped and shown with the nearest filter",
                need_width, need_height, nv_gpu_format_name(NV_SCENE_FORMAT), target_megabytes(need_width, need_height, 1), width, height);
     }
@@ -1133,6 +1446,7 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         output = (NvSceneOutput){gpu->width, gpu->height, {0, 0, gpu->width, gpu->height}, 1.0f, 1.0f};
     NV_ASSERT(output.image.x + output.image.width <= gpu->width && output.image.y + output.image.height <= gpu->height);
     update_scene_targets(renderer, output.width, output.height);
+    update_bloom(renderer);
     update_shadow_map(renderer);
     renderer->scene_width = output.width;
     renderer->scene_height = output.height;
@@ -1343,14 +1657,25 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     wgpuRenderPassEncoderEnd(pass);
     wgpuRenderPassEncoderRelease(pass);
 
+    if (renderer->bloom_texture)
+        record_bloom(renderer, encoder, output.width, output.height);
+    else
+        renderer->bloom_recorded = 0;
+
     // The upscale pass: the scene color target, shown with the nearest filter in the image's
     // rectangle of the canvas. The canvas is cleared to black first, which is the bars around a
     // fixed size; the docks drawn later cover the rest.
     NvPostSettings* post = &renderer->post;
     f32 exposure = post->exposure > 0.0f ? post->exposure : 1.0f;
     f32 tone = (f32)(post->tone < NV_TONE_COUNT ? post->tone : NV_TONE_CLAMP);
-    f32 params[12] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height,
-                      exposure, tone, 0.0f, 0.0f, 0.0f, 0.0f};
+    u32 bloom_size[2] = {1, 1};
+    if (renderer->bloom_texture)
+        bloom_region(output.width, output.height, 0, bloom_size);
+    f32 bloom_intensity = renderer->bloom_texture ? post->bloom_intensity : 0.0f;
+    f32 params[16] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height,
+                      exposure, tone,
+                      bloom_intensity, (f32)bloom_size[0], (f32)bloom_size[1], 0.0f,
+                      (f32)(renderer->bloom_texture ? renderer->bloom_width : 1), (f32)(renderer->bloom_texture ? renderer->bloom_height : 1), 0.0f, 0.0f};
     wgpuQueueWriteBuffer(queue, renderer->upscale_buffer, 0, params, sizeof(params));
     WGPURenderPassColorAttachment upscale_color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
     upscale_color.view = target;
@@ -1400,6 +1725,8 @@ internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView mes
             renderer->gpu_shadow_ms = ticks[3] > ticks[2] ? (f64)(ticks[3] - ticks[2]) / 1.0e6 : 0.0;
         if (ticks)
             renderer->gpu_upscale_ms = ticks[5] > ticks[4] ? (f64)(ticks[5] - ticks[4]) / 1.0e6 : 0.0;
+        if (ticks)
+            renderer->gpu_bloom_ms = renderer->bloom_texture && ticks[9] > ticks[6] ? (f64)(ticks[9] - ticks[6]) / 1.0e6 : 0.0;
         wgpuBufferUnmap(renderer->timestamp_readback);
     }
     renderer->timestamp_mapping = 0;

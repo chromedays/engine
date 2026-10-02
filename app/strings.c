@@ -118,6 +118,8 @@ local_persist const Entry entries[] = {
     {"PBR Neutral", "PBR Neutral"},
     {"ACES", "ACES"},
     {"Exposure", "노출"},
+    {"Bloom", "블룸"},
+    {"Bloom intensity", "블룸 세기"},
     {"off", "끔"},
     {"Resolution", "해상도"},
     {"Workloads", "부하"},

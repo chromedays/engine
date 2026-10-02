@@ -219,6 +219,7 @@ typedef enum TextureKind {
     TEXTURE_SHADOW,
     TEXTURE_DEPTH,
     TEXTURE_SCENE,    // the scene color target, the scene's resolution (allocated a little larger)
+    TEXTURE_BLOOM,    // the bloom chain (docs/specs/vfx.md), while bloom is on
     TEXTURE_MSAA,     // the multisampled color target the scene pass resolves into the swapchain
     TEXTURE_SWAPCHAIN,
     TEXTURE_UI,       // NvImgui.textures

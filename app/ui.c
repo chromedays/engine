@@ -310,6 +310,13 @@ internal void post_ui(App* app)
     }
     if (search_row(app, "Exposure", "brightness hdr"))
         igSliderFloat(TL("Exposure"), &post->exposure, 0.25f, 4.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+    bool bloom = post->bloom;
+    if (search_row(app, "Bloom", "glow hdr bright")) {
+        if (igCheckbox(TL("Bloom"), &bloom))
+            post->bloom = bloom;
+    }
+    if (search_row(app, "Bloom intensity", "glow hdr bright strength"))
+        igSliderFloat(TL("Bloom intensity"), &post->bloom_intensity, 0.0f, 0.2f, "%.3f", 0);
 }
 
 internal u32 clamp_u32(u32 value, u32 lo, u32 hi)

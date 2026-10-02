@@ -951,6 +951,19 @@ EMSCRIPTEN_KEEPALIVE void app_debug_set_post(int tone, float exposure, int bloom
     app_state.renderer.post = (NvPostSettings){.tone = (NvToneMap)tone, .exposure = exposure, .bloom = bloom != 0, .bloom_intensity = intensity};
 }
 
+// Sets the intensity of the shown scene's first directional light, to put values above 1 on screen.
+EMSCRIPTEN_KEEPALIVE void app_debug_set_sun(float intensity)
+{
+    NvScene* scene = app_view(&app_state)->scene;
+    for (u32 index = 1; index <= scene->node_count; ++index) {
+        NvNode* node = &scene->nodes[index];
+        if ((node->gen & 1) && node->light.type == NV_LIGHT_DIRECTIONAL) {
+            node->light.intensity = intensity;
+            return;
+        }
+    }
+}
+
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
 EMSCRIPTEN_KEEPALIVE int app_debug_gizmo(int which)
 {
