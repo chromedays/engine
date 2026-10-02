@@ -31,6 +31,10 @@
 #define TAG_DKRW NV_TAG('D', 'K', 'R', 'W') // desktop: right dock width
 #define TAG_DKBH NV_TAG('D', 'K', 'B', 'H') // desktop: bottom dock height
 #define TAG_DKBO NV_TAG('D', 'K', 'B', 'O') // desktop: bottom dock open
+#define TAG_TONE NV_TAG('T', 'O', 'N', 'E') // tone mapping: 0 Clamp, 1 PBR Neutral, 2 ACES (docs/specs/vfx.md)
+#define TAG_EXPO NV_TAG('E', 'X', 'P', 'O') // exposure, 0.25 to 4
+#define TAG_BLOM NV_TAG('B', 'L', 'O', 'M') // bloom on
+#define TAG_BLMI NV_TAG('B', 'L', 'M', 'I') // bloom intensity, 0 to 0.2
 #define TAG_LANG NV_TAG('L', 'A', 'N', 'G') // the UI's language: 0 English, 1 Korean (docs/specs/korean.md)
 // SCNE
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
@@ -277,6 +281,10 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_f32(&w, TAG_SHDS, shadows->distance);
     nv_chunk_u32(&w, TAG_SHBX, shadows->show_box);
     nv_chunk_u32(&w, TAG_MSAA, app->renderer.msaa);
+    nv_chunk_u32(&w, TAG_TONE, (u32)app->renderer.post.tone);
+    nv_chunk_f32(&w, TAG_EXPO, app->renderer.post.exposure);
+    nv_chunk_u32(&w, TAG_BLOM, app->renderer.post.bloom);
+    nv_chunk_f32(&w, TAG_BLMI, app->renderer.post.bloom_intensity);
     nv_chunk_u32(&w, TAG_RSMD, (u32)app->resolution.mode);
     nv_chunk_u32(&w, TAG_RSCL, app->resolution.divisor);
     nv_chunk_u32(&w, TAG_RSFT, (u32)app->resolution.fixed_fit);
@@ -342,6 +350,12 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_SHBX, (u32*)&shadows.show_box, 1);
     u32 msaa = app->renderer.msaa;
     nv_chunk_read_u32s(r, edit, TAG_MSAA, &msaa, 1);
+    NvPostSettings post = app->renderer.post;
+    u32 tone = (u32)post.tone;
+    nv_chunk_read_u32s(r, edit, TAG_TONE, &tone, 1);
+    nv_chunk_read_f32s(r, edit, TAG_EXPO, &post.exposure, 1);
+    nv_chunk_read_u32s(r, edit, TAG_BLOM, (u32*)&post.bloom, 1);
+    nv_chunk_read_f32s(r, edit, TAG_BLMI, &post.bloom_intensity, 1);
     Resolution resolution = app->resolution;
     u32 mode = (u32)resolution.mode;
     nv_chunk_read_u32s(r, edit, TAG_RSMD, &mode, 1);
@@ -375,6 +389,12 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     app->renderer.shadows = shadows;
     // The two counts the View tab offers; anything else is the default.
     app->renderer.msaa = msaa == 1 ? 1 : 4;
+    // The tone mappers the View tab offers (anything else is PBR Neutral), exposure 0.25 to 4, bloom 0 to 0.2.
+    post.tone = tone < NV_TONE_COUNT ? (NvToneMap)tone : NV_TONE_PBR_NEUTRAL;
+    post.exposure = clamp(post.exposure, 0.25f, 4.0f);
+    post.bloom = post.bloom != 0;
+    post.bloom_intensity = clamp(post.bloom_intensity, 0.0f, 0.2f);
+    app->renderer.post = post;
     // The modes and counts the View tab offers; anything else is the device's default (the phone
     // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
     resolution.mode = mode == RESOLUTION_FIXED ? RESOLUTION_FIXED : RESOLUTION_SCALE;
@@ -823,7 +843,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
     switch (tag) {
     case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
         return TAG_KIND_CONTAINER;
-    case TAG_MSAA: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
+    case TAG_MSAA: case TAG_TONE: case TAG_BLOM: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
     case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO: case TAG_LANG:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN: case TAG_SELO:
     case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
@@ -832,7 +852,7 @@ internal TagKind tag_kind(u32 container, u32 tag)
         return TAG_KIND_U32;
     case TAG_YAW: case TAG_PTCH: case TAG_DIST: case TAG_ORBT: case TAG_PAN: case TAG_PLNT: case TAG_CTIM:
     case TAG_SPED: case TAG_FADE: case TAG_BLDW: case TAG_TURN: case TAG_POS: case TAG_ROT: case TAG_SCL:
-    case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT:
+    case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT: case TAG_EXPO: case TAG_BLMI:
         return TAG_KIND_F32;
     case TAG_CLIP: case TAG_BLND: case TAG_NAME: case TAG_ATCH:
         return TAG_KIND_STRING;

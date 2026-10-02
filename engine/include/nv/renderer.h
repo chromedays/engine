@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nv/gpu.h"
+#include "nv/vfx.h"
 #include "nv/scene.h"
 
 #define NV_MAX_MESHES        256
@@ -115,6 +116,23 @@ typedef struct NvShadowSettings {
     b32 show_box; // draw the light's box as debug lines
 } NvShadowSettings;
 
+#define NV_BLOOM_LEVELS 6
+
+typedef enum NvToneMap {
+    NV_TONE_CLAMP,       // cut at 1: what the renderer showed before HDR
+    NV_TONE_PBR_NEUTRAL, // Khronos PBR Neutral: nearly unchanged below 0.76, bright colors compressed, hue kept
+    NV_TONE_ACES,        // Narkowicz's fit of the ACES filmic curve
+    NV_TONE_COUNT,
+} NvToneMap;
+
+// Set by the app each frame, like the shadow settings.
+typedef struct NvPostSettings {
+    NvToneMap tone;
+    f32 exposure;        // multiplies the scene color before tone mapping
+    b32 bloom;
+    f32 bloom_intensity; // how much of the bloom is added back
+} NvPostSettings;
+
 // What the last nv_renderer_draw did.
 typedef struct NvRenderStats {
     u32 draws;          // mesh draw calls, one per mesh node
@@ -170,7 +188,7 @@ typedef struct NvRenderer {
     u32 target_width, target_height;
     u32 scene_width, scene_height;    // the resolution of the last frame
     WGPUTexture scene_color;
-    WGPUTextureView scene_color_view; // the sRGB view: rendered to and sampled through it
+    WGPUTextureView scene_color_view; // NV_SCENE_FORMAT, linear: rendered to and sampled through it
     WGPURenderPipeline upscale_pipeline;
     WGPUBuffer upscale_buffer;
     WGPUBindGroup upscale_group;      // for the current scene_color_view
@@ -185,6 +203,30 @@ typedef struct NvRenderer {
     WGPUTextureView msaa_color_view;
     u32 msaa_width, msaa_height;
     WGPUTextureFormat msaa_format;
+
+    // Tone mapping and bloom, applied by the upscale pass.
+    NvPostSettings post;
+
+    // Particles (docs/specs/vfx.md), set by the app: the renderer records their compute passes before the
+    // shadow pass and draws them at the end of the scene pass. NULL draws none.
+    NvVfx* vfx;
+
+    // Bloom (docs/specs/vfx.md): a chain of NV_BLOOM_LEVELS mips, each half the last, starting at half the
+    // scene targets' size. The scene color is downsampled into it (13 taps, a Karis average on the first
+    // step), then each level is added back into the one above with a tent filter; the upscale pass
+    // adds mip 0 to the scene. Made while `post.bloom` is on.
+    WGPUTexture bloom_texture;
+    WGPUTextureView bloom_views[NV_BLOOM_LEVELS]; // one mip level each
+    u32 bloom_width, bloom_height;                // of mip 0
+    WGPURenderPipeline bloom_down_first_pipeline, bloom_down_pipeline, bloom_up_pipeline;
+    WGPUBindGroupLayout bloom_layout;
+    WGPUBindGroup bloom_groups[NV_BLOOM_LEVELS + 1]; // by source: the scene color, then each mip
+    WGPUBuffer bloom_buffer;                         // one uniform block per pass, read with dynamic offsets
+    WGPUSampler bloom_sampler;                       // linear, clamped
+    WGPUTexture bloom_dummy;                         // 1x1 black, bound while there is no chain
+    WGPUTextureView bloom_dummy_view;
+    b32 bloom_recorded;                              // this frame's bloom passes wrote timestamps
+    b32 particles_recorded;                          // ... and the particle passes
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.
@@ -229,6 +271,8 @@ typedef struct NvRenderer {
     f64 gpu_ms;             // latest scene pass time; 0 without timestamps
     f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
     f64 gpu_upscale_ms;     // latest upscale pass time; 0 without timestamps
+    f64 gpu_bloom_ms;       // latest time of all the bloom passes; 0 without timestamps or bloom
+    f64 gpu_particles_ms;   // latest time of the particle compute passes; 0 without timestamps or particles
 } NvRenderer;
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);

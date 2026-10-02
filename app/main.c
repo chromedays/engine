@@ -752,7 +752,7 @@ internal f64 now_ms(void)
 f64 app_load(const FrameTimes* t)
 {
     f64 cpu = t->anim + t->scene + t->draw + t->ui;
-    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale;
+    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale + t->gpu_bloom + t->gpu_particles;
     f64 busy = cpu > gpu ? cpu : gpu;
     return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
 }
@@ -770,6 +770,8 @@ internal void accumulate_times(App* app, f64 now)
     sum->gpu += t->gpu;
     sum->gpu_shadow += t->gpu_shadow;
     sum->gpu_upscale += t->gpu_upscale;
+    sum->gpu_bloom += t->gpu_bloom;
+    sum->gpu_particles += t->gpu_particles;
     if (t->frame > app->window_worst_frame)
         app->window_worst_frame = t->frame;
     ++app->window_frames;
@@ -777,7 +779,8 @@ internal void accumulate_times(App* app, f64 now)
         return;
     f64 n = (f64)app->window_frames;
     app->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                                      sum->gpu_shadow / n, sum->gpu_upscale / n};
+                                      sum->gpu_shadow / n, sum->gpu_upscale / n,
+                                      sum->gpu_bloom / n, sum->gpu_particles / n};
     app->shown_worst_frame = app->window_worst_frame;
     *sum = (FrameTimes){0};
     app->window_worst_frame = 0.0;
@@ -830,6 +833,7 @@ void app_start_playing(App* app)
     app->moon_rotation = nv_scene_get(app->scene, app->moon)->rotation;
     app->play_time = 0.0f;
     app->orbit_angle = 0.0f;
+    effects_clear(app);
     app->playing = 1;
     restart_clip(app);
 }
@@ -846,6 +850,7 @@ void app_stop_playing(App* app)
     (void)problem;
     app->jump = JUMP_NONE;
     app->orbit_angle = 0.0f;
+    effects_clear(app);
     restart_clip(app);
 }
 
@@ -893,6 +898,7 @@ internal void frame(void* userdata)
         stress_update(app, dt);
     selection_prune(app_view(app)); // the stress scene may have removed selected nodes
 
+    effects_update(app, dt);
     t = now_ms();
     nv_anim_update_scene(scene, dt);
     times->anim = now_ms() - t;
@@ -918,6 +924,8 @@ internal void frame(void* userdata)
     times->gpu = app->renderer.gpu_ms;
     times->gpu_shadow = app->renderer.shadows.size ? app->renderer.gpu_shadow_ms : 0.0;
     times->gpu_upscale = app->renderer.gpu_upscale_ms;
+    times->gpu_bloom = app->renderer.post.bloom ? app->renderer.gpu_bloom_ms : 0.0;
+    times->gpu_particles = app->renderer.gpu_particles_ms;
     t = now_ms();
     nv_imgui_render(&app->imgui, encoder, target);
     times->ui += now_ms() - t;
@@ -1013,6 +1021,60 @@ EMSCRIPTEN_KEEPALIVE int app_debug_msaa(void)
 EMSCRIPTEN_KEEPALIVE void app_debug_set_msaa(int samples)
 {
     app_state.renderer.msaa = (u32)samples;
+}
+
+// The post-processing settings: 0 tone mapper, 1 exposure x1000, 2 bloom on, 3 bloom intensity x1000; the setter is
+// for tests that change them without the UI.
+EMSCRIPTEN_KEEPALIVE int app_debug_post(int which)
+{
+    const NvPostSettings* post = &app_state.renderer.post;
+    int values[4] = {(int)post->tone, (int)(post->exposure * 1000.0f + 0.5f), post->bloom, (int)(post->bloom_intensity * 1000.0f + 0.5f)};
+    return values[which];
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_set_post(int tone, float exposure, int bloom, float intensity)
+{
+    app_state.renderer.post = (NvPostSettings){.tone = (NvToneMap)tone, .exposure = exposure, .bloom = bloom != 0, .bloom_intensity = intensity};
+}
+
+// Sets the intensity of the shown scene's first directional light, to put values above 1 on screen.
+EMSCRIPTEN_KEEPALIVE void app_debug_set_sun(float intensity)
+{
+    NvScene* scene = app_view(&app_state)->scene;
+    for (u32 index = 1; index <= scene->node_count; ++index) {
+        NvNode* node = &scene->nodes[index];
+        if ((node->gen & 1) && node->light.type == NV_LIGHT_DIRECTIONAL) {
+            node->light.intensity = intensity;
+            return;
+        }
+    }
+}
+
+// The particle system: 0 alive, 1 visible, 2 dropped spawns, 3 effects registered; the second fires a test
+// effect (0 explosion, 1 sparks, 2 smoke, 3 missile) beside the orbit point.
+EMSCRIPTEN_KEEPALIVE int app_debug_vfx(int which)
+{
+    NvVfxStats stats = nv_vfx_stats(&app_state.vfx);
+    int values[6] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)app_state.vfx.effect_count - 1,
+                     (int)stats.segments, (int)stats.decals};
+    return values[which];
+}
+
+// Sets the stress scene's Effects workload: particles kept, explosions a second, missiles, beams, decals a second.
+EMSCRIPTEN_KEEPALIVE void app_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
+{
+    StressWorkloads* want = &app_state.stress.want;
+    want->effects_on = particles || explosions || missiles || beams || decals;
+    want->effect_particles = particles;
+    want->effect_explosions = explosions;
+    want->effect_missiles = missiles;
+    want->effect_beams = beams;
+    want->effect_decals = decals;
+}
+
+EMSCRIPTEN_KEEPALIVE void app_debug_vfx_fire(int effect)
+{
+    effects_fire(&app_state, (u32)effect);
 }
 
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
@@ -1556,6 +1618,8 @@ int main(void)
     };
     // Anti-aliasing (docs/specs/msaa.md): 4x MSAA everywhere; the View tab turns it off.
     app->renderer.msaa = 4;
+    // Tone mapping and bloom (docs/specs/vfx.md); the View tab changes them.
+    app->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
     // The phone shows the scene at half the pixels by default: its GPU is the limit.
     app->resolution = (Resolution){.mode = RESOLUTION_SCALE, .divisor = touch ? 2 : 1, .fixed_width = 1280, .fixed_height = 720};
     app->imgui.view_grab = gizmo_grab;
@@ -1582,6 +1646,7 @@ int main(void)
         return 1;
     }
 
+    effects_init(app);
     app->orbit_speed = 0.7f;
     app->fade_seconds = 0.3f;
     app->turn_rate = 0.6f;

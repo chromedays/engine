@@ -24,3 +24,9 @@ add_executable(utf8_test utf8_test.c)
 target_include_directories(utf8_test PRIVATE ${PROJECT_SOURCE_DIR}/engine/include)
 target_link_options(utf8_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME utf8_test COMMAND utf8_test)
+
+# The effects system's CPU side: splitting bursts into workgroup jobs, the ring buffers' slots.
+add_executable(vfx_test vfx_test.c ${PROJECT_SOURCE_DIR}/engine/src/vfx_cpu.c)
+target_include_directories(vfx_test PRIVATE ${PROJECT_SOURCE_DIR}/engine/include)
+target_link_options(vfx_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME vfx_test COMMAND vfx_test)

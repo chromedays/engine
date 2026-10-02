@@ -30,6 +30,12 @@ typedef struct NvGpu {
     WGPUTextureView current_view;
 } NvGpu;
 
+// The scene is rendered in linear HDR (docs/specs/vfx.md): colors above 1 are kept until the upscale
+// pass multiplies by the exposure, tone maps and writes the canvas. The scene pass has a depth target
+// of NV_SCENE_DEPTH_FORMAT, reverse Z.
+#define NV_SCENE_FORMAT WGPUTextureFormat_RGBA16Float
+#define NV_SCENE_DEPTH_FORMAT WGPUTextureFormat_Depth32Float
+
 // A texture format's name for logs ("BGRA8Unorm"), or its number when it is not one nv uses.
 const char* nv_gpu_format_name(WGPUTextureFormat format);
 

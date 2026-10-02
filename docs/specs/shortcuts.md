@@ -1,8 +1,131 @@
 # Desktop keyboard shortcuts spec
 
+- [한국어](#한국어)
+- [English](#english)
+
+## 한국어
+
+상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
+
+### 목표
+
+데스크톱 UI (`layout.md`)에 키보드 단축키를 빠짐없이 주고, 키, 메뉴의 단축키 라벨, 도움말 창을 움직이는 표 하나에
+둔다, 그래서 단축키는 한 번 정의되고 그 액션이 나오는 곳마다 보인다.
+
+지금 몇몇 키는 액션이 있는 곳에서 각자의 검사로 처리된다: `app/undo.c`의 Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y, `draw_gizmo`의
+W, E, R (포인터가 뷰포트 위에 있을 때만), `app/ui_desktop.c`의 Space와 F. Edit 메뉴는 "Ctrl+Z"를 리터럴로 쓴다. 그리고
+페이지가 소비하지 않은 키는 브라우저로 넘어간다: 엔진은 ImGui가 키보드를 원하는 동안 (텍스트 필드)에만 키를 소비하므로,
+Ctrl+S가 브라우저의 "페이지 저장" 대화 상자를 연다.
+
+### 접근법
+
+| 접근법 | 무엇인가 | 맞음 | 장단점 |
+|---|---|---|---|
+| **자체 표, Dear ImGui의 `Shortcut()`으로 발동** (추천) | `app/shortcuts.c`가 단축키마다 한 행을 담는다: 키 조합, 이름, 적용 조건, 부를 함수. 매 프레임 데스크톱 UI가 모든 행에 대해 ImGui의 `igShortcut_Nil(chord, RouteGlobal)`에 묻는다 | ImGui 1.92는 이미 조합을 라우팅한다: 편집 중인 텍스트 필드는 쓰는 키를 소유하고 (Ctrl+Z는 필드의 텍스트를 undo하고, 입력한 W는 W로 남는다), 수식키가 정확히 맞춰진다 (Ctrl+Z는 Ctrl+Shift+Z가 아니다). 표가 메뉴와 도움말 창에 같은 라벨을 준다. 순수 C, 고정 배열 | 표, 도움말 창, 브라우저 훅 (아래)을 위한 자체 코드 |
+| 각 액션에서 키 검사 유지 | 지금처럼 | 쓸 것이 없다 | 검사가 서로 어긋나고 (W/E/R은 포인터가 뷰포트에 있어야 하고 Space는 아니다), 라벨을 두 번 입력하고, 키를 나열하는 것이 없다 |
+| 웹 단축키 라이브러리 (hotkeys-js, Mousetrap; JavaScript, MIT) | 페이지에서 키를 바인딩한다 | 브라우저 쪽을 처리한다 | 키가 ImGui 입력 밖에서 앱에 닿으므로 텍스트 필드가 키를 지킬 수 없다; `imgui.c` 옆의 두 번째 입력 경로. 의존성으로 둘 가치가 없다 |
+| ImGui의 키보드 내비게이션 (`NavEnableKeyboard`) | 화살표 키와 Enter가 위젯 사이를 움직인다 | 내장 | 단축키가 아니다; 창에 포커스가 있을 때마다 ImGui가 키보드를 원하게 만들어 뷰포트에서 키를 빼앗는다. 꺼 둔다 |
+
+추천: `igShortcut_Nil`로 발동하는 자체 표. 서드파티 라이브러리 없음.
+
+### 결정
+
+| 주제 | 결정 |
+|---|---|
+| 어디서 | 데스크톱 UI만. `layout.md`가 말하듯 폰 UI에는 단축키가 없다: Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y가 `undo_update`에서 표로 옮겨 가므로, 폰 (또는 폰 UI를 받는 키보드 달린 태블릿)은 더 이상 그것을 갖지 않는다 |
+| 표 하나 | `app/shortcuts.c`: `Shortcut {ShortcutId id; ImGuiKeyChord chord; const char* name; u32 when; void (*run)(App*); b32 repeat;}`. 행은 두 번째 조합을 가질 수 있다 (Ctrl+Shift+Z 옆의 Ctrl+Y). 메뉴는 오른쪽 텍스트로 `shortcut_label(id)`를 부른다; 도움말 창은 행을 나열한다 |
+| 언제 발동하나 | 도크를 만든 뒤 프레임마다 한 번 `igShortcut_Nil(chord, ImGuiInputFlags_RouteGlobal)`로. 텍스트 필드를 편집하는 중 (`io.WantTextInput`), 팝업이나 모달이 열린 중 (Escape는 그들의 것), 기즈모를 끄는 중에는 결코 아니다. 행은 추가로 쇼케이스 (`WHEN_SHOWCASE`), Edit 모드 (`WHEN_EDITING`), 선택 (`WHEN_SELECTION`)을 요구할 수 있다. 지금과 달리 W, E, R은 더 이상 포인터가 뷰포트 위에 있을 필요가 없다: 입력을 안전하게 지키는 것은 텍스트 필드 규칙이다 |
+| 반복 | Undo와 Redo만 누르고 있는 동안 반복한다; 나머지는 누를 때마다 한 번 발동한다 |
+| 브라우저 자체 키 | 엔진에 모든 keydown에서 묻는 훅 `NvImgui.claims_key(data, key, mods)`가 생긴다: 그것이 예라고 하면 ImGui가 키보드를 원하지 않아도 `on_key`가 이벤트를 소비한다 (`preventDefault`). 앱이 표로 답하므로, Ctrl+S는 웹 페이지가 아니라 앱을 저장한다. 브라우저가 페이지에 결코 주지 않는 키는 바인딩하지 않는다: Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab, Ctrl+Shift+W/T/N, Ctrl+1–Ctrl+9, Ctrl+Q, F11. 새로고침 (F5, Ctrl+R)과 개발자 도구 (F12, Ctrl+Shift+I)는 일부러 브라우저에 남긴다 |
+| 위치로 키 | 글자는 `imgui.c`가 이미 읽듯 물리적 위치 (`KeyboardEvent.code`)로 맞추므로, W, E, R은 어떤 배열에서든 함께 있다. 라벨은 US 배열의 키를 이름 붙인다. `?`도 위치로 Shift+Slash다 |
+| macOS | Cmd는 이미 Ctrl로 도착한다 (`imgui.c`). 라벨은 macOS (`navigator.platform`으로)에서 "Ctrl" 대신 "Cmd"라고 하며, 기본 글꼴에 ⌘ 글리프가 없으므로 글자로 쓴다 |
+| 도움말 | **Help > Keyboard shortcuts**와 `?` 키가 모든 행을 그룹별로, 키와 함께, 적용되지 않는 동안은 회색으로 나열하는 창을 연다. Escape나 창의 닫기 버튼이 닫는다 |
+| 테스트 | Debug 빌드는 기존 `_app_debug_playing`, `_app_debug_view`, `_app_debug_undo_done` 옆에 `Module._app_debug_gizmo(n)` (0 작업, 1 로컬, 2 스냅), `_app_debug_docks_shown(n)`, `_app_debug_selected()`를 export한다. Playwright가 키를 누르고 그것들을 확인하며, 자체 리스너로 가져온 키의 `defaultPrevented`를 확인한다 |
+| 서드파티 | 없음 |
+
+### 단축키
+
+기존 것은 표시했다; 나머지는 새것이다.
+
+| 그룹 | 키 | 하는 일 | 언제 |
+|---|---|---|---|
+| File | Ctrl+S | 지금 저장 (File 메뉴의 항목) | 저장소 사용 가능 |
+| Edit | Ctrl+Z (기존) | Undo | 쇼케이스, Edit 모드; 반복 |
+| Edit | Ctrl+Shift+Z, Ctrl+Y (기존) | Redo | 쇼케이스, Edit 모드; 반복 |
+| Edit | Escape | 선택 지우기 | 선택 있음; 팝업 없음 |
+| Play | Space (기존) | Play 또는 Stop | 쇼케이스 |
+| Gizmo | W, E, R (기존, 이제 전역) | 이동, 회전, 크기 | |
+| Gizmo | X | Local과 World 축 바꾸기 (Unity의 키) | |
+| Gizmo | Ctrl, 드래그 중 누르고 있기 | 이 드래그에 스냅 (누르는 동안 Snap 상자의 반대) | 기즈모를 끄는 중 |
+| View | F (기존) | 공전 점을 선택으로 옮기기 | 선택 있음 |
+| View | Shift+F | "Camera follows selection" 켜기 또는 끄기 | |
+| View | Home | 씬의 시작 뷰로 (yaw, pitch, 거리, 공전 점) | |
+| Docks | Ctrl+B | Scene 도크 (왼쪽) 보이기 또는 숨기기 | |
+| Docks | Ctrl+I | Inspector 도크 (오른쪽) 보이기 또는 숨기기 | |
+| Docks | \` (백쿼트) | Console 도크 보이기 또는 숨기기; 접혀 있으면 연다 | |
+| Help | ? (Shift+/) | Keyboard shortcuts 창 열기 | |
+
+나중 작업을 위해 비워 둠: 씬 편집을 위한 Delete, Ctrl+D (복제), F2 (이름 바꾸기). Ctrl+D는 브라우저의 북마크 키다:
+복제가 생기면 가져오기 훅이 그것을 가져갈 것이다.
+
+`search.md`가 더한 것:
+
+| 그룹 | 키 | 하는 일 | 언제 |
+|---|---|---|---|
+| Find | Ctrl+Shift+P, F1 | 명령 팔레트 열기 (Firefox는 Ctrl+Shift+P를 비공개 창에 쓰므로, F1이 거기서의 방법이다) | |
+| Find | Ctrl+F | 포인터 아래 패널의 검색 상자, 아니면 오른쪽 도크의 현재 탭의 검색 상자에 포커스 | |
+
+표에서 키가 없는 행 (Show save, Reset everything..., Showcase / Stress 씬 보이기, Textures 탭 열기, 콘솔 지우기)은 팔레트
+전용이다: 팔레트는 실행할 것이 있는 모든 행을, 도움말 창은 키가 있는 행만 나열한다.
+
+### 변경
+
+- **엔진 (`nv/imgui.h`, `engine/src/imgui.c`).** `NvImgui.claims_key`와 `claims_key_data`; 훅이 키를 가져가면 `on_key`가
+  true를 돌려준다.
+- **앱.**
+  - `app/shortcuts.c` (새로 생김): 표, `shortcuts_update` (행을 발동, 데스크톱만), `shortcut_label`, `shortcuts_claim`
+    (훅), `shortcuts_help` (창).
+  - `app/ui_desktop.c`: Help 메뉴, 표에서 온 메뉴 라벨, 그리고 Space와 F 코드가 표로 옮겨 감.
+  - `app/undo.c`: 키가 `undo_update`를 떠난다; `request`는 표가 단계를 요청하는 방법으로 남는다.
+  - `app/main.c`: W, E, R이 `draw_gizmo`를 떠난다; Ctrl을 누른 스냅은 거기서 키를 읽는다; Home의 시작 뷰는 씬을 만들 때
+    씬마다 보관한다.
+- **문서.** `layout.md` (그 단축키 표가 여기로 옮겨 옴), `gizmo.md`, `undo.md`, `play.md`, `AGENTS.md`, README.
+
+### 단계
+
+1. **표:** 기존 단축키 (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y, W, E, R, Space, F)를 옮겨 넣은 `shortcuts.c`, 발동 규칙, 엔진의
+   가져오기 훅, 표에서 온 Edit 메뉴 라벨. 확인: 각각이 여전히 동작; 필드에 입력하는 동안 아무것도 발동하지 않음 (그리고
+   거기서 Ctrl+Z는 씬이 아니라 필드의 텍스트를 undo함); 포인터가 도크 위에 있어도 W, E, R이 동작; 폰 UI에는 없음.
+2. **새 단축키:** Ctrl+S (확인: `defaultPrevented`, 그래서 페이지 저장 대화 상자 없음), Escape, X, Ctrl 누른 스냅,
+   Shift+F, Home, Ctrl+B, Ctrl+I, 백쿼트. 확인: debug export로 각각의 효과, 그리고 팝업이 Escape를 지킴.
+3. **도움말과 문서:** Help 메뉴와 `?` 창, macOS의 Cmd 라벨 (`navigator.platform`을 덮어써서 확인), 위의 문서들.
+
+모든 단계는 헤드리스 Chromium에서 Release와 Debug로 1280×800, US 키보드로 확인한다.
+
+만든 결과로는, 1, 2단계가 함께 왔고 (표 전체와 가져오기 훅이 한 덩어리 코드다) 3단계의 도움말 창과 Cmd 라벨도
+그것들과 함께 왔다; 단계들이 그다음 그것을 확인했다. 메모:
+
+- 도움말 창은 평범한 창이 아니라 모달 팝업이다: 뷰포트 위의 평범한 창 위에서 시작한 입력은 카메라 드래그가 될 것이고,
+  뷰포트는 이미 열린 팝업은 내버려 둔다. Escape와 `?`가 닫지만, 그것을 연 프레임에서는 아니다 (여는 누름이 아직 그
+  프레임의 누름이다).
+- Escape는 브라우저로부터 결코 가져오지 않는다 (전체 화면을 나간다); 다른 모든 바인딩된 조합은 텍스트 필드가 키보드를
+  원하지 않는 한 가져온다.
+- Ctrl과 Shift+F는 `RouteGlobal`과 함께 ImGui의 `Shortcut()`으로 조합을 쓴다; 기즈모 드래그 중 누른 Ctrl은 조합이 아니라
+  누르고 있는 수식키이므로 `draw_gizmo`에서 `io.KeyCtrl`을 읽는다.
+- Debug 빌드는 테스트가 읽는 `_app_debug_gizmo`, `_app_debug_state` (선택, 따라가기, 도움말 열림, 보이는 도크),
+  `_app_debug_selected_position`을 export한다.
+
+### 범위 밖
+
+- 키 재배치와 사용자 바인딩 저장.
+- 폰 UI의 단축키, 그리고 키보드 달린 태블릿의 단축키 (폰 UI를 받는다).
+- 아직 없는 액션 (복제, 삭제, 이름 바꾸기); 그 키는 위에서 비워 두었다.
+
+## English
+
 Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
-## Goal
+### Goal
 
 Give the desktop UI (`layout.md`) a full set of keyboard shortcuts, kept in one table that drives
 the keys, the menus' shortcut labels and a help window, so a shortcut is defined once and shown
@@ -14,7 +137,7 @@ the viewport), Space and F in `app/ui_desktop.c`. The Edit menu writes "Ctrl+Z" 
 a key the page does not consume goes on to the browser: Ctrl+S opens the browser's "Save page"
 dialog, because the engine consumes a key only while ImGui wants the keyboard (a text field).
 
-## Approaches
+### Approaches
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
@@ -25,7 +148,7 @@ dialog, because the engine consumes a key only while ImGui wants the keyboard (a
 
 Recommendation: our table, fired through `igShortcut_Nil`. No third-party library.
 
-## Decisions
+### Decisions
 
 | Topic | Decision |
 |---|---|
@@ -40,7 +163,7 @@ Recommendation: our table, fired through `igShortcut_Nil`. No third-party librar
 | Tests | Debug builds export `Module._app_debug_gizmo(n)` (0 operation, 1 local, 2 snap), `_app_debug_docks_shown(n)` and `_app_debug_selected()`, beside the existing `_app_debug_playing`, `_app_debug_view` and `_app_debug_undo_done`. Playwright presses the keys and checks those, and checks `defaultPrevented` on a claimed key with a listener of its own |
 | Third-party | None |
 
-## The shortcuts
+### The shortcuts
 
 Existing ones are marked; the rest are new.
 
@@ -76,7 +199,7 @@ The rows without keys in the table (Show save, Reset everything..., Show the Sho
 scene, Open the Textures tab, Clear the console) are palette only: the palette lists every row
 that has something to run, and the help window only the rows that have keys.
 
-## Changes
+### Changes
 
 - **Engine (`nv/imgui.h`, `engine/src/imgui.c`).** `NvImgui.claims_key` and `claims_key_data`; `on_key`
   returns true when the hook claims the key.
@@ -91,7 +214,7 @@ that has something to run, and the help window only the rows that have keys.
 - **Docs.** `layout.md` (its shortcut table moves here), `gizmo.md`, `undo.md`, `play.md`,
   `AGENTS.md` and README.
 
-## Phases
+### Phases
 
 1. **The table:** `shortcuts.c` with the existing shortcuts moved into it (Ctrl+Z, Ctrl+Shift+Z,
    Ctrl+Y, W, E, R, Space, F), the firing rules, the engine's claim hook, and the Edit menu's labels
@@ -120,7 +243,7 @@ code) and phase 3's help window and Cmd labels with them; the phases then checke
 - Debug builds export `_app_debug_gizmo`, `_app_debug_state` (selection, follow, help open, docks
   shown) and `_app_debug_selected_position`, which the tests read.
 
-## Out of scope
+### Out of scope
 
 - Remapping keys, and saving custom bindings.
 - Shortcuts on the phone UI, and for a tablet with a keyboard (it gets the phone UI).

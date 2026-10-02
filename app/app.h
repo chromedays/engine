@@ -14,6 +14,7 @@
 #include <nv/renderer.h>
 #include <nv/scene.h>
 #include <nv/storage.h>
+#include <nv/vfx.h>
 #include <nv/window.h>
 
 #include "strings.h"
@@ -36,6 +37,11 @@
 #define STRESS_MAX_COLORS   200
 #define STRESS_MAX_CHURN    256
 #define STRESS_MAX_STEPS    16
+#define STRESS_MAX_PARTICLES 4000000 // the Effects workload's targets
+#define STRESS_MAX_EXPLOSIONS 200
+#define STRESS_MAX_MISSILES 2000
+#define STRESS_MAX_BEAMS    500
+#define STRESS_MAX_DECALS   2000
 
 // Which editor UI runs: chosen once at start from the primary pointer (docs/specs/layout.md).
 typedef enum UiMode {
@@ -226,6 +232,7 @@ typedef enum TextureKind {
     TEXTURE_SHADOW,
     TEXTURE_DEPTH,
     TEXTURE_SCENE,    // the scene color target, the scene's resolution (allocated a little larger)
+    TEXTURE_BLOOM,    // the bloom chain (docs/specs/vfx.md), while bloom is on
     TEXTURE_MSAA,     // the multisampled color target the scene pass resolves into the swapchain
     TEXTURE_SWAPCHAIN,
     TEXTURE_UI,       // NvImgui.textures
@@ -311,18 +318,24 @@ typedef struct FrameTimes {
     f64 gpu;   // the scene pass on the GPU; 0 where the browser has no timestamps
     f64 gpu_shadow; // the shadow pass on the GPU; 0 without timestamps or shadows
     f64 gpu_upscale; // the upscale pass on the GPU; 0 without timestamps
+    f64 gpu_bloom;   // the bloom passes on the GPU; 0 without timestamps or bloom
+    f64 gpu_particles; // the particle compute passes on the GPU; 0 without timestamps or effects
 } FrameTimes;
 
 typedef struct BenchmarkStep {
     const char* name;
     s32 grid;
     s32 crowd;
+    s32 particles; // the Effects workload: live particles kept, missiles flying, beams held
+    s32 missiles;
+    s32 beams;
 } BenchmarkStep;
 
 typedef struct BenchmarkResult {
     u32 frames;
     FrameTimes average;
     f64 worst_frame;
+    f64 particles; // live particles, averaged over the step (a sum until it ends)
 } BenchmarkResult;
 
 // How busy the frame is: the larger of the CPU stages and the GPU pass, as a share of the frame
@@ -342,6 +355,12 @@ typedef struct StressWorkloads {
     bool churn_on;
     s32 churn_count;
     bool show_bones;
+    bool effects_on;
+    s32 effect_particles;  // live particles kept (swarm bursts fired to hold the number)
+    s32 effect_explosions; // explosions per second
+    s32 effect_missiles;   // missiles in flight, each with a trail and smoke
+    s32 effect_beams;      // beams held
+    s32 effect_decals;     // decals per second
 } StressWorkloads;
 
 typedef struct Stress {
@@ -475,6 +494,26 @@ typedef enum JumpPhase {
     JUMP_LAND,
 } JumpPhase;
 
+// A test missile in flight: it leaves a trail and explodes where its life ends.
+typedef struct Flight {
+    NvVec3 pos, vel;
+    f32 life;
+} Flight;
+
+// The effects the app fires (effects.c).
+typedef struct Effects {
+    NvVfxEffectId explosion, sparks, smoke, missile, swarm;
+    NvVfxLineStyle missile_trail, laser;
+    NvVfxDecalStyle scorch;
+    Flight flights[8];
+    u32 flight_count;
+    // The stress scene's Effects workload (effects_stress_update).
+    Flight stress_flights[STRESS_MAX_MISSILES];
+    u32 stress_flight_count;
+    f32 swarm_carry, explosion_carry, decal_carry; // fractions of a burst not yet fired
+    u32 rng;
+} Effects;
+
 typedef struct App {
     NvWindow window;
     NvGpu gpu;
@@ -607,6 +646,10 @@ typedef struct App {
     b32 request_reset;  // open the Reset confirmation (the palette asks; the top bar draws it)
     char download_text[64]; // what the page downloaded, for the build label ("0.9 MB downloaded"); empty = unknown
     Search search;
+
+    // Effects (effects.c, docs/specs/vfx.md).
+    NvVfx vfx;
+    Effects effects;
 } App;
 
 // main.c
@@ -624,6 +667,17 @@ void app_focus_selection(App* app); // F: the orbit point moves to the selected 
 void app_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
 NvMeshId app_box_mesh(App* app, NvVec3 half);
 SceneView* app_view(App* app); // the shown scene's view
+
+// effects.c
+void effects_init(App* app);               // makes the particle system and registers the effects
+void effects_update(App* app, f32 dt);     // each frame, before drawing
+void effects_clear(App* app);              // Play and Stop: every live effect goes
+void effects_fire(App* app, u32 which);    // 0 explosion, 1 sparks, 2 smoke, 3 missile, beside the orbit point
+NvVec3 effects_test_point(App* app);
+void effects_ui(App* app);
+// The Effects workload of the stress scene: keeps the asked numbers of particles, explosions,
+// missiles, beams and decals going. Call each frame while the stress scene is shown.
+void effects_stress_update(App* app, const StressWorkloads* want, f32 dt);
 
 // selection.c (docs/specs/selection.md)
 u32 selection_count(SceneView* view);
