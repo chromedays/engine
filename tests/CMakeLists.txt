@@ -56,3 +56,12 @@ add_executable(camera_test camera_test.c ${PROJECT_SOURCE_DIR}/engine/camera.c)
 target_include_directories(camera_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_options(camera_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME camera_test COMMAND camera_test)
+
+# The auto-battler's rules and definition files (autobattler/battle.c, defs.c): no GPU. NODERAWFS reads the repository's
+# autobattler/data directly.
+add_executable(battle_test battle_test.c ${PROJECT_SOURCE_DIR}/autobattler/battle.c ${PROJECT_SOURCE_DIR}/autobattler/defs.c
+    ${PROJECT_SOURCE_DIR}/engine/log.c)
+target_include_directories(battle_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE_DIR}/autobattler/data")
+target_link_options(battle_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
+add_test(NAME battle_test COMMAND battle_test)

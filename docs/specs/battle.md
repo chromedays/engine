@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 초안 (2026-10-03), A와 B 두 단계로 나눔. 구현 전에 "열린 질문"을 합의한다.
+상태: A의 1단계(시뮬레이션과 정의 파일) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔.
 
 ### 목표
 
@@ -59,6 +59,21 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다.
 
 A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리, 무기(쿨다운, 발사), 포탄(적분, 실드, 유닛, 지면 순으로 가장 먼저
 닿은 것), 죽음, 실드 회복, 끝 조건.
+
+구현에서 정한 세부(1단계):
+- **슬롯 순서:** 유닛은 플레이어 것이 먼저(행, 칸 순), 그다음 적(파일 순)이다. 배치가 바뀔 때마다(놓기, 지우기, Reset, Retry) 유닛 배열을
+  처음부터 다시 만든다. Start는 그대로 시작할 뿐이라 Retry는 같은 배치를 돌려준다.
+- **시간은 틱으로:** 쿨다운과 실드의 기다림은 틱 수(초 × 30, 올림)로 센다. 1.5초는 정확히 45틱이다. 실드는 맞은 틱도 기다림의 첫
+  틱으로 센다(3초 = 90틱 뒤에 차기 시작).
+- **다시 고르기:** 모든 유닛이 `틱 % 8 == 0`인 틱에 함께 다시 고른다(엇갈리게 하지 않는다. 그건 B의 일).
+- **이동:** 멈출 거리까지만 움직여 넘어서지 않는다. 둘이 서로 다가가면 한 걸음 모자란 채 멈출 수 있다(사거리의 90% 안).
+  분리는 모든 쌍의 밀기를 모아 틱 끝에 한 번에 적용한다(순서와 무관). 같은 자리의 두 유닛은 X축으로, 슬롯이 작은 쪽이 왼쪽으로 갈린다.
+- **포탄:** 중력을 틱마다 정확하게(위치에 `−½ g dt²`, 속도에 `−g dt`) 적용하므로 계산한 지점에 떨어진다. 실드가 일부만 받은 포탄은 실드
+  경계에서 남은 피해로 계속 날아가 다음에 닿는 것을 친다. 포탄 풀(4096)이 가득 차면 무기는 자리가 날 때까지 준비된 채 기다린다.
+- **이벤트:** 틱마다 지우지 않는다. 화면이 읽은 뒤 `event_count`를 0으로 돌린다(한 프레임에 틱이 여럿 돌 수 있다).
+- **정의 오류:** `BattleDefs`가 `error_count`와 첫 오류 문장(`first_error`)을 들고 있어 패널이 보여 줄 수 있다. 빠진 키는 블록 헤더의
+  줄 번호로, 파일 전체의 오류(빠진 `supply`, 유닛이나 `place`가 하나도 없음)는 줄 번호 없이 알린다. 공급 초과는 합이 처음 넘는 `place`의
+  줄로 알린다. 오류가 있는 줄은 빠진 키 오류를 더 만들지 않도록 해당 키를 "받은 것"으로 센다.
 
 ### 정의 파일
 
@@ -439,9 +454,9 @@ typedef struct Battle {
 - `WeaponDef`: 사거리, 피해, 쿨다운, 발사각, 퍼짐, 총구. 투사체 종류, 대상, 최소 사거리, 범위, 속도, 선회는 없다.
 - `Unit`: 플래그, 팀, 정의, 위치와 이전 위치, 속도, 방향과 이전 방향, 체력, 이번 틱의 피해, 대상, 쿨다운, 능력 상태
   (`union`에 `shield`만). 분대는 없다.
-- `Projectile`: 팀, 쏜 유닛, 위치와 이전 위치, 속도. 종류와 미사일 데이터는 없다.
-- `Battle`: 단계, 결과, 틱, 난수, 유닛, 포탄, 이벤트(발사, 명중, 실드 피격, 죽음). 지형지물, `blocked`, 분대, 흐름장, 공간 격자는
-  없다.
+- `Projectile`: 팀, 쏜 유닛, 위치와 이전 위치, 속도, 피해(방어력 전; 실드가 일부만 받으면 남은 만큼). 종류와 미사일 데이터는 없다.
+- `Battle`: 정의, 단계, 결과, 틱, 난수, 플레이어의 배치(칸마다 유닛 종류)와 쓴 공급, 유닛, 포탄, 이벤트(발사, 명중, 실드 피격,
+  죽음; 이벤트마다 팀과 유닛 종류), 분리를 위한 임시 배열. 지형지물, `blocked`, 분대, 흐름장, 공간 격자는 없다.
 
 ### 틱 순서 (B; A의 것은 "A 규칙" 끝에)
 
@@ -556,7 +571,7 @@ assert와 WebGPU 오류가 없는지 본다.
 ### 단계
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
-1. **A 시뮬레이션:** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
+1. **A 시뮬레이션 (끝남):** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
 2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
 3. **A 확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
@@ -579,7 +594,7 @@ assert와 WebGPU 오류가 없는지 본다.
 
 ## English
 
-Status: draft (2026-10-03), split into two stages, A and B. The "Open questions" are agreed before it is built.
+Status: A's phase 1 (the simulation and the definition files) built (2026-10-03), the rest a draft. Split into two stages, A and B.
 
 ### Goal
 
@@ -633,6 +648,24 @@ A runs from start to end on these rules alone. The values are a starting point f
 
 A's tick order: record previous positions, pick targets again, movement and separation, weapons (cooldowns, firing), shells
 (integration; the first of shield, unit or ground they touch), deaths, shield refill, end conditions.
+
+Details settled in the build (phase 1):
+- **Slot order:** the player's units come first (by row, then cell), then the enemy's (in file order). Every change to the placement
+  (place, remove, Reset, Retry) rebuilds the unit array from scratch. Start only starts, so Retry gives the same placement back.
+- **Time in ticks:** cooldowns and the shield's wait are counted in ticks (seconds × 30, rounded up). 1.5 s is exactly 45 ticks. A
+  shield counts the tick it was hit in as the first of its wait (refill starts after 3 s = 90 ticks).
+- **Picking again:** every unit picks again together on the ticks where `tick % 8 == 0` (staggering them is B's work).
+- **Movement:** a unit moves only as far as its stopping distance, never past it. Two units closing on each other can end up one step
+  short (inside 90% of the range). Separation gathers the pushes of all pairs and applies them once at the end (order does not matter).
+  Two units on the same spot part along X, the lower slot to the left.
+- **Shells:** gravity is applied exactly each tick (`−½ g dt²` on the position, `−g dt` on the velocity), so a shell lands where it was
+  solved to. A shell a shield took only part of goes on from the shield's boundary with the damage left and hits what it touches next.
+  When the shell pool (4096) is full a weapon waits, ready, for a slot.
+- **Events:** not cleared each tick. The view sets `event_count` back to 0 after reading (several ticks may run in one frame).
+- **Definition errors:** `BattleDefs` holds `error_count` and the first error's text (`first_error`) for the panel to show. A missing key
+  is reported at its block header's line; errors about a whole file (no `supply`, no unit or `place` at all) have no line. A supply
+  overrun is reported at the first `place` that takes the total over. A key that was given with a bad value counts as given, so it
+  does not add a "missing" error.
 
 ### Definition files
 
@@ -1029,9 +1062,11 @@ The code above is the shape with B added. A's structs hold only what A uses (the
   turn rate.
 - `Unit`: flags, team, definition, position and previous position, velocity, yaw and previous yaw, health, this tick's damage,
   target, cooldown, ability state (a `union` with only `shield`). No squad.
-- `Projectile`: team, shooter, position and previous position, velocity. No kind and no missile data.
-- `Battle`: phase, outcome, tick, random numbers, units, shells, events (fire, hit, shield hit, death). No props, `blocked`, squads,
-  flow fields or spatial grid.
+- `Projectile`: team, shooter, position and previous position, velocity, damage (before armor; what a shield leaves when it takes only
+  part). No kind and no missile data.
+- `Battle`: the definitions, phase, outcome, tick, random numbers, the player's placement (a unit type per cell) and the supply used, units,
+  shells, events (fire, hit, shield hit, death; each with the team and unit type it is about), a scratch array for separation. No props,
+  `blocked`, squads, flow fields or spatial grid.
 
 ### Tick order (B; A's is at the end of "Stage A rules")
 
@@ -1152,7 +1187,7 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 
 0. **First (done):** `docs/specs/shared.md` (strings, meshes, resolution and taps, the camera, the font, the version and helpers
    move to the engine).
-1. **A, simulation:** the definition files (`autobattler/data/`) and their parser (`defs.c`), `battle.c`, A's items in
+1. **A, simulation (done):** the definition files (`autobattler/data/`) and their parser (`defs.c`), `battle.c`, A's items in
    `battle_test.c`. No view.
 2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
    deployment input, CMake and the CI deployment.
