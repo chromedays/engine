@@ -10,7 +10,7 @@
 ### 목표
 
 `docs/autobattler.md`의 1단계(전투 프로토타입): 항목 1(시뮬레이션 코어), 2(공간 질의), 3(군집 이동), 4(데이터 기반
-정의)의 최소한. 한 라운드짜리 전투를 지금의 큐브, 디버그 라인, 이펙트로 그린다. 게임이 재미있는지 보기 전에 규칙과 게임
+정의)의 최소한. 한 라운드짜리 전투를 엔진의 기본 도형, 디버그 라인, 이펙트로 그린다. 게임이 재미있는지 보기 전에 규칙과 게임
 오브젝트 구조를 굳히는 것이 목적이다.
 
 규칙이 서로 어떻게 맞물리는지 구현 전에 다 확인하기는 어렵다. 그래서 프로토타입을 두 단계로 나눈다.
@@ -490,7 +490,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 - **카메라:** 플레이어 진영 뒤 위에서 비스듬히 보는 시점. `NvImgui.view`의 드래그로 팬, 휠과 핀치로 줌, 전장 밖으로 나가지
   않는다.
 - **그리기:**
-  - 유닛은 팀 색 큐브 메시 노드로, 크기는 반지름과 높이. 틱 사이를 보간한다.
+  - 유닛은 엔진의 기본 도형(`docs/specs/mesh.md`)으로 그린 팀 색 메시 노드다. A의 Crawler는 캡슐 몸통(반지름과 높이)과 앞쪽의
+    원뿔(향하는 방향), 포탄은 작은 구다. 틱 사이를 보간한다.
   - 지형지물은 회색 상자(B), 배치 격자와 구역은 디버그 라인, 체력 바는 유닛 위의 디버그 라인이다.
   - 투사체는 `nv_vfx_trail`, 폭발은 `nv_vfx_burst`와 `nv_vfx_decal`, 실드는 디버그 라인 원으로 그린다.
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
@@ -577,7 +578,7 @@ Status: draft (2026-10-03), split into two stages, A and B. The "Open questions"
 ### Goal
 
 Step 1 of `docs/autobattler.md` (the battle prototype): the least of items 1 (simulation core), 2 (spatial queries), 3
-(crowd movement) and 4 (data-driven definitions). One round of battle, drawn with today's cubes, debug lines and effects.
+(crowd movement) and 4 (data-driven definitions). One round of battle, drawn with the engine's primitive shapes, debug lines and effects.
 The point is to settle the rules and the game object structure before finding out whether the game is fun.
 
 How the rules interact is hard to check fully before building, so the prototype comes in two stages.
@@ -1075,7 +1076,8 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 - **Camera:** an angled view from above and behind the player's side. Pan by dragging in `NvImgui.view`, zoom with the wheel
   and pinch, kept over the field.
 - **Drawing:**
-  - Units are cube mesh nodes in team colors, sized by radius and height, interpolated between ticks.
+  - Units are mesh nodes in team colors made from the engine's primitives (`docs/specs/mesh.md`). A's Crawler is a capsule body
+    (its radius and height) with a cone in front (its facing), and a shell is a small sphere. Interpolated between ticks.
   - Props are gray boxes (B); the deployment grid and zones are debug lines; health bars are debug lines above units.
   - Projectiles are `nv_vfx_trail`, explosions `nv_vfx_burst` and `nv_vfx_decal`, shields a debug-line circle.
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it

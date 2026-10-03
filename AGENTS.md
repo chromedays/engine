@@ -25,7 +25,8 @@ engine/                    each module's header and source side by side, include
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
                            GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
-                           mesh.c/.h (vertex types, box and plane primitives), camera.c/.h (orbit camera math),
+                           mesh.c/.h (vertex types; box, plane, sphere, cylinder, cone, capsule and torus primitives;
+                           docs/specs/mesh.md), camera.c/.h (orbit camera math),
                            strings.c/.h (T, TL and the language; each executable brings its own table),
                            renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
