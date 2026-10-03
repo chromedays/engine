@@ -479,7 +479,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   내려받는다.
   - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
   - `nv_setup_executable`에 `PRELOAD <폴더>@<패키지 안 경로> ...` 인수를 더한다(`ASSETS <폴더>`는 `<폴더>@/assets`와 같다).
-    게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴을 `/assets/fonts`에 넣는다(열린 질문 8).
+    게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴 폴더 `assets/fonts`만 `/assets/fonts`에 넣는다.
+    `assets/` 전체는 넣지 않는다(쓰지 않는 캐릭터 모델이 빠진다).
   - `nv_setup_executable`에 `COMPONENT <name>` 인수를 더한다(기본값 `web`). `autobattler`는
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 앱의 `web` 패키지에 섞이지 않는다.
   - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
@@ -568,8 +569,8 @@ assert와 WebGPU 오류가 없는지 본다.
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. ~~**수치**~~: 해결됨(2026-10-03). 표와 정의 파일의 값은 출발점으로 두고, A를 해 본 뒤 `units.txt`와 `stage.txt`에서 조정한다.
 7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
-8. **에셋:** 정의 파일 말고 게임에 필요한 에셋은 UI 글꼴(Pretendard 한 파일)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
-   `PRELOAD`로 `assets/fonts/`만 넣을까? 추천: `assets/fonts/`만.
+8. ~~**에셋**~~: 해결됨(2026-10-03). 게임 패키지에는 `PRELOAD`로 `assets/fonts/`와 `autobattler/data`만 넣는다. 캐릭터 모델
+   (`assets/quaternius/`, gzip 약 0.6 MB)은 쓰지 않으므로 빠진다("실행 파일" 절).
 
 ## English
 
@@ -1064,7 +1065,8 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   stay as they are. Downloaded apart from the editor app.
   - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
   - `nv_setup_executable` gets a `PRELOAD <dir>@<path in the package> ...` argument (`ASSETS <dir>` is `<dir>@/assets`). The game
-    puts the definition folder `autobattler/data` at `/data` and the font at `/assets/fonts` (open question 8).
+    puts the definition folder `autobattler/data` at `/data` and only the font folder `assets/fonts` at `/assets/fonts`, not all of
+    `assets/` (the unused character models stay out).
   - `nv_setup_executable` gets a `COMPONENT <name>` argument (default `web`). The game is
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the app's `web` package.
   - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
@@ -1161,5 +1163,5 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 6. ~~**Numbers**~~: resolved (2026-10-03). The values in the tables and definition files are a starting point, adjusted in
    `units.txt` and `stage.txt` after playing A.
 7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
-8. **Assets:** besides the definition files, the only asset the game needs is the UI font (one Pretendard file). Ship the whole
-   `assets/` directory, or only `assets/fonts/` through `PRELOAD`? Recommended: only `assets/fonts/`.
+8. ~~**Assets**~~: resolved (2026-10-03). The game's package holds only `assets/fonts/` and `autobattler/data`, through
+   `PRELOAD`. The character models (`assets/quaternius/`, about 0.6 MB gzip) are unused and left out ("Executable" section).
