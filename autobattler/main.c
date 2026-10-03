@@ -17,8 +17,9 @@ global u8 scratch_memory[NV_MEGABYTES(4)];
 
 #define MAX_TICKS_PER_FRAME 4 // at 1x; more at higher speeds, which need more ticks a frame
 
-// A rectangle of the canvas from CSS pixel corners.
-internal NvRect css_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
+// A rectangle of the canvas in framebuffer pixels, from its corners in CSS pixels. Each corner is rounded on its own, so
+// rectangles that share an edge in CSS pixels share it in framebuffer pixels too (no gap, no overlap).
+internal NvRect framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 {
     u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
     u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
@@ -34,15 +35,15 @@ internal NvRect css_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 void game_layout(Game* game)
 {
     f32 ratio = nv_window_pixel_ratio(&game->window);
-    f32 width = (f32)game->gpu.width / ratio, height = (f32)game->gpu.height / ratio;
-    if (width >= height * 1.1f) {
-        f32 panel_width = fminf(PANEL_WIDTH * game->imgui.ui_scale, width * 0.5f);
-        game->layout.viewport = css_rect(0.0f, 0.0f, width - panel_width, height, ratio);
-        game->layout.panel = css_rect(width - panel_width, 0.0f, width, height, ratio);
+    f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
+    if (width_css >= height_css * 1.1f) {
+        f32 panel_width_css = fminf(PANEL_WIDTH * game->imgui.ui_scale, width_css * 0.5f);
+        game->layout.viewport = framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
+        game->layout.panel = framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
     } else {
-        f32 panel_height = height * PANEL_HEIGHT_SHARE;
-        game->layout.viewport = css_rect(0.0f, 0.0f, width, height - panel_height, ratio);
-        game->layout.panel = css_rect(0.0f, height - panel_height, width, height, ratio);
+        f32 panel_height_css = height_css * PANEL_HEIGHT_SHARE;
+        game->layout.viewport = framebuffer_rect_from_css(0.0f, 0.0f, width_css, height_css - panel_height_css, ratio);
+        game->layout.panel = framebuffer_rect_from_css(0.0f, height_css - panel_height_css, width_css, height_css, ratio);
     }
     game->layout.scene = nv_renderer_scene_output(&game->resolution, game->layout.viewport);
 }

@@ -17,9 +17,9 @@ void phone_layout(App* app, f32 width, f32 height, f32 ratio)
 {
     f32 split = PHONE_TOP_BAR + (height - PHONE_TOP_BAR) * PHONE_VIEWPORT_SHARE;
     app->layout = (Layout){
-        .top_bar = ui_rect(0.0f, 0.0f, width, PHONE_TOP_BAR, ratio),
-        .viewport = ui_rect(0.0f, PHONE_TOP_BAR, width, split, ratio),
-        .panel = ui_rect(0.0f, split, width, height, ratio),
+        .top_bar = framebuffer_rect_from_css(0.0f, 0.0f, width, PHONE_TOP_BAR, ratio),
+        .viewport = framebuffer_rect_from_css(0.0f, PHONE_TOP_BAR, width, split, ratio),
+        .panel = framebuffer_rect_from_css(0.0f, split, width, height, ratio),
     };
 }
 

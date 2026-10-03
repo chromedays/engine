@@ -453,8 +453,9 @@ typedef struct Battle {
 - `UnitDef`: 이름, 비용, 체력, 방어력, 속도, 반지름, 높이, 무기 하나(`WeaponDef`), 능력(`AbilityDef`: `ABILITY_NONE`이나
   `ABILITY_SHIELD`). `layer`, `size`, `squad_size`, `footprint`, `altitude`, `weapon_count`는 없다.
 - `WeaponDef`: 사거리, 피해, 쿨다운, 발사각, 퍼짐, 총구. 투사체 종류, 대상, 최소 사거리, 범위, 속도, 선회는 없다.
-- `Unit`: 플래그, 팀, 정의, 위치와 이전 위치, 속도, 방향과 이전 방향, 체력, 이번 틱의 피해, 대상, 쿨다운, 능력 상태
-  (`union`에 `shield`만). 분대는 없다.
+- `Unit`: 플래그, 팀, 정의, 위치와 이전 위치, 속도, 방향과 이전 방향, 체력, 이번 틱의 피해, 대상, 쿨다운(틱: `cooldown_ticks`), 능력 상태
+  (`union`에 `shield`만: 에너지와 맞은 뒤의 틱 `since_hit_ticks`). 분대는 없다. 틱으로 세는 값은 초로 쓰는 정의의 값과 헷갈리지 않게 이름에
+  `_ticks`를 붙인다(`docs/CODING_STANDARD.md`의 "이름 짓기").
 - `Projectile`: 팀, 쏜 유닛, 위치와 이전 위치, 속도, 피해(방어력 전; 실드가 일부만 받으면 남은 만큼). 종류와 미사일 데이터는 없다.
 - `Battle`: 정의, 단계, 결과, 틱, 난수, 플레이어의 배치(칸마다 유닛 종류)와 쓴 공급, 유닛, 포탄, 이벤트(발사, 명중, 실드 피격,
   죽음; 이벤트마다 팀과 유닛 종류), 분리를 위한 임시 배열. 지형지물, `blocked`, 분대, 흐름장, 공간 격자는 없다.
@@ -1096,7 +1097,9 @@ The code above is the shape with B added. A's structs hold only what A uses (the
 - `WeaponDef`: range, damage, cooldown, launch angle, spread, muzzle. No projectile kind, targets, minimum range, splash, speed or
   turn rate.
 - `Unit`: flags, team, definition, position and previous position, velocity, yaw and previous yaw, health, this tick's damage,
-  target, cooldown, ability state (a `union` with only `shield`). No squad.
+  target, cooldown (in ticks: `cooldown_ticks`), ability state (a `union` with only `shield`: its energy and the ticks since a hit,
+  `since_hit_ticks`). No squad. Values counted in ticks carry `_ticks` in their names, so they are not mistaken for the definitions'
+  values in seconds ("Naming" in `docs/CODING_STANDARD.md`).
 - `Projectile`: team, shooter, position and previous position, velocity, damage (before armor; what a shield leaves when it takes only
   part). No kind and no missile data.
 - `Battle`: the definitions, phase, outcome, tick, random numbers, the player's placement (a unit type per cell) and the supply used, units,

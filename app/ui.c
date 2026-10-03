@@ -813,7 +813,7 @@ b32 ui_begin_textures_tab(App* app)
     return open;
 }
 
-NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
+NvRect framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 {
     u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
     u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
@@ -827,12 +827,12 @@ NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 void app_layout(App* app)
 {
     f32 ratio = nv_window_pixel_ratio(&app->window);
-    f32 width = (f32)app->gpu.width / ratio;
-    f32 height = (f32)app->gpu.height / ratio;
+    f32 width_css = (f32)app->gpu.width / ratio;
+    f32 height_css = (f32)app->gpu.height / ratio;
     if (app->ui_mode == UI_PHONE)
-        phone_layout(app, width, height, ratio);
+        phone_layout(app, width_css, height_css, ratio);
     else
-        desktop_layout(app, width, height, ratio);
+        desktop_layout(app, width_css, height_css, ratio);
     app->layout.scene = nv_renderer_scene_output(&app->resolution, app->layout.viewport);
 }
 

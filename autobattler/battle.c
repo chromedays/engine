@@ -333,9 +333,9 @@ internal void fire_weapons(Battle* battle)
         Unit* unit = &battle->units[i];
         if (!is_alive(unit))
             continue;
-        if (unit->cooldown)
-            --unit->cooldown;
-        if (unit->cooldown || !unit->target.index || battle->projectile_count == BATTLE_MAX_PROJECTILES)
+        if (unit->cooldown_ticks)
+            --unit->cooldown_ticks;
+        if (unit->cooldown_ticks || !unit->target.index || battle->projectile_count == BATTLE_MAX_PROJECTILES)
             continue; // with the pool full the weapon waits, ready, for a slot
         const WeaponDef* weapon = &battle->defs->units[unit->def].weapon;
         const Unit* target = &battle->units[unit->target.index];
@@ -343,7 +343,7 @@ internal void fire_weapons(Battle* battle)
             continue;
         fire_shell(battle, i);
         u32 cooldown = seconds_to_ticks(weapon->cooldown);
-        unit->cooldown = cooldown ? cooldown : 1;
+        unit->cooldown_ticks = cooldown ? cooldown : 1;
     }
 }
 
@@ -467,7 +467,7 @@ internal void step_projectiles(Battle* battle)
                 f32 energy = shield_unit->ability.shield.energy;
                 f32 taken = fminf(energy, shell->damage);
                 shield_unit->ability.shield.energy = energy - taken;
-                shield_unit->ability.shield.since_hit = 0;
+                shield_unit->ability.shield.since_hit_ticks = 0;
                 add_event(battle, BATTLE_EVENT_SHIELD_HIT, shield_unit, point, nv_vec3_normalize(shell->velocity), taken);
                 shell->damage -= taken;
                 if (shell->damage <= 0.0f) {
@@ -519,9 +519,9 @@ internal void refill_shields(Battle* battle)
         const AbilityDef* ability = &battle->defs->units[unit->def].ability;
         if (!is_alive(unit) || ability->kind != ABILITY_SHIELD)
             continue;
-        if (unit->ability.shield.since_hit < UINT32_MAX)
-            ++unit->ability.shield.since_hit;
-        if (unit->ability.shield.since_hit >= seconds_to_ticks(ability->shield.regen_delay))
+        if (unit->ability.shield.since_hit_ticks < UINT32_MAX)
+            ++unit->ability.shield.since_hit_ticks;
+        if (unit->ability.shield.since_hit_ticks >= seconds_to_ticks(ability->shield.regen_delay))
             unit->ability.shield.energy = fminf(ability->shield.capacity,
                                                 unit->ability.shield.energy + ability->shield.regen * BATTLE_TICK_SECONDS);
     }
@@ -576,7 +576,7 @@ u32 battle_hash(const Battle* battle)
         hash = nv_fnv1a(hash, &unit->yaw, sizeof(unit->yaw));
         hash = nv_fnv1a(hash, &unit->health, sizeof(unit->health));
         hash = nv_fnv1a(hash, &unit->target, sizeof(unit->target));
-        hash = nv_fnv1a(hash, &unit->cooldown, sizeof(unit->cooldown));
+        hash = nv_fnv1a(hash, &unit->cooldown_ticks, sizeof(unit->cooldown_ticks));
         hash = nv_fnv1a(hash, &unit->ability.shield, sizeof(unit->ability.shield));
     }
     for (u32 i = 0; i < battle->projectile_count; ++i) {

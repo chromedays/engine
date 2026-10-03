@@ -97,9 +97,9 @@ typedef struct Unit {
     f32 health;
     f32 damage_taken; // this tick; applied at the tick's end
     UnitId target;
-    u32 cooldown; // ticks until the weapon can fire
+    u32 cooldown_ticks; // until the weapon can fire
     union { // tagged by UnitDef.ability.kind
-        struct { f32 energy; u32 since_hit; } shield; // since_hit in ticks
+        struct { f32 energy; u32 since_hit_ticks; } shield;
     } ability;
 } Unit;
 

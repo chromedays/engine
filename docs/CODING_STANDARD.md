@@ -43,6 +43,17 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 
 예외 하나: UI 문자열을 감싸는 `T("text")`와 `TL("label")`(`engine/strings.h`)은 모든 UI 텍스트에 붙으므로 짧은 이름의 매크로다.
 
+위 표는 이름의 모양을 정한다. 이름이 말해야 하는 것은 아래와 같다.
+
+- **함수 이름은 무엇을 돌려주는지, 무엇을 하는지 말한다.** 값을 돌려주는 함수는 그 값으로 짓고(`battle_cell_center`,
+  `nv_mat4_identity`), 무언가를 바꾸는 함수는 동사로 짓는다(`configure_surface`). 헷갈릴 수 있는 단위나 공간(CSS 픽셀과 프레임버퍼
+  픽셀, 초와 틱, 로컬과 월드, 라디안과 도)은 이름에 쓰고, 변환이면 무엇에서 무엇으로인지 쓴다(`framebuffer_rect_from_css`,
+  `seconds_to_ticks`). 길어도 된다: 본문을 열어 봐야 뜻을 아는 짧은 이름보다, 호출하는 곳에서 뜻이 읽히는 긴 이름이 낫다.
+- **변수와 필드는 같은 양이 두 단위로 섞일 때 단위를 이름에 쓴다.** 필드와 매개변수의 단위는 선언의 주석으로 충분하다
+  (`f32 cooldown; // seconds`). 다만 같은 양을 다른 단위로 가진 이름이 함께 쓰이면 이름에 단위를 쓴다(`WeaponDef.cooldown`은 초,
+  `Unit.cooldown_ticks`는 틱). 지역 변수는 한 함수 안에서 같은 양을 두 단위로 다룰 때 단위를 쓴다(`width_css`와 `gpu.width`); 하나뿐이면
+  쓰지 않는다.
+
 ### 타입과 키워드
 
 - `engine/base.h`의 별칭을 쓴다: `u8`–`u64`, `s8`–`s64`, `f32`, `f64`, `b32`(true/false), `umm`(메모리 크기와
@@ -137,6 +148,18 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 One exception: `T("text")` and `TL("label")` (`engine/strings.h`), which wrap UI strings, are macros with short names, since they
 go around every UI text.
+
+The table sets the shape of names. What a name has to say:
+
+- **A function's name says what it gives or does.** A function that returns a value is named for that value (`battle_cell_center`,
+  `nv_mat4_identity`); one that changes something takes a verb (`configure_surface`). A unit or space that could be mistaken (CSS
+  pixels or framebuffer pixels, seconds or ticks, local or world, radians or degrees) goes in the name, and a conversion names both
+  sides (`framebuffer_rect_from_css`, `seconds_to_ticks`). Longer is fine: a name whose meaning reads at the call beats a short one
+  the reader has to open the body to understand.
+- **A variable or field names its unit when the same quantity appears in two units.** A comment at the declaration is enough for a
+  field's or a parameter's unit (`f32 cooldown; // seconds`). But when another name holds the same quantity in a different unit, the
+  unit goes in the name (`WeaponDef.cooldown` in seconds, `Unit.cooldown_ticks` in ticks). A local variable names its unit when one
+  function handles the same quantity in two units (`width_css` beside `gpu.width`); with only one, it does not.
 
 ### Types and keywords
 

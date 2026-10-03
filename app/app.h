@@ -697,7 +697,7 @@ b32 ui_push_play_tint(App* app);
 void ui_pop_play_tint(b32 pushed);
 
 // A rectangle given in CSS pixels as framebuffer pixels, rounded so neighbors share their edges.
-NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio);
+NvRect framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio);
 
 // shortcuts.c
 void shortcuts_update(App* app); // fires the shortcuts pressed this frame; desktop UI, after the docks
