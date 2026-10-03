@@ -73,11 +73,11 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
     f32 top = DESKTOP_TOP_BAR;
     f32 middle = height - bottom;
     app->layout = (Layout){
-        .top_bar = framebuffer_rect_from_css(0.0f, 0.0f, width, top, ratio),
-        .left = framebuffer_rect_from_css(0.0f, top, left, middle, ratio),
-        .right = framebuffer_rect_from_css(width - right, top, width, middle, ratio),
-        .bottom = framebuffer_rect_from_css(0.0f, middle, width, height, ratio),
-        .viewport = framebuffer_rect_from_css(left, top, width - right, middle, ratio),
+        .top_bar = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width, top, ratio),
+        .left = nv_window_framebuffer_rect_from_css(0.0f, top, left, middle, ratio),
+        .right = nv_window_framebuffer_rect_from_css(width - right, top, width, middle, ratio),
+        .bottom = nv_window_framebuffer_rect_from_css(0.0f, middle, width, height, ratio),
+        .viewport = nv_window_framebuffer_rect_from_css(left, top, width - right, middle, ratio),
     };
 }
 

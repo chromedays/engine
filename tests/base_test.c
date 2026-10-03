@@ -1,4 +1,5 @@
-// The small helpers in engine/base.h and engine/math.h: FNV-1a, clamps, PCG32, the pixel ratio.
+// The small helpers in engine/base.h, engine/math.h and engine/window.h: FNV-1a, clamps, PCG32, the pixel ratio, rectangles
+// from CSS pixels.
 #include <engine/math.h>
 #include <engine/window.h>
 
@@ -63,6 +64,16 @@ int main(void)
     CHECK(nv_window_pixel_ratio(&window) == 1.0f); // before the browser says
     window.pixel_ratio = 2.0f;
     CHECK(nv_window_pixel_ratio(&window) == 2.0f);
+
+    // A rectangle from CSS corners: each corner is rounded on its own, so at a ratio like 1.5 two rectangles that share an
+    // edge in CSS pixels still share it (10.3 * 1.5 = 15.45, the edge of both), with no gap or overlap.
+    NvRect left = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, 10.3f, 20.0f, 1.5f);
+    NvRect right = nv_window_framebuffer_rect_from_css(10.3f, 0.0f, 30.0f, 20.0f, 1.5f);
+    CHECK(left.x == 0 && left.y == 0 && left.width == 15 && left.height == 30);
+    CHECK(right.x == left.x + left.width && right.width == 30 && right.height == 30);
+    // Corners in the wrong order make an empty rectangle at the first corner.
+    NvRect empty = nv_window_framebuffer_rect_from_css(5.0f, 5.0f, 2.0f, 1.0f, 2.0f);
+    CHECK(empty.x == 10 && empty.y == 10 && empty.width == 0 && empty.height == 0);
 
     if (failures == 0)
         printf("base_test: all passed\n");

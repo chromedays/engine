@@ -1,4 +1,5 @@
 #include "engine/imgui.h"
+#include "engine/file.h"
 #include "engine/log.h"
 #include "engine/math.h"
 #include "engine/window.h"
@@ -1169,33 +1170,13 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
 #define UI_FONT_FILE "/assets/fonts/Pretendard-Regular.ttf"
 #define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
 
-// The whole file in the arena; NULL (and a warning) if it cannot be read.
-internal void* read_font_file(NvArena* arena, const char* path, u32* out_size)
-{
-    FILE* file = fopen(path, "rb");
-    if (!file) {
-        nv_log(NV_LOG_WARNING, "imgui", "font %s is missing", path);
-        return NULL;
-    }
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    void* bytes = size > 0 ? nv_arena_push(arena, (umm)size, 16) : NULL;
-    b32 ok = bytes && fread(bytes, 1, (umm)size, file) == (umm)size;
-    fclose(file);
-    if (!ok) {
-        nv_log(NV_LOG_WARNING, "imgui", "font %s could not be read", path);
-        return NULL;
-    }
-    *out_size = (u32)size;
-    return bytes;
-}
-
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
 {
-    u32 size = 0;
-    void* font = read_font_file(arena, UI_FONT_FILE, &size);
-    if (!font || !nv_imgui_set_font(imgui, font, size, UI_FONT_SIZE)) {
+    umm size = 0;
+    u8* font = nv_file_read(arena, UI_FONT_FILE, &size);
+    if (!font)
+        nv_log(NV_LOG_WARNING, "imgui", "font %s is missing or could not be read", UI_FONT_FILE);
+    if (!font || !nv_imgui_set_font(imgui, font, (u32)size, UI_FONT_SIZE)) {
         nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
         return 0;
     }
@@ -1238,6 +1219,35 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
     }
     memcpy(out, text, lo);
     memcpy(out + lo, "...", 4);
+}
+
+f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject, f32 box[4])
+{
+    const ImU32 backdrop = 0x99000000u;
+    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+    f32 ratio = nv_window_pixel_ratio(imgui->window);
+    ImVec2_c pos = {(f32)viewport.x / ratio + 6.0f, (f32)viewport.y / ratio + 6.0f};
+    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
+    ImVec2_c min = {pos.x - 4.0f, pos.y - 2.0f};
+    ImVec2_c max = {pos.x + size.x + extra_width + 4.0f, pos.y + size.y + 2.0f};
+    ImDrawList_AddRectFilled(draw, min, max, backdrop, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
+
+    char fitted[512];
+    nv_imgui_fit_text(subject, (f32)viewport.width / ratio - 20.0f, fitted, sizeof(fitted));
+    ImVec2_c subject_size = igCalcTextSize(fitted, NULL, false, -1.0f);
+    ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
+                             (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, backdrop, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, fitted, NULL);
+
+    if (box) {
+        box[0] = min.x;
+        box[1] = min.y;
+        box[2] = max.x;
+        box[3] = max.y;
+    }
+    return pos.x + size.x;
 }
 
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)

@@ -175,6 +175,13 @@ b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 // nv_imgui_render, since it measures with the UI font.
 void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 
+// The build label in a viewport's top-left corner (AGENTS.md): `text` (the build, the commit, what was downloaded) in white on a
+// dark backdrop, and `subject` (the commit's subject line) in gray under it, cut to the viewport's width. `viewport` is in
+// framebuffer pixels. `extra_width` CSS pixels widen the first backdrop for what the caller draws after the text (a badge).
+// Draws in the foreground. Returns the x where the text ends (CSS pixels); `box`, when not NULL, gets the first line's
+// backdrop (min x, min y, max x, max y; CSS pixels). Call between nv_imgui_new_frame and nv_imgui_render.
+f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject, f32 box[4]);
+
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds);
 
 // Begins an ImGui window that fills `rect` (framebuffer pixels), with no title bar, and cannot be

@@ -4,6 +4,8 @@
 
 #include "game.h"
 
+#include <engine/file.h>
+
 #include <emscripten/emscripten.h>
 
 #include <math.h>
@@ -17,19 +19,6 @@ global u8 scratch_memory[NV_MEGABYTES(4)];
 
 #define MAX_TICKS_PER_FRAME 4 // at 1x; more at higher speeds, which need more ticks a frame
 
-// A rectangle of the canvas in framebuffer pixels, from its corners in CSS pixels. Each corner is rounded on its own, so
-// rectangles that share an edge in CSS pixels share it in framebuffer pixels too (no gap, no overlap).
-internal NvRect framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
-{
-    u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
-    u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
-    if (right < left)
-        right = left;
-    if (bottom < top)
-        bottom = top;
-    return (NvRect){left, top, right - left, bottom - top};
-}
-
 // The viewport and the panel never overlap, since input that starts in the viewport skips ImGui: the panel is on the right
 // of a wide canvas and under a tall one.
 void game_layout(Game* game)
@@ -38,32 +27,14 @@ void game_layout(Game* game)
     f32 width_css = (f32)game->gpu.width / ratio, height_css = (f32)game->gpu.height / ratio;
     if (width_css >= height_css * 1.1f) {
         f32 panel_width_css = fminf(PANEL_WIDTH * game->imgui.ui_scale, width_css * 0.5f);
-        game->layout.viewport = framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
-        game->layout.panel = framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
+        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css - panel_width_css, height_css, ratio);
+        game->layout.panel = nv_window_framebuffer_rect_from_css(width_css - panel_width_css, 0.0f, width_css, height_css, ratio);
     } else {
         f32 panel_height_css = height_css * PANEL_HEIGHT_SHARE;
-        game->layout.viewport = framebuffer_rect_from_css(0.0f, 0.0f, width_css, height_css - panel_height_css, ratio);
-        game->layout.panel = framebuffer_rect_from_css(0.0f, height_css - panel_height_css, width_css, height_css, ratio);
+        game->layout.viewport = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width_css, height_css - panel_height_css, ratio);
+        game->layout.panel = nv_window_framebuffer_rect_from_css(0.0f, height_css - panel_height_css, width_css, height_css, ratio);
     }
     game->layout.scene = nv_renderer_scene_output(&game->resolution, game->layout.viewport);
-}
-
-// The text of a file packed into the executable, in the scratch arena; NULL when it cannot be read.
-internal const char* read_text_file(Game* game, const char* path, umm* size)
-{
-    FILE* file = fopen(path, "rb");
-    if (!file)
-        return NULL;
-    fseek(file, 0, SEEK_END);
-    long length = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    char* text = NULL;
-    if (length >= 0 && (umm)length < game->scratch.size - game->scratch.used) {
-        text = NV_PUSH_ARRAY(&game->scratch, (umm)length + 1, char);
-        *size = fread(text, 1, (umm)length, file);
-    }
-    fclose(file);
-    return text;
 }
 
 // Reads units.txt and stage.txt; on any failure `defs.first_error` says what, for the panel.
@@ -72,8 +43,8 @@ internal b32 load_defs(Game* game)
     BattleDefs* defs = &game->defs;
     umm mark = game->scratch.used;
     umm units_size = 0, stage_size = 0;
-    const char* units = read_text_file(game, "/data/units.txt", &units_size);
-    const char* stage = read_text_file(game, "/data/stage.txt", &stage_size);
+    const char* units = (const char*)nv_file_read(&game->scratch, "/data/units.txt", &units_size);
+    const char* stage = (const char*)nv_file_read(&game->scratch, "/data/stage.txt", &stage_size);
     b32 ok = false;
     if (!units || !stage) {
         snprintf(defs->first_error, sizeof(defs->first_error), "%s: cannot read the file", units ? "stage.txt" : "units.txt");

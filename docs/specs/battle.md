@@ -510,7 +510,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 - **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
   (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
   탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(에디터 앱처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
-  내려받은 양, 커밋 제목)은 에디터 앱의 것을 줄인 것이다(배지 없음).
+  내려받은 양, 커밋 제목)은 에디터 앱과 같은 엔진 함수 `nv_imgui_build_label`이 그린다(배지 없음).
 - **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 62°, 거리 104 m) 전장 전체가 보이게 본다. 왼쪽 드래그나 한 손가락은 땅 위로
   화면을 옮기고(손가락을 따라가고, 목표는 전장 안으로 제한), 오른쪽이나 가운데 버튼 드래그와 두 손가락은 돌리고, 휠과 핀치는
   확대한다(거리 15–140 m, 피치 20°–85°).
@@ -1158,7 +1158,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. None of the
   editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
   half of it on a touch screen (as in the editor app). The build label in the corner (build type, commit, what was downloaded,
-  the commit's subject) is a shortened version of the editor app's (no badge).
+  the commit's subject) is drawn by the engine's `nv_imgui_build_label`, as the editor app's is (no badge).
 - **Camera:** an angled view from above and behind the player's side (-Z) at 62° pitch and 104 m, so that all of the field is in view. A
   left drag or one finger moves the view over the ground (it follows the finger; the target is kept inside the field), a right or middle
   drag or two fingers turn it, the wheel and pinch zoom (15 to 140 m, pitch 20° to 85°).

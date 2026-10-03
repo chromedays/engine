@@ -114,6 +114,29 @@ int main(void)
     move = nv_orbit_camera_pan(&camera, &node, 0.0f, 1.0f, 0.0f);
     CHECK(isfinite(move.x) && isfinite(move.z));
 
+    // Panning along the ground: at yaw 0 the camera looks along -Z. Across moves as nv_orbit_camera_pan does; a pixel down the
+    // screen moves 1 / sin(pitch) as far along the view (twice at 30 degrees, once looking straight down), and never up.
+    camera = make_camera();
+    camera.distance = 10.0f;
+    camera.yaw = 0.0f;
+    camera.pitch = NV_PI / 6.0f;
+    node = make_node();
+    move = nv_orbit_camera_pan_ground(&camera, &node, 600.0f, 100.0f, 0.0f);
+    CHECK(near3(move, nv_vec3(-100.0f * pixel, 0.0f, 0.0f)));
+    move = nv_orbit_camera_pan_ground(&camera, &node, 600.0f, 0.0f, 50.0f);
+    CHECK(near3(move, nv_vec3(0.0f, 0.0f, -100.0f * pixel)));
+    camera.pitch = NV_PI / 2.0f;
+    move = nv_orbit_camera_pan_ground(&camera, &node, 600.0f, 0.0f, 50.0f);
+    CHECK(near3(move, nv_vec3(0.0f, 0.0f, -50.0f * pixel)));
+    // Turned a quarter (yaw 90 degrees: the camera on +X, looking along -X), across is along -Z.
+    camera.yaw = NV_PI * 0.5f;
+    move = nv_orbit_camera_pan_ground(&camera, &node, 600.0f, 100.0f, 0.0f);
+    CHECK(near3(move, nv_vec3(0.0f, 0.0f, 100.0f * pixel)));
+    // Level with the ground the slant is held at its least, so the move stays finite.
+    camera.pitch = 0.0f;
+    move = nv_orbit_camera_pan_ground(&camera, &node, 600.0f, 0.0f, 50.0f);
+    CHECK(isfinite(move.x) && isfinite(move.z) && move.y == 0.0f);
+
     if (failures == 0)
         printf("camera_test: all passed\n");
     return failures ? 1 : 0;

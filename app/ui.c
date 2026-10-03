@@ -680,47 +680,28 @@ void ui_build_label(App* app)
     char count[8];
     format_unseen(unseen, count, sizeof(count));
 
-    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
-    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
-    // The viewport's corner, in CSS pixels: below the phone's top bar, right of the desktop's left dock.
-    f32 ratio = nv_window_pixel_ratio(&app->window);
-    ImVec2_c pos = {(f32)app->layout.viewport.x / ratio + 6.0f, (f32)app->layout.viewport.y / ratio + 6.0f};
+    // The badge goes after the text, inside the label's backdrop (the engine draws the label and the commit's subject line).
     f32 radius = igGetFontSize() * 0.3f;
     f32 badge_width = 0.0f;
     if (unseen)
         badge_width = 8.0f + radius * 2.0f + 4.0f + igCalcTextSize(count, NULL, false, -1.0f).x;
-    ImVec2_c min = {pos.x - 4.0f, pos.y - 2.0f};
-    ImVec2_c max = {pos.x + size.x + badge_width + 4.0f, pos.y + size.y + 2.0f};
-    ImDrawList_AddRectFilled(draw, min, max, 0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
-    // The commit's subject line under it, cut to the viewport's width. Not part of the tap box.
-    {
-        char subject[sizeof("Commit: " NV_GIT_SUBJECT) + 4];
-        nv_imgui_fit_text("Commit: " NV_GIT_SUBJECT, (f32)app->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
-        ImVec2_c subject_size = igCalcTextSize(subject, NULL, false, -1.0f);
-        ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
-        ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
-                                 (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, 0x99000000u, 3.0f, 0);
-        ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, subject, NULL);
-    }
+    f32* box = app->badge_box;
+    f32 text_end = nv_imgui_build_label(&app->imgui, app->layout.viewport, text, badge_width, "Commit: " NV_GIT_SUBJECT, box);
     if (unseen) {
+        ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
         ImU32 color = console_level_color(worst);
-        f32 x = pos.x + size.x + 8.0f;
-        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, pos.y + size.y * 0.5f}, radius, color, 12);
-        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, pos.y}, color, count, NULL);
+        f32 x = text_end + 8.0f;
+        f32 text_y = box[1] + 2.0f, text_height = box[3] - box[1] - 4.0f;
+        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, text_y + text_height * 0.5f}, radius, color, 12);
+        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, text_y}, color, count, NULL);
     }
 
-    // The box a tap counts in: the label, grown to a size a finger can hit.
-    f32* box = app->badge_box;
+    // The box a tap counts in: the label (not the subject line), grown to a size a finger can hit.
     if (!unseen) {
         box[0] = box[1] = box[2] = box[3] = 0.0f;
         return;
     }
     f32 minimum = 32.0f * app->imgui.ui_scale;
-    box[0] = min.x;
-    box[1] = min.y;
-    box[2] = max.x;
-    box[3] = max.y;
     for (u32 axis = 0; axis < 2; ++axis) {
         f32 extra = minimum - (box[axis + 2] - box[axis]);
         if (extra > 0.0f) {
@@ -811,17 +792,6 @@ b32 ui_begin_textures_tab(App* app)
     b32 open = igBeginTabItem(TL("Textures"), NULL, flags);
     textures_record(&app->textures, TEXTURES_RECT_TAB);
     return open;
-}
-
-NvRect framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
-{
-    u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
-    u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
-    if (right < left)
-        right = left;
-    if (bottom < top)
-        bottom = top;
-    return (NvRect){left, top, right - left, bottom - top};
 }
 
 void app_layout(App* app)

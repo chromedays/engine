@@ -2,6 +2,7 @@ add_library(nv STATIC
     anim.cpp
     camera.c
     chunk.c
+    file.c
     gltf.c
     gpu.c
     imgui.c

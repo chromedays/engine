@@ -21,6 +21,11 @@ void nv_orbit_camera_turn(NvOrbitCamera* camera, f32 yaw, f32 pitch, f32 dolly);
 // camera node's right and up axes; its fov is the node's.
 NvVec3 nv_orbit_camera_pan(const NvOrbitCamera* camera, const NvNode* camera_node, f32 image_height, f32 pan_x, f32 pan_y);
 
+// The same pan along the ground plane through the target (an RTS camera's): the ground under the finger follows it. Along
+// the camera's yaw, a pixel across moves as nv_orbit_camera_pan does, and a pixel up or down 1 / sin(pitch) times as far,
+// since the ground is seen at a slant. For a camera looking down (pitch above 0; below about 3 degrees it moves as at 3).
+NvVec3 nv_orbit_camera_pan_ground(const NvOrbitCamera* camera, const NvNode* camera_node, f32 image_height, f32 pan_x, f32 pan_y);
+
 // Sets the camera node's position and rotation, and its world matrix too, since the node is a top-level one and
 // nv_scene_update may already have run this frame.
 void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);

@@ -252,13 +252,10 @@ void view_input(Game* game)
 
     nv_orbit_camera_turn(orbit, -in->pan_x * CAMERA_RADIANS_PER_PIXEL, in->pan_y * CAMERA_RADIANS_PER_PIXEL, in->dolly);
     if (in->orbit_x != 0.0f || in->orbit_y != 0.0f) {
-        // The scene follows the finger: along the ground, a pixel down the screen is 1 / sin(pitch) meters of ground deeper.
-        f32 image_height = (f32)scene_output->height * scene_output->pixel_height / ratio;
-        f32 meters = 2.0f * orbit->distance * tanf(nv_scene_get(game->scene, game->camera)->camera.fov_y * 0.5f) / fmaxf(image_height, 1.0f);
-        NvVec3 right = nv_vec3(cosf(orbit->yaw), 0.0f, -sinf(orbit->yaw));
-        NvVec3 forward = nv_vec3(-sinf(orbit->yaw), 0.0f, -cosf(orbit->yaw));
-        orbit->target = nv_vec3_add(orbit->target, nv_vec3_scale(right, -in->orbit_x * meters));
-        orbit->target = nv_vec3_add(orbit->target, nv_vec3_scale(forward, in->orbit_y * meters / sinf(orbit->pitch)));
+        // The ground under the finger follows it. The image's height is in CSS pixels, like the drag.
+        f32 image_height_css = (f32)scene_output->height * scene_output->pixel_height / ratio;
+        NvVec3 move = nv_orbit_camera_pan_ground(orbit, nv_scene_get(game->scene, game->camera), image_height_css, in->orbit_x, in->orbit_y);
+        orbit->target = nv_vec3_add(orbit->target, move);
     }
     orbit->target.x = nv_clamp_f32(orbit->target.x, 0.0f, FIELD_WIDTH);
     orbit->target.z = nv_clamp_f32(orbit->target.z, 0.0f, FIELD_LENGTH);
@@ -444,19 +441,7 @@ void view_build_label(Game* game)
     char text[160];
     snprintf(text, sizeof(text), "%s build %s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, game->download_text[0] ? " \xC2\xB7 " : "",
              game->download_text);
-    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
-    f32 ratio = nv_window_pixel_ratio(&game->window);
-    ImVec2_c pos = {(f32)game->layout.viewport.x / ratio + 6.0f, (f32)game->layout.viewport.y / ratio + 6.0f};
-    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
-    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, pos.y - 2.0f}, (ImVec2_c){pos.x + size.x + 4.0f, pos.y + size.y + 2.0f}, 0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
-    char subject[sizeof("Commit: " NV_GIT_SUBJECT) + 4];
-    nv_imgui_fit_text("Commit: " NV_GIT_SUBJECT, (f32)game->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
-    ImVec2_c subject_size = igCalcTextSize(subject, NULL, false, -1.0f);
-    ImVec2_c subject_pos = {pos.x, pos.y + size.y + 5.0f};
-    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
-                             (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, 0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, subject, NULL);
+    nv_imgui_build_label(&game->imgui, game->layout.viewport, text, 0.0f, "Commit: " NV_GIT_SUBJECT, NULL);
 }
 
 // A button that acts once when clicked and once a frame while held past STEP_HOLD_SECONDS. Not ImGui's ButtonRepeat: that

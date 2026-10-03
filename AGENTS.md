@@ -21,7 +21,8 @@ engine/                    each module's header and source side by side, include
                            base.h (types, asserts, arenas), math.h, scene.c/.h, window.c/.h, gpu.c/.h,
                            imgui.c/.h (Dear ImGui, ImGuizmo), renderer.c/.h (meshes, materials, skinning, debug lines),
                            gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
-                           C++ file), chunk.c/.h (tagged binary files), storage.c/.h (files kept in IndexedDB),
+                           C++ file), chunk.c/.h (tagged binary files), file.c/.h (reading a packed file whole into an arena),
+                           storage.c/.h (files kept in IndexedDB),
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
                            GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
@@ -185,7 +186,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   rects, rows, scroll, selection) for tests.
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
-  viewport's width. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+  viewport's width; both executables draw it with `nv_imgui_build_label` (`engine/imgui.h`), the app adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
   `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
   makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
   (`App.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and

@@ -65,3 +65,10 @@ target_include_directories(battle_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE_DIR}/autobattler/data")
 target_link_options(battle_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
 add_test(NAME battle_test COMMAND battle_test)
+
+# Reading a whole file into an arena (engine/file.c). NODERAWFS reads this test's own source.
+add_executable(file_test file_test.c ${PROJECT_SOURCE_DIR}/engine/file.c)
+target_include_directories(file_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(file_test PRIVATE FILE_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/file_test.c")
+target_link_options(file_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
+add_test(NAME file_test COMMAND file_test)
