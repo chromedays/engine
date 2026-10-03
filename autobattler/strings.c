@@ -15,7 +15,7 @@ global const NvStringPair entries[] = {
     {"Supply: %u / %u", "공급: %u / %u"},
     {"Player: %u alive", "아군: %u 생존"},
     {"Enemy: %u alive", "적군: %u 생존"},
-    {"Time: %.1f / %.0f s", "시간: %.1f / %.0f초"},
+    {"Time: %.1f / %.0f s (%u / %u ticks)", "시간: %.1f / %.0f초 (%u / %u틱)"},
     {"Victory", "승리"},
     {"Defeat", "패배"},
     {"Draw", "무승부"},

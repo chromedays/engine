@@ -531,7 +531,9 @@ void view_panel(Game* game)
         igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);
         igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
         igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
-        igText(T("Time: %.1f / %.0f s"), (f32)battle->tick * BATTLE_TICK_SECONDS, (f32)BATTLE_MAX_TICKS * BATTLE_TICK_SECONDS);
+        // The rules count ticks; the seconds are that count over the tick rate, so they slow down with the game on a slow device.
+        igText(T("Time: %.1f / %.0f s (%u / %u ticks)"), (f32)battle->tick * BATTLE_TICK_SECONDS,
+               (f32)BATTLE_MAX_TICKS * BATTLE_TICK_SECONDS, battle->tick, (u32)BATTLE_MAX_TICKS);
 
         if (battle->phase == BATTLE_RESULT) {
             const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};

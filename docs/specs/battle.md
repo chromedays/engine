@@ -525,7 +525,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
 - **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 남은 공급, 팀별
-  살아 있는 유닛, 시간, (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
+  살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
   공급, 9 정의 읽기 성공, 10 고른 유닛 종류), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
@@ -1160,7 +1160,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
   The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, a button per unit type (name and cost; the chosen one is lit), Start,
-  Retry, Reset, remaining supply, living units per team, the time, (in the result phase) the result and the value left, a short help
+  Retry, Reset, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
