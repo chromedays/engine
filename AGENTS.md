@@ -9,6 +9,8 @@ Guidance for AI coding agents working in this repository.
 - Commit messages and code comments stay in English.
 - Every document is written in both Korean and English in one file: the Korean version first, then
   the English version with the same content.
+- When a response refers to code, give the file path and line (`engine/file.c:16`) and quote the code itself in a snippet
+  under it, so the reader sees what is meant without opening the file.
 
 ## Project
 
