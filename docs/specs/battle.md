@@ -561,11 +561,11 @@ assert와 WebGPU 오류가 없는지 본다.
 1. ~~**정의 데이터 형식**~~: 해결됨(2026-10-03). 직접 만든 줄 단위 텍스트 파일을 패키지에 넣는다("정의 파일" 절).
 2. **공간 격자와 흐름장의 위치 (B):** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면
    `autobattler/`에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
-3. **시간 제한 판정:** 남은 가치 비교가 맞는가?
+3. ~~**시간 제한 판정**~~: 해결됨(2026-10-03). 60초가 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)로 정한다.
 4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가?
 5. **대형 유닛의 통로 (B):** 흐름장은 칸 하나 너비를 기준으로 하므로 Fortress가 1칸 틈에 낄 수 있다. B는 스테이지에
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
-6. **수치:** 위 표의 값은 출발점이다. 바꾸고 싶은 것이 있는가?
+6. ~~**수치**~~: 해결됨(2026-10-03). 표와 정의 파일의 값은 출발점으로 두고, A를 해 본 뒤 `units.txt`와 `stage.txt`에서 조정한다.
 7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
 8. **에셋:** 정의 파일 말고 게임에 필요한 에셋은 UI 글꼴(Pretendard 한 파일)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
    `PRELOAD`로 `assets/fonts/`만 넣을까? 추천: `assets/fonts/`만.
@@ -1152,11 +1152,12 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 1. ~~**Definition data format**~~: resolved (2026-10-03). Our own line-based text files, packaged ("Definition files" section).
 2. **Where the spatial grid and flow field go (B):** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md`
    says, or `autobattler/` first, moving them when a second use appears?
-3. **Time-limit judgment:** is comparing remaining value right?
+3. ~~**Time-limit judgment**~~: resolved (2026-10-03). At 60 seconds, remaining value (the sum of `cost × health / max health`) decides.
 4. **Squads:** units act on their own after the start (proposed), or keep a formation?
 5. **Passages for large units (B):** the flow field assumes a one-cell width, so a Fortress can get stuck in a one-cell gap. B
    keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
-6. **Numbers:** the table values are a starting point. Anything to change?
+6. ~~**Numbers**~~: resolved (2026-10-03). The values in the tables and definition files are a starting point, adjusted in
+   `units.txt` and `stage.txt` after playing A.
 7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
 8. **Assets:** besides the definition files, the only asset the game needs is the UI font (one Pretendard file). Ship the whole
    `assets/` directory, or only `assets/fonts/` through `PRELOAD`? Recommended: only `assets/fonts/`.
