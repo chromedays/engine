@@ -16,7 +16,7 @@
 규칙이 서로 어떻게 맞물리는지 구현 전에 다 확인하기는 어렵다. 그래서 프로토타입을 두 단계로 나눈다.
 - **A**는 오브젝트 구조(정의와 인스턴스, 유닛당 무기 여러 개, 능력의 구분된 공용체, 투사체 세 종류)를 확인하는 가장 작은
   판이다. 지형지물이 없는 탁 트인 전장에서 유닛 4종이 싸운다.
-- **B**는 지형지물과 그것에 기대는 규칙(흐름장, 엄폐, 점프), 최소 사거리가 있는 Mortar, 게임의 한국어 표를 더한다.
+- **B**는 지형지물과 그것에 기대는 규칙(흐름장, 엄폐, 점프), 최소 사거리가 있는 Mortar를 더한다.
 
 아래 규칙, 구조, 테스트에서 B에만 있는 것은 **(B)**로 표시한다. 표시가 없는 것은 A부터 있다.
 
@@ -31,7 +31,7 @@
 | 투사체 세 종류, 방어력, 범위 피해, 아군 피해 | 흐름장(지형지물을 돌아가는 길) | 시간 조작 (일시정지, 배속) |
 | 가장 가까운 적 타게팅, 곧장 다가가기와 분리, 공간 격자 | | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
 | 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | | 저장, undo |
-| 에디터와 따로인 실행 파일 `autobattler`, 영어 패널 | 게임의 한국어 표 | 게임 UI (지금은 ImGui 패널 하나) |
+| 에디터와 따로인 실행 파일 `autobattler`, 한국어와 영어 패널(게임의 한국어 표) | | 게임 UI (지금은 ImGui 패널 하나) |
 
 ### 규칙
 
@@ -320,7 +320,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
 | `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(적 배치; B에서 지형지물) |
 | `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
-| `autobattler/strings.c` (B) | 게임의 한국어 표("UI 문자열" 참고) |
+| `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
 | 공간 격자, 흐름장(B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
 
 ### 실행 파일
@@ -351,9 +351,9 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 ### UI 문자열 (엔진으로 옮김)
 
 결정(2026-10-02): `T()`, `TL()`과 언어 선택을 엔진(`engine/strings.h`)으로 옮기고, 한국어 표는 실행 파일마다 따로 둔다. 자세한
-내용은 `docs/specs/shared.md`의 "UI 문자열"이다. 패널의 모든 글자는 처음부터 `T()`/`TL()`을 거친다. A는 표를 넘기지 않으므로
-영어로 보인다. B에서 게임은 `autobattler/strings.c`에 자기 표를 두고, 브라우저 언어로 시작하며, Battle 패널의 Language
-콤보로 바꾼다(저장 없음).
+내용은 `docs/specs/shared.md`의 "UI 문자열"이다. A부터 게임은 `autobattler/strings.c`에 자기 표를 두고, 브라우저 언어로
+시작하며, Battle 패널의 Language 콤보로 바꾼다(저장 없음). 패널의 모든 글자는 `T()`/`TL()`을 거친다. B는 자기가 더하는 글자의
+행을 같은 표에 더한다.
 
 ### 서드파티 후보
 
@@ -382,7 +382,8 @@ A:
 B:
 - 흐름장: 벽을 돌아가는 경로, 막힌 칸, 목표 없음.
 - 규칙 장면: 낮은 벽이 총탄을 막는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 박격포의 최소 사거리.
-- `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다.
+
+A부터 `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다(ctest 명령에 `autobattler` 폴더를 더한다).
 
 Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다): `autobattler/` 페이지를 열고, 배치를 탭으로 놓고 지우고, Start에서 결과까지 가고,
 assert와 WebGPU 오류가 없는지 본다.
@@ -391,10 +392,10 @@ assert와 WebGPU 오류가 없는지 본다.
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
 1. **A 시뮬레이션:** 공간 격자, `battle.c`, `battle_defs.c`(유닛 4종, 적 배치), `battle_test.c`의 A 항목. 화면 없음.
-2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, 영어 Battle 패널, 배치 입력, CMake와 CI 배포.
+2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
 3. **A 확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
-4. **B:** 지형지물과 흐름장, 엄폐(직사의 시야 검사), Mortar, Jump, 게임의 한국어 표, B 테스트.
+4. **B:** 지형지물과 흐름장, 엄폐(직사의 시야 검사), Mortar, Jump, 더한 글자의 한국어 행, B 테스트.
 
 ### 열린 질문
 
@@ -423,8 +424,7 @@ The point is to settle the rules and the game object structure before finding ou
 How the rules interact is hard to check fully before building, so the prototype comes in two stages.
 - **A** is the smallest version that checks the object structure (definitions and instances, several weapons per unit, the
   discriminated union of abilities, three projectile kinds). Four unit types fight on an open field with no props.
-- **B** adds props and the rules that lean on them (flow fields, cover, jumping), the Mortar with its minimum range, and the
-  game's Korean table.
+- **B** adds props and the rules that lean on them (flow fields, cover, jumping) and the Mortar with its minimum range.
 
 Below, rules, structure and tests that only B has are marked **(B)**. Anything unmarked is there from A on.
 
@@ -439,7 +439,7 @@ Below, rules, structure and tests that only B has are marked **(B)**. Anything u
 | Three projectile kinds, armor, area damage, friendly fire | Flow fields (paths around props) | Time controls (pause, speed-up) |
 | Nearest-enemy targeting, steering straight in with separation, the spatial grid | | Mass rendering and animation (one mesh node each) |
 | One round, ended by a wipe-out or a 60-second time limit | | Saving, undo |
-| An executable of its own, `autobattler`, with an English panel | The game's Korean table | A game UI (one ImGui panel for now) |
+| An executable of its own, `autobattler`, with a Korean and English panel (the game's Korean table) | | A game UI (one ImGui panel for now) |
 
 ### Rules
 
@@ -740,7 +740,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 | `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
 | `autobattler/battle_defs.c` | The unit definition table and one stage (the enemy deployment; props in B) |
 | `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
-| `autobattler/strings.c` (B) | The game's Korean table (see "UI strings") |
+| `autobattler/strings.c` | The game's Korean table (see "UI strings") |
 | Spatial grid, flow field (B) | Open question 2: `engine/` (`engine/spatial.h`, `engine/flow.h`) or `autobattler/` |
 
 ### Executable
@@ -773,9 +773,9 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 ### UI strings (moved to the engine)
 
 Decided (2026-10-02): `T()`, `TL()` and language selection move to the engine (`engine/strings.h`), and each executable keeps its
-own Korean table. The details are in "UI strings" of `docs/specs/shared.md`. Every text in the panel goes through
-`T()`/`TL()` from the start. A hands over no table, so it shows English. In B the game keeps its table in
+own Korean table. The details are in "UI strings" of `docs/specs/shared.md`. From A on the game keeps its table in
 `autobattler/strings.c`, starts in the browser's language and switches with a Language combo in the Battle panel (not saved).
+Every text in the panel goes through `T()`/`TL()`. B adds rows for the text it adds to the same table.
 
 ### Third-party candidates
 
@@ -804,7 +804,8 @@ A:
 B:
 - Flow field: a path around a wall, blocked cells, no goal.
 - Rule scenes: a low wall stops bullets; a Wasp flies over props; a Ranger jumps a low wall; the mortar's minimum range.
-- `tests/strings_test.mjs` checks `autobattler/`'s strings too.
+
+From A on, `tests/strings_test.mjs` checks `autobattler/`'s strings too (the ctest command gets the `autobattler` folder).
 
 Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B): open the `autobattler/` page, place and remove squads by tapping, go
 from Start to a result, and check for no asserts and no WebGPU errors.
@@ -815,12 +816,12 @@ from Start to a result, and check for no asserts and no WebGPU errors.
    move to the engine).
 1. **A, simulation:** the spatial grid, `battle.c`, `battle_defs.c` (four units, the enemy deployment), A's items in
    `battle_test.c`. No view.
-2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the English Battle panel, deployment input, CMake and the
-   CI deployment.
+2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
+   deployment input, CMake and the CI deployment.
 3. **A, checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
-4. **B:** props and flow fields, cover (the line-of-sight check for direct fire), the Mortar, Jump, the game's Korean table, B's
-   tests.
+4. **B:** props and flow fields, cover (the line-of-sight check for direct fire), the Mortar, Jump, Korean rows for the added
+   text, B's tests.
 
 ### Open questions
 
