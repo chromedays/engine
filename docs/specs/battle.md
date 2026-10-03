@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: A의 1단계(시뮬레이션과 정의 파일) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔.
+상태: A의 1단계(시뮬레이션과 정의 파일)와 2단계(실행 파일) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔.
 
 ### 목표
 
@@ -482,11 +482,12 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | 파일 | 내용 |
 |---|---|
 | `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. 설치 구성 요소 `autobattler`의 `<prefix>/`에 설치한다("페이지" 참고) |
-| `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 이펙트, 카메라, 프레임 루프(고정 틱 누산기) |
+| `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 정의 파일 읽기, 배치(레이아웃), 프레임 루프(고정 틱 누산기), 디버그 내보내기 |
+| `autobattler/game.h` | 실행 파일의 상태(`Game`: 창, GPU, 렌더러, 전투, 뷰가 가진 노드와 메시)와 파일 사이의 선언 |
 | `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
 | `autobattler/defs.c` | 정의 파일 읽기("정의 파일" 참고). GPU와 ImGui를 쓰지 않으므로 ctest가 빌드할 수 있다 |
 | `autobattler/data/units.txt`, `stage.txt` | 유닛 정의와 스테이지(적 배치; B에서 지형지물) |
-| `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
+| `autobattler/battle_view.c` | 메시, 이펙트, 카메라, 노드와 디버그 라인으로 그리기, 배치 입력, 패널, 빌드 라벨 |
 | `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
 | 공간 격자, 흐름장 (B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
 
@@ -504,20 +505,33 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
     stage가 기본 브랜치에서는 `autobattler/release`, `autobattler/debug`를, 다른 브랜치에서는 `autobattler/<branch>`를
     바꾼다. `autobattler`라는 이름의 브랜치는 `release`, `debug`처럼 게시하지 않는다(그 폴더를 덮어쓰므로).
-- **화면:** 캔버스 전체가 전장이고 ImGui 창 하나(Battle 패널)가 위에 뜬다. 에디터의 도크, 검색, 팔레트, 저장, undo,
-  선택, 콘솔 탭은 없다. 씬 해상도는 캔버스와 같게(`NvSceneOutput`의 `pixel_size` 1) 시작한다.
-- **카메라:** 플레이어 진영 뒤 위에서 비스듬히 보는 시점. `NvImgui.view`의 드래그로 팬, 휠과 핀치로 줌, 전장 밖으로 나가지
-  않는다.
+- **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
+  (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
+  탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(에디터 앱처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
+  내려받은 양, 커밋 제목)은 에디터 앱의 것을 줄인 것이다(배지 없음).
+- **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 60°, 거리 88 m) 전장 가운데를 본다. 왼쪽 드래그나 한 손가락은 땅 위로
+  화면을 옮기고(손가락을 따라가고, 목표는 전장 안으로 제한), 오른쪽이나 가운데 버튼 드래그와 두 손가락은 돌리고, 휠과 핀치는
+  확대한다(거리 15–140 m, 피치 20°–85°).
 - **그리기:**
-  - 유닛은 엔진의 기본 도형(`docs/specs/mesh.md`)으로 그린 팀 색 메시 노드다. A의 Crawler는 캡슐 몸통(반지름과 높이)과 앞쪽의
-    원뿔(향하는 방향), 포탄은 작은 구다. 틱 사이를 보간한다.
-  - 지형지물은 회색 상자(B), 배치 격자와 구역은 디버그 라인, 체력 바는 유닛 위의 디버그 라인이다.
-  - 투사체는 `nv_vfx_trail`, 폭발은 `nv_vfx_burst`와 `nv_vfx_decal`, 실드는 디버그 라인 원으로 그린다.
+  - 유닛은 엔진의 기본 도형(`docs/specs/mesh.md`)으로 그린 팀 색(아군 파랑, 적 빨강) 메시 노드 하나다(유닛 종류마다 메시 하나).
+    A의 Crawler는 캡슐 몸통과 앞쪽의 원뿔(향하는 방향), 포탄은 작은 구다. 몸통의 반지름은 유닛의 반지름과 높이의 절반 중 작은 쪽이다
+    (Crawler는 높이가 지름보다 낮아 둥근 덩어리가 된다). 노드는 처음 필요할 때 만들고, 죽은 유닛과 사라진 포탄은 메시를 떼어 숨긴다.
+    틱 사이를 보간한다(방향은 짧은 쪽으로).
+  - 땅과 구역 색(두 구역은 땅 위 얇은 평면)은 메시, 배치 격자(배치 단계에서만)와 마우스가 가리키는 칸의 초록/빨강 상자, 체력 바(전투
+    중에만; 화면 오른쪽 방향의 선 몇 개)는 디버그 라인이다. 지형지물은 회색 상자(B).
+  - 포탄은 틱마다 지난 구간에 `nv_vfx_trail`, 이벤트는 효과로: 발사는 총구의 작은 섬광, 명중은 작은 폭발과 `nv_vfx_decal`의 그을음,
+    실드 피격은 파란 불꽃, 죽음은 큰 폭발(`nv_vfx_burst`). 실드는 남은 에너지에 따라 밝기가 바뀌는 디버그 라인 원(세 축) 셋이다.
+    이벤트와 포탄 구간은 틱마다(한 프레임에 틱이 여럿 돌아도) 처리하고 이벤트 목록을 비운다.
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
-  미리 보여 준다. 놓인 분대를 탭하면 지운다. 데스크톱과 폰 모두 같다.
-- **Battle 패널:** 단계, 남은 공급, 유닛 종류 버튼(이름과 비용), Start, Retry, Reset, 남은 시간, 팀별 살아 있는 유닛, 결과.
-- **디버그 내보내기:** `_battle_debug(n)`(단계, 틱, 결과, 유닛 수, 해시), `_battle_debug_deploy(def, x, row)`,
-  `_battle_debug_start()`, `_battle_debug_run(ticks)`.
+  미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
+- **Battle 패널:** 단계, 언어 콤보, 남은 공급, 팀별 살아 있는 유닛, 시간, (결과 단계에서) 결과와 남은 가치, 유닛 종류 버튼(이름과
+  비용; 고른 것이 밝다), Start, Retry, Reset, 짧은 도움말. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
+  유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
+- **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
+  (월드 점이 화면 어디인가; 탭 시험용).
+- **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
 
 ### UI 문자열 (엔진으로 옮김)
 
@@ -572,8 +586,8 @@ assert와 WebGPU 오류가 없는지 본다.
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
 1. **A 시뮬레이션 (끝남):** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
-2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
-3. **A 확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
+2. **A 실행 파일 (끝남):** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
+3. **A 확인과 문서:** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
 4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 분대, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
    Jump, 공간 격자), 더한 글자의 한국어 행, B 테스트.
@@ -594,7 +608,7 @@ assert와 WebGPU 오류가 없는지 본다.
 
 ## English
 
-Status: A's phase 1 (the simulation and the definition files) built (2026-10-03), the rest a draft. Split into two stages, A and B.
+Status: A's phase 1 (the simulation and the definition files) and phase 2 (the executable) built (2026-10-03), the rest a draft. Split into two stages, A and B.
 
 ### Goal
 
@@ -1093,11 +1107,12 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 | File | Contents |
 |---|---|
 | `autobattler/CMakeLists.txt` | The `autobattler` executable, installed into `<prefix>/` of the `autobattler` install component (see "Page") |
-| `autobattler/main.c` | Window, GPU, renderer, ImGui, effects, camera, the frame loop (a fixed-tick accumulator) |
+| `autobattler/main.c` | Window, GPU, renderer, ImGui, reading the definition files, the layout, the frame loop (a fixed-tick accumulator), debug exports |
+| `autobattler/game.h` | The executable's state (`Game`: window, GPU, renderer, the battle, the nodes and meshes the view keeps) and the declarations between files |
 | `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
 | `autobattler/defs.c` | Reading the definition files (see "Definition files"). No GPU or ImGui, so ctest can build it |
 | `autobattler/data/units.txt`, `stage.txt` | The unit definitions and the stage (the enemy deployment; props in B) |
-| `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
+| `autobattler/battle_view.c` | Meshes, effects, the camera, drawing with nodes and debug lines, deployment input, the panel, the build label |
 | `autobattler/strings.c` | The game's Korean table (see "UI strings") |
 | Spatial grid, flow field (B) | Open question 2: `engine/` (`engine/spatial.h`, `engine/flow.h`) or `autobattler/` |
 
@@ -1115,22 +1130,39 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
     and stage replaces `autobattler/release` and `autobattler/debug` for the default branch, `autobattler/<branch>` for others.
     A branch named `autobattler` is not published, like `release` and `debug` (it would replace that folder).
-- **Screen:** the whole canvas is the battlefield, with one ImGui window (the Battle panel) over it. None of the editor's docks,
-  search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the canvas (`pixel_size` 1 in
-  `NvSceneOutput`).
-- **Camera:** an angled view from above and behind the player's side. Pan by dragging in `NvImgui.view`, zoom with the wheel
-  and pinch, kept over the field.
+- **Screen:** the battlefield is the viewport, with one ImGui window (the Battle panel) beside it: on its right (300 wide) on a wide
+  screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. None of the
+  editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
+  half of it on a touch screen (as in the editor app). The build label in the corner (build type, commit, what was downloaded,
+  the commit's subject) is a shortened version of the editor app's (no badge).
+- **Camera:** an angled view from above and behind the player's side (-Z) at 60° pitch and 88 m, looking at the middle of the field. A
+  left drag or one finger moves the view over the ground (it follows the finger; the target is kept inside the field), a right or middle
+  drag or two fingers turn it, the wheel and pinch zoom (15 to 140 m, pitch 20° to 85°).
 - **Drawing:**
-  - Units are mesh nodes in team colors made from the engine's primitives (`docs/specs/mesh.md`). A's Crawler is a capsule body
-    (its radius and height) with a cone in front (its facing), and a shell is a small sphere. Interpolated between ticks.
-  - Props are gray boxes (B); the deployment grid and zones are debug lines; health bars are debug lines above units.
-  - Projectiles are `nv_vfx_trail`, explosions `nv_vfx_burst` and `nv_vfx_decal`, shields a debug-line circle.
+  - A unit is one mesh node in its team's color (player blue, enemy red), with one mesh per unit type, made from the engine's
+    primitives (`docs/specs/mesh.md`). A's Crawler is a capsule body with a cone in front (its facing), and a shell is a small
+    sphere. The body's radius is the smaller of the unit's radius and half its height (a Crawler is lower than it is wide, so it is a
+    rounded lump). Nodes are made when first needed; a dead unit's and a gone shell's mesh is taken off to hide it. Interpolated
+    between ticks (angles the short way round).
+  - The ground and the zones' colors (the zones are thin planes just above the ground) are meshes; the deployment grid (while
+    deploying), the green or red box on the cell under the mouse pointer, and health bars (while fighting; a few lines level with
+    the screen) are debug lines. Props are gray boxes (B).
+  - Each shell leaves `nv_vfx_trail` for the stretch it moved each tick. Events become effects: a shot is a small flash at the
+    muzzle, a hit a small explosion and a scorch (`nv_vfx_decal`), a shield hit blue sparks, a death a big explosion (`nv_vfx_burst`).
+    A shield is three debug-line circles (one per axis) whose brightness follows its energy left. Events and shell stretches are
+    handled after every tick (several may run in one frame), and the event list is emptied then.
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
-  preview green, others red. Tapping a placed squad removes it. The same on desktop and phone.
-- **Battle panel:** the phase, remaining supply, a button per unit type (name and cost), Start, Retry, Reset, time left, living
-  units per team, the result.
-- **Debug exports:** `_battle_debug(n)` (phase, tick, outcome, unit counts, hash), `_battle_debug_deploy(def, x, row)`,
-  `_battle_debug_start()`, `_battle_debug_run(ticks)`.
+  preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
+  The same on desktop and phone. Only while deploying.
+- **Battle panel:** the phase, a language combo, remaining supply, living units per team, the time, (in the result phase) the result and
+  the value left, a button per unit type (name and cost; the chosen one is lit), Start, Retry, Reset, a short help text. When the
+  definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
+  deploying; Reset clears the placement in any phase.
+- **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
+  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type), `_battle_debug_deploy(def, x, row)`,
+  `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
+  1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
+- **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
 
 ### UI strings (moved to the engine)
 
@@ -1189,9 +1221,9 @@ from Start to a result, and check for no asserts and no WebGPU errors.
    move to the engine).
 1. **A, simulation (done):** the definition files (`autobattler/data/`) and their parser (`defs.c`), `battle.c`, A's items in
    `battle_test.c`. No view.
-2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
+2. **A, executable (done):** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
    deployment input, CMake and the CI deployment.
-3. **A, checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and
+3. **A, checks and docs:** Playwright checks (the debug exports were already added in phase 2), updates to `AGENTS.md` (which now says "one executable, `app`") and
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
 4. **B:** the rest of "Stage B rules" (five unit types, air, squads, several weapons, bullets and missiles, area damage and
    friendly fire, props, cover, flow fields, Jump, the spatial grid), Korean rows for the added text, B's tests.
