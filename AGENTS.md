@@ -273,7 +273,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `defs.c` (a bad file blocks Start and is reported with its line); a new key goes in `defs.c`'s field tables and the spec's. Its
   viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
   `autobattler/strings.c`, like the app's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
-  `_battle_debug_run`, `_battle_debug_layout` and `_battle_debug_project` for tests. A touch on a panel widget takes a few frames to
+  `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_layout` and `_battle_debug_project` for tests. Speed controls change only
+  how many ticks a frame runs (the game clock), never the tick, and the effects take the same game clock's dt. A touch on a panel widget takes a few frames to
   count as a tap: tests that touch buttons wait about two seconds.
 
 ## Assets

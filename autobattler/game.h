@@ -55,7 +55,9 @@ typedef struct Game {
     BattleDefs defs;
     b32 defs_ok;
     Battle battle;
-    f32 accumulator; // seconds of frame time not yet run as ticks
+    f32 accumulator; // seconds of game time not yet run as ticks
+    f32 speed;       // game time per real second: 0.5, 1, 2 or 4 (docs/specs/battle.md, "Time controls")
+    b32 paused;      // the game clock stops; the speed is kept for when it goes on
     f64 last_time;
     char download_text[48];
 
@@ -80,7 +82,7 @@ void game_layout(Game* game);
 void view_build(Game* game); // meshes, materials, the field, the camera and the effects, once
 void view_input(Game* game); // the camera from drags and the wheel; taps place and remove units
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
-void view_update(Game* game, f32 dt); // every frame: nodes follow the units and shells, lines, effects' clock
+void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
 void view_panel(Game* game);  // the Battle panel
 void view_build_label(Game* game);
 

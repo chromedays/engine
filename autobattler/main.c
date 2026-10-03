@@ -15,7 +15,7 @@ global Game game_state;
 global u8 permanent_memory[NV_MEGABYTES(48)];
 global u8 scratch_memory[NV_MEGABYTES(4)];
 
-#define MAX_TICKS_PER_FRAME 4
+#define MAX_TICKS_PER_FRAME 4 // at 1x; more at higher speeds, which need more ticks a frame
 
 // A rectangle of the canvas from CSS pixel corners.
 internal NvRect css_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
@@ -106,12 +106,16 @@ internal void frame(void* userdata)
     view_panel(game);
     view_input(game);
 
-    // The battle runs in whole ticks; what is left over decides where between two ticks the view draws.
+    // The game clock: real time times the speed, stopped while paused. The battle runs it in whole ticks, so a speed only
+    // changes how many ticks a frame runs (the result is the same at any speed); what is left over decides where between
+    // two ticks the view draws. The effects follow the same clock.
+    f32 game_dt = game->paused ? 0.0f : dt * game->speed;
     Battle* battle = &game->battle;
     if (game->defs_ok && battle->phase == BATTLE_FIGHT) {
-        game->accumulator += dt;
+        game->accumulator += game_dt;
+        u32 max_ticks = (u32)ceilf(MAX_TICKS_PER_FRAME * fmaxf(game->speed, 1.0f));
         for (u32 ticks = 0; game->accumulator >= BATTLE_TICK_SECONDS && battle->phase == BATTLE_FIGHT; ++ticks) {
-            if (ticks == MAX_TICKS_PER_FRAME) {
+            if (ticks == max_ticks) {
                 game->accumulator = 0.0f; // too far behind: run slower rather than spiral
                 break;
             }
@@ -122,7 +126,7 @@ internal void frame(void* userdata)
     } else {
         game->accumulator = 0.0f;
     }
-    view_update(game, dt);
+    view_update(game, game_dt);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(game->gpu.device, NULL);
     nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, encoder, target);
@@ -137,7 +141,8 @@ internal void frame(void* userdata)
 
 #if !defined(NDEBUG)
 // For tests (Debug builds). Module._battle_debug(n): 0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive,
-// 5 the state's hash, 6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type.
+// 5 the state's hash, 6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the game clock's speed
+// in hundredths (0 while paused).
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -153,8 +158,17 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 7: return (int)battle->projectile_count;
     case 8: return game->defs_ok ? (int)battle_supply_left(battle) : -1;
     case 9: return game->defs_ok;
+    case 11: return game->paused ? 0 : (int)(game->speed * 100.0f + 0.5f);
     default: return (int)game->selected_def;
     }
+}
+
+// Sets the game clock's speed as the panel's buttons do: 0 pauses (keeping the speed), anything else is the speed.
+EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
+{
+    game_state.paused = speed <= 0.0f;
+    if (speed > 0.0f)
+        game_state.speed = speed;
 }
 
 // Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
@@ -228,6 +242,7 @@ int main(void)
     game->renderer.msaa = 4;
     game->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
     // The scene is drawn at the viewport's own pixels; a phone's GPU is the limit, so at half (as the editor app does).
+    game->speed = 1.0f;
     game->resolution = (NvResolution){.mode = NV_RESOLUTION_SCALE, .divisor = touch ? 2 : 1};
 
     game->defs_ok = load_defs(game);

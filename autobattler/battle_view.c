@@ -359,7 +359,7 @@ internal NvNode* shell_node(Game* game, u32 index)
 
 // Every frame: the nodes follow the battle (between two ticks while it runs), and the lines, effects' clock, the scene's
 // matrices and the camera are brought up to date.
-void view_update(Game* game, f32 dt)
+void view_update(Game* game, f32 game_dt)
 {
     const Battle* battle = &game->battle;
     NvRenderer* renderer = &game->renderer;
@@ -429,7 +429,7 @@ void view_update(Game* game, f32 dt)
         }
     }
 
-    nv_vfx_update(&game->vfx, dt);
+    nv_vfx_update(&game->vfx, game_dt); // the game clock: a pause freezes the effects, a speed-up hurries them
     nv_scene_update(game->scene);
     nv_orbit_camera_place(&game->orbit, camera);
 }
@@ -510,6 +510,7 @@ void view_panel(Game* game)
         igBeginDisabled(!can_start);
         if (igButton(TL("Start"), (ImVec2_c){0, 0})) {
             start_over(game);
+            game->paused = false; // a paused clock would make Start look broken
             battle_start(battle);
         }
         igEndDisabled();
@@ -525,6 +526,29 @@ void view_panel(Game* game)
             start_over(game);
             battle_retry(battle);
             battle_clear_placement(battle);
+        }
+
+        // The game clock's speed: the rules run the same ticks at any speed, only more or fewer a frame.
+        b32 paused = game->paused;
+        if (paused)
+            igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+        if (igButton(TL("Pause"), (ImVec2_c){0, 0}))
+            game->paused = !game->paused;
+        if (paused)
+            igPopStyleColor(1);
+        const f32 speeds[4] = {0.5f, 1.0f, 2.0f, 4.0f};
+        const char* speed_labels[4] = {"0.5x###speed0", "1x###speed1", "2x###speed2", "4x###speed3"};
+        for (u32 i = 0; i < NV_ARRAY_COUNT(speeds); ++i) {
+            igSameLine(0.0f, -1.0f);
+            b32 lit = !game->paused && game->speed == speeds[i];
+            if (lit)
+                igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+            if (igButton(speed_labels[i], (ImVec2_c){0, 0})) {
+                game->speed = speeds[i];
+                game->paused = false;
+            }
+            if (lit)
+                igPopStyleColor(1);
         }
 
         igSeparator();

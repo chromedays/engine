@@ -27,10 +27,11 @@
 | 실제 높이: 포탄의 탄도 | 공중 유닛과 고도, 3D 범위 피해 | 여러 라운드, 본부 체력 |
 | 유닛 1종(Crawler), 지상만, 크기 등급 없음 | 유닛 5종, 크기 등급 3개 | 업그레이드, 테크, 카드, 전문가 |
 | 유닛당 무기 하나, 능력 하나(Shield) | 무기 여러 개, Jump | AI 상대 (적 배치는 스테이지 데이터에 고정) |
-| 투사체 한 종류(포탄), 방어력, 단일 피해 | 총탄과 미사일, 범위 피해, 아군 피해 | 시간 조작 (일시정지, 배속) |
+| 투사체 한 종류(포탄), 방어력, 단일 피해 | 총탄과 미사일, 범위 피해, 아군 피해 | |
 | 가장 가까운 적 타게팅, 곧장 다가가기와 분리(모든 쌍 비교) | 지형지물, 엄폐, 흐름장, 공간 격자 | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
 | 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | | 저장, undo |
 | 에디터와 따로인 실행 파일 `autobattler`, 한국어와 영어 패널(게임의 한국어 표) | | 게임 UI (지금은 ImGui 패널 하나) |
+| 시간 조작: 일시정지, 0.5배, 1배, 2배, 4배 (구현 뒤에 더함) | | |
 
 ### A 규칙
 
@@ -522,13 +523,18 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - 포탄은 틱마다 지난 구간에 `nv_vfx_trail`, 이벤트는 효과로: 발사는 총구의 작은 섬광, 명중은 작은 폭발과 `nv_vfx_decal`의 그을음,
     실드 피격은 파란 불꽃, 죽음은 큰 폭발(`nv_vfx_burst`). 실드는 남은 에너지에 따라 밝기가 바뀌는 디버그 라인 원(세 축) 셋이다.
     이벤트와 포탄 구간은 틱마다(한 프레임에 틱이 여럿 돌아도) 처리하고 이벤트 목록을 비운다.
+- **시간 조작:** 게임 시각은 실제 시각 × 속도이고 일시정지 중에는 멈춘다. 패널의 Pause와 0.5x, 1x, 2x, 4x 버튼이 바꾼다(고른 것이
+  밝다; 일시정지는 속도를 기억한다; Start는 일시정지를 푼다; 저장하지 않는다). 규칙은 같은 30 Hz 틱을 돌고 속도는 한 프레임에 도는 틱
+  수만 바꾸므로, 결과는 속도와 상관없이 같다. 누산기는 한 프레임에 최대 `4 × max(1, 속도)`틱만 돌리고, 더 밀리면 남은 시간을 버린다
+  (느린 기기가 따라잡으려다 더 느려지지 않게). 프레임의 dt는 0.1초로 자른다. 이펙트도 같은 게임 시각을 받는다(`nv_vfx_update`): 일시정지는
+  이펙트를 멈추고 배속은 빠르게 한다.
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 남은 공급, 팀별
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), 남은 공급, 팀별
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
-  공급, 9 정의 읽기 성공, 10 고른 유닛 종류), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
   `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
@@ -583,7 +589,8 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 놓고 지운다;
 플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10기) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
 확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 패널의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
-놓을 수 없다; 라운드가 결과로 끝난다; Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
+놓을 수 없다; 속도 버튼이 속도를 바꾸고 Start가 일시정지를 푼다; 일시정지는 틱을 멈추고 4x는 1x보다 2.5배 넘게, 0.5x는 0.75배 안 되게
+돈다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
 아무것도 하지 않는다; 좁은 창은 패널을 아래로 옮긴다; 콘솔에 오류와 경고가 없고 assert로 멈추지 않는다. Release에서는 디버그 내보내기가
 없으므로 같은 흐름을 눈으로(화면 그림) 본다. 폰 크기에서 패널 위젯을 터치하면 탭으로 알려지기까지 몇 프레임이 걸리므로 약 2초를 기다린다.
 
@@ -635,10 +642,11 @@ How the rules interact is hard to check fully before building, so the prototype 
 | Real height: the shell's ballistic arc | Air units and altitude, 3D area damage | Multiple rounds, base health |
 | One unit type (Crawler), ground only, no size classes | Five unit types, three size classes | Upgrades, tech, cards, specialists |
 | One weapon per unit, one ability (Shield) | Several weapons, Jump | An AI opponent (the enemy deployment is fixed in the stage data) |
-| One projectile kind (shells), armor, single-target damage | Bullets and missiles, area damage, friendly fire | Time controls (pause, speed-up) |
+| One projectile kind (shells), armor, single-target damage | Bullets and missiles, area damage, friendly fire | |
 | Nearest-enemy targeting, steering straight in with separation (every pair compared) | Props, cover, flow fields, the spatial grid | Mass rendering and animation (one mesh node each) |
 | One round, ended by a wipe-out or a 60-second time limit | | Saving, undo |
 | An executable of its own, `autobattler`, with a Korean and English panel (the game's Korean table) | | A game UI (one ImGui panel for now) |
+| Time controls: pause, 0.5x, 1x, 2x, 4x (added after it was built) | | |
 
 ### Stage A rules
 
@@ -1156,16 +1164,22 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
     muzzle, a hit a small explosion and a scorch (`nv_vfx_decal`), a shield hit blue sparks, a death a big explosion (`nv_vfx_burst`).
     A shield is three debug-line circles (one per axis) whose brightness follows its energy left. Events and shell stretches are
     handled after every tick (several may run in one frame), and the event list is emptied then.
+- **Time controls:** the game clock is real time times the speed, stopped while paused. The panel's Pause, 0.5x, 1x, 2x and 4x
+  buttons change it (the chosen one is lit; a pause keeps the speed; Start un-pauses; not saved). The rules run the same 30 Hz ticks
+  and a speed only changes how many run in a frame, so the result is the same at any speed. The accumulator runs at most
+  `4 × max(1, speed)` ticks in a frame and drops the time left over beyond that (so a slow device does not slow down further trying
+  to catch up). A frame's dt is cut to 0.1 s. The effects get the same game clock (`nv_vfx_update`): a pause freezes them and a
+  speed-up hurries them.
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
   preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
   The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, a button per unit type (name and cost; the chosen one is lit), Start,
-  Retry, Reset, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
+  Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
-  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type), `_battle_debug_deploy(def, x, row)`,
+  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_deploy(def, x, row)`,
   `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
@@ -1222,7 +1236,9 @@ Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B
 `autobattler/` page and check: the definition files are read and the enemy is placed; the panel is right of the viewport on desktop and
 under it on a phone; taps place and remove units; taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
 runs out (10 units) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
-after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the round ends in a result;
+after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
+than 2.5 times as many as 1x and 0.5x less than 0.75 times; the round ends in a result (run at changing speeds, it gives the same hash
+as a run at once);
 Retry goes back to the same placement and the same placement gives the same hash; Reset clears the placement and Start with none does
 nothing; a narrow window moves the panel under the viewport; no console errors or warnings and no assert stops it. The Release build has
 no debug exports, so the same flow is checked by eye (a screenshot). On a phone-sized screen a touch on a panel widget takes a few frames
