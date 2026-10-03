@@ -59,6 +59,120 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다.
 A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리, 무기(쿨다운, 발사), 포탄(적분, 실드, 유닛, 지면 순으로 가장 먼저
 닿은 것), 죽음, 실드 회복, 끝 조건.
 
+### 정의 파일
+
+결정(2026-10-03): 유닛 정의와 스테이지는 코드가 아니라 텍스트 파일에 둔다. 형식은 아래에 정의한 줄 단위 텍스트이고, 읽는
+코드도 직접 쓴다(새 서드파티 없음, "서드파티 후보" 참고). 파일은 패키지에 들어가 시작할 때 한 번 읽힌다. 값을 바꾸면 다시
+패키징(`cmake --build`)해야 하지만 C 코드는 다시 컴파일되지 않는다.
+
+| 파일 | 패키지 안 경로 | 내용 |
+|---|---|---|
+| `autobattler/data/units.txt` | `/data/units.txt` | 유닛 정의 |
+| `autobattler/data/stage.txt` | `/data/stage.txt` | 공급과 적 배치 |
+
+텍스트라서 Git LFS가 아니라 일반 Git에 들어가고, 코드처럼 리뷰된다.
+
+#### 문법
+
+- UTF-8 텍스트, 줄 끝은 LF나 CRLF.
+- 한 줄에 문장 하나: 키 하나와 그 값들을 스페이스로 나눈다. 빈 줄은 무시한다.
+- `#`부터 줄 끝까지는 주석이다.
+- **들여쓰기가 중첩을 정한다.** 블록을 여는 문장(`unit`, `weapon`, `ability`) 다음에 더 깊게 들여 쓴 줄들이 그 블록에 속한다.
+  같은 블록의 줄은 들여쓰기가 같아야 한다. 들여쓰기는 스페이스만 쓴다(탭은 오류).
+- 값의 종류:
+  - **수:** 10진수, 부호와 소수점 가능(`120`, `0.5`, `-3`). 지수 표기는 없다. 정수 자리에 소수가 오면 오류다.
+  - **이름:** `[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지(`Crawler`).
+  - **낱말:** 키마다 정해진 목록 중 하나(`shield`).
+- 각도는 파일에서 도(degree)이고 읽을 때 라디안으로 바꾼다. 거리는 m, 시간은 초.
+- 다음은 오류다: 모르는 키, 블록 밖에 온 블록 안 키, 같은 블록 안에서 두 번 나온 키, 빠진 필수 키, 값 개수가 틀린 줄, 범위를
+  벗어난 값, 탭, 같은 이름의 유닛 두 개.
+
+#### `units.txt` (A)
+
+| 키 | 값 | 필수 | 범위, 기본값 |
+|---|---|---|---|
+| `unit <이름>` | 블록 | 하나 이상, 최대 16 | 이름은 파일 안에서 하나뿐 |
+| ├ `cost` | 정수 | 예 | 1–10000 |
+| ├ `health` | 수 | 예 | > 0 |
+| ├ `armor` | 수 | 아니오 | ≥ 0, 기본 0 |
+| ├ `speed` | 수, m/s | 예 | ≥ 0 |
+| ├ `radius` | 수, m | 예 | > 0 |
+| ├ `height` | 수, m | 예 | > 0 |
+| ├ `weapon <이름>` | 블록 | 예, 정확히 하나 | |
+| │ ├ `range` | 수, m | 예 | > 0 |
+| │ ├ `damage` | 수 | 예 | ≥ 0 |
+| │ ├ `cooldown` | 수, 초 | 예 | > 0 |
+| │ ├ `launch_angle` | 수, 도 | 예 | 0 초과 90 미만 |
+| │ ├ `spread` | 수, m | 아니오 | ≥ 0, 기본 0 |
+| │ └ `muzzle` | 수 셋(x y z), m, 유닛 공간 | 아니오 | 기본 0 0 0 |
+| └ `ability <종류>` | 블록 | 아니오, 하나까지 | 종류: `shield` |
+| &nbsp;&nbsp; ├ `radius` | 수, m | 예 | > 0 |
+| &nbsp;&nbsp; ├ `capacity` | 수 | 예 | > 0 |
+| &nbsp;&nbsp; ├ `regen` | 수, 초당 | 예 | ≥ 0 |
+| &nbsp;&nbsp; └ `regen_delay` | 수, 초 | 예 | ≥ 0 |
+
+```
+# autobattler/data/units.txt: stage A's units (docs/specs/battle.md, "Definition files")
+unit Crawler
+    cost 100
+    health 120
+    armor 5
+    speed 5            # m/s
+    radius 0.5
+    height 0.8
+    weapon Lobber
+        range 20
+        damage 30
+        cooldown 1.5
+        launch_angle 45    # degrees
+        spread 0.5
+        muzzle 0 0.6 0.3
+    ability shield
+        radius 1.2
+        capacity 60
+        regen 10           # per second
+        regen_delay 3
+```
+
+#### `stage.txt` (A)
+
+| 키 | 값 | 필수 | 범위 |
+|---|---|---|---|
+| `supply <정수>` | 양쪽의 공급 | 예, 한 번 | 1–100000 |
+| `place <유닛 이름> <칸 x> <칸 행>` | 적 유닛 하나 | 하나 이상 | 이름은 `units.txt`에 있어야 한다. x 0–31, 행 34–47(적 구역). 칸마다 하나. 비용 합 ≤ `supply` |
+
+```
+# autobattler/data/stage.txt: stage A's one stage
+supply 1000
+place Crawler 12 36
+place Crawler 14 36
+place Crawler 16 36
+place Crawler 18 36
+place Crawler 13 38
+place Crawler 15 38
+place Crawler 17 38
+place Crawler 14 40
+place Crawler 16 40
+place Crawler 15 42
+```
+
+#### 읽기와 오류
+
+- `autobattler/defs.c`가 읽는다. 함수는 메모리의 텍스트를 받는다(`b32 defs_read_units(BattleDefs* defs, const char* file_name,
+  const char* text, umm size)`, `defs_read_stage`도 같은 모양). `main.c`가 파일을 `fopen`으로 임시 아레나에 읽어 넘기므로, 테스트는
+  문자열로 시험할 수 있다. GPU와 ImGui를 쓰지 않는다.
+- 결과는 고정 용량의 평평한 배열이다: `UnitDef unit_defs[16]`, 적 배치 목록. `UnitDef.name`은 파일에서 복사한 `char[32]`다.
+- 수는 `strtod`로 읽는다. 올바르게 반올림하므로 같은 파일은 언제나 같은 값이 된다(결정론).
+- 오류마다 파일 이름과 줄 번호를 붙여 `nv_log(NV_LOG_ERROR, "battle", "units.txt:12: unknown key 'healt'")`로 알린다. 첫 오류에서
+  멈추지 않고 파일 끝까지 읽어 오류를 모두 알린다(20개까지). 로그 글은 영어다(`AGENTS.md`).
+- 오류가 하나라도 있으면 읽기는 실패한다. Battle 패널은 첫 오류와 "Definitions could not be loaded"를 보이고 Start를 막는다.
+  데이터 오류는 실행 중 일어나는 실패이므로 assert하지 않는다(코딩 표준).
+
+#### B에서
+
+같은 문법에 키를 더한다: 유닛의 `layer`, `size`, `squad`, `footprint`, `altitude`, 여러 `weapon` 블록과 무기의 `projectile`,
+`targets`, `min_range`, `splash`, `speed`, `turn_rate`, `ability jump`, 스테이지의 `prop`. 모르는 키는 여전히 오류다.
+
 ### B 규칙 (전체 프로토타입)
 
 B는 A 위에 아래 규칙을 모두 더한 모양이다. A의 Crawler는 B에서 아래 표의 근접 Crawler(분대 16)로 바뀌고, A의 포탄 무기와
@@ -352,7 +466,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | `autobattler/CMakeLists.txt` | 실행 파일 `autobattler`. 설치 구성 요소 `autobattler`의 `<prefix>/`에 설치한다("페이지" 참고) |
 | `autobattler/main.c` | 창, GPU, 렌더러, ImGui, 이펙트, 카메라, 프레임 루프(고정 틱 누산기) |
 | `autobattler/battle.h`, `autobattler/battle.c` | 규칙과 틱. GPU와 ImGui를 포함하지 않으므로 ctest가 빌드할 수 있다 |
-| `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(적 배치; B에서 지형지물) |
+| `autobattler/defs.c` | 정의 파일 읽기("정의 파일" 참고). GPU와 ImGui를 쓰지 않으므로 ctest가 빌드할 수 있다 |
+| `autobattler/data/units.txt`, `stage.txt` | 유닛 정의와 스테이지(적 배치; B에서 지형지물) |
 | `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
 | `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
 | 공간 격자, 흐름장 (B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
@@ -363,6 +478,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   `autobattler/<branch>/`(`/`는 `-`가 된다). 에디터 앱의 폴더(`release/`, `debug/`, `<branch>/`)는 그대로다. 에디터 앱과 따로
   내려받는다.
   - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
+  - `nv_setup_executable`에 `PRELOAD <폴더>@<패키지 안 경로> ...` 인수를 더한다(`ASSETS <폴더>`는 `<폴더>@/assets`와 같다).
+    게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴을 `/assets/fonts`에 넣는다(열린 질문 8).
   - `nv_setup_executable`에 `COMPONENT <name>` 인수를 더한다(기본값 `web`). `autobattler`는
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 앱의 `web` 패키지에 섞이지 않는다.
   - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
@@ -396,17 +513,23 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | **직접 작성** (추천) | 공간 격자 약 150줄, 흐름장 약 200줄, 규칙 | C17 | 고정 용량, 아레나, 결정적 반복 순서를 그대로 지킨다 |
 | flecs | ECS | C, MIT | 콜백과 불투명 저장소가 코딩 표준과 맞지 않는다. 오브젝트 종류가 몇 개뿐이라 이득이 없다 |
 | Recast/Detour | navmesh와 군중 | C++, zlib | 전장이 평평한 칸 격자라 navmesh가 필요 없다(`autobattler.md`). 두 번째 C++ 파일이 된다 |
-| 정의 데이터: C 표 (추천, 이번 단계) | `battle_defs.c`의 표 | C17 | 바꾸면 다시 빌드해야 한다 |
-| 정의 데이터: JSON + cJSON | 텍스트 파일, 파서 | C, MIT | 사람이 읽기 쉽다. 할당자를 우리 아레나로 바꿔야 한다 |
-| 정의 데이터: JSON + jsmn | 토크나이저만 | C, MIT | 할당이 없다. 값 해석은 우리 몫 |
+| **정의 데이터: 직접 만든 줄 단위 텍스트** (결정) | "정의 파일" 절의 형식과 약 150줄의 파서 | C17 | 주석을 쓸 수 있고, 아레나만 쓰며, 틀린 줄을 줄 번호와 함께 알린다. 형식을 우리가 문서로 남겨야 하고 편집기 도움이 없다 |
+| 정의 데이터: C 표 | `defs.c`의 표 | C17 | 파서가 필요 없지만 값을 바꿀 때마다 다시 컴파일해야 한다 |
+| 정의 데이터: JSON + jsmn | 토크나이저만 | C, MIT | 할당이 없고 편집기가 문법을 검사한다. 주석을 못 쓰고, 토큰을 구조체로 옮기는 코드는 우리 몫 |
+| 정의 데이터: JSON + cJSON | 트리 파서 | C, MIT | 바로 트리로 읽힌다. 스스로 `malloc`을 하고 주석을 못 쓴다 |
+| 정의 데이터: TOML + tomlc99 | 파서 | C, MIT | 주석과 섹션이 있다. 크고 스스로 `malloc`을 한다 |
+| 정의 데이터: INI + inih | 파서 | C, BSD | 아주 작다. 무기와 능력 같은 중첩을 담기 어렵고 콜백 방식이다 |
 | 정의 데이터: `engine/chunk.h` | 우리 바이너리 형식 | C17 | 의존성이 없지만 편집기가 필요하다 |
 
 ### 테스트
 
-`tests/battle_test.c`(ctest, Node)가 `autobattler/battle.c`, `autobattler/battle_defs.c`와 공간 격자(B에서 흐름장) 소스를
-빌드한다.
+`tests/battle_test.c`(ctest, Node)가 `autobattler/battle.c`, `autobattler/defs.c`와 공간 격자(B에서 흐름장) 소스를 빌드한다.
+`-sNODERAWFS=1`로 링크해 저장소의 `autobattler/data/`를 바로 읽는다.
 
 A:
+- 정의 파일: 저장소의 `units.txt`와 `stage.txt`가 오류 없이 읽힌다; 주석, 빈 줄, CRLF; 각도가 라디안이 된다; 기본값; 오류마다
+  (모르는 키, 중복 키, 빠진 필수 키, 값 개수, 범위, 탭, 같은 이름, 없는 유닛 이름, 적 구역 밖의 칸, 공급 초과) 실패하고 맞는 줄
+  번호를 알린다; 오류가 여럿이면 모두 알린다.
 - 같은 배치와 시드로 두 번 돌리면 같은 해시.
 - 규칙 장면 하나씩: 가장 가까운 적을 고른다; 포탄이 퍼짐 안에서 목표점 근처에 떨어진다(탄도 계산); 포탄이 처음 닿은 적 하나만
   깎고 아군은 지나간다; 방어력 식; 실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 겹친 두 유닛이
@@ -426,7 +549,7 @@ assert와 WebGPU 오류가 없는지 본다.
 ### 단계
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
-1. **A 시뮬레이션:** `battle.c`, `battle_defs.c`(Crawler 하나, 적 배치), `battle_test.c`의 A 항목. 화면 없음.
+1. **A 시뮬레이션:** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
 2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
 3. **A 확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
@@ -435,7 +558,7 @@ assert와 WebGPU 오류가 없는지 본다.
 
 ### 열린 질문
 
-1. **정의 데이터 형식:** 이번 단계는 C 표로 하고 파일 형식은 밸런스 작업 전에 따로 정할까, 아니면 지금 정할까?
+1. ~~**정의 데이터 형식**~~: 해결됨(2026-10-03). 직접 만든 줄 단위 텍스트 파일을 패키지에 넣는다("정의 파일" 절).
 2. **공간 격자와 흐름장의 위치 (B):** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면
    `autobattler/`에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. **시간 제한 판정:** 남은 가치 비교가 맞는가?
@@ -444,8 +567,8 @@ assert와 WebGPU 오류가 없는지 본다.
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. **수치:** 위 표의 값은 출발점이다. 바꾸고 싶은 것이 있는가?
 7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
-8. **에셋:** 프로토타입에 필요한 것은 UI 글꼴(Pretendard 한 파일)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
-   `assets/fonts/`만 넣을까(`nv_setup_executable`의 `ASSETS`는 폴더 하나를 받는다)? 추천: `assets/fonts/`만.
+8. **에셋:** 정의 파일 말고 게임에 필요한 에셋은 UI 글꼴(Pretendard 한 파일)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
+   `PRELOAD`로 `assets/fonts/`만 넣을까? 추천: `assets/fonts/`만.
 
 ## English
 
@@ -502,6 +625,124 @@ A runs from start to end on these rules alone. The values are a starting point f
 
 A's tick order: record previous positions, pick targets again, movement and separation, weapons (cooldowns, firing), shells
 (integration; the first of shield, unit or ground they touch), deaths, shield refill, end conditions.
+
+### Definition files
+
+Decided (2026-10-03): unit definitions and the stage live in text files, not in code. The format is the line-based text defined
+below, and we write the code that reads it (no new third-party code; see "Third-party candidates"). The files go into the
+package and are read once at start. Changing a value needs repackaging (`cmake --build`), but no C code recompiles.
+
+| File | Path in the package | Contents |
+|---|---|---|
+| `autobattler/data/units.txt` | `/data/units.txt` | Unit definitions |
+| `autobattler/data/stage.txt` | `/data/stage.txt` | Supply and the enemy deployment |
+
+They are text, so they go into plain Git rather than Git LFS, and are reviewed like code.
+
+#### Syntax
+
+- UTF-8 text, LF or CRLF line ends.
+- One statement per line: a key and its values, separated by spaces. Blank lines are ignored.
+- `#` starts a comment that runs to the end of the line.
+- **Indentation sets nesting.** Lines indented deeper after a statement that opens a block (`unit`, `weapon`, `ability`) belong
+  to that block. Lines of one block have the same indentation. Indentation is spaces only (a tab is an error).
+- Kinds of values:
+  - **Number:** decimal, with an optional sign and point (`120`, `0.5`, `-3`). No exponents. A fraction where an integer goes is
+    an error.
+  - **Name:** `[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes (`Crawler`).
+  - **Word:** one of a list fixed per key (`shield`).
+- Angles are degrees in the file and become radians when read. Distances are meters, times seconds.
+- These are errors: an unknown key, a block's key outside its block, a key twice in one block, a missing required key, a line with
+  the wrong number of values, a value out of range, a tab, two units with the same name.
+
+#### `units.txt` (A)
+
+| Key | Value | Required | Range, default |
+|---|---|---|---|
+| `unit <name>` | Block | One or more, at most 16 | The name is unique in the file |
+| ├ `cost` | Integer | Yes | 1–10000 |
+| ├ `health` | Number | Yes | > 0 |
+| ├ `armor` | Number | No | ≥ 0, default 0 |
+| ├ `speed` | Number, m/s | Yes | ≥ 0 |
+| ├ `radius` | Number, m | Yes | > 0 |
+| ├ `height` | Number, m | Yes | > 0 |
+| ├ `weapon <name>` | Block | Yes, exactly one | |
+| │ ├ `range` | Number, m | Yes | > 0 |
+| │ ├ `damage` | Number | Yes | ≥ 0 |
+| │ ├ `cooldown` | Number, s | Yes | > 0 |
+| │ ├ `launch_angle` | Number, degrees | Yes | Above 0 and below 90 |
+| │ ├ `spread` | Number, m | No | ≥ 0, default 0 |
+| │ └ `muzzle` | Three numbers (x y z), m, unit space | No | Default 0 0 0 |
+| └ `ability <kind>` | Block | No, at most one | Kinds: `shield` |
+| &nbsp;&nbsp; ├ `radius` | Number, m | Yes | > 0 |
+| &nbsp;&nbsp; ├ `capacity` | Number | Yes | > 0 |
+| &nbsp;&nbsp; ├ `regen` | Number, per second | Yes | ≥ 0 |
+| &nbsp;&nbsp; └ `regen_delay` | Number, s | Yes | ≥ 0 |
+
+```
+# autobattler/data/units.txt: stage A's units (docs/specs/battle.md, "Definition files")
+unit Crawler
+    cost 100
+    health 120
+    armor 5
+    speed 5            # m/s
+    radius 0.5
+    height 0.8
+    weapon Lobber
+        range 20
+        damage 30
+        cooldown 1.5
+        launch_angle 45    # degrees
+        spread 0.5
+        muzzle 0 0.6 0.3
+    ability shield
+        radius 1.2
+        capacity 60
+        regen 10           # per second
+        regen_delay 3
+```
+
+#### `stage.txt` (A)
+
+| Key | Value | Required | Range |
+|---|---|---|---|
+| `supply <integer>` | Each side's supply | Yes, once | 1–100000 |
+| `place <unit name> <cell x> <cell row>` | One enemy unit | One or more | The name must be in `units.txt`. x 0–31, row 34–47 (the enemy zone). One per cell. Total cost ≤ `supply` |
+
+```
+# autobattler/data/stage.txt: stage A's one stage
+supply 1000
+place Crawler 12 36
+place Crawler 14 36
+place Crawler 16 36
+place Crawler 18 36
+place Crawler 13 38
+place Crawler 15 38
+place Crawler 17 38
+place Crawler 14 40
+place Crawler 16 40
+place Crawler 15 42
+```
+
+#### Reading and errors
+
+- `autobattler/defs.c` reads them. Its functions take text in memory (`b32 defs_read_units(BattleDefs* defs, const char* file_name,
+  const char* text, umm size)`, and `defs_read_stage` likewise). `main.c` reads the files with `fopen` into a scratch arena and
+  hands them over, so tests can try strings. It uses no GPU or ImGui.
+- The result is flat arrays of fixed capacity: `UnitDef unit_defs[16]` and the enemy deployment list. `UnitDef.name` is a `char[32]`
+  copied from the file.
+- Numbers are read with `strtod`. It rounds correctly, so the same file always gives the same values (determinism).
+- Each error is reported with the file name and line number through `nv_log(NV_LOG_ERROR, "battle", "units.txt:12: unknown key
+  'healt'")`. Reading does not stop at the first error: it goes to the end of the file and reports them all (up to 20). Log text is
+  English (`AGENTS.md`).
+- With any error, reading fails. The Battle panel shows the first error and "Definitions could not be loaded", and Start is
+  disabled. A data error is a failure that happens at run time, so it does not assert (the coding standard).
+
+#### In B
+
+B adds keys to the same syntax: a unit's `layer`, `size`, `squad`, `footprint` and `altitude`, several `weapon` blocks with a
+weapon's `projectile`, `targets`, `min_range`, `splash`, `speed` and `turn_rate`, `ability jump`, and the stage's `prop`. An unknown
+key is still an error.
 
 ### Stage B rules (the full prototype)
 
@@ -809,7 +1050,8 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 | `autobattler/CMakeLists.txt` | The `autobattler` executable, installed into `<prefix>/` of the `autobattler` install component (see "Page") |
 | `autobattler/main.c` | Window, GPU, renderer, ImGui, effects, camera, the frame loop (a fixed-tick accumulator) |
 | `autobattler/battle.h`, `autobattler/battle.c` | The rules and the tick. No GPU or ImGui, so ctest can build it |
-| `autobattler/battle_defs.c` | The unit definition table and one stage (the enemy deployment; props in B) |
+| `autobattler/defs.c` | Reading the definition files (see "Definition files"). No GPU or ImGui, so ctest can build it |
+| `autobattler/data/units.txt`, `stage.txt` | The unit definitions and the stage (the enemy deployment; props in B) |
 | `autobattler/battle_view.c` | Drawing with nodes and effects, deployment input, the panel |
 | `autobattler/strings.c` | The game's Korean table (see "UI strings") |
 | Spatial grid, flow field (B) | Open question 2: `engine/` (`engine/spatial.h`, `engine/flow.h`) or `autobattler/` |
@@ -820,6 +1062,8 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   branches' Debug at `autobattler/<branch>/` (`/` becomes `-`). The editor app's folders (`release/`, `debug/`, `<branch>/`)
   stay as they are. Downloaded apart from the editor app.
   - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
+  - `nv_setup_executable` gets a `PRELOAD <dir>@<path in the package> ...` argument (`ASSETS <dir>` is `<dir>@/assets`). The game
+    puts the definition folder `autobattler/data` at `/data` and the font at `/assets/fonts` (open question 8).
   - `nv_setup_executable` gets a `COMPONENT <name>` argument (default `web`). The game is
     `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the app's `web` package.
   - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
@@ -855,17 +1099,24 @@ Every text in the panel goes through `T()`/`TL()`. B adds rows for the text it a
 | **Write it ourselves** (recommended) | Spatial grid about 150 lines, flow field about 200, the rules | C17 | Keeps fixed capacities, arenas and a deterministic iteration order as they are |
 | flecs | An ECS | C, MIT | Callbacks and opaque storage clash with the coding standard; with a handful of object kinds there is no gain |
 | Recast/Detour | Navmesh and crowds | C++, zlib | The field is a flat cell grid, so no navmesh is needed (`autobattler.md`). It would be a second C++ file |
-| Definitions: C tables (recommended, this step) | Tables in `battle_defs.c` | C17 | A change needs a rebuild |
-| Definitions: JSON + cJSON | Text files, a parser | C, MIT | Easy to read; its allocator must be pointed at our arenas |
-| Definitions: JSON + jsmn | A tokenizer only | C, MIT | No allocation; interpreting values is ours |
+| **Definitions: our own line-based text** (decided) | The format of "Definition files" and a parser of about 150 lines | C17 | Allows comments, uses only arenas, reports bad lines with their numbers. We document the format ourselves, and editors give no help |
+| Definitions: C tables | Tables in `defs.c` | C17 | No parser, but every value change needs a recompile |
+| Definitions: JSON + jsmn | A tokenizer only | C, MIT | No allocation, and editors check the syntax. No comments, and moving tokens into structs is ours |
+| Definitions: JSON + cJSON | A tree parser | C, MIT | Reads straight into a tree. Calls `malloc` itself, no comments |
+| Definitions: TOML + tomlc99 | A parser | C, MIT | Comments and sections. Large, and calls `malloc` itself |
+| Definitions: INI + inih | A parser | C, BSD | Very small. Nesting such as weapons and abilities is awkward, and it reads through callbacks |
 | Definitions: `engine/chunk.h` | Our binary format | C17 | No dependency, but needs an editor |
 
 ### Tests
 
-`tests/battle_test.c` (ctest, Node) builds `autobattler/battle.c`, `autobattler/battle_defs.c` and the spatial grid (and in B the
-flow field) sources.
+`tests/battle_test.c` (ctest, Node) builds `autobattler/battle.c`, `autobattler/defs.c` and the spatial grid (and in B the flow
+field) sources. It links with `-sNODERAWFS=1` to read the repository's `autobattler/data/` directly.
 
 A:
+- Definition files: the repository's `units.txt` and `stage.txt` read without errors; comments, blank lines, CRLF; angles become
+  radians; defaults; each error (unknown key, repeated key, missing required key, value count, range, tab, a repeated name, an
+  unknown unit name, a cell outside the enemy zone, supply exceeded) fails and reports the right line number; several errors are
+  all reported.
 - The same deployment and seed run twice give the same hash.
 - One scene per rule: the nearest enemy is picked; a shell lands near its aim point, within the spread (the ballistic solve); a
   shell hurts only the first enemy it touches and passes allies; the armor formula; a shield stops enemy shells until its energy
@@ -887,8 +1138,8 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 
 0. **First (done):** `docs/specs/shared.md` (strings, meshes, resolution and taps, the camera, the font, the version and helpers
    move to the engine).
-1. **A, simulation:** `battle.c`, `battle_defs.c` (the one Crawler, the enemy deployment), A's items in `battle_test.c`. No
-   view.
+1. **A, simulation:** the definition files (`autobattler/data/`) and their parser (`defs.c`), `battle.c`, A's items in
+   `battle_test.c`. No view.
 2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
    deployment input, CMake and the CI deployment.
 3. **A, checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and
@@ -898,7 +1149,7 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 
 ### Open questions
 
-1. **Definition data format:** C tables for this step and a file format decided separately before balancing, or decide now?
+1. ~~**Definition data format**~~: resolved (2026-10-03). Our own line-based text files, packaged ("Definition files" section).
 2. **Where the spatial grid and flow field go (B):** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md`
    says, or `autobattler/` first, moving them when a second use appears?
 3. **Time-limit judgment:** is comparing remaining value right?
@@ -907,5 +1158,5 @@ from Start to a result, and check for no asserts and no WebGPU errors.
    keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
 6. **Numbers:** the table values are a starting point. Anything to change?
 7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
-8. **Assets:** the prototype needs only the UI font (one Pretendard file). Ship the whole `assets/` directory, or
-   only `assets/fonts/` (`ASSETS` in `nv_setup_executable` takes one directory)? Recommended: only `assets/fonts/`.
+8. **Assets:** besides the definition files, the only asset the game needs is the UI font (one Pretendard file). Ship the whole
+   `assets/` directory, or only `assets/fonts/` through `PRELOAD`? Recommended: only `assets/fonts/`.
