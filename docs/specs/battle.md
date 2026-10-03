@@ -14,26 +14,55 @@
 오브젝트 구조를 굳히는 것이 목적이다.
 
 규칙이 서로 어떻게 맞물리는지 구현 전에 다 확인하기는 어렵다. 그래서 프로토타입을 두 단계로 나눈다.
-- **A**는 오브젝트 구조(정의와 인스턴스, 유닛당 무기 여러 개, 능력의 구분된 공용체, 투사체 세 종류)를 확인하는 가장 작은
-  판이다. 지형지물이 없는 탁 트인 전장에서 유닛 4종이 싸운다.
-- **B**는 지형지물과 그것에 기대는 규칙(흐름장, 엄폐, 점프), 최소 사거리가 있는 Mortar를 더한다.
-
-아래 규칙, 구조, 테스트에서 B에만 있는 것은 **(B)**로 표시한다. 표시가 없는 것은 A부터 있다.
+- **A**는 한 라운드가 처음부터 끝까지 도는 가장 작은 판이다. 지상 유닛 한 종류(Crawler)가 포탄 하나와 Shield 하나로 탁
+  트인 전장에서 싸운다. 규칙은 "A 규칙" 절에 모두 있다.
+- **B**는 나머지 전부다: "B 규칙 (전체 프로토타입)" 절의 유닛 5종, 공중, 크기 등급, 분대, 무기 여러 개와 투사체 세 종류, 범위
+  피해와 아군 피해, 지형지물과 흐름장, Jump, 공간 격자.
 
 ### 범위
 
 | A (먼저) | B (다음) | 빠짐 (나중) |
 |---|---|---|
-| 칸 단위 배치 그리드, 분대 단위 배치 | 지형지물(낮은 벽, 바위, 탑)과 엄폐 | 높이맵 지형 (지면은 평평한 y = 0) |
-| 실제 높이: 공중 유닛의 고도, 탄도 포탄, 3D 범위 피해 | 점프 | 여러 라운드, 본부 체력 |
-| 유닛 4종(Crawler, Ranger, Wasp, Fortress), 지상과 공중, 크기 등급 3개 | Mortar(최소 사거리, 고각 포탄) | 업그레이드, 테크, 카드, 전문가 |
-| 유닛당 무기 여러 개(Fortress), 능력 하나(Shield) | 능력 Jump(Ranger) | AI 상대 (적 배치는 스테이지 데이터에 고정) |
-| 투사체 세 종류, 방어력, 범위 피해, 아군 피해 | 흐름장(지형지물을 돌아가는 길) | 시간 조작 (일시정지, 배속) |
-| 가장 가까운 적 타게팅, 곧장 다가가기와 분리, 공간 격자 | | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
+| 칸 단위 배치 그리드(칸 하나에 유닛 하나) | 분대 단위 배치 | 높이맵 지형 (지면은 평평한 y = 0) |
+| 실제 높이: 포탄의 탄도 | 공중 유닛과 고도, 3D 범위 피해 | 여러 라운드, 본부 체력 |
+| 유닛 1종(Crawler), 지상만, 크기 등급 없음 | 유닛 5종, 크기 등급 3개 | 업그레이드, 테크, 카드, 전문가 |
+| 유닛당 무기 하나, 능력 하나(Shield) | 무기 여러 개, Jump | AI 상대 (적 배치는 스테이지 데이터에 고정) |
+| 투사체 한 종류(포탄), 방어력, 단일 피해 | 총탄과 미사일, 범위 피해, 아군 피해 | 시간 조작 (일시정지, 배속) |
+| 가장 가까운 적 타게팅, 곧장 다가가기와 분리(모든 쌍 비교) | 지형지물, 엄폐, 흐름장, 공간 격자 | 대량 렌더링, 애니메이션 (메시 노드 하나씩) |
 | 전멸 또는 60초 시간 제한으로 끝나는 한 라운드 | | 저장, undo |
 | 에디터와 따로인 실행 파일 `autobattler`, 한국어와 영어 패널(게임의 한국어 표) | | 게임 UI (지금은 ImGui 패널 하나) |
 
-### 규칙
+### A 규칙
+
+A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다.
+
+| 항목 | A |
+|---|---|
+| 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0 |
+| 배치 | 칸 하나에 Crawler 하나. 양쪽 공급 1000, Crawler 비용 100(편마다 최대 10기). 적 배치는 스테이지에 고정 |
+| 유닛 | Crawler 한 종류, 지상만. 크기 등급과 분대가 없다 |
+| 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부 |
+| 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽 |
+| 이동 | 대상으로 곧장 다가가고, 대상이 사거리의 90% 안이면 멈춘다. 겹친 유닛끼리 서로 밀어낸다(분리, 무게는 모두 같다). 전장 밖으로 나가지 않는다. 가까운 유닛 찾기와 분리는 모든 쌍을 직접 비교한다(공간 격자 없음) |
+| 무기 | 하나. 투사체는 포탄 한 종류: 중력 9.8 m/s²의 탄도로 날고, 발사각과 목표점(쏠 때 대상의 위치 + 시드 난수 퍼짐)에서 초기 속도를 구한다 |
+| 피해 | 단일 피해: 포탄은 처음 닿은 **적** 유닛 하나에 `max(피해 - 방어력, 피해 × 0.25)`를 주고 사라진다. 아군은 지나간다. 지면에 닿으면 피해 없이 사라진다. 피해는 틱 동안 더하기만 하고 죽음은 틱 끝에 정한다 |
+| 능력 | Shield 하나(아래) |
+
+| Crawler (A) | 값 |
+|---|---|
+| 체력, 방어력 | 120, 5 |
+| 속도 | 5 m/s |
+| 반지름 / 높이 | 0.5 / 0.8 m |
+| 무기 Lobber | 포탄, 사거리 20 m, 피해 30, 쿨다운 1.5초, 발사각 45°, 퍼짐 0.5 m |
+| Shield | 반지름 1.2 m의 구. 바깥에서 경계를 넘어 들어오는 적 포탄을 없애고 그 피해만큼 에너지를 잃는다(용량 60). 3초 동안 맞지 않으면 초당 10씩 찬다. 에너지가 0이면 꺼진다 |
+
+A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리, 무기(쿨다운, 발사), 포탄(적분, 실드, 유닛, 지면 순으로 가장 먼저
+닿은 것), 죽음, 실드 회복, 끝 조건.
+
+### B 규칙 (전체 프로토타입)
+
+B는 A 위에 아래 규칙을 모두 더한 모양이다. A의 Crawler는 B에서 아래 표의 근접 Crawler(분대 16)로 바뀌고, A의 포탄 무기와
+Shield 값은 B의 표를 따른다.
 
 #### 전장
 
@@ -42,9 +71,9 @@
 | 좌표 | 오른손, Y 위 (`engine/math.h`). 전장 중심이 원점, 플레이어 진영은 +Z, 적 진영은 -Z |
 | 칸 | 2 m 정사각형. 전장은 32칸(X) × 48행(Z) = 64 m × 96 m. 행 0이 플레이어 쪽 끝 |
 | 배치 구역 | 플레이어: 행 0–13, 적: 행 34–47. 가운데 20행은 배치할 수 없다 |
-| 지형지물 (B) | 칸에 맞춘 상자 (칸 범위와 높이). 부서지지 않는다. 지상 이동을 막고, 상자를 지나는 투사체를 멈춘다. 그 칸에는 배치할 수 없다 |
-| 지형지물 높이 (B) | 낮은 벽 1.5 m (엄폐: 지상 직사를 막지만 점프로 넘는다), 바위 5 m, 탑 8 m. 공중 고도(10 m)보다 낮다 |
-| 지면 | y = 0. 지상 유닛은 (B: 점프 중이 아니면) y = 0에 있다. 공중 유닛은 정의의 고도에 있다 |
+| 지형지물 | 칸에 맞춘 상자 (칸 범위와 높이). 부서지지 않는다. 지상 이동을 막고, 상자를 지나는 투사체를 멈춘다. 그 칸에는 배치할 수 없다 |
+| 지형지물 높이 | 낮은 벽 1.5 m (엄폐: 지상 직사를 막지만 점프로 넘는다), 바위 5 m, 탑 8 m. 공중 고도(10 m)보다 낮다 |
+| 지면 | y = 0. 지상 유닛은 점프 중이 아니면 y = 0에 있다. 공중 유닛은 정의의 고도에 있다 |
 
 #### 라운드
 
@@ -64,7 +93,6 @@
 
 | | Crawler | Ranger | Mortar | Wasp | Fortress |
 |---|---|---|---|---|---|
-| 단계 | A | A | **B** | A | A |
 | 층 | 지상 | 지상 | 지상 | 공중 (고도 10 m) | 지상 |
 | 크기 등급 | 소형 | 중형 | 중형 | 소형 | 대형 |
 | 분대 크기 | 16 | 4 | 2 | 6 | 1 |
@@ -75,7 +103,7 @@
 | 속도 (m/s) | 7 | 4 | 3 | 8 | 2 |
 | 반지름 / 높이 (m) | 0.5 / 0.8 | 0.8 / 2 | 1.2 / 2 | 0.8 / 0.6 | 2.5 / 5 |
 | 무기 | Claws | Rifle | Mortar | Rockets | Cannon, Flak |
-| 능력 | 없음 | Jump (B) | 없음 | 없음 | Shield |
+| 능력 | 없음 | Jump | 없음 | 없음 | Shield |
 
 크기 등급은 분리(밀어내기)의 무게를 정한다: 소형 1, 중형 4, 대형 20. 큰 유닛이 작은 유닛을 밀어낸다.
 
@@ -85,14 +113,14 @@
 |---|---|---|---|---|---|---|---|
 | Claws | 근접 (투사체 없음) | 지상 | 1.2 | 25 | – | 0.6 | |
 | Rifle | 총탄 | 지상, 공중 | 25 | 40 | – | 1.0 | 속도 90 m/s, 퍼짐 0.3 m |
-| Mortar (B) | 포탄 | 지상 | 10–45 | 120 | 4 | 3.0 | 발사각 60°, 퍼짐 1.5 m |
+| Mortar | 포탄 | 지상 | 10–45 | 120 | 4 | 3.0 | 발사각 60°, 퍼짐 1.5 m |
 | Rockets | 미사일 | 지상 | 12 | 35 | 1.5 | 0.8 | 속도 30 m/s, 선회 3 rad/s |
 | Cannon | 포탄 | 지상 | 35 | 400 | 5 | 4.0 | 발사각 15°, 퍼짐 1 m |
 | Flak | 미사일 | 공중 | 30 | 60 | 3 | 1.5 | 속도 50 m/s, 선회 5 rad/s |
 
 #### 능력
 
-- **Jump (Ranger, B):** 이동 방향 4 m 안에 지형지물이 있거나 적 소형 근접 유닛이 3 m 안에 오면, 이동 방향으로 10 m를
+- **Jump (Ranger):** 이동 방향 4 m 안에 지형지물이 있거나 적 소형 근접 유닛이 3 m 안에 오면, 이동 방향으로 10 m를
   0.8초에 걸쳐 높이 3 m의 포물선으로 뛴다. 착지점이 지형지물 칸이면 뛰지 않는다. 쿨다운 10초. 뛰는 동안 쏘지 않고 다른
   유닛과 밀어내지 않는다.
 - **Shield (Fortress):** 반지름 7 m의 구. 바깥에서 경계를 넘어 들어오는 적 투사체를 없애고 그 피해만큼 에너지를 잃는다
@@ -106,20 +134,20 @@
   - 0.25초(8틱)마다 다시 고르고, 유닛마다 틱을 나눠 분산한다. 대상이 죽으면 바로 다시 고른다.
   - 같은 거리면 슬롯 번호가 작은 유닛.
 - **이동:**
-  - 지상: A에서는 이동 대상으로 곧장 향한다. (B) 이동 대상이 8 m 밖이거나 그 사이에 지형지물이 있으면 흐름장을 따른다.
-    이동 대상이 무기 사거리의 90% 안이면 멈춘다. 이웃과 분리하고, 전장 밖으로 나가지 않게 (B: 지형지물 칸에서도) 밀어낸다.
-    몸은 이동 방향으로 돈다(무기는 360° 포탑).
+  - 지상: 이동 대상이 8 m 안이고 그 사이에 지형지물이 없으면 곧장 향하고, 아니면 흐름장을 따른다. 이동 대상이 무기
+    사거리의 90% 안이면 멈춘다. 이웃과 분리하고, 지형지물 칸과 전장 밖으로 나가지 않게 밀어낸다. 몸은 이동 방향으로
+    돈다(무기는 360° 포탑).
   - 공중: 지형지물을 무시하고 고도를 지키며 이동 대상으로 곧장 날아간다. 공중 유닛끼리만 분리한다.
-- **흐름장 (B):** 팀마다 둘(지상 적만, 모든 적; 공중 적은 지면에 투영). 목표 칸은 적이 있는 칸이다. 8방향 다익스트라, 정수
+- **흐름장:** 팀마다 둘(지상 적만, 모든 적; 공중 적은 지면에 투영). 목표 칸은 적이 있는 칸이다. 8방향 다익스트라, 정수
   비용 10/14, 지형지물 칸은 지날 수 없고 대각선으로 모서리를 자르지 않는다. 10틱마다 다시 만들며, 네 장을 틱에 나눠
   만든다. 지상만 치는 유닛(Crawler, Mortar)은 "지상 적만"을 따른다.
-- **발사:** 쿨다운이 끝나고 대상이 사거리 안에 있으면 쏜다. (B) 직사(총탄)는 총구에서 대상 중심까지 지형지물이 없을 때만
+- **발사:** 쿨다운이 끝나고 대상이 사거리 안에 있으면 쏜다. 직사(총탄)는 총구에서 대상 중심까지 지형지물이 없을 때만
   쏜다. 포탄과 미사일은 그 검사가 없다. 리드 사격은 없다: 쏠 때 대상의 위치를 겨눈다.
 - **투사체:**
   - 총탄은 직선으로 날아가 사거리만큼 가면 사라진다.
   - 포탄은 중력 9.8 m/s²로 날아가고, 발사각과 목표점(대상 위치 + 시드 난수 퍼짐)에서 초기 속도를 구한다.
   - 미사일은 대상을 향해 선회하고, 대상이 죽으면 마지막 위치로 간다.
-  - 매 틱 이전 위치에서 지금 위치까지의 선분을 실드, 지형지물(B), 지면, 유닛 원기둥에 대해 검사하고 가장 먼저 닿은 것에서
+  - 매 틱 이전 위치에서 지금 위치까지의 선분을 실드, 지형지물, 지면, 유닛 원기둥에 대해 검사하고 가장 먼저 닿은 것에서
     터진다. 쏜 유닛은 맞지 않는다.
 - **피해:**
   - 한 번 맞을 때 `max(피해 - 방어력, 피해 × 0.25)`.
@@ -288,16 +316,22 @@ typedef struct Battle {
 } Battle;
 ```
 
-A의 `Battle`에는 `props`, `prop_count`, `blocked`, `fields`가 없다. `AbilityKind`에는 `ABILITY_JUMP`가, `Unit.ability`에는 `jump`가,
-플래그에는 `UNIT_JUMPING`이, 이벤트에는 `BATTLE_EVENT_JUMP`가 없다. 모두 B에서 더한다. 쓰기 전에는 두지 않는다는 코딩 표준을
-따른 것이고, 위 코드는 B까지 더한 모양이다.
+위 코드는 B까지 더한 모양이다. A의 구조체는 쓰는 것만 가진다(쓰기 전에는 두지 않는다는 코딩 표준):
+- `UnitDef`: 이름, 비용, 체력, 방어력, 속도, 반지름, 높이, 무기 하나(`WeaponDef`), 능력(`AbilityDef`: `ABILITY_NONE`이나
+  `ABILITY_SHIELD`). `layer`, `size`, `squad_size`, `footprint`, `altitude`, `weapon_count`는 없다.
+- `WeaponDef`: 사거리, 피해, 쿨다운, 발사각, 퍼짐, 총구. 투사체 종류, 대상, 최소 사거리, 범위, 속도, 선회는 없다.
+- `Unit`: 플래그, 팀, 정의, 위치와 이전 위치, 속도, 방향과 이전 방향, 체력, 이번 틱의 피해, 대상, 쿨다운, 능력 상태
+  (`union`에 `shield`만). 분대는 없다.
+- `Projectile`: 팀, 쏜 유닛, 위치와 이전 위치, 속도. 종류와 미사일 데이터는 없다.
+- `Battle`: 단계, 결과, 틱, 난수, 유닛, 포탄, 이벤트(발사, 명중, 실드 피격, 죽음). 지형지물, `blocked`, 분대, 흐름장, 공간 격자는
+  없다.
 
-### 틱 순서
+### 틱 순서 (B; A의 것은 "A 규칙" 끝에)
 
 1. 모든 유닛의 `previous_position`, `previous_yaw`를 기록하고 공간 격자를 다시 만든다(유닛 슬롯 순서로 넣는다).
-2. (B) 이번 틱 차례인 흐름장을 다시 만든다.
+2. 이번 틱 차례인 흐름장을 다시 만든다.
 3. 이번 틱 차례인 유닛의 대상을 다시 고른다.
-4. 이동과 능력(B: 점프 시작과 진행; 분리, 밀어내기, 적분).
+4. 이동과 능력(점프 시작과 진행, 분리, 밀어내기, 적분).
 5. 무기: 쿨다운, 발사(투사체 생성, 근접 피해).
 6. 투사체: 적분, 충돌, 피해와 범위 피해, 실드.
 7. 죽음: `damage_taken`을 적용하고 체력이 0 이하인 유닛을 `UNIT_DEAD`로 표시한다.
@@ -321,7 +355,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 | `autobattler/battle_defs.c` | 유닛 정의 표와 스테이지 하나(적 배치; B에서 지형지물) |
 | `autobattler/battle_view.c` | 노드와 이펙트로 그리기, 배치 입력, 패널 |
 | `autobattler/strings.c` | 게임의 한국어 표("UI 문자열" 참고) |
-| 공간 격자, 흐름장(B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
+| 공간 격자, 흐름장 (B) | 열린 질문 2: `engine/`(`engine/spatial.h`, `engine/flow.h`) 또는 `autobattler/` |
 
 ### 실행 파일
 
@@ -340,7 +374,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   않는다.
 - **그리기:**
   - 유닛은 팀 색 큐브 메시 노드로, 크기는 반지름과 높이. 틱 사이를 보간한다.
-  - (B) 지형지물은 회색 상자. 배치 격자와 구역은 디버그 라인, 체력 바는 유닛 위의 디버그 라인이다.
+  - 지형지물은 회색 상자(B), 배치 격자와 구역은 디버그 라인, 체력 바는 유닛 위의 디버그 라인이다.
   - 투사체는 `nv_vfx_trail`, 폭발은 `nv_vfx_burst`와 `nv_vfx_decal`, 실드는 디버그 라인 원으로 그린다.
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다. 놓인 분대를 탭하면 지운다. 데스크톱과 폰 모두 같다.
@@ -374,14 +408,15 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 A:
 - 같은 배치와 시드로 두 번 돌리면 같은 해시.
-- 공간 격자: 질의가 무차별 검사와 같은 유닛을 같은 순서로 돌려준다.
-- 규칙 장면 하나씩: 가장 가까운 적을 고른다; 총탄이 길 위의 아군을 맞힌다; Cannon 포탄의 범위 피해가 아군도 깎는다; 지면
-  폭발이 공중 유닛을 맞히지 않는다; Flak이 공중만 노린다; 실드가 적 투사체를 막고 아군 것은 통과시킨다; 60초에 끝나고 남은
-  가치로 판정한다.
+- 규칙 장면 하나씩: 가장 가까운 적을 고른다; 포탄이 퍼짐 안에서 목표점 근처에 떨어진다(탄도 계산); 포탄이 처음 닿은 적 하나만
+  깎고 아군은 지나간다; 방어력 식; 실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 겹친 두 유닛이
+  분리로 떨어진다; 한쪽이 전멸하면 끝난다; 60초에 끝나고 남은 가치로 판정한다.
 
 B:
+- 공간 격자: 질의가 무차별 검사와 같은 유닛을 같은 순서로 돌려준다.
 - 흐름장: 벽을 돌아가는 경로, 막힌 칸, 목표 없음.
-- 규칙 장면: 낮은 벽이 총탄을 막는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 박격포의 최소 사거리.
+- 규칙 장면: 총탄이 길 위의 아군을 맞힌다; 범위 피해가 아군도 깎는다; 지면 폭발이 공중 유닛을 맞히지 않는다; Flak이 공중만
+  노린다; 낮은 벽이 총탄을 막는다; Wasp가 지형지물 위를 난다; Ranger가 낮은 벽을 넘어 뛴다; 박격포의 최소 사거리.
 
 A부터 `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다(ctest 명령에 `autobattler` 폴더를 더한다).
 
@@ -391,16 +426,17 @@ assert와 WebGPU 오류가 없는지 본다.
 ### 단계
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
-1. **A 시뮬레이션:** 공간 격자, `battle.c`, `battle_defs.c`(유닛 4종, 적 배치), `battle_test.c`의 A 항목. 화면 없음.
+1. **A 시뮬레이션:** `battle.c`, `battle_defs.c`(Crawler 하나, 적 배치), `battle_test.c`의 A 항목. 화면 없음.
 2. **A 실행 파일:** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
 3. **A 확인과 문서:** 디버그 내보내기, Playwright 검사, `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
-4. **B:** 지형지물과 흐름장, 엄폐(직사의 시야 검사), Mortar, Jump, 더한 글자의 한국어 행, B 테스트.
+4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 분대, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
+   Jump, 공간 격자), 더한 글자의 한국어 행, B 테스트.
 
 ### 열린 질문
 
 1. **정의 데이터 형식:** 이번 단계는 C 표로 하고 파일 형식은 밸런스 작업 전에 따로 정할까, 아니면 지금 정할까?
-2. **공간 격자와 흐름장의 위치:** `autobattler.md`대로 엔진(`engine/spatial.h`, B에서 `engine/flow.h`)인가, 아니면
+2. **공간 격자와 흐름장의 위치 (B):** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면
    `autobattler/`에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. **시간 제한 판정:** 남은 가치 비교가 맞는가?
 4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가?
@@ -422,26 +458,55 @@ Step 1 of `docs/autobattler.md` (the battle prototype): the least of items 1 (si
 The point is to settle the rules and the game object structure before finding out whether the game is fun.
 
 How the rules interact is hard to check fully before building, so the prototype comes in two stages.
-- **A** is the smallest version that checks the object structure (definitions and instances, several weapons per unit, the
-  discriminated union of abilities, three projectile kinds). Four unit types fight on an open field with no props.
-- **B** adds props and the rules that lean on them (flow fields, cover, jumping) and the Mortar with its minimum range.
-
-Below, rules, structure and tests that only B has are marked **(B)**. Anything unmarked is there from A on.
+- **A** is the smallest version in which one round runs from start to end. One ground unit type (the Crawler), with one shell
+  weapon and one Shield, fights on an open field. Its rules are all in the "Stage A rules" section.
+- **B** is everything else: from "Stage B rules (the full prototype)", the five unit types, air, size classes, squads, several
+  weapons and three projectile kinds, area damage and friendly fire, props and flow fields, Jump and the spatial grid.
 
 ### Scope
 
 | A (first) | B (next) | Out (later) |
 |---|---|---|
-| A cell-based deployment grid, deployment by squad | Props (low walls, rocks, towers) and cover | Heightmap terrain (the ground is flat at y = 0) |
-| Real height: air units' altitude, ballistic shells, 3D area damage | Jumping | Multiple rounds, base health |
-| Four unit types (Crawler, Ranger, Wasp, Fortress), ground and air, three size classes | The Mortar (minimum range, high-arc shells) | Upgrades, tech, cards, specialists |
-| Several weapons per unit (Fortress), one ability (Shield) | The Jump ability (Ranger) | An AI opponent (the enemy deployment is fixed in the stage data) |
-| Three projectile kinds, armor, area damage, friendly fire | Flow fields (paths around props) | Time controls (pause, speed-up) |
-| Nearest-enemy targeting, steering straight in with separation, the spatial grid | | Mass rendering and animation (one mesh node each) |
+| A cell-based deployment grid (one unit per cell) | Deployment by squad | Heightmap terrain (the ground is flat at y = 0) |
+| Real height: the shell's ballistic arc | Air units and altitude, 3D area damage | Multiple rounds, base health |
+| One unit type (Crawler), ground only, no size classes | Five unit types, three size classes | Upgrades, tech, cards, specialists |
+| One weapon per unit, one ability (Shield) | Several weapons, Jump | An AI opponent (the enemy deployment is fixed in the stage data) |
+| One projectile kind (shells), armor, single-target damage | Bullets and missiles, area damage, friendly fire | Time controls (pause, speed-up) |
+| Nearest-enemy targeting, steering straight in with separation (every pair compared) | Props, cover, flow fields, the spatial grid | Mass rendering and animation (one mesh node each) |
 | One round, ended by a wipe-out or a 60-second time limit | | Saving, undo |
 | An executable of its own, `autobattler`, with a Korean and English panel (the game's Korean table) | | A game UI (one ImGui panel for now) |
 
-### Rules
+### Stage A rules
+
+A runs from start to end on these rules alone. The values are a starting point for balancing.
+
+| Topic | A |
+|---|---|
+| Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0 |
+| Deployment | One Crawler per cell. Each side has 1000 supply and a Crawler costs 100 (at most 10 per side). The enemy deployment is fixed in the stage |
+| Units | One type, the Crawler, ground only. No size classes and no squads |
+| Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `cost × health / max health`) wins; equal is a draw |
+| Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index |
+| Movement | Steer straight at the target and stop once it is within 90% of the range. Overlapping units push each other apart (separation, all with the same weight), and stay inside the field. Finding nearby units and separating compare every pair directly (no spatial grid) |
+| Weapon | One. The one projectile kind is the shell: it flies a ballistic arc under 9.8 m/s² of gravity, with the launch velocity found from the launch angle and the aim point (the target's position when fired, plus seeded random spread) |
+| Damage | Single-target: a shell deals `max(damage - armor, damage × 0.25)` to the first **enemy** unit it touches and vanishes. It passes allies. On the ground it vanishes with no damage. Damage only adds up during a tick, and deaths are decided at its end |
+| Ability | One, Shield (below) |
+
+| Crawler (A) | Value |
+|---|---|
+| Health, armor | 120, 5 |
+| Speed | 5 m/s |
+| Radius / height | 0.5 / 0.8 m |
+| Weapon, Lobber | Shell, range 20 m, damage 30, cooldown 1.5 s, launch angle 45°, spread 0.5 m |
+| Shield | A sphere of radius 1.2 m. It removes enemy shells that cross its boundary from outside and loses their damage as energy (capacity 60). After 3 seconds without hits it refills at 10 per second. At zero energy it is off |
+
+A's tick order: record previous positions, pick targets again, movement and separation, weapons (cooldowns, firing), shells
+(integration; the first of shield, unit or ground they touch), deaths, shield refill, end conditions.
+
+### Stage B rules (the full prototype)
+
+B is A with all of the rules below added. A's Crawler becomes the melee Crawler of the table below (squads of 16), and the shell
+weapon and Shield take the values of B's tables.
 
 #### Battlefield
 
@@ -450,9 +515,9 @@ Below, rules, structure and tests that only B has are marked **(B)**. Anything u
 | Coordinates | Right-handed, Y up (`engine/math.h`). The field is centered on the origin; the player's side is +Z, the enemy's −Z |
 | Cells | 2 m squares. The field is 32 cells (X) × 48 rows (Z) = 64 m × 96 m. Row 0 is the player's edge |
 | Deployment zones | Player: rows 0–13; enemy: rows 34–47. The 20 rows between take no deployment |
-| Props (B) | Boxes aligned to cells (a cell range and a height). Indestructible. They block ground movement and stop projectiles that pass through the box. Their cells take no deployment |
-| Prop heights (B) | Low wall 1.5 m (cover: stops direct ground fire, but can be jumped), rock 5 m, tower 8 m. All below the air altitude (10 m) |
-| Ground | y = 0. Ground units stay at y = 0 (B: unless jumping); air units fly at their definition's altitude |
+| Props | Boxes aligned to cells (a cell range and a height). Indestructible. They block ground movement and stop projectiles that pass through the box. Their cells take no deployment |
+| Prop heights | Low wall 1.5 m (cover: stops direct ground fire, but can be jumped), rock 5 m, tower 8 m. All below the air altitude (10 m) |
+| Ground | y = 0. Ground units stay at y = 0 unless jumping; air units fly at their definition's altitude |
 
 #### Round
 
@@ -473,7 +538,6 @@ The values are a starting point for balancing.
 
 | | Crawler | Ranger | Mortar | Wasp | Fortress |
 |---|---|---|---|---|---|
-| Stage | A | A | **B** | A | A |
 | Layer | Ground | Ground | Ground | Air (altitude 10 m) | Ground |
 | Size class | Small | Medium | Medium | Small | Large |
 | Squad size | 16 | 4 | 2 | 6 | 1 |
@@ -484,7 +548,7 @@ The values are a starting point for balancing.
 | Speed (m/s) | 7 | 4 | 3 | 8 | 2 |
 | Radius / height (m) | 0.5 / 0.8 | 0.8 / 2 | 1.2 / 2 | 0.8 / 0.6 | 2.5 / 5 |
 | Weapons | Claws | Rifle | Mortar | Rockets | Cannon, Flak |
-| Ability | None | Jump (B) | None | None | Shield |
+| Ability | None | Jump | None | None | Shield |
 
 The size class sets the weight in separation (pushing): small 1, medium 4, large 20. Large units push small ones aside.
 
@@ -494,14 +558,14 @@ The size class sets the weight in separation (pushing): small 1, medium 4, large
 |---|---|---|---|---|---|---|---|
 | Claws | Melee (no projectile) | Ground | 1.2 | 25 | – | 0.6 | |
 | Rifle | Bullet | Ground, air | 25 | 40 | – | 1.0 | Speed 90 m/s, spread 0.3 m |
-| Mortar (B) | Shell | Ground | 10–45 | 120 | 4 | 3.0 | Launch angle 60°, spread 1.5 m |
+| Mortar | Shell | Ground | 10–45 | 120 | 4 | 3.0 | Launch angle 60°, spread 1.5 m |
 | Rockets | Missile | Ground | 12 | 35 | 1.5 | 0.8 | Speed 30 m/s, turn 3 rad/s |
 | Cannon | Shell | Ground | 35 | 400 | 5 | 4.0 | Launch angle 15°, spread 1 m |
 | Flak | Missile | Air | 30 | 60 | 3 | 1.5 | Speed 50 m/s, turn 5 rad/s |
 
 #### Abilities
 
-- **Jump (Ranger, B):** when a prop is within 4 m along its movement, or a small enemy melee unit comes within 3 m, it jumps 10 m
+- **Jump (Ranger):** when a prop is within 4 m along its movement, or a small enemy melee unit comes within 3 m, it jumps 10 m
   along its movement over 0.8 seconds, on a parabola 3 m high. It does not jump if the landing point is a prop cell.
   Cooldown 10 seconds. While jumping it does not fire and is not pushed.
 - **Shield (Fortress):** a sphere of radius 7 m. It removes enemy projectiles that cross its boundary from outside and loses
@@ -516,15 +580,15 @@ The size class sets the weight in separation (pushing): small 1, medium 4, large
   - Targets are picked again every 0.25 seconds (8 ticks), spread over ticks by unit, and at once when a target dies.
   - Equal distances go to the lower slot index.
 - **Movement:**
-  - Ground: in A, steer straight at the move target. (B) If the move target is beyond 8 m or a prop lies between, follow the
-    flow field. Stop when the move target is within 90% of the weapon's range. Separate from neighbors, and push back inside
-    the field (B: and out of prop cells). The body turns toward its movement (weapons are 360° turrets).
+  - Ground: if the move target is within 8 m with no prop between, steer straight at it; otherwise follow the flow field. Stop
+    when the move target is within 90% of the weapon's range. Separate from neighbors, and push out of prop cells and back
+    inside the field. The body turns toward its movement (weapons are 360° turrets).
   - Air: ignore props, hold altitude and fly straight at the move target. Separate from other air units only.
-- **Flow fields (B):** two per team (ground enemies only, all enemies; air enemies projected onto the ground). Goal cells are the
+- **Flow fields:** two per team (ground enemies only, all enemies; air enemies projected onto the ground). Goal cells are the
   cells enemies stand in. Eight-way Dijkstra with integer costs 10/14; prop cells cannot be crossed, and diagonals do not cut
   corners. Rebuilt every 10 ticks, the four fields spread over ticks. Units that hit only ground (Crawler, Mortar) follow
   "ground enemies only".
-- **Firing:** a weapon fires when its cooldown is over and its target is in range. (B) Direct fire (bullets) fires only when no
+- **Firing:** a weapon fires when its cooldown is over and its target is in range. Direct fire (bullets) fires only when no
   prop lies between the muzzle and the target's center; shells and missiles skip that check. No leading: the weapon aims at
   the target's position when it fires.
 - **Projectiles:**
@@ -532,7 +596,7 @@ The size class sets the weight in separation (pushing): small 1, medium 4, large
   - Shells fly under gravity (9.8 m/s²); the launch velocity comes from the launch angle and the aim point (the target's
     position plus seeded random spread).
   - Missiles turn toward their target, and toward its last position once it dies.
-  - Every tick the segment from the previous position to the current one is tested against shields, props (B), the ground and
+  - Every tick the segment from the previous position to the current one is tested against shields, props, the ground and
     unit cylinders, and the projectile hits the first thing it touches. A shooter is never hit by its own projectile.
 - **Damage:**
   - Each hit deals `max(damage - armor, damage × 0.25)`.
@@ -707,16 +771,23 @@ typedef struct Battle {
 } Battle;
 ```
 
-A's `Battle` has no `props`, `prop_count`, `blocked` or `fields`; `AbilityKind` has no `ABILITY_JUMP`, `Unit.ability` no `jump`,
-the flags no `UNIT_JUMPING` and the events no `BATTLE_EVENT_JUMP`. B adds them all. That follows the coding standard's "nothing
-before it is used"; the code above is the shape with B added.
+The code above is the shape with B added. A's structs hold only what A uses (the coding standard's "nothing before it is used"):
+- `UnitDef`: name, cost, health, armor, speed, radius, height, one weapon (`WeaponDef`), the ability (`AbilityDef`: `ABILITY_NONE` or
+  `ABILITY_SHIELD`). No `layer`, `size`, `squad_size`, `footprint`, `altitude` or `weapon_count`.
+- `WeaponDef`: range, damage, cooldown, launch angle, spread, muzzle. No projectile kind, targets, minimum range, splash, speed or
+  turn rate.
+- `Unit`: flags, team, definition, position and previous position, velocity, yaw and previous yaw, health, this tick's damage,
+  target, cooldown, ability state (a `union` with only `shield`). No squad.
+- `Projectile`: team, shooter, position and previous position, velocity. No kind and no missile data.
+- `Battle`: phase, outcome, tick, random numbers, units, shells, events (fire, hit, shield hit, death). No props, `blocked`, squads,
+  flow fields or spatial grid.
 
-### Tick order
+### Tick order (B; A's is at the end of "Stage A rules")
 
 1. Record every unit's `previous_position` and `previous_yaw`, and rebuild the spatial grid (units go in by slot order).
-2. (B) Rebuild the flow field whose turn it is.
+2. Rebuild the flow field whose turn it is.
 3. Pick targets again for the units whose turn it is.
-4. Movement and abilities (B: starting and advancing jumps; separation, pushing out, integration).
+4. Movement and abilities (starting and advancing jumps, separation, pushing out, integration).
 5. Weapons: cooldowns, firing (new projectiles, melee damage).
 6. Projectiles: integration, collisions, damage and area damage, shields.
 7. Deaths: apply `damage_taken`, and mark units at zero health or below `UNIT_DEAD`.
@@ -761,7 +832,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   and pinch, kept over the field.
 - **Drawing:**
   - Units are cube mesh nodes in team colors, sized by radius and height, interpolated between ticks.
-  - (B) Props are gray boxes. The deployment grid and zones are debug lines; health bars are debug lines above units.
+  - Props are gray boxes (B); the deployment grid and zones are debug lines; health bars are debug lines above units.
   - Projectiles are `nv_vfx_trail`, explosions `nv_vfx_burst` and `nv_vfx_decal`, shields a debug-line circle.
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
   preview green, others red. Tapping a placed squad removes it. The same on desktop and phone.
@@ -796,14 +867,16 @@ flow field) sources.
 
 A:
 - The same deployment and seed run twice give the same hash.
-- Spatial grid: queries return the same units, in the same order, as a brute-force check.
-- One scene per rule: the nearest enemy is picked; a bullet hits an ally on its path; the Cannon's shell splash hurts allies too;
-  a ground explosion does not hit air units; Flak aims at air only; a shield stops enemy projectiles and lets friendly ones
-  through; the battle ends at 60 seconds and is judged by remaining value.
+- One scene per rule: the nearest enemy is picked; a shell lands near its aim point, within the spread (the ballistic solve); a
+  shell hurts only the first enemy it touches and passes allies; the armor formula; a shield stops enemy shells until its energy
+  runs out, then lets them through, and refills when not hit; two overlapping units separate; the battle ends when a side is
+  wiped out; it ends at 60 seconds and is judged by remaining value.
 
 B:
+- Spatial grid: queries return the same units, in the same order, as a brute-force check.
 - Flow field: a path around a wall, blocked cells, no goal.
-- Rule scenes: a low wall stops bullets; a Wasp flies over props; a Ranger jumps a low wall; the mortar's minimum range.
+- Rule scenes: a bullet hits an ally on its path; area damage hurts allies too; a ground explosion does not hit air units; Flak
+  aims at air only; a low wall stops bullets; a Wasp flies over props; a Ranger jumps a low wall; the mortar's minimum range.
 
 From A on, `tests/strings_test.mjs` checks `autobattler/`'s strings too (the ctest command gets the `autobattler` folder).
 
@@ -814,19 +887,19 @@ from Start to a result, and check for no asserts and no WebGPU errors.
 
 0. **First (done):** `docs/specs/shared.md` (strings, meshes, resolution and taps, the camera, the font, the version and helpers
    move to the engine).
-1. **A, simulation:** the spatial grid, `battle.c`, `battle_defs.c` (four units, the enemy deployment), A's items in
-   `battle_test.c`. No view.
+1. **A, simulation:** `battle.c`, `battle_defs.c` (the one Crawler, the enemy deployment), A's items in `battle_test.c`. No
+   view.
 2. **A, executable:** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
    deployment input, CMake and the CI deployment.
 3. **A, checks and docs:** debug exports, Playwright checks, updates to `AGENTS.md` (which now says "one executable, `app`") and
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
-4. **B:** props and flow fields, cover (the line-of-sight check for direct fire), the Mortar, Jump, Korean rows for the added
-   text, B's tests.
+4. **B:** the rest of "Stage B rules" (five unit types, air, squads, several weapons, bullets and missiles, area damage and
+   friendly fire, props, cover, flow fields, Jump, the spatial grid), Korean rows for the added text, B's tests.
 
 ### Open questions
 
 1. **Definition data format:** C tables for this step and a file format decided separately before balancing, or decide now?
-2. **Where the spatial grid and flow field go:** the engine (`engine/spatial.h`, and `engine/flow.h` in B), as `autobattler.md`
+2. **Where the spatial grid and flow field go (B):** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md`
    says, or `autobattler/` first, moving them when a second use appears?
 3. **Time-limit judgment:** is comparing remaining value right?
 4. **Squads:** units act on their own after the start (proposed), or keep a formation?
