@@ -364,7 +364,8 @@ void view_update(Game* game, f32 game_dt)
     const Battle* battle = &game->battle;
     NvRenderer* renderer = &game->renderer;
     NvNode* camera = nv_scene_get(game->scene, game->camera);
-    f32 alpha = battle->phase == BATTLE_FIGHT ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
+    // Between the last two ticks while it runs; paused (and stepping), exactly at the last tick.
+    f32 alpha = battle->phase == BATTLE_FIGHT && !game->paused ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
     NvVec3 screen_right = nv_quat_rotate(camera->rotation, nv_vec3(1.0f, 0.0f, 0.0f));
 
     for (u32 slot = 1; slot <= battle->unit_count; ++slot) {
@@ -456,6 +457,16 @@ void view_build_label(Game* game)
     ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
                              (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, 0x99000000u, 3.0f, 0);
     ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, subject, NULL);
+}
+
+// A button that acts once when clicked and once a frame while held past STEP_HOLD_SECONDS. Not ImGui's ButtonRepeat: that
+// acts on the press and again after a delay counted in frame time, so a click spanning a slow frame or two steps twice.
+#define STEP_HOLD_SECONDS 0.4f
+internal b32 step_button(const char* label)
+{
+    b32 clicked = igButton(label, (ImVec2_c){0, 0});
+    b32 held = igIsItemActive() && igGetIO_Nil()->MouseDownDuration[0] > STEP_HOLD_SECONDS;
+    return clicked || held;
 }
 
 internal void start_over(Game* game)
@@ -550,6 +561,21 @@ void view_panel(Game* game)
             if (lit)
                 igPopStyleColor(1);
         }
+
+        // One tick back or forward, paused; holding a button runs through the ticks.
+        igBeginDisabled(battle->phase == BATTLE_DEPLOY || battle->tick == 0);
+        if (step_button(TL("< Tick"))) {
+            game->step = -1;
+            game->paused = true;
+        }
+        igEndDisabled();
+        igSameLine(0.0f, -1.0f);
+        igBeginDisabled(battle->phase != BATTLE_FIGHT);
+        if (step_button(TL("Tick >"))) {
+            game->step = 1;
+            game->paused = true;
+        }
+        igEndDisabled();
 
         igSeparator();
         igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);

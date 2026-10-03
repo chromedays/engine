@@ -528,13 +528,19 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   수만 바꾸므로, 결과는 속도와 상관없이 같다. 누산기는 한 프레임에 최대 `4 × max(1, 속도)`틱만 돌리고, 더 밀리면 남은 시간을 버린다
   (느린 기기가 따라잡으려다 더 느려지지 않게). 프레임의 dt는 0.1초로 자른다. 이펙트도 같은 게임 시각을 받는다(`nv_vfx_update`): 일시정지는
   이펙트를 멈추고 배속은 빠르게 한다.
+  - **틱 단위 이동:** `< Tick`과 `Tick >` 버튼이 일시정지하고 한 틱 뒤로 또는 앞으로 간다(배치 단계에서는 꺼짐; 앞으로는 전투 중에만).
+    누르고 있으면 0.4초 뒤부터 프레임마다 한 틱씩 간다(ImGui의 ButtonRepeat는 느린 프레임에서 한 번 누름이 두 번이 되어 쓰지 않는다).
+    앞으로는 틱 하나를 돌리고 그 틱의 이펙트에 1/30초를 준다(전투 시각은 멈춘 채). 뒤로는 `battle_seek`가 같은 배치와 시드로 라운드를
+    처음부터 그 틱까지 다시 돌린다: 규칙이 결정적이므로 그때의 상태와 같다(해시가 같다). 거꾸로 돌릴 수 없는 이펙트는 지운다. 일시정지
+    중에는 보간 없이 마지막 틱 그대로 그린다. 처음부터 다시 돌리는 비용은 틱 수에 비례하는데, A의 군대(유닛 수십)에는 작다. B의 큰 군대에는
+    1초마다 스냅숏을 두고 가장 가까운 것부터 다시 돌린다(`// TODO:`).
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), 남은 공급, 팀별
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
-  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
   `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
@@ -571,6 +577,8 @@ A:
   (모르는 키, 중복 키, 빠진 필수 키, 값 개수, 범위, 탭, 같은 이름, 없는 유닛 이름, 적 구역 밖의 칸, 공급 초과) 실패하고 맞는 줄
   번호를 알린다; 오류가 여럿이면 모두 알린다.
 - 같은 배치와 시드로 두 번 돌리면 같은 해시. 시드가 다르면 퍼짐이 달라진다.
+- `battle_seek`: 전투 중이든 결과든 어느 틱으로 돌아가도 그 틱에 기록한 해시와 같고, 거기서 다시 돌리면 이어서 같으며, 끝을 넘겨 찾으면
+  끝에서 멈추고, 배치 단계에서는 아무것도 하지 않는다.
 - 규칙 장면 하나씩: 가장 가까운 적을 고른다; 포탄이 퍼짐 안에서 목표점 근처에 떨어진다(탄도 계산); 포탄이 처음 닿은 적 하나만
   깎고 아군은 지나간다; 리드 조준한 포탄이 곧게 움직이는 대상을 맞힌다; 빠르게 지나가는 포탄도 원기둥을 뚫지 않는다; 방어력 식;
   실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 에너지가 모자라면 남은 피해만 지나간다
@@ -590,7 +598,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10기) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
 확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 패널의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
 놓을 수 없다; 속도 버튼이 속도를 바꾸고 Start가 일시정지를 푼다; 일시정지는 틱을 멈추고 4x는 1x보다 2.5배 넘게, 0.5x는 0.75배 안 되게
-돈다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
+돈다; `Tick >`가 한 틱씩 가고 `< Tick`이 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
 아무것도 하지 않는다; 좁은 창은 패널을 아래로 옮긴다; 콘솔에 오류와 경고가 없고 assert로 멈추지 않는다. Release에서는 디버그 내보내기가
 없으므로 같은 흐름을 눈으로(화면 그림) 본다. 폰 크기에서 패널 위젯을 터치하면 탭으로 알려지기까지 몇 프레임이 걸리므로 약 2초를 기다린다.
 
@@ -1170,16 +1178,23 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   `4 × max(1, speed)` ticks in a frame and drops the time left over beyond that (so a slow device does not slow down further trying
   to catch up). A frame's dt is cut to 0.1 s. The effects get the same game clock (`nv_vfx_update`): a pause freezes them and a
   speed-up hurries them.
+  - **Stepping a tick:** the `< Tick` and `Tick >` buttons pause and go one tick back or forward (off while deploying; forward only while
+    fighting). Held, they go one tick a frame after 0.4 s (not ImGui's ButtonRepeat, which on a slow frame turns one click into two).
+    Forward runs one tick and gives its effects 1/30 s (the battle's clock stays paused). Back is `battle_seek`, which plays the round
+    again from its start with the same placement and seed up to that tick: the rules are deterministic, so it is the state the round
+    had then (the same hash). Effects, which cannot run backward, are cleared. While paused the view draws the last tick as it is, with
+    no interpolation. Replaying from the start costs time in proportion to the tick, which is small for A's armies (a few dozen units);
+    for B's large ones, keep a snapshot every second and replay from the nearest (`// TODO:`).
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
   preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
   The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, a button per unit type (name and cost; the chosen one is lit), Start,
-  Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
+  Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
-  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_deploy(def, x, row)`,
+  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)`,
   `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
@@ -1217,6 +1232,8 @@ A:
   unknown unit name, a cell outside the enemy zone, supply exceeded) fails and reports the right line number; several errors are
   all reported.
 - The same deployment and seed run twice give the same hash; a different seed changes the spread.
+- `battle_seek`: going back to any tick, from the fight or the result, gives the hash recorded at that tick, running on from there
+  stays the same, seeking past the end stops at the end, and in deployment it does nothing.
 - One scene per rule: the nearest enemy is picked; a shell lands near its aim point, within the spread (the ballistic solve); a
   shell hurts only the first enemy it touches and passes allies; a lead-aimed shell hits a target moving in a straight line; a fast shell does not pass
   through a cylinder; the armor formula; a shield stops enemy shells until its energy runs out, then lets them through, and
@@ -1237,7 +1254,8 @@ Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B
 under it on a phone; taps place and remove units; taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
 runs out (10 units) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
 after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
-than 2.5 times as many as 1x and 0.5x less than 0.75 times; the round ends in a result (run at changing speeds, it gives the same hash
+than 2.5 times as many as 1x and 0.5x less than 0.75 times; `Tick >` goes one tick at a time and `< Tick` comes back to the same hash, and holding it
+goes back several ticks; the round ends in a result (run at changing speeds, it gives the same hash
 as a run at once);
 Retry goes back to the same placement and the same placement gives the same hash; Reset clears the placement and Start with none does
 nothing; a narrow window moves the panel under the viewport; no console errors or warnings and no assert stops it. The Release build has

@@ -164,6 +164,23 @@ void battle_retry(Battle* battle)
     rebuild_units(battle);
 }
 
+// TODO: Replaying from the start is cheap for stage A's armies (a few dozen units); with B's larger ones, keep snapshots every
+// second of battle and replay from the nearest one.
+void battle_seek(Battle* battle, u32 tick)
+{
+    if (battle->phase == BATTLE_DEPLOY)
+        return;
+    battle_retry(battle);
+    b32 started = battle_start(battle);
+    NV_ASSERT(started); // a round that was started has player units to start with
+    (void)started;
+    while (battle->tick < tick && battle->phase == BATTLE_FIGHT) {
+        battle_tick(battle);
+        battle->event_count = 0;
+    }
+    battle->events_dropped = 0;
+}
+
 // The nearest living enemy on the ground (XZ), the lower slot on a tie; 0 when there is none.
 internal u32 nearest_enemy(const Battle* battle, const Unit* unit)
 {

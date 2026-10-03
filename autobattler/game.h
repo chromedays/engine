@@ -58,6 +58,7 @@ typedef struct Game {
     f32 accumulator; // seconds of game time not yet run as ticks
     f32 speed;       // game time per real second: 0.5, 1, 2 or 4 (docs/specs/battle.md, "Time controls")
     b32 paused;      // the game clock stops; the speed is kept for when it goes on
+    s32 step;        // asked by the panel for this frame: +1 one tick forward, -1 one tick back (both pause)
     f64 last_time;
     char download_text[48];
 

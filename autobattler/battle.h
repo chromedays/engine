@@ -167,6 +167,11 @@ void battle_retry(Battle* battle);
 // One 30 Hz tick (does nothing outside BATTLE_FIGHT).
 void battle_tick(Battle* battle);
 
+// Puts a started round (fighting or over) back at `tick`, by playing it again from its start with the same placement and seed:
+// the rules are deterministic, so that is the state it had then. Events of the replayed ticks are dropped. The cost grows with
+// `tick` (each step back replays the round so far).
+void battle_seek(Battle* battle, u32 tick);
+
 u32 battle_alive_count(const Battle* battle, u32 team);
 // The sum over a team's living units of cost * health / max health.
 f32 battle_remaining_value(const Battle* battle, u32 team);

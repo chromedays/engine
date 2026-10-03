@@ -873,6 +873,44 @@ internal void test_whole_round(void)
     CHECK(play_round(2, &finished_again) != first);
 }
 
+// Stepping back: a round put back at a tick by battle_seek is the state it had at that tick, from the fight and from the
+// result alike; seeking forward runs on to the tick; in deployment it does nothing.
+internal void test_seek(void)
+{
+    load_repository_defs();
+    battle_init(&battle, &defs);
+    const s32 cells[6][2] = {{12, 11}, {14, 11}, {16, 11}, {13, 9}, {15, 9}, {14, 7}};
+    for (u32 i = 0; i < 6; ++i)
+        CHECK(battle_place(&battle, 0, cells[i][0], cells[i][1]));
+    u32 hash_before = battle_hash(&battle);
+    battle_seek(&battle, 10);
+    CHECK(battle.phase == BATTLE_DEPLOY && battle_hash(&battle) == hash_before);
+
+    static u32 hashes[BATTLE_MAX_TICKS + 1];
+    CHECK(battle_start(&battle));
+    hashes[0] = battle_hash(&battle);
+    while (battle.phase == BATTLE_FIGHT) {
+        battle_tick(&battle);
+        battle.event_count = 0;
+        hashes[battle.tick] = battle_hash(&battle);
+    }
+    u32 last = battle.tick;
+    CHECK(battle.phase == BATTLE_RESULT && last > 200);
+
+    const u32 ticks[5] = {last - 1, 200, 57, 1, 0};
+    for (u32 i = 0; i < 5; ++i) {
+        battle_seek(&battle, ticks[i]);
+        CHECK(battle.tick == ticks[i] && battle.phase == BATTLE_FIGHT && battle_hash(&battle) == hashes[ticks[i]]);
+        CHECK(battle.event_count == 0);
+    }
+    battle_seek(&battle, 120); // forward from 0
+    CHECK(battle.tick == 120 && battle_hash(&battle) == hashes[120]);
+    battle_tick(&battle); // and on from there as if it had never stopped
+    CHECK(battle_hash(&battle) == hashes[121]);
+    battle_seek(&battle, last + 50); // past the end: the round ends where it ends
+    CHECK(battle.phase == BATTLE_RESULT && battle.tick == last && battle_hash(&battle) == hashes[last]);
+}
+
 int main(void)
 {
     test_definition_files();
@@ -886,6 +924,7 @@ int main(void)
     test_shield();
     test_round_end();
     test_whole_round();
+    test_seek();
     if (failures) {
         printf("battle_test: %d failure(s)\n", failures);
         return 1;

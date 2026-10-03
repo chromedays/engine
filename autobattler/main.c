@@ -110,7 +110,19 @@ internal void frame(void* userdata)
     // changes how many ticks a frame runs (the result is the same at any speed); what is left over decides where between
     // two ticks the view draws. The effects follow the same clock.
     f32 game_dt = game->paused ? 0.0f : dt * game->speed;
+    f32 effects_dt = game_dt;
     Battle* battle = &game->battle;
+    // A step moves the paused battle one tick: forward runs it (its effects get that tick's time), back replays the round to
+    // the tick before, and the effects, which cannot run backward, are cleared.
+    if (game->defs_ok && game->step > 0 && battle->phase == BATTLE_FIGHT) {
+        battle_tick(battle);
+        view_on_tick(game);
+        effects_dt = BATTLE_TICK_SECONDS; // not the battle's clock: that stays paused
+    } else if (game->defs_ok && game->step < 0 && battle->phase != BATTLE_DEPLOY && battle->tick > 0) {
+        battle_seek(battle, battle->tick - 1);
+        nv_vfx_clear(&game->vfx);
+    }
+    game->step = 0;
     if (game->defs_ok && battle->phase == BATTLE_FIGHT) {
         game->accumulator += game_dt;
         u32 max_ticks = (u32)ceilf(MAX_TICKS_PER_FRAME * fmaxf(game->speed, 1.0f));
@@ -126,7 +138,7 @@ internal void frame(void* userdata)
     } else {
         game->accumulator = 0.0f;
     }
-    view_update(game, game_dt);
+    view_update(game, effects_dt);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(game->gpu.device, NULL);
     nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, encoder, target);
@@ -169,6 +181,13 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
     game_state.paused = speed <= 0.0f;
     if (speed > 0.0f)
         game_state.speed = speed;
+}
+
+// Asks for a step as the panel's buttons do (+1 forward, -1 back), taken by the next frame; it pauses.
+EMSCRIPTEN_KEEPALIVE void battle_debug_step(int direction)
+{
+    game_state.step = direction > 0 ? 1 : -1;
+    game_state.paused = true;
 }
 
 // Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
