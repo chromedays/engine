@@ -5,6 +5,10 @@
 
 ## 한국어
 
+참고 (2026-10-03): UI 글꼴은 이제 Pretendard Regular 하나다(`assets/fonts/Pretendard-Regular.ttf`). 라틴과 한글 11,172
+음절이 모두 한 파일에 있어서, Inter, 한글 서브셋(`Hangul-Subset.ttf`), `tools/subset_hangul.sh`와 `nv_imgui_set_font`의
+폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
+
 참고 (2026-10-02, `shared.md`): `T`, `TL`, 언어와 조회는 엔진으로 옮겨졌다(`engine/strings.h`, `engine/strings.c`; 이름은 `nv_strings_*`,
 `NvLanguage`, `NV_LANGUAGE_*`). 표는 실행 파일마다 남는다(앱의 것은 `app/strings.c`, `app_strings_init`이 엔진에 넘긴다). 아래의
 `app/strings.h`, `strings_*`, `Language`, `LANG_*`는 옛 이름이다. 한글 글꼴은 `nv_imgui_load_ui_font`가 읽는다.
@@ -179,6 +183,11 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
   한국어와 영어로 함께 쓴다.
 
 ## English
+
+Note (2026-10-03): the UI font is now Pretendard Regular alone (`assets/fonts/Pretendard-Regular.ttf`). Latin and all
+11,172 Hangul syllables are in one file, so Inter, the Hangul subset (`Hangul-Subset.ttf`), `tools/subset_hangul.sh` and the
+fallback arguments of `nv_imgui_set_font` are gone. The size stays 14 px (the two fonts' vertical metrics are nearly the same).
+What follows about Inter and the subset is the design before that.
 
 Note (2026-10-02, `shared.md`): `T`, `TL`, the language and the lookup moved to the engine (`engine/strings.h`,
 `engine/strings.c`; the names are `nv_strings_*`, `NvLanguage`, `NV_LANGUAGE_*`). Each executable keeps its own table (the app's is

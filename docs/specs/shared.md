@@ -33,7 +33,7 @@
 |---|---|---|
 | `app/strings.c`, `strings.h` | `T()`, `TL()`, 언어, 한국어 표 | **옮김** (조회와 언어). 표는 실행 파일마다 남는다 |
 | `app/main.c`: `append_box`, `app_box_mesh`, `create_ground_mesh` | 상자와 바닥 메시 | **옮김**: 게임의 유닛, 지형지물, 전장 |
-| `app/main.c`: `read_asset`, `load_font` | UI 글꼴(Inter와 한글 서브셋) 읽기 | **옮김**: 같은 글꼴을 쓴다 |
+| `app/main.c`: `read_asset`, `load_font` | UI 글꼴 읽기 | **옮김**: 같은 글꼴을 쓴다 |
 | `app/main.c`: `js_download_bytes`, `read_download_size` | 내려받은 크기 글 | **옮김**: 파일 이름을 실행 파일 이름에서 얻도록 |
 | `app/main.c`: `apply_view_input`, `update_camera` | 궤도 카메라(회전, 줌, 팬, 배치) | **일부 옮김**: 수학은 엔진, 선택 따라가기와 홈은 앱 |
 | `app/main.c`: `pick` | 탭이 이미지 안인지, CSS 픽셀에서 광선 | **일부 옮김**: 탭에서 광선까지. 배지와 선택은 앱 |
@@ -79,7 +79,7 @@ const char* nv_strings_label(const char* english);
   `<strings.h>`와 섞이지 않는다.
 - 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 `NV_LANGUAGE_*`의 값과 같다.
 - `tests/strings_test.mjs`는 폴더 목록을 받아 폴더마다 자기 `strings.c`에 대해 검사한다. 지금은 `app/` 하나이고, 게임이
-  `autobattler/`를 더한다. `tools/subset_hangul.sh`도 표 목록을 받는다.
+  `autobattler/`를 더한다. (`tools/subset_hangul.sh`도 표 목록을 받았지만, 2026-10-03에 글꼴이 Pretendard 하나로 바뀌며 없어졌다.)
 
 #### 2. 메시 기본형 (`engine/mesh.h`)
 
@@ -106,7 +106,7 @@ void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0
 #### 3. UI 글꼴 (`engine/imgui.h`)
 
 ```c
-// Inter with the Hangul subset behind it, from /assets/fonts/ (docs/specs/fonts.md), read into `arena`
+// The UI font from /assets/fonts/ (docs/specs/fonts.md; Pretendard since 2026-10-03), read into `arena`
 // (ImGui keeps pointing at the bytes). Logs a warning and keeps the built-in font when a file is missing.
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 
@@ -328,7 +328,7 @@ and save format do not change.
 |---|---|---|
 | `app/strings.c`, `strings.h` | `T()`, `TL()`, the language, the Korean table | **Moves** (lookup and language). Each executable keeps its own table |
 | `app/main.c`: `append_box`, `app_box_mesh`, `create_ground_mesh` | Box and ground meshes | **Moves**: the game's units, props and field |
-| `app/main.c`: `read_asset`, `load_font` | Reading the UI font (Inter and the Hangul subset) | **Moves**: the game uses the same font |
+| `app/main.c`: `read_asset`, `load_font` | Reading the UI font | **Moves**: the game uses the same font |
 | `app/main.c`: `js_download_bytes`, `read_download_size` | The downloaded-size text | **Moves**, with file names taken from the executable's name |
 | `app/main.c`: `apply_view_input`, `update_camera` | The orbit camera (turn, zoom, pan, placement) | **Partly moves**: the math goes to the engine; following the selection and home stay in the app |
 | `app/main.c`: `pick` | Whether a tap is inside the image, a ray from CSS pixels | **Partly moves**: from the tap to the ray. The badge and the selection stay |
@@ -374,7 +374,7 @@ const char* nv_strings_label(const char* english);
   never confused with the app's `strings.c` or POSIX's `<strings.h>`.
 - The `LANG` save tag's values (0 English, 1 Korean) equal those of `NV_LANGUAGE_*`.
 - `tests/strings_test.mjs` takes a list of folders and checks each against its own `strings.c`. For now that is `app/`;
-  the game adds `autobattler/`. `tools/subset_hangul.sh` takes a list of tables too.
+  the game adds `autobattler/`. (`tools/subset_hangul.sh` took a list of tables too, until the font became Pretendard alone on 2026-10-03 and it went.)
 
 #### 2. Mesh primitives (`engine/mesh.h`)
 
@@ -402,7 +402,7 @@ void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0
 #### 3. UI font (`engine/imgui.h`)
 
 ```c
-// Inter with the Hangul subset behind it, from /assets/fonts/ (docs/specs/fonts.md), read into `arena`
+// The UI font from /assets/fonts/ (docs/specs/fonts.md; Pretendard since 2026-10-03), read into `arena`
 // (ImGui keeps pointing at the bytes). Logs a warning and keeps the built-in font when a file is missing.
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 

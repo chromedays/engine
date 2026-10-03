@@ -388,7 +388,7 @@ assert와 WebGPU 오류가 없는지 본다.
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. **수치:** 위 표의 값은 출발점이다. 바꾸고 싶은 것이 있는가?
 7. ~~**UI 문자열**~~: 해결됨. 엔진으로 옮긴다("UI 문자열" 절).
-8. **에셋:** 프로토타입에 필요한 것은 UI 글꼴(Inter와 한글 서브셋)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
+8. **에셋:** 프로토타입에 필요한 것은 UI 글꼴(Pretendard 한 파일)뿐이다. `assets/` 전체를 함께 내려받을까, 아니면
    `assets/fonts/`만 넣을까(`nv_setup_executable`의 `ASSETS`는 폴더 하나를 받는다)? 추천: `assets/fonts/`만.
 
 ## English
@@ -792,5 +792,5 @@ from Start to a result, and check for no asserts and no WebGPU errors.
    step keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
 6. **Numbers:** the table values are a starting point. Anything to change?
 7. ~~**UI strings**~~: resolved. They move to the engine ("UI strings" section).
-8. **Assets:** the prototype needs only the UI fonts (Inter and the Hangul subset). Ship the whole `assets/` directory, or
+8. **Assets:** the prototype needs only the UI font (one Pretendard file). Ship the whole `assets/` directory, or
    only `assets/fonts/` (`ASSETS` in `nv_setup_executable` takes one directory)? Recommended: only `assets/fonts/`.

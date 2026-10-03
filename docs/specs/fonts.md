@@ -5,6 +5,10 @@
 
 ## 한국어
 
+참고 (2026-10-03): UI 글꼴은 이제 Pretendard Regular 하나다(`assets/fonts/Pretendard-Regular.ttf`). 라틴과 한글 11,172
+음절이 모두 한 파일에 있어서, Inter, 한글 서브셋(`Hangul-Subset.ttf`), `tools/subset_hangul.sh`와 `nv_imgui_set_font`의
+폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
+
 참고 (2026-10-02, `shared.md`): 글꼴 읽기는 엔진으로 옮겨졌다. `nv_imgui_load_ui_font`(`engine/imgui.h`)가 `app/main.c`의
 `read_asset`과 `load_font`를 대신하고, 경고의 출처는 `"imgui"`다.
 
@@ -132,6 +136,11 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 - FreeType 힌팅 (위, 견본이 요구할 때까지).
 
 ## English
+
+Note (2026-10-03): the UI font is now Pretendard Regular alone (`assets/fonts/Pretendard-Regular.ttf`). Latin and all
+11,172 Hangul syllables are in one file, so Inter, the Hangul subset (`Hangul-Subset.ttf`), `tools/subset_hangul.sh` and the
+fallback arguments of `nv_imgui_set_font` are gone. The size stays 14 px (the two fonts' vertical metrics are nearly the same).
+What follows about Inter and the subset is the design before that.
 
 Note (2026-10-02, `shared.md`): reading the font moved to the engine. `nv_imgui_load_ui_font` (`engine/imgui.h`) replaces
 `read_asset` and `load_font` in `app/main.c`, and its warnings come from the source `"imgui"`.

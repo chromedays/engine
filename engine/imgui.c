@@ -1150,7 +1150,7 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
-bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, void* fallback, u32 fallback_size, f32 pixel_size)
+bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
 {
     (void)imgui;
     ImGuiIO* io = igGetIO_Nil();
@@ -1161,21 +1161,12 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, void* fallback, u32 
     ImFontConfig_destroy(config);
     if (!font)
         return false;
-    if (fallback) {
-        // Merged into the same font: a glyph comes from the first face that has it.
-        config = ImFontConfig_ImFontConfig();
-        config->FontDataOwnedByAtlas = false;
-        config->MergeMode = true;
-        ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, fallback, (int)fallback_size, 0.0f, config, NULL);
-        ImFontConfig_destroy(config);
-    }
     io->FontDefault = font;
     igGetStyle()->FontSizeBase = pixel_size;
     return true;
 }
 
-#define UI_FONT_FILE "/assets/fonts/Inter-Regular.ttf"
-#define UI_FONT_HANGUL_FILE "/assets/fonts/Hangul-Subset.ttf"
+#define UI_FONT_FILE "/assets/fonts/Pretendard-Regular.ttf"
 #define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
 
 // The whole file in the arena; NULL (and a warning) if it cannot be read.
@@ -1202,10 +1193,9 @@ internal void* read_font_file(NvArena* arena, const char* path, u32* out_size)
 
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
 {
-    u32 size = 0, hangul_size = 0;
+    u32 size = 0;
     void* font = read_font_file(arena, UI_FONT_FILE, &size);
-    void* hangul = read_font_file(arena, UI_FONT_HANGUL_FILE, &hangul_size);
-    if (!font || !nv_imgui_set_font(imgui, font, size, hangul, hangul_size, UI_FONT_SIZE)) {
+    if (!font || !nv_imgui_set_font(imgui, font, size, UI_FONT_SIZE)) {
         nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
         return 0;
     }

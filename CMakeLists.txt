@@ -56,8 +56,10 @@ function(nv_setup_executable target)
         VERBATIM)
 
     if(ARG_ASSETS)
+        # CONFIGURE_DEPENDS: an asset added or removed re-runs the glob, so an old build directory does not stop on a
+        # file that is gone.
+        file(GLOB_RECURSE asset_files CONFIGURE_DEPENDS "${ARG_ASSETS}/*")
         # A Git LFS pointer instead of the real file means the clone skipped LFS.
-        file(GLOB_RECURSE asset_files "${ARG_ASSETS}/*")
         foreach(asset ${asset_files})
             file(READ "${asset}" head LIMIT 40)
             if(head MATCHES "^version https://git-lfs")

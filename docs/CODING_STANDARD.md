@@ -86,6 +86,8 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   파싱하는 것은 이 프로젝트의 목적이 아니다.
 - 실행 중 스켈레탈 애니메이션(샘플링, 블렌딩, 스키닝 행렬)에는 ozz-animation: 우리가 다시 만들 것을
   다루는 성숙한 데이터 지향 라이브러리다. API가 C++이므로 엔진은 우리 C 래퍼를 통해서만 사용한다.
+- UI 글꼴에는 Pretendard Regular(SIL OFL 1.1, `assets/fonts/`): 영어와 한국어를 한 파일로 그린다. 라틴은 Inter를 바탕으로
+  해서 영어가 화면용 산세리프로 보이고, 한글 11,172 음절이 모두 있어 서브셋 도구가 필요 없다. 대가는 크기(약 2.6 MB)다.
 - 그 밖의 것은 (단일 헤더 라이브러리라도) 이유를 글로 쓰고 먼저 합의해야 한다. 수학, 컨테이너, 문자열은
   여기서 작성한다.
 
@@ -181,6 +183,9 @@ go around every UI text.
 - ozz-animation for skeletal animation at runtime (sampling, blending, skinning matrices): a
   mature, data-oriented library that covers what we would otherwise rebuild. Its API is C++, so
   the engine talks to it only through our own C wrapper.
+- Pretendard Regular (SIL OFL 1.1, `assets/fonts/`) for the UI font: one file draws English and Korean. Its Latin is
+  based on Inter, so English reads as a screen sans, and it has all 11,172 Hangul syllables, so no subsetting tool is
+  needed. The cost is its size (about 2.6 MB).
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 

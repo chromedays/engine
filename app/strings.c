@@ -2,8 +2,7 @@
 
 // The editor app's Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in
 // the code, and its Korean. The lookup is the engine's (engine/strings.h). tests/strings_test.mjs checks that every string the
-// code wraps has a row and that a row keeps its printf conversions. Hangul that is not among KS X 1001's 2,350
-// syllables is added to the font by tools/subset_hangul.sh.
+// code wraps has a row and that a row keeps its printf conversions. The UI font (Pretendard) has every Hangul syllable.
 
 // clang-format off
 global const NvStringPair entries[] = {
