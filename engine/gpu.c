@@ -45,12 +45,16 @@ const char* nv_gpu_format_name(WGPUTextureFormat format)
     }
 }
 
+// What a request gave; the callbacks fill it in.
 typedef struct AdapterRequest {
+    b32 ok;
     WGPUAdapter adapter;
 } AdapterRequest;
 
 typedef struct DeviceRequest {
+    b32 ok;
     WGPUDevice device;
+    b32 has_timestamps;
 } DeviceRequest;
 
 internal void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message,
@@ -58,8 +62,8 @@ internal void on_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, W
 {
     (void)userdata2;
     AdapterRequest* request = userdata1;
-    if (status == WGPURequestAdapterStatus_Success)
-        request->adapter = adapter;
+    if (status == WGPURequestAdapterStatus_Success && adapter)
+        *request = (AdapterRequest){.ok = 1, .adapter = adapter};
     else
         nv_log(NV_LOG_ERROR, "wgpu", "request adapter failed: " SV_FMT, SV_ARG(message));
 }
@@ -69,8 +73,10 @@ internal void on_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUS
 {
     (void)userdata2;
     DeviceRequest* request = userdata1;
-    if (status == WGPURequestDeviceStatus_Success)
+    if (status == WGPURequestDeviceStatus_Success && device) {
+        request->ok = 1;
         request->device = device;
+    }
     else
         nv_log(NV_LOG_ERROR, "wgpu", "request device failed: " SV_FMT, SV_ARG(message));
 }
@@ -99,7 +105,7 @@ internal void wait_for(WGPUInstance instance, WGPUFuture future)
     wgpuInstanceWaitAny(instance, 1, &wait, UINT64_MAX);
 }
 
-internal WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
+internal AdapterRequest request_adapter(WGPUInstance instance, WGPUSurface surface)
 {
     WGPURequestAdapterOptions options = WGPU_REQUEST_ADAPTER_OPTIONS_INIT;
     options.compatibleSurface = surface;
@@ -112,17 +118,17 @@ internal WGPUAdapter request_adapter(WGPUInstance instance, WGPUSurface surface)
     callback.userdata1 = &request;
 
     wait_for(instance, wgpuInstanceRequestAdapter(instance, &options, callback));
-    return request.adapter;
+    return request;
 }
 
-internal WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter, b32* has_timestamps)
+internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter)
 {
     WGPUDeviceDescriptor desc = WGPU_DEVICE_DESCRIPTOR_INIT;
     desc.label = (WGPUStringView){"nv device", WGPU_STRLEN};
     // Pass timing is optional: many browsers, phones especially, do not offer it.
     local_persist const WGPUFeatureName timestamps = WGPUFeatureName_TimestampQuery;
-    *has_timestamps = wgpuAdapterHasFeature(adapter, timestamps);
-    if (*has_timestamps) {
+    b32 has_timestamps = wgpuAdapterHasFeature(adapter, timestamps);
+    if (has_timestamps) {
         desc.requiredFeatureCount = 1;
         desc.requiredFeatures = &timestamps;
     }
@@ -137,7 +143,9 @@ internal WGPUDevice request_device(WGPUInstance instance, WGPUAdapter adapter, b
     callback.userdata1 = &request;
 
     wait_for(instance, wgpuAdapterRequestDevice(adapter, &desc, callback));
-    return request.device;
+    if (request.ok)
+        request.has_timestamps = has_timestamps;
+    return request;
 }
 
 internal WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
@@ -283,13 +291,16 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         goto fail;
     }
 
-    gpu->adapter = request_adapter(gpu->instance, gpu->surface);
-    if (!gpu->adapter)
+    AdapterRequest adapter = request_adapter(gpu->instance, gpu->surface);
+    if (!adapter.ok)
         goto fail;
+    gpu->adapter = adapter.adapter;
 
-    gpu->device = request_device(gpu->instance, gpu->adapter, &gpu->has_timestamps);
-    if (!gpu->device)
+    DeviceRequest device = request_device(gpu->instance, gpu->adapter);
+    if (!device.ok)
         goto fail;
+    gpu->device = device.device;
+    gpu->has_timestamps = device.has_timestamps;
     gpu->queue = wgpuDeviceGetQueue(gpu->device);
 
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
@@ -315,7 +326,7 @@ fail:
     return 0;
 }
 
-WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
+NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
 {
     NV_ASSERT(!gpu->current_view);
 
@@ -328,7 +339,7 @@ WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
         configure_surface(gpu);
     }
     if (gpu->width == 0 || gpu->height == 0)
-        return NULL; // canvas is hidden or collapsed
+        return (NvGpuFrame){0}; // canvas is hidden or collapsed
 
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(gpu->surface, &surface_texture);
@@ -342,17 +353,17 @@ WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu)
         if (surface_texture.texture)
             wgpuTextureRelease(surface_texture.texture);
         configure_surface(gpu);
-        return NULL;
+        return (NvGpuFrame){0};
     default:
         nv_log(NV_LOG_ERROR, "nv", "wgpuSurfaceGetCurrentTexture failed (%d)", (int)surface_texture.status);
-        return NULL;
+        return (NvGpuFrame){0};
     }
 
     gpu->current_texture = surface_texture.texture;
     WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
     view_desc.format = gpu->surface_format;
     gpu->current_view = wgpuTextureCreateView(gpu->current_texture, &view_desc);
-    return gpu->current_view;
+    return (NvGpuFrame){.ok = 1, .view = gpu->current_view};
 }
 
 // NOTE: No wgpuSurfacePresent here: the browser presents the canvas when the animation frame

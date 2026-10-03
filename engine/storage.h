@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/base.h"
+#include "engine/file.h"
 
 // Files that outlive the page: a directory of Emscripten's in-memory file system mounted on
 // IndexedDB (IDBFS). Files there are read and written with the C file API as usual; nothing
@@ -18,9 +19,8 @@ void nv_storage_init(NvStorage* storage, const char* dir);
 // replaces the old file. Returns 0 on failure.
 b32 nv_storage_write(NvStorage* storage, const char* name, const void* bytes, u32 size);
 
-// Reads `name` into memory pushed from `arena`. Returns its size (0 if it is missing or empty or
-// larger than `max_size`); `bytes` points at it.
-u32 nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size, u8** bytes);
+// Reads `name` into memory pushed from `arena`. Fails when it is missing, empty or larger than `max_size`.
+NvFileData nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size);
 
 b32 nv_storage_exists(NvStorage* storage, const char* name);
 

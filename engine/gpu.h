@@ -64,6 +64,10 @@ static inline u64 nv_gpu_texture_bytes(u32 width, u32 height, u32 mip_count, WGP
 // display and swapchain it found; the swapchain again whenever the canvas is resized.
 b32 nv_gpu_create(NvGpu* gpu, NvWindow* window);
 
-// NOTE: Acquires this frame's canvas texture view. Returns NULL when the frame should be skipped.
-WGPUTextureView nv_gpu_begin_frame(NvGpu* gpu);
+// NOTE: Acquires this frame's canvas texture view. Fails when the frame should be skipped.
+typedef struct NvGpuFrame {
+    b32 ok;
+    WGPUTextureView view;
+} NvGpuFrame;
+NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu);
 void nv_gpu_end_frame(NvGpu* gpu);

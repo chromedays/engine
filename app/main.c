@@ -243,16 +243,19 @@ internal NvVec3 joint_axis_towards(NvMat4 joint_model, NvVec3 direction)
 // from the rest pose (so before any clip plays).
 internal b32 build_character(App* app)
 {
-    if (!nv_gltf_load_model("/assets/quaternius/character.glb", app->scene, &app->renderer, &app->permanent, &app->scratch, &app->character))
+    NvGltfLoad load = nv_gltf_load_model("/assets/quaternius/character.glb", app->scene, &app->renderer, &app->permanent, &app->scratch);
+    if (!load.ok)
         return 0;
+    app->character = load.model;
     NV_ASSERT(app->character.animator.index);
     NvNode* root = nv_scene_get(app->scene, app->character.root);
     snprintf(root->name, sizeof(root->name), "character");
     app->animator = app->character.animator;
     NvSkeletonId skeleton = app->character.skeleton;
-    app->clip_count = nv_gltf_load_clips("/assets/quaternius/clips.glb", skeleton, NULL, &app->scratch, app->clips, APP_MAX_CLIPS);
+    // A file that does not load leaves no clips (the load logged why).
+    app->clip_count = nv_gltf_load_clips("/assets/quaternius/clips.glb", skeleton, NULL, &app->scratch, app->clips, APP_MAX_CLIPS).count;
     app->root_motion_clip_count = nv_gltf_load_clips("/assets/quaternius/clips_rm.glb", skeleton, "root", &app->scratch,
-                                                     app->root_motion_clips, APP_MAX_CLIPS);
+                                                     app->root_motion_clips, APP_MAX_CLIPS).count;
     NvAnimator* animator = nv_anim_get(app->animator);
 
     // The character faces +Z with +Y up. In the rest (T) pose the right fist's grip runs along
@@ -393,10 +396,10 @@ internal void pick(App* app, const NvSceneOutput* scene_output)
         return;
     }
     SceneView* view = app_view(app);
-    NvRay ray;
-    if (!nv_renderer_tap_ray(view->scene, *scene_output, in->tap_x, in->tap_y, nv_window_pixel_ratio(&app->window), &ray))
+    NvTapRay tap = nv_renderer_tap_ray(view->scene, *scene_output, in->tap_x, in->tap_y, nv_window_pixel_ratio(&app->window));
+    if (!tap.ok)
         return;
-    NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, nv_anim_skins(), ray, NULL);
+    NvNodeId hit = nv_renderer_pick(&app->renderer, view->scene, nv_anim_skins(), tap.ray);
     if (hit.index) {
         NvNode* node = nv_scene_get(view->scene, hit);
         if (node->animator.index && node->parent)
@@ -761,8 +764,9 @@ void app_start_playing(App* app)
 {
     if (app->playing)
         return;
-    app->play_snapshot_size = save_write(app, app->play_snapshot, SAVE_MAX_SIZE);
-    NV_ASSERT(app->play_snapshot_size);
+    NvChunkWritten snapshot = save_write(app, app->play_snapshot, SAVE_MAX_SIZE);
+    NV_ASSERT(snapshot.ok);
+    app->play_snapshot_size = snapshot.size;
     app->planet_rotation = nv_scene_get(app->scene, app->planet)->rotation;
     app->moon_rotation = nv_scene_get(app->scene, app->moon)->rotation;
     app->play_time = 0.0f;
@@ -779,9 +783,9 @@ void app_stop_playing(App* app)
     app->playing = 0;
     // The scene as it was at Play: nodes, character settings, scene settings. The view, the
     // selection and the editor settings stay as they are now.
-    const char* problem = save_load_parts(app, app->play_snapshot, app->play_snapshot_size, SAVE_PART_SCENE);
-    NV_ASSERT(!problem); // written by save_write at Play
-    (void)problem;
+    SaveLoad load = save_load_parts(app, app->play_snapshot, app->play_snapshot_size, SAVE_PART_SCENE);
+    NV_ASSERT(load.ok); // written by save_write at Play
+    (void)load;
     app->jump = JUMP_NONE;
     app->orbit_angle = 0.0f;
     effects_clear(app);
@@ -797,9 +801,10 @@ internal void frame(void* userdata)
     app->last_time = now;
     app->time = now;
 
-    WGPUTextureView target = nv_gpu_begin_frame(&app->gpu);
-    if (!target)
+    NvGpuFrame gpu_frame = nv_gpu_begin_frame(&app->gpu);
+    if (!gpu_frame.ok)
         return;
+    WGPUTextureView target = gpu_frame.view;
 
     FrameTimes* times = &app->times;
     times->frame = (f64)dt * 1000.0;
@@ -1439,8 +1444,7 @@ EMSCRIPTEN_KEEPALIVE unsigned app_debug_save_crc(void)
     App* app = &app_state;
     umm mark = app->scratch.used;
     u8* bytes = NV_PUSH_ARRAY(&app->scratch, SAVE_MAX_SIZE, u8);
-    u32 size = save_write(app, bytes, SAVE_MAX_SIZE);
-    u32 crc = nv_crc32(bytes, size);
+    u32 crc = nv_crc32(bytes, save_write(app, bytes, SAVE_MAX_SIZE).size);
     app->scratch.used = mark;
     return crc;
 }

@@ -136,8 +136,8 @@ typedef struct NvResolution {
 // The scene's size and where its image goes in `viewport` (docs/specs/resolution.md).
 NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect viewport);
 
-// A ray through a tap given in CSS pixels; false when the tap is outside the image (on a black bar).
-b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+// A ray through a tap given in CSS pixels; not ok when the tap is outside the image (on a black bar).
+NvTapRay nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio);
 
 // The view-projection the scene pass draws with (reverse Z): `renderer.c` calls it, so it is declared too.
 NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
@@ -433,8 +433,8 @@ typedef struct NvResolution {
 // The scene's size and where its image goes in `viewport` (docs/specs/resolution.md).
 NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect viewport);
 
-// A ray through a tap given in CSS pixels; false when the tap is outside the image (on a black bar).
-b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+// A ray through a tap given in CSS pixels; not ok when the tap is outside the image (on a black bar).
+NvTapRay nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio);
 
 // The view-projection the scene pass draws with (reverse Z): `renderer.c` calls it, so it is declared too.
 NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);

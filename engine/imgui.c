@@ -1172,11 +1172,10 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
 
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
 {
-    umm size = 0;
-    u8* font = nv_file_read(arena, UI_FONT_FILE, &size);
-    if (!font)
+    NvFileData font = nv_file_read(arena, UI_FONT_FILE);
+    if (!font.ok)
         nv_log(NV_LOG_WARNING, "imgui", "font %s is missing or could not be read", UI_FONT_FILE);
-    if (!font || !nv_imgui_set_font(imgui, font, (u32)size, UI_FONT_SIZE)) {
+    if (!font.ok || !nv_imgui_set_font(imgui, font.bytes, (u32)font.size, UI_FONT_SIZE)) {
         nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
         return 0;
     }

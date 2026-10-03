@@ -19,16 +19,21 @@ u32 nv_chunk_load_u32(const u8* bytes)
     return (u32)bytes[0] | ((u32)bytes[1] << 8) | ((u32)bytes[2] << 16) | ((u32)bytes[3] << 24);
 }
 
-// Room for `size` more bytes, or NULL (and overflow) when there is none.
-internal u8* reserve(NvChunkWriter* writer, u32 size)
+typedef struct Room {
+    b32 ok;
+    u8* at;
+} Room;
+
+// Room for `size` more bytes. Fails (and sets overflow) when there is none.
+internal Room reserve(NvChunkWriter* writer, u32 size)
 {
     if (writer->overflow || size > writer->capacity - writer->size) {
         writer->overflow = 1;
-        return NULL;
+        return (Room){0};
     }
     u8* at = writer->bytes + writer->size;
     writer->size += size;
-    return at;
+    return (Room){.ok = 1, .at = at};
 }
 
 void nv_chunk_writer_init(NvChunkWriter* writer, void* buffer, u32 capacity)
@@ -39,24 +44,24 @@ void nv_chunk_writer_init(NvChunkWriter* writer, void* buffer, u32 capacity)
 void nv_chunk_file_begin(NvChunkWriter* writer, u32 magic, u32 version)
 {
     NV_ASSERT(writer->size == 0);
-    u8* header = reserve(writer, NV_CHUNK_FILE_HEADER_SIZE);
-    if (!header)
+    Room header = reserve(writer, NV_CHUNK_FILE_HEADER_SIZE);
+    if (!header.ok)
         return;
-    store_u32(header, magic);
-    store_u32(header + 4, version);
-    store_u32(header + 8, 0);
-    store_u32(header + 12, 0);
+    store_u32(header.at, magic);
+    store_u32(header.at + 4, version);
+    store_u32(header.at + 8, 0);
+    store_u32(header.at + 12, 0);
 }
 
-u32 nv_chunk_file_end(NvChunkWriter* writer)
+NvChunkWritten nv_chunk_file_end(NvChunkWriter* writer)
 {
     NV_ASSERT(writer->depth == 0);
     if (writer->overflow || writer->depth || writer->size < NV_CHUNK_FILE_HEADER_SIZE)
-        return 0;
+        return (NvChunkWritten){0};
     u32 payload = writer->size - NV_CHUNK_FILE_HEADER_SIZE;
     store_u32(writer->bytes + 8, payload);
     store_u32(writer->bytes + 12, nv_crc32(writer->bytes + NV_CHUNK_FILE_HEADER_SIZE, payload));
-    return writer->size;
+    return (NvChunkWritten){.ok = 1, .size = writer->size};
 }
 
 void nv_chunk_begin(NvChunkWriter* writer, u32 tag)
@@ -67,10 +72,10 @@ void nv_chunk_begin(NvChunkWriter* writer, u32 tag)
         return;
     }
     // Counted as open even when it does not fit, so every nv_chunk_end still has its begin.
-    u8* header = reserve(writer, NV_CHUNK_HEADER_SIZE);
-    if (header)
-        store_u32(header, tag);
-    writer->open[writer->depth++] = header ? writer->size - 4 : 0;
+    Room header = reserve(writer, NV_CHUNK_HEADER_SIZE);
+    if (header.ok)
+        store_u32(header.at, tag);
+    writer->open[writer->depth++] = header.ok ? writer->size - 4 : 0;
 }
 
 void nv_chunk_end(NvChunkWriter* writer)
@@ -84,34 +89,34 @@ void nv_chunk_end(NvChunkWriter* writer)
 }
 
 // A field's header and room for its payload.
-internal u8* field(NvChunkWriter* writer, u32 tag, u32 size)
+internal Room field(NvChunkWriter* writer, u32 tag, u32 size)
 {
-    u8* at = reserve(writer, NV_CHUNK_HEADER_SIZE + size);
-    if (!at)
-        return NULL;
-    store_u32(at, tag);
-    store_u32(at + 4, size);
-    return at + NV_CHUNK_HEADER_SIZE;
+    Room room = reserve(writer, NV_CHUNK_HEADER_SIZE + size);
+    if (!room.ok)
+        return room;
+    store_u32(room.at, tag);
+    store_u32(room.at + 4, size);
+    return (Room){.ok = 1, .at = room.at + NV_CHUNK_HEADER_SIZE};
 }
 
 void nv_chunk_u32s(NvChunkWriter* writer, u32 tag, const u32* values, u32 count)
 {
-    u8* at = field(writer, tag, count * 4);
-    if (!at)
+    Room payload = field(writer, tag, count * 4);
+    if (!payload.ok)
         return;
     for (u32 i = 0; i < count; ++i)
-        store_u32(at + i * 4, values[i]);
+        store_u32(payload.at + i * 4, values[i]);
 }
 
 void nv_chunk_f32s(NvChunkWriter* writer, u32 tag, const f32* values, u32 count)
 {
-    u8* at = field(writer, tag, count * 4);
-    if (!at)
+    Room payload = field(writer, tag, count * 4);
+    if (!payload.ok)
         return;
     for (u32 i = 0; i < count; ++i) {
         u32 bits;
         memcpy(&bits, &values[i], 4);
-        store_u32(at + i * 4, bits);
+        store_u32(payload.at + i * 4, bits);
     }
 }
 
@@ -128,34 +133,36 @@ void nv_chunk_f32(NvChunkWriter* writer, u32 tag, f32 value)
 void nv_chunk_string(NvChunkWriter* writer, u32 tag, const char* text)
 {
     u32 length = (u32)strlen(text);
-    u8* at = field(writer, tag, length);
-    if (at)
-        memcpy(at, text, length);
+    Room payload = field(writer, tag, length);
+    if (payload.ok)
+        memcpy(payload.at, text, length);
 }
 
 //
 // Reading
 //
 
-NvChunkFileStatus nv_chunk_file_open(const void* bytes, u32 size, u32 magic, u32 max_version, u32* version,
-                                     NvChunk* root)
+NvChunkFile nv_chunk_file_open(const void* bytes, u32 size, u32 magic, u32 max_version)
 {
-    *root = (NvChunk){0};
     const u8* b = bytes;
     if (size < NV_CHUNK_FILE_HEADER_SIZE)
-        return NV_CHUNK_FILE_TOO_SHORT;
+        return (NvChunkFile){.status = NV_CHUNK_FILE_TOO_SHORT};
     if (nv_chunk_load_u32(b) != magic)
-        return NV_CHUNK_FILE_WRONG_MAGIC;
+        return (NvChunkFile){.status = NV_CHUNK_FILE_WRONG_MAGIC};
     u32 payload = nv_chunk_load_u32(b + 8);
     if (payload != size - NV_CHUNK_FILE_HEADER_SIZE)
-        return NV_CHUNK_FILE_WRONG_SIZE;
+        return (NvChunkFile){.status = NV_CHUNK_FILE_WRONG_SIZE};
     if (nv_chunk_load_u32(b + 12) != nv_crc32(b + NV_CHUNK_FILE_HEADER_SIZE, payload))
-        return NV_CHUNK_FILE_WRONG_CHECKSUM;
-    *version = nv_chunk_load_u32(b + 4);
-    if (*version > max_version)
-        return NV_CHUNK_FILE_NEWER;
-    *root = (NvChunk){.size = payload, .data = b + NV_CHUNK_FILE_HEADER_SIZE};
-    return NV_CHUNK_FILE_OK;
+        return (NvChunkFile){.status = NV_CHUNK_FILE_WRONG_CHECKSUM};
+    u32 version = nv_chunk_load_u32(b + 4);
+    if (version > max_version)
+        return (NvChunkFile){.status = NV_CHUNK_FILE_NEWER};
+    return (NvChunkFile){
+        .ok = 1,
+        .status = NV_CHUNK_FILE_OK,
+        .version = version,
+        .root = {.size = payload, .data = b + NV_CHUNK_FILE_HEADER_SIZE},
+    };
 }
 
 const char* nv_chunk_file_status_name(NvChunkFileStatus status)
@@ -238,19 +245,19 @@ b32 nv_chunk_read_f32s(NvChunkReader* reader, NvChunk parent, u32 tag, f32* out,
     return 1;
 }
 
-b32 nv_chunk_read_u32_list(NvChunkReader* reader, NvChunk parent, u32 tag, u32* out, u32 max, u32* count)
+NvChunkList nv_chunk_read_u32_list(NvChunkReader* reader, NvChunk parent, u32 tag, u32* out, u32 max)
 {
     NvChunk field = nv_chunk_find(reader, parent, tag);
     if (!field.data)
-        return 0;
+        return (NvChunkList){0};
     if (field.size % 4 || field.size / 4 > max) {
         reader->failed = 1;
-        return 0;
+        return (NvChunkList){0};
     }
-    *count = field.size / 4;
-    for (u32 i = 0; i < *count; ++i)
+    u32 count = field.size / 4;
+    for (u32 i = 0; i < count; ++i)
         out[i] = nv_chunk_load_u32(field.data + i * 4);
-    return 1;
+    return (NvChunkList){.ok = 1, .count = count};
 }
 
 b32 nv_chunk_read_string(NvChunkReader* reader, NvChunk parent, u32 tag, char* out, u32 capacity)

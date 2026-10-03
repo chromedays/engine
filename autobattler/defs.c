@@ -77,11 +77,14 @@ internal b32 token_is(Token token, const char* word)
     return token.length == strlen(word) && memcmp(token.text, word, token.length) == 0;
 }
 
-// Splitting a line. A comment runs from '#' to the end of the line; a line with nothing else is blank. A tab is an error,
-// since indentation is spaces only.
-typedef enum LineResult { LINE_BLANK, LINE_OK, LINE_BAD } LineResult;
+// Splitting a line. A comment runs from '#' to the end of the line; a line with nothing else is blank (no tokens). A tab
+// is an error, since indentation is spaces only. Fails on an error, which it reports.
+typedef struct Tokenized {
+    b32 ok;
+    Line line;
+} Tokenized;
 
-internal LineResult tokenize(Reader* reader, const char* begin, const char* end, u32 number, Line* line)
+internal Tokenized tokenize(Reader* reader, const char* begin, const char* end, u32 number)
 {
     const char* stop = end;
     for (const char* p = begin; p < stop; ++p)
@@ -92,18 +95,19 @@ internal LineResult tokenize(Reader* reader, const char* begin, const char* end,
     for (const char* p = begin; p < stop; ++p) {
         if (*p == '\t') {
             report(reader, number, "tab (indent and separate with spaces)");
-            return LINE_BAD;
+            return (Tokenized){0};
         }
     }
 
-    *line = (Line){.number = number};
+    Tokenized result = {.ok = true, .line = {.number = number}};
+    Line* line = &result.line;
     const char* p = begin;
     while (p < stop && *p == ' ') {
         ++line->indent;
         ++p;
     }
     if (p == stop)
-        return LINE_BLANK;
+        return result;
     while (p < stop) {
         while (p < stop && *p == ' ')
             ++p;
@@ -114,11 +118,11 @@ internal LineResult tokenize(Reader* reader, const char* begin, const char* end,
             ++p;
         if (line->token_count == MAX_TOKENS) {
             report(reader, number, "too many values");
-            return LINE_BAD;
+            return (Tokenized){0};
         }
         line->tokens[line->token_count++] = (Token){word, (u32)(p - word)};
     }
-    return LINE_OK;
+    return result;
 }
 
 // Values
@@ -128,9 +132,14 @@ internal b32 is_digit(char c)
     return c >= '0' && c <= '9';
 }
 
+typedef struct Number {
+    b32 ok;
+    f64 value;
+} Number;
+
 // A decimal number: an optional sign, digits, an optional point with digits ("120", "0.5", "-3", ".5"); no exponent.
-// With `integer`, a point is an error too.
-internal b32 parse_number(Reader* reader, u32 line, Token token, b32 integer, f64* value)
+// With `integer`, a point is an error too. Fails on an error, which it reports.
+internal Number parse_number(Reader* reader, u32 line, Token token, b32 integer)
 {
     char buffer[40];
     u32 i = 0, digits = 0;
@@ -152,16 +161,15 @@ internal b32 parse_number(Reader* reader, u32 line, Token token, b32 integer, f6
     valid = valid && i == token.length && digits > 0;
     if (!valid) {
         report(reader, line, "'%.*s' is not a number", shown(token), token.text);
-        return false;
+        return (Number){0};
     }
     if (integer && has_point) {
         report(reader, line, "'%.*s' is not an integer", shown(token), token.text);
-        return false;
+        return (Number){0};
     }
     memcpy(buffer, token.text, token.length);
     buffer[token.length] = 0;
-    *value = strtod(buffer, NULL); // rounds correctly, so a file always gives the same values
-    return true;
+    return (Number){.ok = true, .value = strtod(buffer, NULL)}; // strtod rounds correctly, so a file always gives the same values
 }
 
 // A name: a letter or '_', then letters, digits and '_'; at most 31 bytes. Copies it into `destination`.
@@ -270,9 +278,12 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
         return;
     }
     f64 numbers[3];
-    for (u32 i = 0; i < values; ++i)
-        if (!parse_number(reader, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER, &numbers[i]))
+    for (u32 i = 0; i < values; ++i) {
+        Number number = parse_number(reader, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER);
+        if (!number.ok)
             return;
+        numbers[i] = number.value;
+    }
     for (u32 i = 0; i < values; ++i) {
         if (!in_range(field, numbers[i])) {
             report_range(reader, line->number, field);
@@ -317,19 +328,25 @@ typedef struct Lines {
     u32 number;
 } Lines;
 
-internal b32 next_line(Lines* lines, const char** begin, const char** end)
+// A line's text, without its '\n'. Fails (zeroed) after the last line.
+typedef struct LineText {
+    b32 ok;
+    const char* begin;
+    const char* end;
+} LineText;
+
+internal LineText next_line(Lines* lines)
 {
     if (lines->cursor >= lines->size)
-        return false;
-    *begin = lines->text + lines->cursor;
+        return (LineText){0};
+    const char* begin = lines->text + lines->cursor;
     const char* limit = lines->text + lines->size;
-    const char* p = *begin;
+    const char* p = begin;
     while (p < limit && *p != '\n')
         ++p;
-    *end = p;
     lines->cursor = (umm)(p - lines->text) + 1; // past the '\n'
     ++lines->number;
-    return true;
+    return (LineText){.ok = true, .begin = begin, .end = p};
 }
 
 // units.txt
@@ -501,11 +518,10 @@ b32 defs_read_units(BattleDefs* defs, const char* file_name, const char* text, u
     reader.depth = 1;
 
     Lines lines = {text, size, 0, 0};
-    const char *begin, *end;
-    while (next_line(&lines, &begin, &end)) {
-        Line line;
-        if (tokenize(&reader.base, begin, end, lines.number, &line) == LINE_OK)
-            read_units_line(&reader, &line);
+    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
+        Tokenized tokenized = tokenize(&reader.base, text_line.begin, text_line.end, lines.number);
+        if (tokenized.ok && tokenized.line.token_count)
+            read_units_line(&reader, &tokenized.line);
     }
     while (reader.depth > 1)
         close_block(&reader);
@@ -516,15 +532,18 @@ b32 defs_read_units(BattleDefs* defs, const char* file_name, const char* text, u
 
 // stage.txt
 
-internal const UnitDef* find_unit(const BattleDefs* defs, Token name, u32* index)
+typedef struct UnitIndex {
+    b32 ok;
+    u32 index; // into BattleDefs.units
+} UnitIndex;
+
+// Fails when no unit has that name.
+internal UnitIndex find_unit(const BattleDefs* defs, Token name)
 {
-    for (u32 i = 0; i < defs->unit_count; ++i) {
-        if (token_is(name, defs->units[i].name)) {
-            *index = i;
-            return &defs->units[i];
-        }
-    }
-    return NULL;
+    for (u32 i = 0; i < defs->unit_count; ++i)
+        if (token_is(name, defs->units[i].name))
+            return (UnitIndex){.ok = true, .index = i};
+    return (UnitIndex){0};
 }
 
 internal void read_place(Reader* reader, const Line* line, u8 taken[BATTLE_ZONE_ROWS][BATTLE_GRID_WIDTH], u32 place_lines[BATTLE_MAX_PLACES])
@@ -534,15 +553,19 @@ internal void read_place(Reader* reader, const Line* line, u8 taken[BATTLE_ZONE_
         report(reader, line->number, "'place' takes a unit name, a cell x and a cell row");
         return;
     }
-    u32 def_index = 0;
     b32 ok = true;
-    if (!find_unit(defs, line->tokens[1], &def_index)) {
+    UnitIndex unit = find_unit(defs, line->tokens[1]);
+    if (!unit.ok) {
         report(reader, line->number, "unknown unit '%.*s'", shown(line->tokens[1]), line->tokens[1].text);
         ok = false;
     }
-    f64 x = 0, row = 0;
-    if (!parse_number(reader, line->number, line->tokens[2], true, &x) || !parse_number(reader, line->number, line->tokens[3], true, &row))
+    Number x_number = parse_number(reader, line->number, line->tokens[2], true);
+    if (!x_number.ok)
         return;
+    Number row_number = parse_number(reader, line->number, line->tokens[3], true);
+    if (!row_number.ok)
+        return;
+    f64 x = x_number.value, row = row_number.value;
     if (x < 0 || x >= BATTLE_GRID_WIDTH) {
         report(reader, line->number, "cell x must be 0 to %d", BATTLE_GRID_WIDTH - 1);
         ok = false;
@@ -560,7 +583,7 @@ internal void read_place(Reader* reader, const Line* line, u8 taken[BATTLE_ZONE_
     }
     taken[cell_row][cell_x] = 1;
     place_lines[defs->enemy_count] = line->number;
-    defs->enemy[defs->enemy_count++] = (StagePlace){(u8)def_index, (u8)cell_x, (u8)row};
+    defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
 }
 
 b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, umm size)
@@ -573,11 +596,11 @@ b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, u
     defs->seed = 1;
 
     Lines lines = {text, size, 0, 0};
-    const char *begin, *end;
-    while (next_line(&lines, &begin, &end)) {
-        Line line;
-        if (tokenize(&reader, begin, end, lines.number, &line) != LINE_OK)
+    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
+        Tokenized tokenized = tokenize(&reader, text_line.begin, text_line.end, lines.number);
+        if (!tokenized.ok || !tokenized.line.token_count)
             continue;
+        const Line line = tokenized.line;
         Token key = line.tokens[0];
         if (line.indent != 0) {
             report(&reader, line.number, "unexpected indentation");
@@ -589,11 +612,12 @@ b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, u
                 continue;
             }
             *seen = true;
-            f64 value = 0;
             f64 lowest = is_supply ? 1 : 0, highest = is_supply ? 100000 : 4294967295.0;
+            Number number = line.token_count == 2 ? parse_number(&reader, line.number, line.tokens[1], true) : (Number){0};
+            f64 value = number.value;
             if (line.token_count != 2) {
                 report(&reader, line.number, "'%s' takes one integer", is_supply ? "supply" : "seed");
-            } else if (parse_number(&reader, line.number, line.tokens[1], true, &value)) {
+            } else if (number.ok) {
                 if (value < lowest || value > highest)
                     report(&reader, line.number, "'%s' must be %.0f to %.0f", is_supply ? "supply" : "seed", lowest, highest);
                 else if (is_supply)

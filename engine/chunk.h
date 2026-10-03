@@ -36,8 +36,12 @@ void nv_chunk_writer_init(NvChunkWriter* writer, void* buffer, u32 capacity);
 
 // Reserves the file header; nv_chunk_file_end fills it in.
 void nv_chunk_file_begin(NvChunkWriter* writer, u32 magic, u32 version);
-// Returns the file's size, or 0 if it did not fit or a chunk was left open.
-u32 nv_chunk_file_end(NvChunkWriter* writer);
+// What a writer wrote. Fails (zeroed) when it did not fit or a chunk was left open.
+typedef struct NvChunkWritten {
+    b32 ok;
+    u32 size;
+} NvChunkWritten;
+NvChunkWritten nv_chunk_file_end(NvChunkWriter* writer);
 
 void nv_chunk_begin(NvChunkWriter* writer, u32 tag); // a container
 void nv_chunk_end(NvChunkWriter* writer);
@@ -74,9 +78,15 @@ typedef enum NvChunkFileStatus {
     NV_CHUNK_FILE_NEWER,         // a version above `max_version`
 } NvChunkFileStatus;
 
-// Checks the header and returns the top level as a container chunk in `root`.
-NvChunkFileStatus nv_chunk_file_open(const void* bytes, u32 size, u32 magic, u32 max_version, u32* version,
-                                     NvChunk* root);
+// An opened file: its version and its top level as a container chunk. Failed (`status` says why, the rest zeroed) when
+// the header does not check out.
+typedef struct NvChunkFile {
+    b32 ok;
+    NvChunkFileStatus status;
+    u32 version;
+    NvChunk root;
+} NvChunkFile;
+NvChunkFile nv_chunk_file_open(const void* bytes, u32 size, u32 magic, u32 max_version);
 const char* nv_chunk_file_status_name(NvChunkFileStatus status);
 
 // Steps through a container's children. Start with a zeroed `child`; returns 0 after the last one
@@ -90,8 +100,13 @@ NvChunk nv_chunk_find(NvChunkReader* reader, NvChunk parent, u32 tag);
 // whose size does not fit fails the reader.
 b32 nv_chunk_read_u32s(NvChunkReader* reader, NvChunk parent, u32 tag, u32* out, u32 count);
 b32 nv_chunk_read_f32s(NvChunkReader* reader, NvChunk parent, u32 tag, f32* out, u32 count);
-// Between 0 and `max` u32s; `count` receives how many.
-b32 nv_chunk_read_u32_list(NvChunkReader* reader, NvChunk parent, u32 tag, u32* out, u32 max, u32* count);
+// Between 0 and `max` u32s into `out`. Fails (zeroed), with `out` left alone, when the field is not there or does not fit
+// (which also fails the reader).
+typedef struct NvChunkList {
+    b32 ok;
+    u32 count;
+} NvChunkList;
+NvChunkList nv_chunk_read_u32_list(NvChunkReader* reader, NvChunk parent, u32 tag, u32* out, u32 max);
 // Copies the string with a NUL, truncated to fit `capacity`.
 b32 nv_chunk_read_string(NvChunkReader* reader, NvChunk parent, u32 tag, char* out, u32 capacity);
 

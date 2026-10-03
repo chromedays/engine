@@ -102,27 +102,31 @@ int main(void)
 
     fixed = (NvResolution){.mode = NV_RESOLUTION_FIXED, .fixed_fit = NV_FIT_WHOLE, .fixed_width = 320, .fixed_height = 180};
     out = nv_renderer_scene_output(&fixed, viewport); // the image is at (280, 124), 640 x 360
-    NvRay ray = {0};
-    CHECK(nv_renderer_tap_ray(&scene, out, 600.0f, 304.0f, 1.0f, &ray)); // the image's center
+    NvTapRay tap = nv_renderer_tap_ray(&scene, out, 600.0f, 304.0f, 1.0f); // the image's center
+    NvRay ray = tap.ray;
+    CHECK(tap.ok);
     CHECK(near(ray.direction.x, 0.0f) && near(ray.direction.y, 0.0f) && near(ray.direction.z, -1.0f));
     CHECK(near(ray.origin.x, 0.0f) && near(ray.origin.y, 0.0f) && near(ray.origin.z, 4.9f)); // the near plane
 
     // The same point from CSS pixels on a screen with two canvas pixels each.
-    NvRay ray2 = {0};
-    CHECK(nv_renderer_tap_ray(&scene, out, 300.0f, 152.0f, 2.0f, &ray2));
-    CHECK(near(ray2.direction.z, -1.0f) && near(ray2.origin.z, 4.9f));
+    NvTapRay tap2 = nv_renderer_tap_ray(&scene, out, 300.0f, 152.0f, 2.0f);
+    CHECK(tap2.ok);
+    CHECK(near(tap2.ray.direction.z, -1.0f) && near(tap2.ray.origin.z, 4.9f));
 
     // The bars around the image: above, left, right of it, and the image's far edges (exclusive).
-    NvRay untouched = {nv_vec3(7, 7, 7), nv_vec3(7, 7, 7)};
-    ray = untouched;
-    CHECK(!nv_renderer_tap_ray(&scene, out, 600.0f, 60.0f, 1.0f, &ray));
-    CHECK(!nv_renderer_tap_ray(&scene, out, 270.0f, 304.0f, 1.0f, &ray));
-    CHECK(!nv_renderer_tap_ray(&scene, out, 930.0f, 304.0f, 1.0f, &ray));
-    CHECK(!nv_renderer_tap_ray(&scene, out, 920.0f, 304.0f, 1.0f, &ray)); // x = 920 is the first column past the image
-    CHECK(!nv_renderer_tap_ray(&scene, out, 600.0f, 484.0f, 1.0f, &ray)); // y = 484 is the first row past the image
-    CHECK(ray.origin.x == 7.0f && ray.direction.z == 7.0f); // a miss leaves the ray alone
-    CHECK(nv_renderer_tap_ray(&scene, out, 280.0f, 124.0f, 1.0f, &ray));  // the image's first pixel
-    CHECK(nv_renderer_tap_ray(&scene, out, 919.0f, 483.0f, 1.0f, &ray));  // its last
+    const f32 misses[][2] = {
+        {600.0f, 60.0f},
+        {270.0f, 304.0f},
+        {930.0f, 304.0f},
+        {920.0f, 304.0f}, // x = 920 is the first column past the image
+        {600.0f, 484.0f}, // y = 484 is the first row past the image
+    };
+    for (u32 i = 0; i < NV_ARRAY_COUNT(misses); ++i) {
+        NvTapRay miss = nv_renderer_tap_ray(&scene, out, misses[i][0], misses[i][1], 1.0f);
+        CHECK(!miss.ok && miss.ray.origin.z == 0.0f && miss.ray.direction.z == 0.0f); // a miss is all zero
+    }
+    CHECK(nv_renderer_tap_ray(&scene, out, 280.0f, 124.0f, 1.0f).ok); // the image's first pixel
+    CHECK(nv_renderer_tap_ray(&scene, out, 919.0f, 483.0f, 1.0f).ok); // its last
 
     // The camera matrices the scene pass draws with: reverse Z, so the near plane maps to depth 1 and the far plane to 0.
     NvMat4 view_proj = nv_renderer_camera_view_proj(node, 16.0f / 9.0f);

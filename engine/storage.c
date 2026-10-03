@@ -93,29 +93,26 @@ b32 nv_storage_write(NvStorage* storage, const char* name, const void* bytes, u3
     return 1;
 }
 
-u32 nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size, u8** bytes)
+NvFileData nv_storage_read(NvStorage* storage, const char* name, NvArena* arena, u32 max_size)
 {
-    *bytes = NULL;
     if (!storage->available)
-        return 0;
+        return (NvFileData){0};
     char path[256];
     full_path(storage, name, path, sizeof(path));
     FILE* file = fopen(path, "rb");
     if (!file)
-        return 0;
-    u32 size = 0;
+        return (NvFileData){0};
+    NvFileData result = {0};
     if (fseek(file, 0, SEEK_END) == 0) {
         long end = ftell(file);
         if (end > 0 && (u64)end <= max_size && fseek(file, 0, SEEK_SET) == 0) {
             u8* data = NV_PUSH_ARRAY(arena, (umm)end, u8);
-            if (fread(data, 1, (umm)end, file) == (umm)end) {
-                *bytes = data;
-                size = (u32)end;
-            }
+            if (fread(data, 1, (umm)end, file) == (umm)end)
+                result = (NvFileData){.ok = 1, .bytes = data, .size = (umm)end};
         }
     }
     fclose(file);
-    return size;
+    return result;
 }
 
 b32 nv_storage_rename(NvStorage* storage, const char* from, const char* to)

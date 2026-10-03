@@ -114,12 +114,11 @@ NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect vi
     return out;
 }
 
-b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray)
+NvTapRay nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio)
 {
     f32 x = tap_x * pixel_ratio, y = tap_y * pixel_ratio;
     const NvRect* image = &output.image;
     if (x < (f32)image->x || y < (f32)image->y || x >= (f32)(image->x + image->width) || y >= (f32)(image->y + image->height))
-        return 0;
-    *ray = nv_renderer_view_ray(scene, output, x, y);
-    return 1;
+        return (NvTapRay){0};
+    return (NvTapRay){.ok = 1, .ray = nv_renderer_view_ray(scene, output, x, y)};
 }

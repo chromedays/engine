@@ -143,7 +143,12 @@ internal s32 find_word(const char* text, const char* word)
 
 // Whether every word is in the text, ignoring case in the scripts that have it. `score` is the
 // number of words that matched in the middle of a word: lower ranks higher.
-internal b32 query_match(const SearchQuery* query, const char* original, u32* score)
+typedef struct QueryMatch {
+    b32 ok;
+    u32 score;
+} QueryMatch;
+
+internal QueryMatch query_match(const SearchQuery* query, const char* original)
 {
     char text[256];
     fold_text(original, text, sizeof(text));
@@ -151,13 +156,11 @@ internal b32 query_match(const SearchQuery* query, const char* original, u32* sc
     for (u32 w = 0; w < query->count; ++w) {
         s32 at = find_word(text, query->words[w]);
         if (at < 0)
-            return 0;
+            return (QueryMatch){0};
         if (at > 0 && !is_boundary(text[at - 1]))
             ++middle;
     }
-    if (score)
-        *score = middle;
-    return 1;
+    return (QueryMatch){.ok = 1, .score = middle};
 }
 
 // Appends `text` to `out`, after a space when there is something before it; whole characters only.
@@ -273,7 +276,7 @@ b32 search_match(App* app, const char* text)
         return 1;
     char candidate[200];
     candidate_text(candidate, sizeof(candidate), text, s->section, NULL);
-    return query_match(&s->query, candidate, NULL);
+    return query_match(&s->query, candidate).ok;
 }
 
 void search_set_query(App* app, SearchPanel panel, const char* text)
@@ -312,7 +315,7 @@ internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
     if (query[0]) {
         char candidate[200];
         candidate_text(candidate, sizeof(candidate), label, s->section, keywords);
-        if (!query_match(&s->query, candidate, NULL))
+        if (!query_match(&s->query, candidate).ok)
             return 0;
     }
     if (s->section_pending) {
@@ -478,20 +481,21 @@ internal void build_results(App* app)
     }
 
     char text[200];
-    u32 score;
     for (u32 id = 0; id < SHORTCUT_COUNT; ++id) {
         if (!command_listed(id))
             continue;
         candidate_text(text, sizeof(text), command_name(id), command_group(id), NULL);
-        if (query_match(&query, text, &score))
+        QueryMatch match = query_match(&query, text);
+        if (match.ok)
             add_result(s, PALETTE_ACTION, command_enabled(app, id), id,
-                       make_key(!command_enabled(app, id), score, (u32)strlen(command_name(id)), PALETTE_ACTION, id));
+                       make_key(!command_enabled(app, id), match.score, (u32)strlen(command_name(id)), PALETTE_ACTION, id));
     }
     for (u32 i = 0; i < s->setting_count; ++i) {
         const SearchSetting* setting = &s->settings[i];
         candidate_text(text, sizeof(text), setting->label, setting->section, setting->keywords);
-        if (query_match(&query, text, &score))
-            add_result(s, PALETTE_SETTING, 1, i, make_key(0, score, (u32)strlen(setting->label), PALETTE_SETTING, i));
+        QueryMatch match = query_match(&query, text);
+        if (match.ok)
+            add_result(s, PALETTE_SETTING, 1, i, make_key(0, match.score, (u32)strlen(setting->label), PALETTE_SETTING, i));
     }
 
     // Nodes: the best SEARCH_MAX_NODES by rank, found without sorting thousands.
@@ -500,10 +504,13 @@ internal void build_results(App* app)
     u32 best_count = 0, matched = 0;
     for (u32 i = 1; i <= scene->node_count; ++i) {
         const NvNode* node = &scene->nodes[i];
-        if (!(node->gen & 1) || !query_match(&query, node->name, &score))
+        if (!(node->gen & 1))
+            continue;
+        QueryMatch match = query_match(&query, node->name);
+        if (!match.ok)
             continue;
         ++matched;
-        u64 key = make_key(0, score, (u32)strlen(node->name), PALETTE_NODE, i);
+        u64 key = make_key(0, match.score, (u32)strlen(node->name), PALETTE_NODE, i);
         if (best_count == SEARCH_MAX_NODES && key >= best[best_count - 1].key)
             continue;
         u32 at = best_count < SEARCH_MAX_NODES ? best_count++ : SEARCH_MAX_NODES - 1;

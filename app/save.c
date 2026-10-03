@@ -101,12 +101,17 @@ internal u32 depth_of(NvScene* scene, u32 index)
     return depth;
 }
 
-// Returns the path's length, or 0 if it is deeper than SAVE_MAX_PATH.
-internal u32 path_of(NvScene* scene, u32 index, u32* path)
+typedef struct NodePath {
+    b32 ok;
+    u32 length;
+} NodePath;
+
+// Writes the node's path into `path` (SAVE_MAX_PATH entries). Fails when it is deeper than that.
+internal NodePath path_of(NvScene* scene, u32 index, u32* path)
 {
     u32 length = depth_of(scene, index) + 1;
     if (length > SAVE_MAX_PATH)
-        return 0;
+        return (NodePath){0};
     u32 at = index;
     for (u32 level = length; level-- > 0;) {
         u32 parent = scene->nodes[at].parent;
@@ -119,7 +124,7 @@ internal u32 path_of(NvScene* scene, u32 index, u32* path)
         path[level] = position;
         at = parent;
     }
-    return length;
+    return (NodePath){.ok = 1, .length = length};
 }
 
 // The node at `path`, or 0.
@@ -165,17 +170,17 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     nv_chunk_f32s(w, TAG_ORBT, &view->orbit.target.x, 3);
     nv_chunk_f32s(w, TAG_PAN, &view->pan.x, 3);
     u32 path[SAVE_MAX_PATH];
-    u32 length = view->selected.index ? path_of(scene, view->selected.index, path) : 0;
-    nv_chunk_u32s(w, TAG_SELN, path, length);
+    NodePath selected = view->selected.index ? path_of(scene, view->selected.index, path) : (NodePath){0};
+    nv_chunk_u32s(w, TAG_SELN, path, selected.length);
     // The others: each path as its length, then its indices.
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
     u32 count = 0;
     for (u32 i = 0; i < view->other_count; ++i) {
-        u32 other_length = path_of(scene, view->others[i].index, &others[count + 1]);
-        if (!other_length)
+        NodePath other = path_of(scene, view->others[i].index, &others[count + 1]);
+        if (!other.ok)
             continue;
-        others[count] = other_length;
-        count += 1 + other_length;
+        others[count] = other.length;
+        count += 1 + other.length;
     }
     if (count)
         nv_chunk_u32s(w, TAG_SELO, others, count);
@@ -255,16 +260,16 @@ internal void write_node_fields(NvChunkWriter* w, App* app, u32 index, b32 undo)
 internal void write_node(NvChunkWriter* w, App* app, u32 index)
 {
     u32 path[SAVE_MAX_PATH];
-    u32 length = path_of(app->scene, index, path);
-    if (!length)
+    NodePath node_path = path_of(app->scene, index, path);
+    if (!node_path.ok)
         return;
     nv_chunk_begin(w, TAG_NODE);
-    nv_chunk_u32s(w, TAG_PATH, path, length);
+    nv_chunk_u32s(w, TAG_PATH, path, node_path.length);
     write_node_fields(w, app, index, 0);
     nv_chunk_end(w);
 }
 
-u32 save_write(App* app, void* buffer, u32 capacity)
+NvChunkWritten save_write(App* app, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
@@ -424,19 +429,16 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     nv_chunk_read_f32s(r, chunk, TAG_ORBT, &v.orbit.target.x, 3);
     nv_chunk_read_f32s(r, chunk, TAG_PAN, &v.pan.x, 3);
     u32 path[SAVE_MAX_PATH];
-    u32 length = 0;
-    b32 has_selection = nv_chunk_read_u32_list(r, chunk, TAG_SELN, path, SAVE_MAX_PATH, &length);
+    NvChunkList selection = nv_chunk_read_u32_list(r, chunk, TAG_SELN, path, SAVE_MAX_PATH);
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
-    u32 others_size = 0;
-    if (!nv_chunk_read_u32_list(r, chunk, TAG_SELO, others, NV_ARRAY_COUNT(others), &others_size))
-        others_size = 0;
+    u32 others_size = nv_chunk_read_u32_list(r, chunk, TAG_SELO, others, NV_ARRAY_COUNT(others)).count; // 0 when missing
     if (!apply)
         return;
     v.orbit.pitch = nv_clamp_f32(v.orbit.pitch, v.orbit.min_pitch, v.orbit.max_pitch);
     v.orbit.distance = nv_clamp_f32(v.orbit.distance, v.orbit.min_distance, v.orbit.max_distance);
     // A selection path only means something while the tree is the one it was saved from.
-    if (has_selection && nodes_match) {
-        u32 index = length ? node_at(scene, path, length) : 0;
+    if (selection.ok && nodes_match) {
+        u32 index = selection.count ? node_at(scene, path, selection.count) : 0;
         v.selected = index ? (NvNodeId){index, scene->nodes[index].gen} : (NvNodeId){0};
         v.other_count = 0;
         v.range_anchor = v.selected;
@@ -570,10 +572,10 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, App* app, u32 in
 internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
 {
     u32 path[SAVE_MAX_PATH];
-    u32 length = 0;
-    if (!nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH, &length) || !length)
+    NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
+    if (!node_path.ok || !node_path.count)
         return;
-    read_node_fields(r, chunk, app, node_at(app->scene, path, length), apply);
+    read_node_fields(r, chunk, app, node_at(app->scene, path, node_path.count), apply);
 }
 
 internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply, u32 parts)
@@ -619,20 +621,18 @@ internal b32 read_state(NvChunk root, App* app, b32 apply, u32 parts)
     return !r.failed;
 }
 
-const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts)
+SaveLoad save_load_parts(App* app, const void* bytes, u32 size, u32 parts)
 {
-    u32 version = 0;
-    NvChunk root;
-    NvChunkFileStatus status = nv_chunk_file_open(bytes, size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
-    if (status != NV_CHUNK_FILE_OK)
-        return nv_chunk_file_status_name(status);
-    if (!read_state(root, app, 0, parts))
-        return "malformed";
-    read_state(root, app, 1, parts);
-    return NULL;
+    NvChunkFile file = nv_chunk_file_open(bytes, size, SAVE_MAGIC, SAVE_VERSION);
+    if (!file.ok)
+        return (SaveLoad){.error = nv_chunk_file_status_name(file.status)};
+    if (!read_state(file.root, app, 0, parts))
+        return (SaveLoad){.error = "malformed"};
+    read_state(file.root, app, 1, parts);
+    return (SaveLoad){.ok = 1};
 }
 
-const char* save_load(App* app, const void* bytes, u32 size)
+SaveLoad save_load(App* app, const void* bytes, u32 size)
 {
     return save_load_parts(app, bytes, size, SAVE_PART_ALL);
 }
@@ -643,10 +643,11 @@ b32 save_round_trip_matches(App* app)
     umm mark = scratch->used;
     u8* first = NV_PUSH_ARRAY(scratch, SAVE_MAX_SIZE, u8);
     u8* second = NV_PUSH_ARRAY(scratch, SAVE_MAX_SIZE, u8);
-    u32 first_size = save_write(app, first, SAVE_MAX_SIZE);
-    b32 matches = first_size && !save_load(app, first, first_size);
-    u32 second_size = matches ? save_write(app, second, SAVE_MAX_SIZE) : 0;
-    matches = matches && second_size == first_size && memcmp(first, second, first_size) == 0;
+    NvChunkWritten first_written = save_write(app, first, SAVE_MAX_SIZE);
+    b32 matches = first_written.ok && save_load(app, first, first_written.size).ok;
+    NvChunkWritten second_written = matches ? save_write(app, second, SAVE_MAX_SIZE) : (NvChunkWritten){0};
+    matches = matches && second_written.ok && second_written.size == first_written.size &&
+              memcmp(first, second, first_written.size) == 0;
     scratch->used = mark;
     return matches;
 }
@@ -661,7 +662,7 @@ u32 save_driven_fields(App* app, u32 node)
     return driven_fields(app, node);
 }
 
-u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
+NvChunkWritten save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
@@ -685,7 +686,7 @@ u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_
         NV_INVALID_CODE_PATH;
         break;
     }
-    return w.overflow ? 0 : w.size;
+    return w.overflow ? (NvChunkWritten){0} : (NvChunkWritten){.ok = 1, .size = w.size};
 }
 
 internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, b32 apply)
@@ -775,14 +776,15 @@ void save_now(App* app, b32 force)
     if (!app->storage.available || app->save_stopped)
         return;
     // While playing, the edit state is the snapshot taken at Play; the running scene is never saved.
-    u32 size = 0;
+    NvChunkWritten written;
     if (app->playing) {
-        size = app->play_snapshot_size;
-        memcpy(app->next_save, app->play_snapshot, size);
+        written = (NvChunkWritten){.ok = 1, .size = app->play_snapshot_size};
+        memcpy(app->next_save, app->play_snapshot, written.size);
     } else {
-        size = save_write(app, app->next_save, SAVE_MAX_SIZE);
+        written = save_write(app, app->next_save, SAVE_MAX_SIZE);
     }
-    if (!size) {
+    u32 size = written.size;
+    if (!written.ok) {
         snprintf(app->save_notice, sizeof(app->save_notice), T("Not saved: the state is larger than %u KB."),
                  (u32)(SAVE_MAX_SIZE / 1024));
         nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
@@ -934,11 +936,10 @@ internal void view_chunks(NvChunkReader* r, NvChunk parent, u32 parent_tag)
 internal void load_viewed(App* app, b32 bad)
 {
     umm mark = app->scratch.used;
-    u8* bytes = NULL;
-    u32 size = nv_storage_read(&app->storage, bad ? SAVE_BAD_FILE : SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
-    if (size)
-        memcpy(app->viewed, bytes, size);
-    app->viewed_size = size;
+    NvFileData file = nv_storage_read(&app->storage, bad ? SAVE_BAD_FILE : SAVE_FILE, &app->scratch, SAVE_MAX_SIZE);
+    if (file.ok)
+        memcpy(app->viewed, file.bytes, file.size);
+    app->viewed_size = (u32)file.size;
     app->viewed_bad = bad;
     app->scratch.used = mark;
 }
@@ -958,10 +959,8 @@ internal void save_viewer(App* app)
         igTextDisabled("%s is missing or empty.", file);
         return;
     }
-    u32 version = 0;
-    NvChunk root;
-    NvChunkFileStatus status = nv_chunk_file_open(app->viewed, app->viewed_size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
-    igText("%s: %u bytes, %s", file, app->viewed_size, nv_chunk_file_status_name(status));
+    NvChunkFile opened = nv_chunk_file_open(app->viewed, app->viewed_size, SAVE_MAGIC, SAVE_VERSION);
+    igText("%s: %u bytes, %s", file, app->viewed_size, nv_chunk_file_status_name(opened.status));
     if (app->viewed_size < NV_CHUNK_FILE_HEADER_SIZE)
         return;
     u32 magic = nv_chunk_load_u32(app->viewed);
@@ -970,7 +969,8 @@ internal void save_viewer(App* app)
     igText("Header: %s, version %u, %u bytes after it, checksum %08x", magic_text, nv_chunk_load_u32(app->viewed + 4),
            nv_chunk_load_u32(app->viewed + 8), nv_chunk_load_u32(app->viewed + 12));
     // A damaged file is still walked as far as it goes, to show where it breaks.
-    if (status != NV_CHUNK_FILE_OK)
+    NvChunk root = opened.root;
+    if (!opened.ok)
         root = (NvChunk){.size = app->viewed_size - NV_CHUNK_FILE_HEADER_SIZE, .data = app->viewed + NV_CHUNK_FILE_HEADER_SIZE};
     NvChunkReader r = {0};
     view_chunks(&r, root, 0);
@@ -985,13 +985,14 @@ void save_init(App* app)
         return;
 
     umm mark = app->scratch.used;
-    u8* bytes = NULL;
-    u32 size = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
+    NvFileData file = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE);
     const char* problem = NULL;
-    if (size)
-        problem = save_load(app, bytes, size);
-    else if (nv_storage_exists(&app->storage, SAVE_FILE))
+    if (file.ok) {
+        SaveLoad load = save_load(app, file.bytes, (u32)file.size);
+        problem = load.error;
+    } else if (nv_storage_exists(&app->storage, SAVE_FILE)) {
         problem = "empty, unreadable or too large";
+    }
     app->scratch.used = mark;
     if (problem) {
         // The app starts as on a first visit. The file is set aside rather than deleted, so it can
@@ -1006,7 +1007,7 @@ void save_init(App* app)
     app->viewed = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
 
     // What is on screen now counts as saved, so an unchanged state is not written again.
-    app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE);
+    app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE).size;
     app->last_save_check = nv_time_seconds();
     nv_window_on_hidden(&app->window, save_on_hidden, app);
 }

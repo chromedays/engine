@@ -42,17 +42,17 @@ internal b32 load_defs(Game* game)
 {
     BattleDefs* defs = &game->defs;
     umm mark = game->scratch.used;
-    umm units_size = 0, stage_size = 0;
-    const char* units = (const char*)nv_file_read(&game->scratch, "/data/units.txt", &units_size);
-    const char* stage = (const char*)nv_file_read(&game->scratch, "/data/stage.txt", &stage_size);
+    NvFileData units = nv_file_read(&game->scratch, "/data/units.txt");
+    NvFileData stage = nv_file_read(&game->scratch, "/data/stage.txt");
     b32 ok = false;
-    if (!units || !stage) {
-        snprintf(defs->first_error, sizeof(defs->first_error), "%s: cannot read the file", units ? "stage.txt" : "units.txt");
+    if (!units.ok || !stage.ok) {
+        snprintf(defs->first_error, sizeof(defs->first_error), "%s: cannot read the file", units.ok ? "stage.txt" : "units.txt");
         ++defs->error_count;
         nv_log(NV_LOG_ERROR, "battle", "%s", defs->first_error);
     } else {
         // The stage looks unit names up, so it is read only when the units are good.
-        ok = defs_read_units(defs, "units.txt", units, units_size) && defs_read_stage(defs, "stage.txt", stage, stage_size);
+        ok = defs_read_units(defs, "units.txt", (const char*)units.bytes, units.size) &&
+             defs_read_stage(defs, "stage.txt", (const char*)stage.bytes, stage.size);
     }
     game->scratch.used = mark;
     return ok;
@@ -68,9 +68,10 @@ internal void frame(void* userdata)
     if (dt > 0.1f)
         dt = 0.1f; // a hidden tab's long pause is not caught up on
 
-    WGPUTextureView target = nv_gpu_begin_frame(&game->gpu);
-    if (!target)
+    NvGpuFrame gpu_frame = nv_gpu_begin_frame(&game->gpu);
+    if (!gpu_frame.ok)
         return;
+    WGPUTextureView target = gpu_frame.view;
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);

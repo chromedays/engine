@@ -1276,7 +1276,7 @@ NvBox nv_renderer_mesh_bounds(NvRenderer* renderer, NvMeshId id, const NvSkin* s
     return posed;
 }
 
-NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray, f32* distance)
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray)
 {
     NvNodeId best = {0};
     f32 best_t = 1.0e30f;
@@ -1298,8 +1298,6 @@ NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* sk
             best = (NvNodeId){index, node->gen};
         }
     }
-    if (distance)
-        *distance = best_t;
     return best;
 }
 

@@ -226,19 +226,26 @@ void view_build(Game* game)
 
 // Input
 
+typedef struct PlayerCell {
+    b32 ok;
+    s32 x, row;
+} PlayerCell;
+
 // The ground cell a point of the viewport (CSS pixels) shows, if it is in the player's zone.
-internal b32 player_cell_at(Game* game, f32 x, f32 y, s32* cell_x, s32* cell_row)
+internal PlayerCell player_cell_at(Game* game, f32 x, f32 y)
 {
-    NvRay ray;
-    if (!nv_renderer_tap_ray(game->scene, game->layout.scene, x, y, nv_window_pixel_ratio(&game->window), &ray) || ray.direction.y >= -1e-4f)
-        return false;
+    NvTapRay tap = nv_renderer_tap_ray(game->scene, game->layout.scene, x, y, nv_window_pixel_ratio(&game->window));
+    NvRay ray = tap.ray;
+    if (!tap.ok || ray.direction.y >= -1e-4f)
+        return (PlayerCell){0};
     f32 distance = -ray.origin.y / ray.direction.y;
     f32 ground_x = ray.origin.x + ray.direction.x * distance, ground_z = ray.origin.z + ray.direction.z * distance;
     if (ground_x < 0.0f || ground_z < 0.0f)
-        return false;
-    *cell_x = (s32)(ground_x / BATTLE_CELL_SIZE);
-    *cell_row = (s32)(ground_z / BATTLE_CELL_SIZE);
-    return *cell_x < BATTLE_GRID_WIDTH && *cell_row < BATTLE_ZONE_ROWS;
+        return (PlayerCell){0};
+    s32 cell_x = (s32)(ground_x / BATTLE_CELL_SIZE), cell_row = (s32)(ground_z / BATTLE_CELL_SIZE);
+    if (cell_x >= BATTLE_GRID_WIDTH || cell_row >= BATTLE_ZONE_ROWS)
+        return (PlayerCell){0};
+    return (PlayerCell){.ok = true, .x = cell_x, .row = cell_row};
 }
 
 // A left drag or one finger moves the view over the ground; a right or middle drag or two fingers turn it; the wheel and
@@ -267,16 +274,19 @@ void view_input(Game* game)
         ImVec2_c mouse = igGetIO_Nil()->MousePos;
         const NvRect* v = &game->layout.viewport;
         if (mouse.x * ratio >= (f32)v->x && mouse.x * ratio < (f32)(v->x + v->width) && mouse.y * ratio >= (f32)v->y &&
-            mouse.y * ratio < (f32)(v->y + v->height))
-            player_cell_at(game, mouse.x, mouse.y, &game->hover_cell_x, &game->hover_cell_row);
+            mouse.y * ratio < (f32)(v->y + v->height)) {
+            PlayerCell cell = player_cell_at(game, mouse.x, mouse.y);
+            if (cell.ok) {
+                game->hover_cell_x = cell.x;
+                game->hover_cell_row = cell.row;
+            }
+        }
     }
 
     if (in->tapped && game->defs_ok && game->battle.phase == BATTLE_DEPLOY) {
-        s32 cell_x, cell_row;
-        if (player_cell_at(game, in->tap_x, in->tap_y, &cell_x, &cell_row)) {
-            if (!battle_remove(&game->battle, cell_x, cell_row))
-                battle_place(&game->battle, game->selected_def, cell_x, cell_row);
-        }
+        PlayerCell cell = player_cell_at(game, in->tap_x, in->tap_y);
+        if (cell.ok && !battle_remove(&game->battle, cell.x, cell.row))
+            battle_place(&game->battle, game->selected_def, cell.x, cell.row);
     }
 }
 

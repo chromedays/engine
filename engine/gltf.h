@@ -28,9 +28,13 @@ typedef struct NvGltfModel {
 } NvGltfModel;
 
 // Loads meshes, base color materials and textures into `renderer`, and adds a node tree under a
-// new root node in `scene`. Loading uses `scratch` and leaves it as it was.
-b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent,
-                       NvArena* scratch, NvGltfModel* out);
+// new root node in `scene`. Loading uses `scratch` and leaves it as it was. Fails (zeroed, having
+// logged why) when the file is missing or not valid glTF.
+typedef struct NvGltfLoad {
+    b32 ok;
+    NvGltfModel model;
+} NvGltfLoad;
+NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent, NvArena* scratch);
 
 // Adds another copy of a loaded model to `scene` (any scene), under `parent` (a zeroed id adds it
 // at the top level): a new root with the same node names, meshes and materials, and a new animator
@@ -39,6 +43,10 @@ void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId pare
 
 // Creates a clip on `skeleton` for every animation in the file, matching animated nodes to joints
 // by name. Joints named `root_motion_joint` (NULL for none) have their horizontal motion taken
-// out. Returns the number of clips written to `clips`.
-u32 nv_gltf_load_clips(const char* path, NvSkeletonId skeleton, const char* root_motion_joint,
-                       NvArena* scratch, NvClipId* clips, u32 max_clips);
+// out. `count` is the number of clips written to `clips`. Fails (zeroed) like nv_gltf_load_model.
+typedef struct NvGltfClips {
+    b32 ok;
+    u32 count;
+} NvGltfClips;
+NvGltfClips nv_gltf_load_clips(const char* path, NvSkeletonId skeleton, const char* root_motion_joint,
+                               NvArena* scratch, NvClipId* clips, u32 max_clips);

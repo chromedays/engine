@@ -306,9 +306,13 @@ void nv_renderer_camera_matrices(NvScene* scene, NvSceneOutput output, NvMat4* v
 // camera as drawn with `output`.
 NvRay nv_renderer_view_ray(NvScene* scene, NvSceneOutput output, f32 x, f32 y);
 
-// A ray through a tap at (tap_x, tap_y) CSS pixels, `pixel_ratio` canvas pixels each. False, with `ray` untouched, when the
-// tap is outside the image (on a black bar around a fixed size).
-b32 nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio, NvRay* ray);
+// A ray through a tap at (tap_x, tap_y) CSS pixels, `pixel_ratio` canvas pixels each. None (zeroed) when the tap is outside
+// the image (on a black bar around a fixed size).
+typedef struct NvTapRay {
+    b32 ok;
+    NvRay ray;
+} NvTapRay;
+NvTapRay nv_renderer_tap_ray(NvScene* scene, NvSceneOutput output, f32 tap_x, f32 tap_y, f32 pixel_ratio);
 
 // The view-projection matrix the scene pass draws with: the camera node's projection, reverse Z (docs/specs/vfx.md), and its
 // inverse world matrix.
@@ -320,9 +324,8 @@ NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
 NvBox nv_renderer_mesh_bounds(NvRenderer* renderer, NvMeshId mesh, const NvSkin* skin);
 
 // The nearest mesh node whose box (nv_renderer_mesh_bounds, in the node's own space) the ray hits,
-// or a zeroed id. Skinned nodes are posed by `skins` as in nv_renderer_draw. `distance`, when not
-// NULL, receives how far along the ray the hit is.
-NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray, f32* distance);
+// or a zeroed id. Skinned nodes are posed by `skins` as in nv_renderer_draw.
+NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvRay ray);
 
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);

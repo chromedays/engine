@@ -890,12 +890,18 @@ internal void ring_flush(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes)
     ring->pending = 0;
 }
 
+typedef struct RingSlot {
+    b32 ok;
+    void* at;
+} RingSlot;
+
 // The next slot to fill, staged (zeroed). The run being staged stays contiguous in the ring: it is
-// uploaded when full and when the ring wrapped, before the slot after the wrap is staged.
-internal void* ring_add(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes, f32 death)
+// uploaded when full and when the ring wrapped, before the slot after the wrap is staged. Fails
+// before nv_vfx_init made the ring.
+internal RingSlot ring_add(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes, f32 death)
 {
     if (!ring->capacity)
-        return NULL;
+        return (RingSlot){0};
     if (ring->pending && (ring->pending == STAGE_SLOTS || ring->head == 0))
         ring_flush(vfx, ring, slot_bytes);
     u32 index = nv_vfx_ring_take(&ring->head, &ring->filled, ring->capacity);
@@ -905,7 +911,7 @@ internal void* ring_add(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes, f32 de
     memset(slot, 0, slot_bytes);
     ++ring->pending;
     ring->death[index] = death;
-    return slot;
+    return (RingSlot){.ok = 1, .at = slot};
 }
 
 internal void ring_clear(struct VfxRing* ring)
@@ -1170,9 +1176,10 @@ internal void add_segment(NvVfx* vfx, const NvVfxLineStyle* style, NvVec3 from, 
 {
     if (!(life > 0.0f))
         return;
-    NvVfxGpuSegment* segment = ring_add(vfx, &vfx->segments, sizeof(NvVfxGpuSegment), vfx->time + life);
-    if (!segment)
+    RingSlot slot = ring_add(vfx, &vfx->segments, sizeof(NvVfxGpuSegment), vfx->time + life);
+    if (!slot.ok)
         return;
+    NvVfxGpuSegment* segment = slot.at;
     segment->a[0] = from.x, segment->a[1] = from.y, segment->a[2] = from.z;
     segment->b[0] = to.x, segment->b[1] = to.y, segment->b[2] = to.z;
     segment->birth = vfx->time;
@@ -1199,9 +1206,10 @@ void nv_vfx_decal(NvVfx* vfx, const NvVfxDecalStyle* style, NvVec3 position, f32
 {
     if (!(style->life > 0.0f))
         return;
-    NvVfxGpuDecal* decal = ring_add(vfx, &vfx->decals, sizeof(NvVfxGpuDecal), vfx->time + style->life);
-    if (!decal)
+    RingSlot slot = ring_add(vfx, &vfx->decals, sizeof(NvVfxGpuDecal), vfx->time + style->life);
+    if (!slot.ok)
         return;
+    NvVfxGpuDecal* decal = slot.at;
     decal->pos[0] = position.x, decal->pos[1] = position.y, decal->pos[2] = position.z;
     decal->angle = angle;
     decal->size = size;

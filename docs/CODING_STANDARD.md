@@ -82,8 +82,34 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 
 - 프로그래머 실수(잘못된 핸들, 용량 초과, 깨진 불변식)는 `NV_ASSERT`에 걸려 멈춘다. 오류 코드로 바꾸지
   않는다. `NV_INVALID_CODE_PATH`는 실행되면 안 되는 분기를 표시한다.
-- 실행 중에 실제로 일어나는 실패(브라우저에 WebGPU가 없음, 파일이 없음)는 `b32`를 돌려주고, 그것에 대해
-  무언가 할 수 있는 호출자가 처리한다.
+- 실행 중에 실제로 일어나는 실패(브라우저에 WebGPU가 없음, 파일이 없음, 저장할 내용이 버퍼에 맞지 않음)는 그것에
+  대해 무언가 할 수 있는 호출자가 처리한다. 실패할 수 있는 함수는 실패를 결과와 따로 알린다.
+  - 성공 여부 말고 돌려줄 결과가 없으면 `b32`를 돌려준다.
+  - 결과가 있으면 **결과 구조체**를 값으로 돌려준다. 첫 필드가 `b32 ok`이고 결과가 그 뒤에 온다. 실패하면 `ok`도
+    결과도 0이다. 호출자가 실패 이유를 알아야 하면 그 이유를 필드로 둔다(`NvChunkFile.status`, `SaveLoad.error`).
+    결과를 포인터 매개변수로 내보내지 않고, 실패를 결과의 특별한 값(NULL, 0, -1)으로 알리지 않는다.
+
+    ```c
+    typedef struct NvFileData {
+        b32 ok;
+        u8* bytes;
+        umm size;
+    } NvFileData;
+    NvFileData nv_file_read(NvArena* arena, const char* path);
+
+    NvFileData units = nv_file_read(arena, "/data/units.txt");
+    if (!units.ok)
+        ...
+    ```
+  - 실패는 아니어도 입력에 따라 결과가 없을 수 있는 함수도 같다: 이미지 밖을 누른 탭(`NvTapRay`), 맞지 않는
+    검색어, 마지막 줄 다음.
+- 다음은 이 규칙에 들지 않는다.
+  - 찾는 것이 없을 수 있는 조회는 결과 하나를 돌려주고, 없으면 그 타입의 "없음"을 돌려준다: 핸들은 0, 포인터는
+    NULL, 배열 안의 위치는 -1(`nv_anim_find_joint`).
+  - 함수가 다루는 대상은 결과가 아니다: 함수가 설정하거나 바꾸는 객체(`nv_gpu_create`의 `gpu`,
+    `defs_read_units`의 `defs`), 호출 사이에 이어지는 커서(`nv_chunk_next`의 `child`), 값이 있을 때만 덮어쓰는
+    자리(`nv_chunk_read_u32s`의 `out`), 호출자가 크기와 함께 넘기는 채울 버퍼(`char* out, umm capacity`).
+  - JavaScript 함수(`EM_JS`)는 숫자만 주고받으므로 포인터 매개변수를 쓴다. 그것을 감싸는 C 함수가 규칙을 따른다.
 
 ### 의존성
 
@@ -189,8 +215,38 @@ The table sets the shape of names. What a name has to say:
 
 - Programmer mistakes (bad handle, capacity exceeded, broken invariant) hit `NV_ASSERT` and stop.
   They are not turned into error codes. `NV_INVALID_CODE_PATH` marks branches that must not run.
-- Failures that really happen at runtime (no WebGPU in the browser, a missing file) return `b32`
-  and are handled by the caller that can do something about them.
+- Failures that really happen at runtime (no WebGPU in the browser, a missing file, a save that does not fit its
+  buffer) are handled by the caller that can do something about them. A function that can fail reports the failure apart
+  from its results.
+  - With nothing to give back but whether it worked, it returns `b32`.
+  - With results, it returns a **result struct** by value: its first field is `b32 ok`, and the results follow. On
+    failure `ok` and the results are all 0. When the caller needs to know why it failed, the reason is a field too
+    (`NvChunkFile.status`, `SaveLoad.error`). Results never go out through pointer parameters, and failure is never a
+    special value of a result (NULL, 0, -1).
+
+    ```c
+    typedef struct NvFileData {
+        b32 ok;
+        u8* bytes;
+        umm size;
+    } NvFileData;
+    NvFileData nv_file_read(NvArena* arena, const char* path);
+
+    NvFileData units = nv_file_read(arena, "/data/units.txt");
+    if (!units.ok)
+        ...
+    ```
+  - The same holds for a function that may have no result for its input without anything failing: a tap outside the
+    image (`NvTapRay`), a search query that does not match, the line after the last.
+- These are outside the rule:
+  - A lookup that may find nothing returns its one result, or that type's "none" when there is nothing: 0 for a handle,
+    NULL for a pointer, -1 for a position in an array (`nv_anim_find_joint`).
+  - What a function works on is not a result: the object it sets up or changes (`gpu` of `nv_gpu_create`, `defs` of
+    `defs_read_units`), a cursor carried from call to call (`child` of `nv_chunk_next`), a place it overwrites only when
+    there is a value (`out` of `nv_chunk_read_u32s`), and a buffer the caller hands in to be filled, with its size
+    (`char* out, umm capacity`).
+  - JavaScript functions (`EM_JS`) pass only numbers, so they use pointer parameters; the C function around one follows
+    the rule.
 
 ### Dependencies
 

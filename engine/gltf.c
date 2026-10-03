@@ -18,7 +18,12 @@ internal void cgltf_arena_free(void* user, void* ptr)
     (void)user, (void)ptr;
 }
 
-internal cgltf_data* parse_file(const char* path, NvArena* scratch)
+typedef struct Parsed {
+    b32 ok;
+    cgltf_data* data;
+} Parsed;
+
+internal Parsed parse_file(const char* path, NvArena* scratch)
 {
     cgltf_options options = {0};
     options.memory.alloc_func = cgltf_arena_alloc;
@@ -30,9 +35,9 @@ internal cgltf_data* parse_file(const char* path, NvArena* scratch)
         cgltf_load_buffers(&options, data, path) != cgltf_result_success ||
         cgltf_validate(data) != cgltf_result_success) {
         nv_log(NV_LOG_ERROR, "nv", "failed to load %s", path);
-        return NULL;
+        return (Parsed){0};
     }
-    return data;
+    return (Parsed){.ok = 1, .data = data};
 }
 
 //
@@ -62,26 +67,31 @@ EM_JS(void, js_take_decoded_image, (u8* out), {
     Module.nvDecodedImage = null;
 });
 
-internal NvTextureId load_texture(const cgltf_image* image, NvRenderer* renderer, NvArena* scratch)
+typedef struct LoadedTexture {
+    b32 ok;
+    NvTextureId id;
+} LoadedTexture;
+
+internal LoadedTexture load_texture(const cgltf_image* image, NvRenderer* renderer, NvArena* scratch)
 {
     if (!image || !image->buffer_view) {
         // TODO: Images referenced by URI; the shipped assets embed theirs in .glb files.
         nv_log(NV_LOG_WARNING, "nv", "skipping image without an embedded buffer");
-        return (NvTextureId){0};
+        return (LoadedTexture){0};
     }
     const u8* bytes = cgltf_buffer_view_data(image->buffer_view);
     s32 width = 0;
     s32 height = 0;
     const char* mime = image->mime_type ? image->mime_type : "image/png";
     if (!js_decode_image(bytes, (int)image->buffer_view->size, mime, &width, &height))
-        return (NvTextureId){0};
+        return (LoadedTexture){0};
 
     umm mark = scratch->used;
     u8* pixels = NV_PUSH_ARRAY(scratch, (umm)width * height * 4, u8);
     js_take_decoded_image(pixels);
     NvTextureId texture = nv_renderer_add_texture(renderer, image->name, (u32)width, (u32)height, pixels, 1, scratch);
     scratch->used = mark;
-    return texture;
+    return (LoadedTexture){.ok = 1, .id = texture};
 }
 
 //
@@ -190,21 +200,22 @@ internal NvMaterialId load_material(const cgltf_material* material, NvRenderer* 
         const cgltf_pbr_metallic_roughness* pbr = &material->pbr_metallic_roughness;
         memcpy(desc.base_color, pbr->base_color_factor, sizeof(desc.base_color));
         if (pbr->base_color_texture.texture)
-            desc.base_color_texture = load_texture(pbr->base_color_texture.texture->image, renderer, scratch);
+            desc.base_color_texture = load_texture(pbr->base_color_texture.texture->image, renderer, scratch).id; // none if it failed
     }
     return nv_renderer_add_material(renderer, &desc);
 }
 
-b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent,
-                       NvArena* scratch, NvGltfModel* out)
+NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent, NvArena* scratch)
 {
-    *out = (NvGltfModel){0};
     umm mark = scratch->used;
-    cgltf_data* data = parse_file(path, scratch);
-    if (!data) {
+    Parsed parsed = parse_file(path, scratch);
+    if (!parsed.ok) {
         scratch->used = mark;
-        return 0;
+        return (NvGltfLoad){0};
     }
+    cgltf_data* data = parsed.data;
+    NvGltfLoad result = {.ok = 1};
+    NvGltfModel* out = &result.model;
 
     // Each glTF material becomes one renderer material, shared by the primitives that use it.
     NvMaterialId* materials = NV_PUSH_ARRAY(scratch, data->materials_count + 1, NvMaterialId);
@@ -264,7 +275,7 @@ b32 nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, N
     }
 
     scratch->used = mark;
-    return 1;
+    return result;
 }
 
 void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId parent, NvGltfModel* out)
@@ -306,15 +317,16 @@ internal u32 read_keys(const cgltf_animation_sampler* sampler, u32 components, N
     return count;
 }
 
-u32 nv_gltf_load_clips(const char* path, NvSkeletonId skeleton, const char* root_motion_joint,
-                       NvArena* scratch, NvClipId* clips, u32 max_clips)
+NvGltfClips nv_gltf_load_clips(const char* path, NvSkeletonId skeleton, const char* root_motion_joint,
+                               NvArena* scratch, NvClipId* clips, u32 max_clips)
 {
     umm mark = scratch->used;
-    cgltf_data* data = parse_file(path, scratch);
-    if (!data) {
+    Parsed parsed = parse_file(path, scratch);
+    if (!parsed.ok) {
         scratch->used = mark;
-        return 0;
+        return (NvGltfClips){0};
     }
+    cgltf_data* data = parsed.data;
 
     u32 joint_count = nv_anim_joint_count(skeleton);
     s32 motion_joint = root_motion_joint ? nv_anim_find_joint(skeleton, root_motion_joint) : -1;
@@ -377,5 +389,5 @@ u32 nv_gltf_load_clips(const char* path, NvSkeletonId skeleton, const char* root
     }
 
     scratch->used = mark;
-    return clip_count;
+    return (NvGltfClips){.ok = 1, .count = clip_count};
 }

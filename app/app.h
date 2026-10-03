@@ -752,22 +752,26 @@ void textures_record(TextureViewer* viewer, TexturesRect id);     // the last it
 
 // save.c
 u32 save_scene_layout(NvScene* scene); // a hash of the tree's shape and names
-// Writes the app state; returns its size, or 0 if it did not fit.
-u32 save_write(App* app, void* buffer, u32 capacity);
-// Loads a save into the app. It is checked whole first, and nothing changes unless it is good.
-// Returns NULL, or what is wrong with it.
-const char* save_load(App* app, const void* bytes, u32 size);
+// Writes the app state. Fails when it does not fit.
+NvChunkWritten save_write(App* app, void* buffer, u32 capacity);
+// Loads a save into the app. It is checked whole first, and nothing changes unless it is good. On failure `error` says
+// what is wrong with it.
+typedef struct SaveLoad {
+    b32 ok;
+    const char* error;
+} SaveLoad;
+SaveLoad save_load(App* app, const void* bytes, u32 size);
 // Loads only some parts of a save (SAVE_PART_*), e.g. the scene without the view for Stop.
 #define SAVE_PART_EDITOR (1u << 0) // gizmo and autosave settings
 #define SAVE_PART_VIEW   (1u << 1) // the showcase's camera view and selection
 #define SAVE_PART_SCENE  (1u << 2) // nodes, character and scene settings
 #define SAVE_PART_ALL    (SAVE_PART_EDITOR | SAVE_PART_VIEW | SAVE_PART_SCENE)
-const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts);
+SaveLoad save_load_parts(App* app, const void* bytes, u32 size, u32 parts);
 // Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
 // (docs/specs/undo.md). Values the app drives every frame are left out.
 // The Node scope holds each of `nodes` in a container, in order; the other scopes ignore them.
-// Returns the size written, or 0 if it did not fit.
-u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity);
+// Fails when it does not fit.
+NvChunkWritten save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity);
 // Applies the fields present. Returns 0, changing nothing, if the bytes are malformed.
 b32 save_apply_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size);
 // Which parts of a node's transform the app drives (bit 0 position, bit 1 rotation).
