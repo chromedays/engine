@@ -38,15 +38,16 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다.
 
 | 항목 | A |
 |---|---|
-| 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0 |
-| 배치 | 칸 하나에 Crawler 하나. 양쪽 공급 1000, Crawler 비용 100(편마다 최대 10기). 적 배치는 스테이지에 고정 |
+| 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0. 칸 (x, 행)의 중심은 ((x + 0.5) · 2, 0, (행 + 0.5) · 2) m: 플레이어 쪽이 −Z, 적 쪽이 +Z |
+| 배치 | 칸 하나에 Crawler 하나. 양쪽 공급 1000, Crawler 비용 100(편마다 최대 10기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
 | 유닛 | Crawler 한 종류, 지상만. 크기 등급과 분대가 없다 |
-| 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부 |
-| 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽 |
-| 이동 | 대상으로 곧장 다가가고, 대상이 사거리의 90% 안이면 멈춘다. 겹친 유닛끼리 서로 밀어낸다(분리, 무게는 모두 같다). 전장 밖으로 나가지 않는다. 가까운 유닛 찾기와 분리는 모든 쌍을 직접 비교한다(공간 격자 없음) |
-| 무기 | 하나. 투사체는 포탄 한 종류: 중력 9.8 m/s²의 탄도로 날고, 발사각과 목표점(쏠 때 대상의 위치 + 시드 난수 퍼짐)에서 초기 속도를 구한다 |
-| 피해 | 단일 피해: 포탄은 처음 닿은 **적** 유닛 하나에 `max(피해 - 방어력, 피해 × 0.25)`를 주고 사라진다. 아군은 지나간다. 지면에 닿으면 피해 없이 사라진다. 피해는 틱 동안 더하기만 하고 죽음은 틱 끝에 정한다 |
+| 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부. 같은 틱에 양쪽이 전멸해도 무승부 |
+| 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽. 거리(타게팅과 사거리 모두)는 지면(XZ) 위 중심 사이 거리 |
+| 이동 | 대상으로 곧장 다가가고, 대상이 사거리의 90% 안이면 멈춘다. 겹친 유닛끼리 서로 밀어낸다(분리, 무게는 모두 같다). 전장 밖으로 나가지 않는다. 가까운 유닛 찾기와 분리는 모든 쌍을 직접 비교한다(공간 격자 없음). 회전은 즉시: 움직일 때는 속도 방향, 멈췄을 때는 대상 쪽을 본다 |
+| 무기 | 하나. 쿨다운이 끝나고 대상이 사거리 안이면 움직이는 중에도 쏜다. 쿨다운은 0에서 시작한다. 투사체는 포탄 한 종류: 중력 9.8 m/s²의 탄도로 날고, 발사각과 목표점에서 초기 속도를 구한다. 목표점은 **리드 조준**(대상의 지금 속도로 착탄 때의 위치를 예측: 비행 시간과 예측을 3번 번갈아 구한다)에 퍼짐(반지름 `spread` 원 안의 균등 난수)을 더한 지면 위의 점이다 |
+| 피해 | 포탄은 점이고, 매 틱 이전 위치에서 지금 위치까지의 선분을 유닛의 세로 원기둥(반지름 × 높이)에 대해 검사한다(뚫고 지나가지 않는다). 단일 피해: 포탄은 처음 닿은 **적** 유닛 하나에 `max(피해 - 방어력, 피해 × 0.25)`를 주고 사라진다. 아군은 지나간다. 지면에 닿으면 피해 없이 사라진다. 피해는 틱 동안 더하기만 하고 죽음은 틱 끝에 정한다 |
 | 능력 | Shield 하나(아래) |
+| 난수 | 시드는 스테이지에 고정된다(`stage.txt`의 `seed`). 같은 배치는 언제나 같은 결과를 낸다 |
 
 | Crawler (A) | 값 |
 |---|---|
@@ -54,7 +55,7 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다.
 | 속도 | 5 m/s |
 | 반지름 / 높이 | 0.5 / 0.8 m |
 | 무기 Lobber | 포탄, 사거리 20 m, 피해 30, 쿨다운 1.5초, 발사각 45°, 퍼짐 0.5 m |
-| Shield | 반지름 1.2 m의 구. 바깥에서 경계를 넘어 들어오는 적 포탄을 없애고 그 피해만큼 에너지를 잃는다(용량 60). 3초 동안 맞지 않으면 초당 10씩 찬다. 에너지가 0이면 꺼진다 |
+| Shield | 반지름 1.2 m의 구, 중심은 유닛 높이의 절반. 바깥에서 경계를 넘어 들어오는 적 포탄(다른 유닛을 노린 것도: 이웃을 지킨다)의 피해를 남은 에너지만큼 흡수한다(용량 60, 방어력 전의 피해). 다 흡수하면 포탄이 사라지고, 모자라면 실드가 0이 되고 포탄은 남은 피해를 가지고 계속 날아간다(그다음 닿은 적에게 방어력 식을 적용). 3초 동안 맞지 않으면 초당 10씩 찬다. 에너지가 0이면 꺼진다 |
 
 A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리, 무기(쿨다운, 발사), 포탄(적분, 실드, 유닛, 지면 순으로 가장 먼저
 닿은 것), 죽음, 실드 회복, 끝 조건.
@@ -139,11 +140,13 @@ unit Crawler
 | 키 | 값 | 필수 | 범위 |
 |---|---|---|---|
 | `supply <정수>` | 양쪽의 공급 | 예, 한 번 | 1–100000 |
+| `seed <정수>` | 난수 시드(퍼짐). 같은 배치는 같은 결과 | 아니요, 한 번 | 0–4294967295, 기본값 1 |
 | `place <유닛 이름> <칸 x> <칸 행>` | 적 유닛 하나 | 하나 이상 | 이름은 `units.txt`에 있어야 한다. x 0–31, 행 34–47(적 구역). 칸마다 하나. 비용 합 ≤ `supply` |
 
 ```
 # autobattler/data/stage.txt: stage A's one stage
 supply 1000
+seed 1
 place Crawler 12 36
 place Crawler 14 36
 place Crawler 16 36
@@ -256,10 +259,10 @@ Shield 값은 B의 표를 따른다.
   비용 10/14, 지형지물 칸은 지날 수 없고 대각선으로 모서리를 자르지 않는다. 10틱마다 다시 만들며, 네 장을 틱에 나눠
   만든다. 지상만 치는 유닛(Crawler, Mortar)은 "지상 적만"을 따른다.
 - **발사:** 쿨다운이 끝나고 대상이 사거리 안에 있으면 쏜다. 직사(총탄)는 총구에서 대상 중심까지 지형지물이 없을 때만
-  쏜다. 포탄과 미사일은 그 검사가 없다. 리드 사격은 없다: 쏠 때 대상의 위치를 겨눈다.
+  쏜다. 포탄과 미사일은 그 검사가 없다. 포탄은 A처럼 리드 조준을 한다. 총탄과 미사일은 리드가 없다: 쏠 때 대상의 위치를 겨눈다.
 - **투사체:**
   - 총탄은 직선으로 날아가 사거리만큼 가면 사라진다.
-  - 포탄은 중력 9.8 m/s²로 날아가고, 발사각과 목표점(대상 위치 + 시드 난수 퍼짐)에서 초기 속도를 구한다.
+  - 포탄은 중력 9.8 m/s²로 날아가고, 발사각과 목표점(리드 조준으로 예측한 대상 위치 + 시드 난수 퍼짐)에서 초기 속도를 구한다.
   - 미사일은 대상을 향해 선회하고, 대상이 죽으면 마지막 위치로 간다.
   - 매 틱 이전 위치에서 지금 위치까지의 선분을 실드, 지형지물, 지면, 유닛 원기둥에 대해 검사하고 가장 먼저 닿은 것에서
     터진다. 쏜 유닛은 맞지 않는다.
@@ -413,7 +416,7 @@ typedef struct Battle {
     BattlePhase phase;
     BattleOutcome outcome;
     u32 tick;
-    u64 rng; // seeded at Start
+    u64 rng; // seeded at Start from the stage's seed
     Prop props[BATTLE_MAX_PROPS];
     u32 prop_count;
     u8 blocked[BATTLE_GRID_LENGTH][BATTLE_GRID_WIDTH]; // cells with a prop
@@ -532,9 +535,11 @@ A:
 - 정의 파일: 저장소의 `units.txt`와 `stage.txt`가 오류 없이 읽힌다; 주석, 빈 줄, CRLF; 각도가 라디안이 된다; 기본값; 오류마다
   (모르는 키, 중복 키, 빠진 필수 키, 값 개수, 범위, 탭, 같은 이름, 없는 유닛 이름, 적 구역 밖의 칸, 공급 초과) 실패하고 맞는 줄
   번호를 알린다; 오류가 여럿이면 모두 알린다.
-- 같은 배치와 시드로 두 번 돌리면 같은 해시.
+- 같은 배치와 시드로 두 번 돌리면 같은 해시. 시드가 다르면 퍼짐이 달라진다.
 - 규칙 장면 하나씩: 가장 가까운 적을 고른다; 포탄이 퍼짐 안에서 목표점 근처에 떨어진다(탄도 계산); 포탄이 처음 닿은 적 하나만
-  깎고 아군은 지나간다; 방어력 식; 실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 겹친 두 유닛이
+  깎고 아군은 지나간다; 리드 조준한 포탄이 곧게 움직이는 대상을 맞힌다; 빠르게 지나가는 포탄도 원기둥을 뚫지 않는다; 방어력 식;
+  실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 에너지가 모자라면 남은 피해만 지나간다
+  (에너지 10, 피해 30 → 유닛은 `max(20 - 5, 20 × 0.25)` = 15); 실드가 이웃을 노린 포탄도 막는다; 같은 틱에 양쪽이 전멸하면 무승부; 겹친 두 유닛이
   분리로 떨어진다; 한쪽이 전멸하면 끝난다; 60초에 끝나고 남은 가치로 판정한다.
 
 B:
@@ -607,15 +612,16 @@ A runs from start to end on these rules alone. The values are a starting point f
 
 | Topic | A |
 |---|---|
-| Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0 |
-| Deployment | One Crawler per cell. Each side has 1000 supply and a Crawler costs 100 (at most 10 per side). The enemy deployment is fixed in the stage |
+| Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0. Cell (x, row) is centered at ((x + 0.5) · 2, 0, (row + 0.5) · 2) m: the player's side is −Z, the enemy's +Z |
+| Deployment | One Crawler per cell. Each side has 1000 supply and a Crawler costs 100 (at most 10 per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
 | Units | One type, the Crawler, ground only. No size classes and no squads |
-| Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `cost × health / max health`) wins; equal is a draw |
-| Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index |
-| Movement | Steer straight at the target and stop once it is within 90% of the range. Overlapping units push each other apart (separation, all with the same weight), and stay inside the field. Finding nearby units and separating compare every pair directly (no spatial grid) |
-| Weapon | One. The one projectile kind is the shell: it flies a ballistic arc under 9.8 m/s² of gravity, with the launch velocity found from the launch angle and the aim point (the target's position when fired, plus seeded random spread) |
-| Damage | Single-target: a shell deals `max(damage - armor, damage × 0.25)` to the first **enemy** unit it touches and vanishes. It passes allies. On the ground it vanishes with no damage. Damage only adds up during a tick, and deaths are decided at its end |
+| Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `cost × health / max health`) wins; equal is a draw. Both sides wiped out on the same tick is a draw too |
+| Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index. Distance (for targeting and range alike) is between centers on the ground (XZ) |
+| Movement | Steer straight at the target and stop once it is within 90% of the range. Overlapping units push each other apart (separation, all with the same weight), and stay inside the field. Finding nearby units and separating compare every pair directly (no spatial grid). Turning is instant: a moving unit faces its velocity, a stopped one its target |
+| Weapon | One. It fires when its cooldown is over and its target is in range, moving or not; cooldowns start at 0. The one projectile kind is the shell: it flies a ballistic arc under 9.8 m/s² of gravity, with the launch velocity found from the launch angle and the aim point. The aim point is on the ground: **lead aiming** (the target's position at impact, predicted from its current velocity; flight time and prediction are solved in turn three times) plus spread (uniformly random within a circle of radius `spread`) |
+| Damage | A shell is a point; every tick the segment from its previous position to its current one is tested against units' upright cylinders (radius × height), so it cannot pass through. Single-target: a shell deals `max(damage - armor, damage × 0.25)` to the first **enemy** unit it touches and vanishes. It passes allies. On the ground it vanishes with no damage. Damage only adds up during a tick, and deaths are decided at its end |
 | Ability | One, Shield (below) |
+| Random numbers | The seed is fixed per stage (`seed` in `stage.txt`), so the same deployment always gives the same result |
 
 | Crawler (A) | Value |
 |---|---|
@@ -623,7 +629,7 @@ A runs from start to end on these rules alone. The values are a starting point f
 | Speed | 5 m/s |
 | Radius / height | 0.5 / 0.8 m |
 | Weapon, Lobber | Shell, range 20 m, damage 30, cooldown 1.5 s, launch angle 45°, spread 0.5 m |
-| Shield | A sphere of radius 1.2 m. It removes enemy shells that cross its boundary from outside and loses their damage as energy (capacity 60). After 3 seconds without hits it refills at 10 per second. At zero energy it is off |
+| Shield | A sphere of radius 1.2 m centered at half the unit's height. It absorbs the damage of enemy shells that cross its boundary from outside (also those aimed at another unit: it guards neighbors), up to its remaining energy (capacity 60; damage before armor). A shell fully absorbed vanishes; otherwise the shield drops to 0 and the shell flies on with the damage left (the armor formula applies to the next enemy it touches). After 3 seconds without hits it refills at 10 per second. At zero energy it is off |
 
 A's tick order: record previous positions, pick targets again, movement and separation, weapons (cooldowns, firing), shells
 (integration; the first of shield, unit or ground they touch), deaths, shield refill, end conditions.
@@ -709,11 +715,13 @@ unit Crawler
 | Key | Value | Required | Range |
 |---|---|---|---|
 | `supply <integer>` | Each side's supply | Yes, once | 1–100000 |
+| `seed <integer>` | The random seed (spread); the same deployment gives the same result | No, once | 0–4294967295, default 1 |
 | `place <unit name> <cell x> <cell row>` | One enemy unit | One or more | The name must be in `units.txt`. x 0–31, row 34–47 (the enemy zone). One per cell. Total cost ≤ `supply` |
 
 ```
 # autobattler/data/stage.txt: stage A's one stage
 supply 1000
+seed 1
 place Crawler 12 36
 place Crawler 14 36
 place Crawler 16 36
@@ -832,12 +840,12 @@ The size class sets the weight in separation (pushing): small 1, medium 4, large
   corners. Rebuilt every 10 ticks, the four fields spread over ticks. Units that hit only ground (Crawler, Mortar) follow
   "ground enemies only".
 - **Firing:** a weapon fires when its cooldown is over and its target is in range. Direct fire (bullets) fires only when no
-  prop lies between the muzzle and the target's center; shells and missiles skip that check. No leading: the weapon aims at
-  the target's position when it fires.
+  prop lies between the muzzle and the target's center; shells and missiles skip that check. Shells lead their aim as in A;
+  bullets and missiles do not, aiming at the target's position when they fire.
 - **Projectiles:**
   - Bullets fly straight and vanish after their range.
   - Shells fly under gravity (9.8 m/s²); the launch velocity comes from the launch angle and the aim point (the target's
-    position plus seeded random spread).
+    position predicted by lead aiming, plus seeded random spread).
   - Missiles turn toward their target, and toward its last position once it dies.
   - Every tick the segment from the previous position to the current one is tested against shields, props, the ground and
     unit cylinders, and the projectile hits the first thing it touches. A shooter is never hit by its own projectile.
@@ -997,7 +1005,7 @@ typedef struct Battle {
     BattlePhase phase;
     BattleOutcome outcome;
     u32 tick;
-    u64 rng; // seeded at Start
+    u64 rng; // seeded at Start from the stage's seed
     Prop props[BATTLE_MAX_PROPS];
     u32 prop_count;
     u8 blocked[BATTLE_GRID_LENGTH][BATTLE_GRID_WIDTH]; // cells with a prop
@@ -1121,10 +1129,12 @@ A:
   radians; defaults; each error (unknown key, repeated key, missing required key, value count, range, tab, a repeated name, an
   unknown unit name, a cell outside the enemy zone, supply exceeded) fails and reports the right line number; several errors are
   all reported.
-- The same deployment and seed run twice give the same hash.
+- The same deployment and seed run twice give the same hash; a different seed changes the spread.
 - One scene per rule: the nearest enemy is picked; a shell lands near its aim point, within the spread (the ballistic solve); a
-  shell hurts only the first enemy it touches and passes allies; the armor formula; a shield stops enemy shells until its energy
-  runs out, then lets them through, and refills when not hit; two overlapping units separate; the battle ends when a side is
+  shell hurts only the first enemy it touches and passes allies; a lead-aimed shell hits a target moving in a straight line; a fast shell does not pass
+  through a cylinder; the armor formula; a shield stops enemy shells until its energy runs out, then lets them through, and
+  refills when not hit; short of energy, only the damage left goes through (energy 10, damage 30 → the unit takes
+  `max(20 - 5, 20 × 0.25)` = 15); a shield stops shells aimed at a neighbor; both sides wiped out on one tick is a draw; two overlapping units separate; the battle ends when a side is
   wiped out; it ends at 60 seconds and is judged by remaining value.
 
 B:
