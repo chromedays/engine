@@ -35,7 +35,7 @@ typedef struct WeaponDef {
     f32 range, damage, cooldown; // meters, damage, seconds
     f32 launch_angle;            // radians
     f32 spread;                  // meters: the shell lands within this radius of its aim point
-    NvVec3 muzzle;               // in the unit's space: x to its right, y up, z forward
+    NvVec3 muzzle;               // in the unit's space: x to its right, y up, z forward (facing +Z, its right is -X)
 } WeaponDef;
 
 typedef enum AbilityKind { ABILITY_NONE, ABILITY_SHIELD } AbilityKind;

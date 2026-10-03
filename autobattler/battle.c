@@ -287,11 +287,13 @@ internal void fire_shell(Battle* battle, u32 unit_index)
     const WeaponDef* weapon = &battle->defs->units[unit->def].weapon;
     const Unit* target = &battle->units[unit->target.index];
 
+    // The unit's axes: forward (sin yaw, 0, cos yaw), up +Y, and right = forward x up = (-cos yaw, 0, sin yaw) (Y up and
+    // right-handed, so a unit facing +Z has its right toward -X).
     f32 sin_yaw = sinf(unit->yaw), cos_yaw = cosf(unit->yaw);
     NvVec3 muzzle = unit->position;
-    muzzle.x += cos_yaw * weapon->muzzle.x + sin_yaw * weapon->muzzle.z;
+    muzzle.x += -cos_yaw * weapon->muzzle.x + sin_yaw * weapon->muzzle.z;
     muzzle.y += weapon->muzzle.y;
-    muzzle.z += -sin_yaw * weapon->muzzle.x + cos_yaw * weapon->muzzle.z;
+    muzzle.z += sin_yaw * weapon->muzzle.x + cos_yaw * weapon->muzzle.z;
 
     // Lead the target: where it will be when the shell lands, from its velocity now. The landing spot depends on the
     // flight time and the flight time on the landing spot, so they are solved in turn.
@@ -320,7 +322,8 @@ internal void fire_shell(Battle* battle, u32 unit_index)
     Projectile* shell = &battle->projectiles[battle->projectile_count++];
     *shell = (Projectile){.team = unit->team, .shooter = {unit_index}, .position = muzzle, .previous_position = muzzle,
                           .velocity = velocity, .damage = weapon->damage};
-    NvVec3 direction = nv_vec3_normalize(velocity);
+    // No flight time (a muzzle at or below the ground right over its aim) leaves the shell still: it falls, and lands at once.
+    NvVec3 direction = time > 0.0f ? nv_vec3_normalize(velocity) : nv_vec3(0.0f, -1.0f, 0.0f);
     add_event(battle, BATTLE_EVENT_FIRE, unit, muzzle, direction, weapon->damage);
 }
 

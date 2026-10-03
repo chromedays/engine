@@ -200,6 +200,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_start(void)
 {
     nv_vfx_clear(&game_state.vfx);
     game_state.accumulator = 0.0f;
+    game_state.paused = false; // as the panel's Start does
     return game_state.defs_ok && battle_start(&game_state.battle);
 }
 

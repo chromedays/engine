@@ -93,6 +93,21 @@ internal void expect_error(b32 stage, const char* text, u32 count, u32 line, con
     }
 }
 
+// Whether `text` is whole UTF-8 characters: no lead byte without its continuation bytes, and no stray continuation byte.
+internal b32 valid_utf8(const char* text)
+{
+    for (const u8* p = (const u8*)text; *p;) {
+        u32 length = *p < 0x80 ? 1 : (*p >> 5) == 0x6 ? 2 : (*p >> 4) == 0xE ? 3 : (*p >> 3) == 0x1E ? 4 : 0;
+        if (!length)
+            return false;
+        for (u32 i = 1; i < length; ++i)
+            if ((p[i] & 0xC0) != 0x80)
+                return false;
+        p += length;
+    }
+    return true;
+}
+
 internal b32 log_has(const char* text)
 {
     for (u32 i = 0; i < nv_log_ring.count; ++i) {
@@ -271,6 +286,16 @@ internal void test_definition_errors(void)
     expect_error(true, "supply 250\nplace Crawler 1 34\nplace Crawler 2 34\nplace Crawler 3 34\nplace Crawler 4 34\n", 1, 4, "over the supply");
     expect_error(true, "place Crawler 1 34\nplace Crawler 2 34\nsupply 150\n", 1, 2, "over the supply");
     CHECK(read_text("supply 200\nplace Crawler 1 34\nplace Crawler 2 34\n", true)); // exactly the supply is fine
+
+    // A long token in a message is cut before a character, not inside one (Hangul is 3 bytes a syllable; 24 is not a
+    // multiple of 3 after the one ASCII byte), in the logged message and in first_error alike.
+    CHECK(!read_text("unit A\n  cost 1\n  health x\xEC\xB2\xB4\xEB\xA0\xA5\xEC\xB2\xB4\xEB\xA0\xA5\xEC\xB2\xB4\xEB\xA0\xA5"
+                     "\xEC\xB2\xB4\xEB\xA0\xA5\xEC\xB2\xB4\xEB\xA0\xA5\n", false));
+    CHECK(first_error_has("is not a number") && valid_utf8(defs.first_error));
+    CHECK(!read_text("x\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80\xEA\xB0\x80"
+                     "\xEA\xB0\x80\xEA\xB0\x80 1\n", false));
+    CHECK(first_error_has("unknown key") && valid_utf8(defs.first_error));
+    CHECK(valid_utf8(nv_log_text(nv_log_message(0))));
 }
 
 // Scenes. Two kinds of unit: 0 "Shooter" and 1 "Dummy", both 100 health, radius 0.5, height 0.8, standing still, with a
@@ -569,6 +594,41 @@ internal void test_weapon(void)
     run(70);
     CHECK(battle.units[2].health == 70.0f); // one 30 damage hit, no armor (the second shell, fired at tick 45, is still in the air)
     CHECK(events_of(BATTLE_EVENT_HIT) == 1);
+}
+
+// The muzzle is in the unit's space: x to its right. Facing +Z (the player's way) the right is -X; facing -Z, +X.
+internal void test_muzzle(void)
+{
+    scene_defs();
+    defs.units[0].weapon.range = 30.0f;
+    defs.units[0].weapon.muzzle = nv_vec3(0.5f, 0.6f, 0.3f);
+    scene_start(one_shooter, 1, one_dummy, 1);
+    put(1, 33.0f, 9.0f);
+    put(2, 33.0f, 24.0f);
+    run(1);
+    CHECK(events_of(BATTLE_EVENT_FIRE) == 1);
+    CHECK(near_value(battle.events[0].position.x, 32.5f, 1e-4f) && near_value(battle.events[0].position.z, 9.3f, 1e-4f));
+
+    u8 shooter_enemy[1] = {0};
+    scene_start(one_dummy, 1, shooter_enemy, 1);
+    put(1, 33.0f, 9.0f);
+    put(2, 33.0f, 24.0f);
+    run(1);
+    CHECK(events_of(BATTLE_EVENT_FIRE) == 1);
+    CHECK(near_value(battle.events[0].position.x, 33.5f, 1e-4f) && near_value(battle.events[0].position.z, 23.7f, 1e-4f));
+
+    // A muzzle under the ground leaves the shell no flight: it is fired still and lands at once, with no crash and no damage.
+    scene_defs();
+    defs.units[0].weapon.range = 30.0f;
+    defs.units[0].weapon.muzzle = nv_vec3(0.0f, -5.0f, 0.0f);
+    scene_start(one_shooter, 1, one_dummy, 1);
+    put(1, 33.0f, 9.0f);
+    put(2, 33.0f, 12.0f);
+    run(1);
+    CHECK(events_of(BATTLE_EVENT_FIRE) == 1 && battle.projectile_count == 0);
+    NvVec3 direction = battle.events[0].direction;
+    CHECK(isfinite(direction.x) && isfinite(direction.y) && isfinite(direction.z) && direction.y == -1.0f);
+    CHECK(battle.units[2].health == 100.0f);
 }
 
 internal void test_lead_aim(void)
@@ -919,6 +979,7 @@ int main(void)
     test_deployment();
     test_targets_and_movement();
     test_weapon();
+    test_muzzle();
     test_lead_aim();
     test_damage();
     test_shield();

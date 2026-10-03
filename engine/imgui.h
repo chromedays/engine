@@ -170,7 +170,8 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size);
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 
 // Copies `text` into `out`, cut and ended with "..." if it is wider than `room` pixels. The cut is the longest one that fits
-// (a binary search over the text's UTF-8 characters), never inside a character. Call between nv_imgui_new_frame and
+// (a binary search over the text's UTF-8 characters), never inside a character, and no longer than `capacity` - 1 bytes
+// with the "..." (`capacity` is at least 4). Call between nv_imgui_new_frame and
 // nv_imgui_render, since it measures with the UI font.
 void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 

@@ -1204,30 +1204,40 @@ b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
 
 void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
 {
+    NV_ASSERT(capacity >= 4); // room for "..." and the terminator
+    // The whole text, when it fits both the buffer and the room.
     umm length = strlen(text);
-    if (length >= capacity - 4)
-        length = capacity - 5;
-    memcpy(out, text, length);
-    out[length] = 0;
-    if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
-        return;
-    umm lo = 0, hi = length; // the longest prefix that fits is in [lo, hi)
+    if (length < capacity) {
+        memcpy(out, text, length + 1);
+        if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
+            return;
+    }
+    // Else the longest prefix of whole characters that fits with "..." after it, in the buffer and the room. Candidates are
+    // the characters' starts up to `limit`; the empty prefix is taken when nothing fits ("..." alone). Each candidate is
+    // written into `out` to be measured, which has room for it.
+    umm limit = nv_utf8_fit(text, (u32)(capacity - 4));
+    umm lo = 0, hi = limit + 1; // the answer is in [lo, hi): lo fits (or is the empty prefix), hi does not (or is past the limit)
     while (lo + 1 < hi) {
         umm mid = (lo + hi) / 2;
         while (mid > lo && ((u8)text[mid] & 0xC0) == 0x80)
-            --mid; // the start of a character
+            --mid; // back to the start of a character
         if (mid == lo) {
-            lo = hi - 1; // no character start between: stop
-            break;
+            // No character starts in (lo, middle]: try the first one after it, if it comes before hi.
+            mid = lo + 1;
+            while (mid < hi && ((u8)text[mid] & 0xC0) == 0x80)
+                ++mid;
+            if (mid >= hi)
+                break;
         }
-        char candidate[512];
-        snprintf(candidate, sizeof(candidate), "%.*s...", (int)mid, text);
-        if (igCalcTextSize(candidate, NULL, false, -1.0f).x <= room)
+        memcpy(out, text, mid);
+        memcpy(out + mid, "...", 4);
+        if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
             lo = mid;
         else
             hi = mid;
     }
-    snprintf(out, capacity, "%.*s...", (int)lo, text);
+    memcpy(out, text, lo);
+    memcpy(out + lo, "...", 4);
 }
 
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)

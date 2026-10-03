@@ -41,6 +41,7 @@ __attribute__((format(printf, 3, 4))) internal void report(Reader* reader, u32 l
     va_start(arguments, format);
     vsnprintf(message, sizeof(message), format, arguments);
     va_end(arguments);
+    nv_utf8_trim(message); // a long message is cut at the buffer's end, perhaps inside a character
 
     BattleDefs* defs = reader->defs;
     char full[sizeof(defs->first_error)];
@@ -57,6 +58,18 @@ __attribute__((format(printf, 3, 4))) internal void report(Reader* reader, u32 l
         nv_log(NV_LOG_ERROR, "battle", "%s", full);
     else if (defs->error_count == MAX_LOGGED_ERRORS + 1)
         nv_log(NV_LOG_ERROR, "battle", "more errors, not shown");
+}
+
+// How many bytes of a token a message shows: at most 24, cut before a character rather than inside it.
+internal int shown(Token token)
+{
+    u32 length = token.length;
+    if (length > 24) {
+        length = 24;
+        while (length > 0 && ((u8)token.text[length] & 0xC0) == 0x80)
+            --length;
+    }
+    return (int)length;
 }
 
 internal b32 token_is(Token token, const char* word)
@@ -138,11 +151,11 @@ internal b32 parse_number(Reader* reader, u32 line, Token token, b32 integer, f6
     }
     valid = valid && i == token.length && digits > 0;
     if (!valid) {
-        report(reader, line, "'%.*s' is not a number", (int)(token.length < 24 ? token.length : 24), token.text);
+        report(reader, line, "'%.*s' is not a number", shown(token), token.text);
         return false;
     }
     if (integer && has_point) {
-        report(reader, line, "'%.*s' is not an integer", (int)token.length, token.text);
+        report(reader, line, "'%.*s' is not an integer", shown(token), token.text);
         return false;
     }
     memcpy(buffer, token.text, token.length);
@@ -162,7 +175,7 @@ internal b32 parse_name(Reader* reader, u32 line, Token token, char destination[
     }
     if (!valid) {
         report(reader, line, "'%.*s' is not a name (letters, digits and _; at most %d bytes; not starting with a digit)",
-               (int)(token.length < 24 ? token.length : 24), token.text, BATTLE_NAME_SIZE - 1);
+               shown(token), token.text, BATTLE_NAME_SIZE - 1);
         return false;
     }
     memcpy(destination, token.text, token.length);
@@ -427,14 +440,14 @@ internal void read_unit_line(UnitsReader* reader, const Line* line, Block* block
             open_block(reader, BLOCK_SHIELD, line);
         } else {
             if (!token_is(line->tokens[1], "shield"))
-                report(base, line->number, "unknown ability '%.*s' (kinds: shield)", (int)line->tokens[1].length, line->tokens[1].text);
+                report(base, line->number, "unknown ability '%.*s' (kinds: shield)", shown(line->tokens[1]), line->tokens[1].text);
             open_block(reader, BLOCK_SKIP, line);
         }
         return;
     }
     const Field* field = find_field(unit_fields, FIELD_COUNT(unit_fields), key);
     if (!field)
-        report(base, line->number, "unknown key '%.*s'", (int)key.length, key.text);
+        report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
     else
         read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
 }
@@ -460,7 +473,7 @@ internal void read_units_line(UnitsReader* reader, const Line* line)
         if (token_is(key, "unit"))
             read_unit_header(reader, line);
         else
-            report(base, line->number, "unknown key '%.*s'", (int)key.length, key.text);
+            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
         break;
     case BLOCK_UNIT:
         read_unit_line(reader, line, block);
@@ -472,7 +485,7 @@ internal void read_units_line(UnitsReader* reader, const Line* line)
         void* data = block->kind == BLOCK_WEAPON ? (void*)&reader->unit.weapon : (void*)&reader->unit.ability;
         const Field* field = find_field(fields, count, key);
         if (!field)
-            report(base, line->number, "unknown key '%.*s'", (int)key.length, key.text);
+            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
         else
             read_field(base, line, field, (u32)(field - fields), data, &block->seen);
     } break;
@@ -524,7 +537,7 @@ internal void read_place(Reader* reader, const Line* line, u8 taken[BATTLE_ZONE_
     u32 def_index = 0;
     b32 ok = true;
     if (!find_unit(defs, line->tokens[1], &def_index)) {
-        report(reader, line->number, "unknown unit '%.*s'", (int)(line->tokens[1].length < 24 ? line->tokens[1].length : 24), line->tokens[1].text);
+        report(reader, line->number, "unknown unit '%.*s'", shown(line->tokens[1]), line->tokens[1].text);
         ok = false;
     }
     f64 x = 0, row = 0;
@@ -591,7 +604,7 @@ b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, u
         } else if (token_is(key, "place")) {
             read_place(&reader, &line, taken, place_lines);
         } else {
-            report(&reader, line.number, "unknown key '%.*s'", (int)key.length, key.text);
+            report(&reader, line.number, "unknown key '%.*s'", shown(key), key.text);
         }
     }
 
