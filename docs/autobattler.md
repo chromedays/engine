@@ -63,8 +63,8 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 
 ### 추천 순서
 
-1. **전투 프로토타입** (1, 2, 3, 4): 지금의 큐브와 디버그 라인으로 그린다. ctest 테스트로 같은 배치가 같은
-   결과 해시를 내는지 확인한다.
+1. **전투 프로토타입** (1, 2, 3, 4): 엔진의 기본 도형(`docs/specs/mesh.md`)과 디버그 라인으로 그린다. ctest 테스트로 같은 배치가 같은
+   결과 해시를 내는지 확인한다. A 단계(유닛 한 종류의 한 라운드)는 `autobattler/`에 구현되었다(`docs/specs/battle.md`); B 단계가 남아 있다.
 2. **라운드 루프와 AI** (5, 9, 10의 최소한): 게임이 재미있는지 여기서 판가름 난다.
 3. **대량 렌더링과 애니메이션** (6, 7): 유닛 약 1,000기와 투사체 5,000개의 스트레스 씬 워크로드로 측정한다.
 4. **연출** (8, 11, 15).
@@ -137,8 +137,9 @@ it?
 
 ### Suggested order
 
-1. **Battle prototype** (1, 2, 3, 4): drawn with today's cubes and debug lines. A ctest test checks
-   that the same deployment gives the same result hash.
+1. **Battle prototype** (1, 2, 3, 4): drawn with the engine's primitive shapes (`docs/specs/mesh.md`) and debug lines. A ctest test checks
+   that the same deployment gives the same result hash. Its stage A (one round with one unit type) is built in `autobattler/`
+   (`docs/specs/battle.md`); stage B is still to do.
 2. **Round loop and AI** (5, 9, the least of 10): this is where the game proves fun or not.
 3. **Mass rendering and animation** (6, 7): measured with a stress scene workload of about 1,000
    units and 5,000 projectiles.

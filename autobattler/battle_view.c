@@ -189,8 +189,8 @@ void view_build(Game* game)
     scene->active_camera = game->camera;
     // Above and behind the player's side (-Z), looking at the middle of the field, far enough to see all of it.
     game->orbit = (NvOrbitCamera){
-        .target = {FIELD_WIDTH * 0.5f, 0.0f, FIELD_LENGTH * 0.42f}, .yaw = NV_PI, .pitch = 60.0f * NV_PI / 180.0f,
-        .distance = 88.0f, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
+        .target = {FIELD_WIDTH * 0.5f, 0.0f, FIELD_LENGTH * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
+        .distance = 104.0f, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
         .min_distance = CAMERA_MIN_DISTANCE, .max_distance = CAMERA_MAX_DISTANCE};
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
@@ -489,22 +489,6 @@ void view_panel(Game* game)
         }
 
         igSeparator();
-        igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);
-        igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
-        igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
-        igText(T("Time: %.1f / %.0f s"), (f32)battle->tick * BATTLE_TICK_SECONDS, (f32)BATTLE_MAX_TICKS * BATTLE_TICK_SECONDS);
-
-        if (battle->phase == BATTLE_RESULT) {
-            const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};
-            igPushStyleColor_Vec4(ImGuiCol_Text, battle->outcome == OUTCOME_PLAYER ? (ImVec4_c){0.4f, 1.0f, 0.5f, 1.0f}
-                                                 : battle->outcome == OUTCOME_ENEMY ? (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f}
-                                                                                    : (ImVec4_c){1.0f, 0.9f, 0.4f, 1.0f});
-            igText("%s", outcomes[battle->outcome]);
-            igPopStyleColor(1);
-            igText(T("Value left: %.0f against %.0f"), battle_remaining_value(battle, TEAM_PLAYER), battle_remaining_value(battle, TEAM_ENEMY));
-        }
-        igSeparator();
-
         // The unit types: one button each, the chosen one lit.
         igBeginDisabled(battle->phase != BATTLE_DEPLOY);
         for (u32 i = 0; i < battle->defs->unit_count; ++i) {
@@ -543,6 +527,21 @@ void view_panel(Game* game)
             battle_clear_placement(battle);
         }
 
+        igSeparator();
+        igText(T("Supply: %u / %u"), battle_supply_left(battle), battle->defs->supply);
+        igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
+        igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
+        igText(T("Time: %.1f / %.0f s"), (f32)battle->tick * BATTLE_TICK_SECONDS, (f32)BATTLE_MAX_TICKS * BATTLE_TICK_SECONDS);
+
+        if (battle->phase == BATTLE_RESULT) {
+            const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};
+            igPushStyleColor_Vec4(ImGuiCol_Text, battle->outcome == OUTCOME_PLAYER ? (ImVec4_c){0.4f, 1.0f, 0.5f, 1.0f}
+                                                 : battle->outcome == OUTCOME_ENEMY ? (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f}
+                                                                                    : (ImVec4_c){1.0f, 0.9f, 0.4f, 1.0f});
+            igText("%s", outcomes[battle->outcome]);
+            igPopStyleColor(1);
+            igText(T("Value left: %.0f against %.0f"), battle_remaining_value(battle, TEAM_PLAYER), battle_remaining_value(battle, TEAM_ENEMY));
+        }
         igSeparator();
         igTextWrapped("%s", T("Tap a cell of your zone (blue) to place the chosen unit; tap a placed unit to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
     }

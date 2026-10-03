@@ -36,6 +36,9 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), app.h (shared state)
+autobattler/               the auto-battler, a second executable with its own page (docs/specs/battle.md): battle.c/.h (the rules and
+                           the 30 Hz tick; no GPU), defs.c (reads data/units.txt and stage.txt), main.c (window, frame loop),
+                           battle_view.c (drawing, deployment input, the Battle panel), game.h (its state), strings.c (its Korean table)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
@@ -52,7 +55,7 @@ Where code goes: `engine/` holds what any app would need (rendering, GPU, window
 animation, chunks, storage, log, ImGui's platform glue) and never refers to `App`; `app/` holds what
 only this editor needs (its scenes, panels, search, shortcuts, saved state, undo, strings). Ask "would
 another app use this?": yes goes in the engine, no in the app. Dependencies point one way, `app` to
-`engine`.
+`engine`; `autobattler/` is a second app on the same terms and uses nothing from `app/`.
 
 ## Build and run
 
@@ -255,13 +258,23 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model; call `nv_anim_init`
   first.
-- There is one executable, `app`. Its assets are packaged with
-  `nv_setup_executable(app ROOT ASSETS <dir>)` (the whole `assets/` directory) and read from `/assets/...` with `fopen`. CI installs
-  the Release build to `release/` and the Debug build to `debug/` on Pages (the site root has
-  nothing); every other pushed branch publishes only its Debug build to `<branch>/` (`/` becomes
-  `-`). Builds are staged in the `gh-pages` branch (one commit, rewritten by CI) and deployed by
-  `.github/workflows/pages.yml`. Debug builds keep their DWARF in `app.debug.wasm`, which only browser developer tools
-  download.
+- There are two executables, `app` (the editor) and `autobattler` (`docs/specs/battle.md`), each with its own page.
+  `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])` packs the files a program reads
+  into `<target>.data`, read with `fopen`: `app` takes the whole `assets/` directory (`ASSETS`, at `/assets`), `autobattler` only the
+  font folder and its `data/` (`PRELOAD`), and its own install `COMPONENT`. CI installs the editor's Release build to `release/` and
+  Debug build to `debug/` on Pages (the site root has nothing), and the auto-battler's to `autobattler/release/` and
+  `autobattler/debug/`; every other pushed branch publishes only its Debug builds, to `<branch>/` and `autobattler/<branch>/` (`/`
+  becomes `-`; a branch named `release`, `debug` or `autobattler` is not published). Builds are staged in the `gh-pages` branch (one
+  commit, rewritten by CI) and deployed by `.github/workflows/pages.yml`. Debug builds keep their DWARF in `<target>.debug.wasm`,
+  which only browser developer tools download.
+- The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
+  rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
+  `battle_remove`, `battle_start` and `battle_retry`. Units, weapons and the stage are the text files in `autobattler/data/`, read by
+  `defs.c` (a bad file blocks Start and is reported with its line); a new key goes in `defs.c`'s field tables and the spec's. Its
+  viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
+  `autobattler/strings.c`, like the app's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
+  `_battle_debug_run`, `_battle_debug_layout` and `_battle_debug_project` for tests. A touch on a panel widget takes a few frames to
+  count as a tap: tests that touch buttons wait about two seconds.
 
 ## Assets
 
@@ -288,7 +301,8 @@ There is no physical display in cloud sessions. Headless Chromium renders WebGPU
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
-`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds); `battle_test` reads the
+auto-battler's `autobattler/data/` directly.
 Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can

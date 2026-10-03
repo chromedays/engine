@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: A의 1단계(시뮬레이션과 정의 파일)와 2단계(실행 파일) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔.
+상태: A의 1~3단계(시뮬레이션과 정의 파일, 실행 파일, 확인과 문서) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔.
 
 ### 목표
 
@@ -509,7 +509,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
   탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(에디터 앱처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
   내려받은 양, 커밋 제목)은 에디터 앱의 것을 줄인 것이다(배지 없음).
-- **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 60°, 거리 88 m) 전장 가운데를 본다. 왼쪽 드래그나 한 손가락은 땅 위로
+- **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 62°, 거리 104 m) 전장 전체가 보이게 본다. 왼쪽 드래그나 한 손가락은 땅 위로
   화면을 옮기고(손가락을 따라가고, 목표는 전장 안으로 제한), 오른쪽이나 가운데 버튼 드래그와 두 손가락은 돌리고, 휠과 핀치는
   확대한다(거리 15–140 m, 피치 20°–85°).
 - **그리기:**
@@ -524,8 +524,8 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
     이벤트와 포탄 구간은 틱마다(한 프레임에 틱이 여럿 돌아도) 처리하고 이벤트 목록을 비운다.
 - **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
   미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
-- **Battle 패널:** 단계, 언어 콤보, 남은 공급, 팀별 살아 있는 유닛, 시간, (결과 단계에서) 결과와 남은 가치, 유닛 종류 버튼(이름과
-  비용; 고른 것이 밝다), Start, Retry, Reset, 짧은 도움말. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 남은 공급, 팀별
+  살아 있는 유닛, 시간, (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
   공급, 9 정의 읽기 성공, 10 고른 유닛 종류), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
@@ -579,15 +579,20 @@ B:
 
 A부터 `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다(ctest 명령에 `autobattler` 폴더를 더한다).
 
-Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다): `autobattler/` 페이지를 열고, 배치를 탭으로 놓고 지우고, Start에서 결과까지 가고,
-assert와 WebGPU 오류가 없는지 본다.
+Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): `autobattler/` 페이지를
+열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 놓고 지운다;
+플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10기) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
+확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 패널의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
+놓을 수 없다; 라운드가 결과로 끝난다; Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
+아무것도 하지 않는다; 좁은 창은 패널을 아래로 옮긴다; 콘솔에 오류와 경고가 없고 assert로 멈추지 않는다. Release에서는 디버그 내보내기가
+없으므로 같은 흐름을 눈으로(화면 그림) 본다. 폰 크기에서 패널 위젯을 터치하면 탭으로 알려지기까지 몇 프레임이 걸리므로 약 2초를 기다린다.
 
 ### 단계
 
 0. **선행 (끝남):** `docs/specs/shared.md`(문자열, 메시, 해상도와 탭, 카메라, 글꼴, 버전, 도우미를 엔진으로).
 1. **A 시뮬레이션 (끝남):** 정의 파일(`autobattler/data/`)과 그 파서(`defs.c`), `battle.c`, `battle_test.c`의 A 항목. 화면 없음.
 2. **A 실행 파일 (끝남):** `autobattler/main.c`, 카메라, 그리기, 이펙트, Battle 패널과 그 한국어 표(`autobattler/strings.c`), 배치 입력, CMake와 CI 배포.
-3. **A 확인과 문서:** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`(지금은 "실행 파일은 `app` 하나")와 `autobattler.md` 갱신.
+3. **A 확인과 문서 (끝남):** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
 4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 분대, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
    Jump, 공간 격자), 더한 글자의 한국어 행, B 테스트.
@@ -608,7 +613,7 @@ assert와 WebGPU 오류가 없는지 본다.
 
 ## English
 
-Status: A's phase 1 (the simulation and the definition files) and phase 2 (the executable) built (2026-10-03), the rest a draft. Split into two stages, A and B.
+Status: A's phases 1 to 3 (the simulation and the definition files, the executable, checks and docs) built (2026-10-03), the rest a draft. Split into two stages, A and B.
 
 ### Goal
 
@@ -1135,7 +1140,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
   half of it on a touch screen (as in the editor app). The build label in the corner (build type, commit, what was downloaded,
   the commit's subject) is a shortened version of the editor app's (no badge).
-- **Camera:** an angled view from above and behind the player's side (-Z) at 60° pitch and 88 m, looking at the middle of the field. A
+- **Camera:** an angled view from above and behind the player's side (-Z) at 62° pitch and 104 m, so that all of the field is in view. A
   left drag or one finger moves the view over the ground (it follows the finger; the target is kept inside the field), a right or middle
   drag or two fingers turn it, the wheel and pinch zoom (15 to 140 m, pitch 20° to 85°).
 - **Drawing:**
@@ -1154,8 +1159,9 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 - **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
   preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
   The same on desktop and phone. Only while deploying.
-- **Battle panel:** the phase, a language combo, remaining supply, living units per team, the time, (in the result phase) the result and
-  the value left, a button per unit type (name and cost; the chosen one is lit), Start, Retry, Reset, a short help text. When the
+- **Battle panel:** top to bottom: the phase, a language combo, a button per unit type (name and cost; the chosen one is lit), Start,
+  Retry, Reset, remaining supply, living units per team, the time, (in the result phase) the result and the value left, a short help
+  text. The buttons stay where they are as the phase changes. When the
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
@@ -1212,8 +1218,15 @@ B:
 
 From A on, `tests/strings_test.mjs` checks `autobattler/`'s strings too (the ctest command gets the `autobattler` folder).
 
-Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B): open the `autobattler/` page, place and remove squads by tapping, go
-from Start to a result, and check for no asserts and no WebGPU errors.
+Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B; run by hand, the script is not in the repository): open the
+`autobattler/` page and check: the definition files are read and the enemy is placed; the panel is right of the viewport on desktop and
+under it on a phone; taps place and remove units; taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
+runs out (10 units) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
+after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the round ends in a result;
+Retry goes back to the same placement and the same placement gives the same hash; Reset clears the placement and Start with none does
+nothing; a narrow window moves the panel under the viewport; no console errors or warnings and no assert stops it. The Release build has
+no debug exports, so the same flow is checked by eye (a screenshot). On a phone-sized screen a touch on a panel widget takes a few frames
+to count as a tap, so the checks wait about two seconds.
 
 ### Phases
 
@@ -1223,7 +1236,7 @@ from Start to a result, and check for no asserts and no WebGPU errors.
    `battle_test.c`. No view.
 2. **A, executable (done):** `autobattler/main.c`, the camera, drawing, effects, the Battle panel and its Korean table (`autobattler/strings.c`),
    deployment input, CMake and the CI deployment.
-3. **A, checks and docs:** Playwright checks (the debug exports were already added in phase 2), updates to `AGENTS.md` (which now says "one executable, `app`") and
+3. **A, checks and docs (done):** Playwright checks (the debug exports were already added in phase 2), updates to `AGENTS.md` and
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
 4. **B:** the rest of "Stage B rules" (five unit types, air, squads, several weapons, bullets and missiles, area damage and
    friendly fire, props, cover, flow fields, Jump, the spatial grid), Korean rows for the added text, B's tests.
