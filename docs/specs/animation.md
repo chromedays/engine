@@ -73,7 +73,7 @@ Swim_Fwd_Loop, Swim_Idle_Loop, Sword_Attack, Sword_Idle, Walk_Formal_Loop, Walk_
 
 새 모듈 세 개. cgltf는 C 쪽에, ozz는 C++ 래퍼 안에 머물고, 둘은 단순한 C 구조체로 만난다.
 
-#### `nv/renderer.h` (C)
+#### `engine/renderer.h` (C)
 
 지금 `examples/scene`에 있는 메시, 머티리얼, 그리기 코드를 엔진으로 옮긴다. glTF 로딩이 두 번째 사용처가
 되었기 때문이다.
@@ -85,14 +85,14 @@ Swim_Fwd_Loop, Swim_Idle_Loop, Sword_Attack, Sword_Idle, Walk_Formal_Loop, Walk_
 - 객체별 데이터 (모델 행렬, 머티리얼, 관절 행렬의 오프셋)는 스토리지 버퍼 하나에, 모든 캐릭터의 스키닝
   행렬은 다른 버퍼 하나에 이어 붙여 프레임마다 한 번 올린다.
 
-#### `nv/gltf.h` (C, cgltf)
+#### `engine/gltf.h` (C, cgltf)
 
 - 메시, 머티리얼, 텍스처를 렌더러로 불러온다.
 - 캐릭터마다 루트 씬 노드 하나를 만든다. 관절은 씬 노드가 아니다. ozz 스켈레톤이 소유한다.
 - 스킨(관절 목록, inverse bind 행렬)을 읽어 스켈레톤용 `NvJointDesc`를 채운다.
 - 클립 파일에서 클립을 읽어 `NvTrackDesc`를 채우고, glTF 채널을 이름으로 스켈레톤 관절에 맞춘다.
 
-#### `nv/anim.h` (C API) + `engine/src/anim.cpp` (ozz 래퍼, C++)
+#### `engine/anim.h` (C API) + `engine/anim.cpp` (ozz 래퍼, C++)
 
 ```c
 #define NV_MAX_SKELETONS   8
@@ -171,7 +171,7 @@ s32  nv_anim_find_joint(NvSkeletonId skeleton, const char* name);        // for 
 
 ### 단계
 
-1. **렌더러와 정적 glTF.** `nv/renderer.h`를 뽑아내고, `examples/scene`을 그 위로 옮기고, cgltf로 캐릭터를
+1. **렌더러와 정적 glTF.** `engine/renderer.h`를 뽑아내고, `examples/scene`을 그 위로 옮기고, cgltf로 캐릭터를
    불러 bind 포즈로 그린다.
 2. **ozz 래퍼와 스키닝.** 스켈레톤과 클립을 만들고, 클립 하나를 재생하고, GPU에서 스키닝한다. 캐릭터가
    걷는다.
@@ -282,7 +282,7 @@ rebuilt; the tool itself is not added to the repository, the build or CI.
 Three new modules. cgltf stays on the C side, ozz stays inside the C++ wrapper, and the two meet
 through plain C structs.
 
-#### `nv/renderer.h` (C)
+#### `engine/renderer.h` (C)
 
 The mesh, material and draw code that lives in `examples/scene` today moves into the engine, now
 that glTF loading is a second user of it.
@@ -294,7 +294,7 @@ that glTF loading is a second user of it.
 - Per-object data (model matrix, material, offset of its joint matrices) in one storage buffer;
   every character's skinning matrices concatenated in another, uploaded once per frame.
 
-#### `nv/gltf.h` (C, cgltf)
+#### `engine/gltf.h` (C, cgltf)
 
 - Loads meshes, materials and textures into the renderer.
 - Creates a root scene node per character. Joints are not scene nodes; the ozz skeleton owns them.
@@ -302,7 +302,7 @@ that glTF loading is a second user of it.
 - Reads clips from a clip file and fills `NvTrackDesc`s, matching glTF channels to skeleton joints
   by name.
 
-#### `nv/anim.h` (C API) + `engine/src/anim.cpp` (ozz wrapper, C++)
+#### `engine/anim.h` (C API) + `engine/anim.cpp` (ozz wrapper, C++)
 
 ```c
 #define NV_MAX_SKELETONS   8
@@ -383,7 +383,7 @@ downloads before `main` runs.
 
 ### Phases
 
-1. **Renderer and static glTF.** Extract `nv/renderer.h`, move `examples/scene` onto it, load the
+1. **Renderer and static glTF.** Extract `engine/renderer.h`, move `examples/scene` onto it, load the
    character with cgltf and draw it in its bind pose.
 2. **ozz wrapper and skinning.** Build the skeleton and clips, play one clip, skin on the GPU. The
    character walks.

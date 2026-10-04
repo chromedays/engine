@@ -43,7 +43,7 @@
 
 ### 엔진 변경
 
-- **입력 라우팅 (`nv/imgui.h`).** 지금은 `view_rect`에서 시작하는 모든 누름이 `NvImgui.view`로 가므로 ImGui는
+- **입력 라우팅 (`engine/imgui.h`).** 지금은 `view_rect`에서 시작하는 모든 누름이 `NvImgui.view`로 가므로 ImGui는
   그것을 보지 못한다. 새 훅 `NvImgui.view_grab`은 앱이 설정하는 함수다.
   - 뷰포트에서 왼쪽 누름이나 한 손가락 터치는 ImGui의 마우스를 그리로 옮기고 두 프레임 기다린다. 터치에는
     hover가 없으므로, ImGuizmo는 마우스가 거기 있는 채로 한 프레임이 돈 뒤에야 손가락 아래에 무엇이 있는지
@@ -51,9 +51,9 @@
   - 그다음 훅이 결정한다 (앱이 ImGuizmo의 `IsOver`를 부른다). 예: 누름은 눌린 곳에서부터 ImGui 왼쪽 버튼이
     되고, 뷰가 모은 것은 버린다. 아니요: 뷰가 그것을 적용한다, 기다리는 동안 놓인 탭도 포함해서.
   - 두 번째 손가락은 항상 누름을 뷰에 둔다 (핀치와 팬).
-- **렌더러 (`nv/renderer.h`).** `nv_renderer_camera_matrices`는 `nv_renderer_draw`가 쓰는 대로 활성 카메라의
+- **렌더러 (`engine/renderer.h`).** `nv_renderer_camera_matrices`는 `nv_renderer_draw`가 쓰는 대로 활성 카메라의
   뷰와 투영 행렬을 준다.
-- **수학 (`nv/math.h`).** `nv_mat4_decompose`와 `nv_mat4_inverse`는 이미 있다. `nv_mat4_decompose`는 이제
+- **수학 (`engine/math.h`).** `nv_mat4_decompose`와 `nv_mat4_inverse`는 이미 있다. `nv_mat4_decompose`는 이제
   쿼터니언을 정규화한다. 그렇지 않으면 드래그의 매 프레임 노드를 나누고 다시 만드는 동안 표류한다: 회전과
   크기가 매 프레임 조금씩 줄어들었다.
 - **빌드.** cimguizmo는 cimgui처럼 가져와 `cimgui` 라이브러리 안에 빌드하므로, 그 라이브러리의 ImGui
@@ -118,7 +118,7 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 
 ### Engine changes
 
-- **Input routing (`nv/imgui.h`).** Today every press that starts in `view_rect` goes to
+- **Input routing (`engine/imgui.h`).** Today every press that starts in `view_rect` goes to
   `NvImgui.view`, so ImGui never sees it. A new hook, `NvImgui.view_grab`, is a function that the
   app sets.
   - A left press or a one-finger touch in the viewport moves ImGui's mouse there and waits two
@@ -128,9 +128,9 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
     left button from where it went down, and what the view gathered is dropped. No: the view
     applies it, including a tap that was released while waiting.
   - A second finger always keeps the press in the view (pinch and pan).
-- **Renderer (`nv/renderer.h`).** `nv_renderer_camera_matrices` gives the active camera's view and
+- **Renderer (`engine/renderer.h`).** `nv_renderer_camera_matrices` gives the active camera's view and
   projection matrices, as `nv_renderer_draw` uses them.
-- **Math (`nv/math.h`).** `nv_mat4_decompose` and `nv_mat4_inverse` already exist.
+- **Math (`engine/math.h`).** `nv_mat4_decompose` and `nv_mat4_inverse` already exist.
   `nv_mat4_decompose` now normalizes its quaternion. Otherwise splitting and rebuilding the node
   every frame of a drag drifts: the rotation and scale shrank a little more each frame.
 - **Build.** cimguizmo is fetched like cimgui and built into the `cimgui` library, so it shares

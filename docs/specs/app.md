@@ -107,11 +107,11 @@
 
 ### 엔진 API 변경
 
-- **`nv/scene.h`**
+- **`engine/scene.h`**
   - `NvJointAttach { NvAnimatorId animator; u32 joint; NvMat4 joint_model; }`와 `NvNode.attach`.
   - 부착된 노드의 부모는 그 애니메이터의 owner여야 한다. `nv_scene_update`는
     `world = parent.world × attach.joint_model × local`을 계산한다. `scene.c`의 다른 것은 바뀌지 않는다.
-- **`nv/anim.h`**
+- **`engine/anim.h`**
   - `NvAnimator.owner` (`NvNodeId`)와 `NvLookAt.target_node` (`NvNodeId`).
   - `nv_anim_create_animator(skeleton, owner)`가 `nv_anim_create_animator(skeleton)`을 대신한다.
   - `nv_anim_update_scene(NvScene* scene, f32 dt)`. 애니메이터마다:
@@ -123,7 +123,7 @@
   - `nv_anim_update`는 씬을 쓰지 않는 호출자를 위해 남는다.
   - `nv_anim_clip_skeleton(NvClipId)`과 `nv_anim_clip_count()`: 앱이 자체 테이블을 두지 않고도 UI가
     스켈레톤의 클립을 나열할 수 있게.
-- **`nv/gltf.h`**
+- **`engine/gltf.h`**
   - `NvGltfModel.skeleton`과 `NvGltfModel.animator`. 파일에 스킨이 있으면 로더가 둘 다 만들고, `owner`를
     모델 루트로 정하고, 모든 skinned 메시 노드에 `animator`를 설정한다.
 
@@ -280,12 +280,12 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 
 ### Engine API changes
 
-- **`nv/scene.h`**
+- **`engine/scene.h`**
   - `NvJointAttach { NvAnimatorId animator; u32 joint; NvMat4 joint_model; }` and
     `NvNode.attach`.
   - An attached node's parent should be its animator's owner. `nv_scene_update` computes
     `world = parent.world × attach.joint_model × local`. Nothing else in `scene.c` changes.
-- **`nv/anim.h`**
+- **`engine/anim.h`**
   - `NvAnimator.owner` (`NvNodeId`) and `NvLookAt.target_node` (`NvNodeId`).
   - `nv_anim_create_animator(skeleton, owner)` replaces `nv_anim_create_animator(skeleton)`.
   - `nv_anim_update_scene(NvScene* scene, f32 dt)`. For every animator:
@@ -297,7 +297,7 @@ scene, so the app no longer moves nodes by hand to follow the animation.
   - `nv_anim_update` stays for callers that do not use a scene.
   - `nv_anim_clip_skeleton(NvClipId)` and `nv_anim_clip_count()`, so UI can list a skeleton's
     clips without the app keeping its own table.
-- **`nv/gltf.h`**
+- **`engine/gltf.h`**
   - `NvGltfModel.skeleton` and `NvGltfModel.animator`. When the file has a skin, the loader
     creates both, with `owner` set to the model root, and sets `animator` on every skinned mesh
     node.

@@ -1,0 +1,1410 @@
+#include "engine/imgui.h"
+#include "engine/file.h"
+#include "engine/log.h"
+#include "engine/math.h"
+#include "engine/window.h"
+
+#include <emscripten/emscripten.h>
+#include <emscripten/html5.h>
+
+#include <float.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
+// NOTE: imgui.h spells this as a macro that cimgui does not carry over.
+#define IMGUI_RESET_RENDER_STATE ((ImDrawCallback)(intptr_t)-8)
+
+// Vertex colors are authored in sRGB, but the canvas view is sRGB-encoding, so they are
+// linearized here to avoid applying the curve twice.
+global const char* imgui_shader =
+    "struct Uniforms {\n"
+    "    mvp: mat4x4f,\n"
+    "};\n"
+    "@group(0) @binding(0) var<uniform> u: Uniforms;\n"
+    "@group(0) @binding(1) var s: sampler;\n"
+    "@group(0) @binding(2) var t: texture_2d<f32>;\n"
+    "\n"
+    "struct VsIn {\n"
+    "    @location(0) pos: vec2f,\n"
+    "    @location(1) uv: vec2f,\n"
+    "    @location(2) col: vec4f,\n"
+    "};\n"
+    "struct VsOut {\n"
+    "    @builtin(position) pos: vec4f,\n"
+    "    @location(0) uv: vec2f,\n"
+    "    @location(1) col: vec4f,\n"
+    "};\n"
+    "\n"
+    "@vertex\n"
+    "fn vs_main(in: VsIn) -> VsOut {\n"
+    "    var out: VsOut;\n"
+    "    out.pos = u.mvp * vec4f(in.pos, 0.0, 1.0);\n"
+    "    out.uv = in.uv;\n"
+    "    out.col = vec4f(pow(in.col.rgb, vec3f(2.2)), in.col.a);\n"
+    "    return out;\n"
+    "}\n"
+    "\n"
+    "@fragment\n"
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
+    "    return in.col * textureSample(t, s, in.uv);\n"
+    "}\n";
+
+//
+// Browser glue
+//
+
+// NOTE: Phones only show their on-screen keyboard for a focused text field, and a canvas is not
+// one. A hidden <input> (the "text agent") takes focus while ImGui edits text; what the keyboard
+// types arrives as input events and is forwarded to ImGui. The agent always holds one sentinel
+// space, so a Backspace on an otherwise empty field is still visible as a shorter value.
+EM_JS_DEPS(nv_imgui, "$stringToUTF8,$UTF8ToString");
+
+EM_JS(void, js_setup_text_agent, (char* clipboard, int clipboard_size), {
+    const agent = document.createElement("input");
+    agent.id = "nv-text-agent";
+    agent.type = "text";
+    agent.setAttribute("autocomplete", "off");
+    agent.setAttribute("autocapitalize", "off");
+    agent.setAttribute("autocorrect", "off");
+    agent.spellcheck = false;
+    // 16px keeps iOS from zooming the page when the field gains focus.
+    agent.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;border:0;" +
+                          "padding:0;font-size:16px;pointer-events:none;";
+    document.body.appendChild(agent);
+    // The browser draws a composing syllable with its own highlight: keep it readable, no focus ring.
+    const css = document.createElement("style");
+    css.textContent = "#nv-text-agent{outline:none;caret-color:transparent}" +
+                      "#nv-text-agent::selection{background:#ffd54a;color:#111}";
+    document.head.appendChild(css);
+
+    const reset = () => { agent.value = " "; agent.setSelectionRange(1, 1); };
+    const flush = () => {
+        const value = agent.value;
+        if (value.length < 1) {
+            _nv_imgui_js_backspace();
+        } else {
+            for (const ch of value.slice(1)) _nv_imgui_js_char(ch.codePointAt(0));
+        }
+        reset();
+    };
+    // While an input method composes a syllable, the agent shows it at the text caret, drawn by
+    // the browser (ImGui has no pre-edit text); the method's candidate window follows it too.
+    let composing = false;
+    let lineHeight = 16;
+    const showComposition = (on) => {
+        const style = agent.style;
+        style.opacity = on ? "1" : "0";
+        style.color = "#111";
+        style.background = on ? "#f2f2f2" : "transparent";
+        style.height = on ? lineHeight + "px" : "1px";
+        style.width = on ? Math.max(lineHeight, agent.value.length * lineHeight) + "px" : "1px";
+        style.fontSize = on ? Math.max(12, Math.round(lineHeight * 0.85)) + "px" : "16px";
+        style.zIndex = on ? "10" : "";
+    };
+    agent.addEventListener("focus", reset);
+    agent.addEventListener("compositionstart", () => { composing = true; showComposition(true); });
+    agent.addEventListener("compositionupdate", () => showComposition(true));
+    agent.addEventListener("compositionend", () => { composing = false; showComposition(false); flush(); });
+    agent.addEventListener("input", (event) => {
+        // A browser undo or redo on the agent's own value is not typing.
+        if (event.inputType && event.inputType.startsWith("history")) { reset(); return; }
+        if (!composing) flush();
+        else showComposition(true);
+    });
+    Module.nvImeMove = (x, y, height) => {
+        lineHeight = Math.max(10, height);
+        agent.style.left = Math.round(x) + "px";
+        agent.style.top = Math.round(y) + "px";
+        if (composing) showComposition(true);
+    };
+
+    // Keyboard pastes land here; pastes into the agent (long-press menu) arrive as input instead.
+    window.addEventListener("paste", (event) => {
+        if (event.target === agent) return;
+        const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+        stringToUTF8(text, clipboard, clipboard_size);
+        event.preventDefault();
+        _nv_imgui_js_paste();
+    });
+});
+
+EM_JS(void, js_ime_move, (float x, float y, float height), {
+    if (Module.nvImeMove) Module.nvImeMove(x, y, height);
+});
+
+EM_JS(int, js_text_agent_focused, (void), {
+    return document.activeElement === document.getElementById("nv-text-agent") ? 1 : 0;
+});
+
+EM_JS(void, js_focus_text_agent, (int focus), {
+    const agent = document.getElementById("nv-text-agent");
+    if (focus) agent.focus({preventScroll: true});
+    else agent.blur();
+});
+
+EM_JS(void, js_write_clipboard, (const char* text), {
+    if (navigator.clipboard) navigator.clipboard.writeText(UTF8ToString(text)).catch(() => {});
+});
+
+// The canvas's pointer follows the cursor ImGui asks for (a resize cursor over a splitter). The
+// page sets it only when it changes.
+EM_JS(void, js_set_cursor, (const char* name), {
+    const canvas = document.getElementById("canvas");
+    const cursor = UTF8ToString(name);
+    if (canvas && canvas.style.cursor !== cursor)
+        canvas.style.cursor = cursor;
+});
+
+EM_JS(int, js_touch_is_primary, (void), {
+    return matchMedia("(pointer: coarse)").matches ? 1 : 0;
+});
+
+// Entry points for the JavaScript above; not part of the public API.
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_char(u32 codepoint)
+{
+    ImGuiIO_AddInputCharacter(igGetIO_Nil(), codepoint);
+}
+
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_backspace(void)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_Backspace, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_Backspace, 0);
+}
+
+// The pasted text is already in the clipboard buffer; replaying Ctrl+V makes ImGui read it.
+EMSCRIPTEN_KEEPALIVE void nv_imgui_js_paste(void)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_V, 1);
+    ImGuiIO_AddKeyEvent(io, ImGuiKey_V, 0);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, 0);
+}
+
+internal const char* get_clipboard(ImGuiContext* context)
+{
+    (void)context;
+    NvImgui* imgui = igGetPlatformIO_Nil()->Platform_ClipboardUserData;
+    return imgui->clipboard;
+}
+
+internal void set_clipboard(ImGuiContext* context, const char* text)
+{
+    (void)context;
+    NvImgui* imgui = igGetPlatformIO_Nil()->Platform_ClipboardUserData;
+    umm length = strlen(text);
+    if (length > NV_IMGUI_CLIPBOARD_SIZE - 1)
+        length = NV_IMGUI_CLIPBOARD_SIZE - 1;
+    memcpy(imgui->clipboard, text, length);
+    imgui->clipboard[length] = 0;
+    // NOTE: Best effort: browsers may refuse writes that are not close to a user gesture.
+    js_write_clipboard(imgui->clipboard);
+}
+
+//
+// Input
+//
+
+// NOTE: Mouse and touch positions use the page's client coordinates, which equal canvas
+// coordinates because the page pins the canvas to the top-left corner of the viewport.
+
+typedef struct KeyName {
+    const char* code;
+    ImGuiKey key;
+} KeyName;
+
+global const KeyName named_keys[] = {
+    {"Tab", ImGuiKey_Tab},
+    {"ArrowLeft", ImGuiKey_LeftArrow},
+    {"ArrowRight", ImGuiKey_RightArrow},
+    {"ArrowUp", ImGuiKey_UpArrow},
+    {"ArrowDown", ImGuiKey_DownArrow},
+    {"PageUp", ImGuiKey_PageUp},
+    {"PageDown", ImGuiKey_PageDown},
+    {"Home", ImGuiKey_Home},
+    {"End", ImGuiKey_End},
+    {"Insert", ImGuiKey_Insert},
+    {"Delete", ImGuiKey_Delete},
+    {"Backspace", ImGuiKey_Backspace},
+    {"Space", ImGuiKey_Space},
+    {"Enter", ImGuiKey_Enter},
+    {"NumpadEnter", ImGuiKey_KeypadEnter},
+    {"Escape", ImGuiKey_Escape},
+    {"ControlLeft", ImGuiKey_LeftCtrl},
+    {"ShiftLeft", ImGuiKey_LeftShift},
+    {"AltLeft", ImGuiKey_LeftAlt},
+    {"MetaLeft", ImGuiKey_LeftSuper},
+    {"ControlRight", ImGuiKey_RightCtrl},
+    {"ShiftRight", ImGuiKey_RightShift},
+    {"AltRight", ImGuiKey_RightAlt},
+    {"MetaRight", ImGuiKey_RightSuper},
+    {"Quote", ImGuiKey_Apostrophe},
+    {"Comma", ImGuiKey_Comma},
+    {"Minus", ImGuiKey_Minus},
+    {"Period", ImGuiKey_Period},
+    {"Slash", ImGuiKey_Slash},
+    {"Semicolon", ImGuiKey_Semicolon},
+    {"Equal", ImGuiKey_Equal},
+    {"BracketLeft", ImGuiKey_LeftBracket},
+    {"Backslash", ImGuiKey_Backslash},
+    {"BracketRight", ImGuiKey_RightBracket},
+    {"Backquote", ImGuiKey_GraveAccent},
+};
+
+// Maps a DOM KeyboardEvent.code (the physical key) to an ImGuiKey.
+internal ImGuiKey key_from_code(const char* code)
+{
+    umm length = strlen(code);
+    if (length == 4 && memcmp(code, "Key", 3) == 0 && code[3] >= 'A' && code[3] <= 'Z')
+        return (ImGuiKey)(ImGuiKey_A + (code[3] - 'A'));
+    if (length == 6 && memcmp(code, "Digit", 5) == 0 && code[5] >= '0' && code[5] <= '9')
+        return (ImGuiKey)(ImGuiKey_0 + (code[5] - '0'));
+    if (length == 7 && memcmp(code, "Numpad", 6) == 0 && code[6] >= '0' && code[6] <= '9')
+        return (ImGuiKey)(ImGuiKey_Keypad0 + (code[6] - '0'));
+    if ((length == 2 || length == 3) && code[0] == 'F' && code[1] >= '1' && code[1] <= '9') {
+        s32 n = (length == 2) ? code[1] - '0' : (code[1] - '0') * 10 + (code[2] - '0');
+        if (n >= 1 && n <= 12)
+            return (ImGuiKey)(ImGuiKey_F1 + (n - 1));
+    }
+    for (umm i = 0; i < NV_ARRAY_COUNT(named_keys); ++i) {
+        if (strcmp(code, named_keys[i].code) == 0)
+            return named_keys[i].key;
+    }
+    return ImGuiKey_None;
+}
+
+// True when `text` is exactly one UTF-8 encoded character, which is how KeyboardEvent.key
+// reports printable keys ("a", "A", "é", " "), as opposed to names like "Enter".
+internal b32 is_single_character(const char* text)
+{
+    u8 lead = (u8)text[0];
+    umm expected = (lead < 0x80) ? 1 : (lead >> 5) == 0x6 ? 2 : (lead >> 4) == 0xE ? 3 : (lead >> 3) == 0x1E ? 4 : 0;
+    return expected && strlen(text) == expected;
+}
+
+// NOTE: Cmd (metaKey) is reported as Ctrl so macOS shortcuts (Cmd+C, Cmd+V, Cmd+A) work.
+internal void add_modifiers(ImGuiIO* io, const EmscriptenKeyboardEvent* event)
+{
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Ctrl, event->ctrlKey || event->metaKey);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Shift, event->shiftKey);
+    ImGuiIO_AddKeyEvent(io, ImGuiMod_Alt, event->altKey);
+}
+
+// Browser callbacks return true to stop the browser's default handling. Return values and
+// parameter types are fixed by Emscripten's html5.h.
+internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void* userdata)
+{
+    NvImgui* imgui = userdata;
+    ImGuiIO* io = igGetIO_Nil();
+    b32 down = (event_type == EMSCRIPTEN_EVENT_KEYDOWN);
+    b32 shortcut = event->ctrlKey || event->metaKey;
+    add_modifiers(io, event);
+
+    // On-screen keyboards often leave `code` empty, but name special keys in `key`.
+    ImGuiKey key = key_from_code(event->code);
+    if (key == ImGuiKey_None)
+        key = key_from_code(event->key);
+
+    // Leave paste to the browser: it fires a paste event carrying the text (see the glue above).
+    if (shortcut && key == ImGuiKey_V)
+        return 0;
+
+    // While the text agent has focus, its input events carry text and Backspace; taking them
+    // from keydown too would apply them twice. The agent needs the default action to see them.
+    if (js_text_agent_focused()) {
+        // A key the input method takes ("Process") is the method's: not ImGui's, and its default
+        // action must stay or the composition stops.
+        if (strcmp(event->key, "Process") == 0)
+            return 0;
+        if (key != ImGuiKey_None && key != ImGuiKey_Backspace)
+            ImGuiIO_AddKeyEvent(io, key, down);
+        // Keys that do not type text act in ImGui only: the agent's own caret must not move
+        // (arrows, Home, End) and chords must not select or undo in it. Typing, Backspace and
+        // paste stay with the agent.
+        b32 types = !shortcut && is_single_character(event->key);
+        if (shortcut)
+            return key != ImGuiKey_V;
+        return !types && key != ImGuiKey_Backspace;
+    }
+
+    if (key != ImGuiKey_None)
+        ImGuiIO_AddKeyEvent(io, key, down);
+
+    // NOTE: Text is taken from keydown instead of keypress so keydown can be consumed below
+    // (consuming keydown suppresses keypress).
+    if (down && !shortcut && is_single_character(event->key))
+        ImGuiIO_AddInputCharactersUTF8(io, event->key);
+
+    // A key the app asked to keep is not the browser's either.
+    b32 claimed = 0;
+    if (imgui->claims_key && key != ImGuiKey_None) {
+        ImGuiKeyChord chord = (ImGuiKeyChord)key | (shortcut ? ImGuiMod_Ctrl : 0) | (event->shiftKey ? ImGuiMod_Shift : 0) |
+                              (event->altKey ? ImGuiMod_Alt : 0);
+        claimed = imgui->claims_key(imgui->claims_key_data, chord);
+    }
+    return io->WantCaptureKeyboard || claimed;
+}
+
+// Whether input starting at page position (x, y) belongs to the view rather than to ImGui. Open
+// popups (a combo's list can reach over the viewport) keep their input.
+internal b32 in_view(NvImgui* imgui, f32 x, f32 y)
+{
+    f32 ratio = nv_window_pixel_ratio(imgui->window);
+    NvRect r = imgui->view_rect;
+    f32 px = x * ratio;
+    f32 py = y * ratio;
+    return px >= (f32)r.x && py >= (f32)r.y && px < (f32)(r.x + r.width) && py < (f32)(r.y + r.height) &&
+           !igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+}
+
+internal void view_tap(NvImgui* imgui, f32 x, f32 y)
+{
+    imgui->view_pending.tapped = 1;
+    imgui->view_pending.tap_x = x;
+    imgui->view_pending.tap_y = y;
+    // As they were at the press: a tap can be decided frames after the keys were let go.
+    imgui->view_pending.tap_mods = imgui->view_press_mods;
+}
+
+// A press in the view drags the camera: left orbits, right and middle pan. A left press that does
+// not move is a tap.
+internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEvent* event)
+{
+    f32 x = (f32)event->clientX;
+    f32 y = (f32)event->clientY;
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
+        if (imgui->view_mouse_button || !in_view(imgui, x, y))
+            return 0;
+        imgui->view_mouse_button = event->button + 1;
+        imgui->view_moved = 0;
+        imgui->view_press_x = imgui->view_mouse_x = x;
+        imgui->view_press_y = imgui->view_mouse_y = y;
+        imgui->view_press_mods = (event->ctrlKey || event->metaKey ? ImGuiMod_Ctrl : 0) |
+                                 (event->shiftKey ? ImGuiMod_Shift : 0) | (event->altKey ? ImGuiMod_Alt : 0);
+        if (imgui->view_grab && event->button == 0) {
+            imgui->view_grab_wait = 2;
+            imgui->view_tap_held = 0;
+            imgui->view_grab_touch = 0;
+        }
+        return 1;
+    }
+    if (!imgui->view_mouse_button)
+        return 0;
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEMOVE) {
+        f32 dx = x - imgui->view_mouse_x;
+        f32 dy = y - imgui->view_mouse_y;
+        imgui->view_mouse_x = x;
+        imgui->view_mouse_y = y;
+        if (imgui->view_mouse_button == 1) {
+            imgui->view_pending.orbit_x += dx;
+            imgui->view_pending.orbit_y += dy;
+        } else {
+            imgui->view_pending.pan_x += dx;
+            imgui->view_pending.pan_y += dy;
+        }
+        if (fabsf(x - imgui->view_press_x) + fabsf(y - imgui->view_press_y) > 4.0f)
+            imgui->view_moved = 1;
+        return 1;
+    }
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEUP && event->button + 1 == imgui->view_mouse_button) {
+        if (!imgui->view_moved && imgui->view_mouse_button == 1) {
+            if (imgui->view_grab_wait)
+                imgui->view_tap_held = 1;
+            else
+                view_tap(imgui, x, y);
+        }
+        imgui->view_mouse_button = 0;
+        return 1;
+    }
+    return 0;
+}
+
+internal bool on_mouse(int event_type, const EmscriptenMouseEvent* event, void* userdata)
+{
+    NvImgui* imgui = userdata;
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_Mouse);
+    ImGuiIO_AddMousePosEvent(io, (f32)event->clientX, (f32)event->clientY);
+    if (view_mouse(imgui, event_type, event))
+        return event_type != EMSCRIPTEN_EVENT_MOUSEMOVE;
+
+    if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN || event_type == EMSCRIPTEN_EVENT_MOUSEUP) {
+        // DOM order is left, middle, right; ImGui's is left, right, middle.
+        local_persist const s32 buttons[3] = {0, 2, 1};
+        if (event->button < 3)
+            ImGuiIO_AddMouseButtonEvent(io, buttons[event->button], event_type == EMSCRIPTEN_EVENT_MOUSEDOWN);
+    }
+    return event_type != EMSCRIPTEN_EVENT_MOUSEMOVE && io->WantCaptureMouse;
+}
+
+internal bool on_wheel(int event_type, const EmscriptenWheelEvent* event, void* userdata)
+{
+    (void)event_type;
+    NvImgui* imgui = userdata;
+    ImGuiIO* io = igGetIO_Nil();
+    if (in_view(imgui, io->MousePos.x, io->MousePos.y)) {
+        // One wheel notch (about 100 pixels, or 3 lines) zooms by about 15%.
+        f32 pixels = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f : (event->deltaMode == DOM_DELTA_LINE) ? 33.0f : 400.0f;
+        imgui->view_pending.dolly += (f32)event->deltaY * pixels * 0.0014f;
+        return 1;
+    }
+    // ImGui counts in lines; browsers usually report pixels.
+    f32 scale = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f / 100.0f : (event->deltaMode == DOM_DELTA_LINE) ? 1.0f / 3.0f : 1.0f;
+    ImGuiIO_AddMouseWheelEvent(io, (f32)-event->deltaX * scale, (f32)-event->deltaY * scale);
+    return io->WantCaptureMouse;
+}
+
+// A touch that is held still this long becomes a press, for widgets that are dragged in place.
+#define TOUCH_PRESS_SECONDS 0.3
+
+internal void touch_press(NvImgui* imgui)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddMousePosEvent(io, imgui->touch_start_x, imgui->touch_start_y);
+    ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+    ImGuiIO_AddMousePosEvent(io, imgui->touch_x, imgui->touch_y);
+    imgui->touch_gesture = NV_TOUCH_PRESS;
+}
+
+// Where the view's fingers are: their center and, with two, the distance between them.
+internal void view_touch_center(NvImgui* imgui, f32* x, f32* y, f32* spread)
+{
+    *x = *y = *spread = 0.0f;
+    u32 n = imgui->view_touch_count;
+    for (u32 i = 0; i < n; ++i) {
+        *x += imgui->view_touch_x[i] / (f32)n;
+        *y += imgui->view_touch_y[i] / (f32)n;
+    }
+    if (n == 2) {
+        f32 dx = imgui->view_touch_x[1] - imgui->view_touch_x[0];
+        f32 dy = imgui->view_touch_y[1] - imgui->view_touch_y[0];
+        *spread = sqrtf(dx * dx + dy * dy);
+    }
+}
+
+// Touches that start in the view move the camera: one finger orbits, two pan and pinch-zoom, and
+// a single finger that lifts without moving is a tap. Returns whether the event was the view's.
+internal b32 view_touch(NvImgui* imgui, int event_type, const EmscriptenTouchEvent* event)
+{
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        if (imgui->touch_gesture == NV_TOUCH_NONE) {
+            const EmscriptenTouchPoint* first = NULL;
+            for (int i = 0; i < event->numTouches && !first; ++i) {
+                if (event->touches[i].isChanged)
+                    first = &event->touches[i];
+            }
+            if (!first || !in_view(imgui, (f32)first->clientX, (f32)first->clientY))
+                return 0;
+            imgui->touch_gesture = NV_TOUCH_VIEW;
+            imgui->view_touch_count = 0;
+            imgui->view_touch_multi = 0;
+            imgui->view_moved = 0;
+            imgui->view_press_x = (f32)first->clientX;
+            imgui->view_press_y = (f32)first->clientY;
+            imgui->view_press_mods = 0;
+            if (imgui->view_grab) {
+                // ImGui learns where the finger is, so the app can tell what is under it.
+                ImGuiIO_AddMousePosEvent(igGetIO_Nil(), imgui->view_press_x, imgui->view_press_y);
+                imgui->view_grab_wait = 2;
+                imgui->view_tap_held = 0;
+                imgui->view_grab_touch = 1;
+            }
+        } else if (imgui->touch_gesture != NV_TOUCH_VIEW) {
+            return 0;
+        }
+        for (int i = 0; i < event->numTouches; ++i) {
+            const EmscriptenTouchPoint* t = &event->touches[i];
+            if (!t->isChanged || imgui->view_touch_count >= NV_VIEW_MAX_TOUCHES)
+                continue;
+            u32 k = imgui->view_touch_count++;
+            imgui->view_touch_id[k] = t->identifier;
+            imgui->view_touch_x[k] = (f32)t->clientX;
+            imgui->view_touch_y[k] = (f32)t->clientY;
+        }
+        if (imgui->view_touch_count > 1)
+            imgui->view_touch_multi = 1;
+        return 1;
+    }
+    if (imgui->touch_gesture != NV_TOUCH_VIEW)
+        return 0;
+
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+        f32 x0, y0, spread0;
+        view_touch_center(imgui, &x0, &y0, &spread0);
+        for (int i = 0; i < event->numTouches; ++i) {
+            const EmscriptenTouchPoint* t = &event->touches[i];
+            for (u32 k = 0; k < imgui->view_touch_count; ++k) {
+                if (imgui->view_touch_id[k] == t->identifier) {
+                    imgui->view_touch_x[k] = (f32)t->clientX;
+                    imgui->view_touch_y[k] = (f32)t->clientY;
+                }
+            }
+        }
+        f32 x1, y1, spread1;
+        view_touch_center(imgui, &x1, &y1, &spread1);
+        if (imgui->view_touch_count == 1) {
+            imgui->view_pending.orbit_x += x1 - x0;
+            imgui->view_pending.orbit_y += y1 - y0;
+            if (fabsf(x1 - imgui->view_press_x) + fabsf(y1 - imgui->view_press_y) > 8.0f * imgui->ui_scale)
+                imgui->view_moved = 1;
+        } else if (imgui->view_touch_count == 2) {
+            imgui->view_pending.pan_x += x1 - x0;
+            imgui->view_pending.pan_y += y1 - y0;
+            if (spread0 > 1.0f && spread1 > 1.0f)
+                imgui->view_pending.dolly += logf(spread0 / spread1);
+        }
+        return 1;
+    }
+
+    // Touch end or cancel: forget the lifted fingers.
+    for (int i = 0; i < event->numTouches; ++i) {
+        const EmscriptenTouchPoint* t = &event->touches[i];
+        if (!t->isChanged)
+            continue;
+        for (u32 k = 0; k < imgui->view_touch_count; ++k) {
+            if (imgui->view_touch_id[k] != t->identifier)
+                continue;
+            --imgui->view_touch_count;
+            imgui->view_touch_id[k] = imgui->view_touch_id[imgui->view_touch_count];
+            imgui->view_touch_x[k] = imgui->view_touch_x[imgui->view_touch_count];
+            imgui->view_touch_y[k] = imgui->view_touch_y[imgui->view_touch_count];
+            break;
+        }
+    }
+    if (imgui->view_touch_count == 0) {
+        if (event_type == EMSCRIPTEN_EVENT_TOUCHEND && !imgui->view_moved && !imgui->view_touch_multi) {
+            if (imgui->view_grab_wait)
+                imgui->view_tap_held = 1;
+            else
+                view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+        }
+        imgui->touch_gesture = NV_TOUCH_NONE;
+        // A lifted finger points at nothing; while a press waits, ImGui still needs to see it.
+        if (!imgui->view_grab_wait)
+            ImGuiIO_AddMousePosEvent(igGetIO_Nil(), -FLT_MAX, -FLT_MAX);
+    }
+    return 1;
+}
+
+// Touch drives ImGui's mouse with the first finger, but only once the gesture is clear:
+// - moving mostly vertically past a threshold scrolls the panel, and ImGui sees no click;
+// - moving sideways first, or holding still, presses (sliders drag sideways);
+// - lifting before either is a tap: a press and a release together.
+internal bool on_touch(int event_type, const EmscriptenTouchEvent* event, void* userdata)
+{
+    NvImgui* imgui = userdata;
+    ImGuiIO* io = igGetIO_Nil();
+    ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_TouchScreen);
+    if (view_touch(imgui, event_type, event))
+        return 1;
+    const EmscriptenTouchPoint* touch = event->numTouches ? &event->touches[0] : NULL;
+    f32 x = touch ? (f32)touch->clientX : imgui->touch_x;
+    f32 y = touch ? (f32)touch->clientY : imgui->touch_y;
+
+    if (event_type == EMSCRIPTEN_EVENT_TOUCHSTART) {
+        if (imgui->touch_gesture != NV_TOUCH_NONE)
+            return 1; // a second finger
+        imgui->touch_gesture = NV_TOUCH_UNDECIDED;
+        imgui->touch_start_x = imgui->touch_x = x;
+        imgui->touch_start_y = imgui->touch_y = y;
+        imgui->touch_start_time = emscripten_get_now() / 1000.0;
+        // Hovering the touched widget lets a tap on a text field be recognized (below).
+        ImGuiIO_AddMousePosEvent(io, x, y);
+    } else if (event_type == EMSCRIPTEN_EVENT_TOUCHMOVE) {
+        f32 step = y - imgui->touch_y;
+        imgui->touch_x = x;
+        imgui->touch_y = y;
+        if (imgui->touch_gesture == NV_TOUCH_UNDECIDED) {
+            f32 dx = fabsf(x - imgui->touch_start_x);
+            f32 dy = fabsf(y - imgui->touch_start_y);
+            f32 threshold = 8.0f * imgui->ui_scale;
+            if (dy >= threshold && dy >= dx) {
+                imgui->touch_gesture = NV_TOUCH_SCROLL;
+                step = y - imgui->touch_start_y;
+            } else if (dx >= threshold) {
+                touch_press(imgui);
+            }
+        } else if (imgui->touch_gesture == NV_TOUCH_PRESS) {
+            ImGuiIO_AddMousePosEvent(io, x, y);
+        }
+        if (imgui->touch_gesture == NV_TOUCH_SCROLL)
+            imgui->touch_scroll_pending += step;
+    } else {
+        // Touch end or cancel.
+        if (imgui->touch_gesture == NV_TOUCH_UNDECIDED && event_type == EMSCRIPTEN_EVENT_TOUCHEND) {
+            // IMPORTANT: iOS only opens the keyboard for focus() called inside a touch handler,
+            // and ImGui activates the field a frame later. The text cursor shows it is one.
+            if (igGetMouseCursor() == ImGuiMouseCursor_TextInput) {
+                js_focus_text_agent(1);
+                imgui->text_agent_grace = 4;
+            }
+            ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+            ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+        } else if (imgui->touch_gesture == NV_TOUCH_PRESS) {
+            ImGuiIO_AddMouseButtonEvent(io, 0, 0);
+            if (io->WantTextInput)
+                js_focus_text_agent(1);
+        }
+        imgui->touch_gesture = NV_TOUCH_NONE;
+        // A lifted finger points at nothing, so the last widget touched does not stay hovered.
+        ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
+    }
+    // Consuming touches stops the browser from also sending emulated mouse events.
+    return 1;
+}
+
+// ImGui tells where the text caret is: the agent moves there, so a composing syllable and the input
+// method's candidate window appear at the field being edited (docs/specs/korean.md).
+internal void set_ime_data(ImGuiContext* context, ImGuiViewport* viewport, ImGuiPlatformImeData* data)
+{
+    (void)context, (void)viewport;
+    if (data->WantVisible || data->WantTextInput)
+        js_ime_move(data->InputPos.x, data->InputPos.y, data->InputLineHeight);
+}
+
+internal bool on_focus(int event_type, const EmscriptenFocusEvent* event, void* userdata)
+{
+    (void)event, (void)userdata;
+    ImGuiIO_AddFocusEvent(igGetIO_Nil(), event_type == EMSCRIPTEN_EVENT_FOCUS);
+    return 0;
+}
+
+internal void hook_input(NvImgui* imgui, NvWindow* window)
+{
+    const char* page = EMSCRIPTEN_EVENT_TARGET_WINDOW;
+    emscripten_set_keydown_callback(page, imgui, 1, on_key);
+    emscripten_set_keyup_callback(page, imgui, 1, on_key);
+    emscripten_set_mousedown_callback(window->canvas_selector, imgui, 1, on_mouse);
+    // Moves and releases are watched page-wide so a drag keeps working past the canvas edge.
+    emscripten_set_mousemove_callback(page, imgui, 1, on_mouse);
+    emscripten_set_mouseup_callback(page, imgui, 1, on_mouse);
+    emscripten_set_wheel_callback(window->canvas_selector, imgui, 1, on_wheel);
+    emscripten_set_touchstart_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchmove_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchend_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_touchcancel_callback(window->canvas_selector, imgui, 1, on_touch);
+    emscripten_set_focus_callback(page, NULL, 1, on_focus);
+    emscripten_set_blur_callback(page, NULL, 1, on_focus);
+}
+
+//
+// Rendering
+//
+
+// Engine textures in the UI (nv_imgui_preview). Same vertex stage; the fragment stage shows the
+// texture as the slot's Params say. Colors reach an sRGB-encoding view, so a value meant to show
+// as stored is linearized first: channels of non-sRGB textures, alpha, and depth grays.
+#define PREVIEW_COMMON \
+    "struct Uniforms {\n" \
+    "    mvp: mat4x4f,\n" \
+    "};\n" \
+    "struct Params {\n" \
+    "    range: vec4f, // min, max, near, far\n" \
+    "    mode: vec4u,  // NvImguiPreviewMode, linearize, NvImguiDepth\n" \
+    "};\n" \
+    "@group(0) @binding(0) var<uniform> u: Uniforms;\n" \
+    "@group(0) @binding(3) var<uniform> p: Params;\n" \
+    "struct VsIn {\n" \
+    "    @location(0) pos: vec2f,\n" \
+    "    @location(1) uv: vec2f,\n" \
+    "    @location(2) col: vec4f,\n" \
+    "};\n" \
+    "struct VsOut {\n" \
+    "    @builtin(position) pos: vec4f,\n" \
+    "    @location(0) uv: vec2f,\n" \
+    "    @location(1) col: vec4f,\n" \
+    "};\n" \
+    "@vertex\n" \
+    "fn vs_main(in: VsIn) -> VsOut {\n" \
+    "    var out: VsOut;\n" \
+    "    out.pos = u.mvp * vec4f(in.pos, 0.0, 1.0);\n" \
+    "    out.uv = in.uv;\n" \
+    "    out.col = vec4f(pow(in.col.rgb, vec3f(2.2)), in.col.a);\n" \
+    "    return out;\n" \
+    "}\n" \
+    "fn gray(v: f32) -> vec4f {\n" \
+    "    return vec4f(vec3f(v), 1.0);\n" \
+    "}\n"
+
+global const char* preview_color_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(1) var s: sampler;\n"
+    "@group(0) @binding(2) var t: texture_2d<f32>;\n"
+    "@fragment\n"
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
+    "    let raw = textureSample(t, s, in.uv);\n"
+    "    var c = raw;\n"
+    "    if (p.mode.y != 0u) {\n"
+    "        c = vec4f(pow(raw.rgb, vec3f(2.2)), raw.a);\n"
+    "    }\n"
+    "    var out = c;\n"
+    "    switch p.mode.x {\n"
+    "        case 1u: { out = vec4f(c.rgb, 1.0); }\n"
+    "        case 2u: { out = gray(c.r); }\n"
+    "        case 3u: { out = gray(c.g); }\n"
+    "        case 4u: { out = gray(c.b); }\n"
+    "        case 5u: { out = gray(pow(raw.a, 2.2)); }\n"
+    "        default: {}\n"
+    "    }\n"
+    "    return out * in.col;\n"
+    "}\n";
+
+// Depth cannot be filtered, so it is read texel by texel. Reverse Z turns back into distance t:
+// the standard depth s = 1 - d is far (t - near) / ((far - near) t) for a perspective camera, and
+// (t - near) / (far - near) for an orthographic one (nv_mat4_perspective, nv_mat4_orthographic).
+#define PREVIEW_DEPTH_FRAGMENT \
+    "@fragment\n" \
+    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n" \
+    "    let size = textureDimensions(d);\n" \
+    "    let texel = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(size)), size - vec2u(1u));\n" \
+    "    let z = textureLoad(d, texel, 0);\n" \
+    "    let near = p.range.z;\n" \
+    "    let far = p.range.w;\n" \
+    "    var v = z;\n" \
+    "    if (p.mode.z == 1u) {\n" \
+    "        v = far * near / (far - (1.0 - z) * (far - near));\n" \
+    "    } else if (p.mode.z == 2u) {\n" \
+    "        v = near + (1.0 - z) * (far - near);\n" \
+    "    }\n" \
+    "    let g = clamp((v - p.range.x) / max(p.range.y - p.range.x, 1e-6), 0.0, 1.0);\n" \
+    "    return vec4f(vec3f(pow(g, 2.2)), 1.0) * in.col;\n" \
+    "}\n"
+
+global const char* preview_depth_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(2) var d: texture_depth_2d;\n"
+    PREVIEW_DEPTH_FRAGMENT;
+
+// The same for a multisampled depth texture (the scene's with MSAA on): it shows sample 0.
+global const char* preview_depth_ms_shader =
+    PREVIEW_COMMON
+    "@group(0) @binding(2) var d: texture_depth_multisampled_2d;\n"
+    PREVIEW_DEPTH_FRAGMENT;
+
+typedef struct PreviewParams {
+    f32 range[4];
+    u32 mode[4];
+} PreviewParams;
+
+internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format, const char* code, const char* label)
+{
+    WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
+    wgsl.code = (WGPUStringView){code, WGPU_STRLEN};
+    WGPUShaderModuleDescriptor module_desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
+    module_desc.nextInChain = &wgsl.chain;
+    WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
+
+    WGPUVertexAttribute attributes[3] = {
+        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(ImDrawVert, pos), .shaderLocation = 0},
+        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(ImDrawVert, uv), .shaderLocation = 1},
+        {.format = WGPUVertexFormat_Unorm8x4, .offset = offsetof(ImDrawVert, col), .shaderLocation = 2},
+    };
+    WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
+    vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
+    vertex_layout.arrayStride = sizeof(ImDrawVert);
+    vertex_layout.attributeCount = NV_ARRAY_COUNT(attributes);
+    vertex_layout.attributes = attributes;
+
+    WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
+    blend.color.operation = WGPUBlendOperation_Add;
+    blend.color.srcFactor = WGPUBlendFactor_SrcAlpha;
+    blend.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+    blend.alpha.operation = WGPUBlendOperation_Add;
+    blend.alpha.srcFactor = WGPUBlendFactor_One;
+    blend.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
+
+    WGPUColorTargetState color_target = WGPU_COLOR_TARGET_STATE_INIT;
+    color_target.format = format;
+    color_target.blend = &blend;
+
+    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
+    fragment.module = module;
+    fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
+    fragment.targetCount = 1;
+    fragment.targets = &color_target;
+
+    WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){label, WGPU_STRLEN};
+    desc.vertex.module = module;
+    desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
+    desc.vertex.bufferCount = 1;
+    desc.vertex.buffers = &vertex_layout;
+    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    desc.primitive.cullMode = WGPUCullMode_None;
+    desc.fragment = &fragment;
+
+    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+    wgpuShaderModuleRelease(module);
+    return pipeline;
+}
+
+internal WGPUBuffer create_buffer(WGPUDevice device, WGPUBufferUsage usage, umm size)
+{
+    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    desc.usage = usage | WGPUBufferUsage_CopyDst;
+    desc.size = size;
+    return wgpuDeviceCreateBuffer(device, &desc);
+}
+
+internal void upload_texture_rect(NvImgui* imgui, ImTextureData* tex, u32 x, u32 y, u32 w, u32 h)
+{
+    NvImguiTexture* slot = &imgui->textures[ImTextureData_GetTexID(tex)];
+    u32 pitch = (u32)ImTextureData_GetPitch(tex);
+
+    WGPUTexelCopyTextureInfo destination = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    destination.texture = slot->texture;
+    destination.origin = (WGPUOrigin3D){x, y, 0};
+    WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+    layout.bytesPerRow = pitch;
+    layout.rowsPerImage = h;
+    WGPUExtent3D size = {w, h, 1};
+    umm data_size = (umm)pitch * (h - 1) + (umm)w * 4;
+    wgpuQueueWriteTexture(imgui->gpu->queue, &destination, ImTextureData_GetPixelsAt(tex, (int)x, (int)y),
+                          data_size, &layout, &size);
+}
+
+// Serves ImGui's texture requests (font atlas creation, glyph uploads, destruction).
+internal void update_texture(NvImgui* imgui, ImTextureData* tex)
+{
+    WGPUDevice device = imgui->gpu->device;
+
+    if (tex->Status == ImTextureStatus_WantCreate) {
+        NV_ASSERT(tex->Format == ImTextureFormat_RGBA32);
+        u32 index = 1;
+        while (index < NV_IMGUI_MAX_TEXTURES && imgui->textures[index].texture)
+            ++index;
+        NV_ASSERT(index < NV_IMGUI_MAX_TEXTURES);
+        NvImguiTexture* slot = &imgui->textures[index];
+
+        WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+        desc.label = (WGPUStringView){"imgui texture", WGPU_STRLEN};
+        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
+        desc.size = (WGPUExtent3D){(u32)tex->Width, (u32)tex->Height, 1};
+        desc.format = WGPUTextureFormat_RGBA8Unorm;
+        slot->texture = wgpuDeviceCreateTexture(device, &desc);
+        slot->view = wgpuTextureCreateView(slot->texture, NULL);
+
+        WGPUBindGroupEntry entries[3] = {
+            {.binding = 0, .buffer = imgui->uniform_buffer, .size = sizeof(NvMat4)},
+            {.binding = 1, .sampler = imgui->sampler},
+            {.binding = 2, .textureView = slot->view},
+        };
+        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(imgui->pipeline, 0);
+        WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+        group_desc.layout = layout;
+        group_desc.entryCount = NV_ARRAY_COUNT(entries);
+        group_desc.entries = entries;
+        slot->bind_group = wgpuDeviceCreateBindGroup(device, &group_desc);
+        wgpuBindGroupLayoutRelease(layout);
+
+        ImTextureData_SetTexID(tex, index);
+        upload_texture_rect(imgui, tex, 0, 0, (u32)tex->Width, (u32)tex->Height);
+        ImTextureData_SetStatus(tex, ImTextureStatus_OK);
+    } else if (tex->Status == ImTextureStatus_WantUpdates) {
+        ImTextureRect r = tex->UpdateRect;
+        upload_texture_rect(imgui, tex, r.x, r.y, r.w, r.h);
+        ImTextureData_SetStatus(tex, ImTextureStatus_OK);
+    } else if (tex->Status == ImTextureStatus_WantDestroy && tex->UnusedFrames > 0) {
+        // Waiting for an unused frame keeps the texture alive while queued draws may use it.
+        NvImguiTexture* slot = &imgui->textures[ImTextureData_GetTexID(tex)];
+        wgpuBindGroupRelease(slot->bind_group);
+        wgpuTextureViewRelease(slot->view);
+        wgpuTextureRelease(slot->texture);
+        *slot = (NvImguiTexture){0};
+        ImTextureData_SetTexID(tex, 0);
+        ImTextureData_SetStatus(tex, ImTextureStatus_Destroyed);
+    }
+}
+
+internal void set_render_state(NvImgui* imgui, WGPURenderPassEncoder pass)
+{
+    wgpuRenderPassEncoderSetPipeline(pass, imgui->pipeline);
+    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, imgui->vertex_buffer, 0, WGPU_WHOLE_SIZE);
+    wgpuRenderPassEncoderSetIndexBuffer(pass, imgui->index_buffer, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
+}
+
+//
+// API
+//
+
+void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
+{
+    _Static_assert(sizeof(ImDrawIdx) == 2, "the index buffer is bound as Uint16");
+    *imgui = (NvImgui){0};
+    imgui->gpu = gpu;
+    imgui->window = window;
+    imgui->vertices = NV_PUSH_ARRAY(arena, NV_IMGUI_MAX_VERTICES, ImDrawVert);
+    imgui->indices = NV_PUSH_ARRAY(arena, NV_IMGUI_MAX_INDICES, ImDrawIdx);
+    imgui->clipboard = NV_PUSH_ARRAY(arena, NV_IMGUI_CLIPBOARD_SIZE, char);
+
+    igCreateContext(NULL);
+    ImGuiIO* io = igGetIO_Nil();
+    io->IniFilename = NULL; // no filesystem to persist window layout to
+    io->BackendPlatformName = "nv_html5";
+    io->BackendRendererName = "nv_webgpu";
+    io->BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures;
+
+    ImGuiPlatformIO* platform_io = igGetPlatformIO_Nil();
+    platform_io->Platform_SetImeDataFn = set_ime_data;
+    platform_io->Platform_ClipboardUserData = imgui;
+    platform_io->Platform_GetClipboardTextFn = get_clipboard;
+    platform_io->Platform_SetClipboardTextFn = set_clipboard;
+
+    hook_input(imgui, window);
+    js_setup_text_agent(imgui->clipboard, NV_IMGUI_CLIPBOARD_SIZE);
+
+    // Fingers need bigger text and hit areas than a mouse pointer.
+    imgui->ui_scale = js_touch_is_primary() ? 1.3f : 1.0f;
+    ImGuiStyle* style = igGetStyle();
+    ImGuiStyle_ScaleAllSizes(style, imgui->ui_scale);
+    style->FontScaleMain = imgui->ui_scale;
+
+    WGPUDevice device = gpu->device;
+    imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_shader, "imgui");
+    imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_shader, "imgui preview");
+    imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_shader, "imgui depth preview");
+    imgui->depth_ms_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_ms_shader, "imgui multisampled depth preview");
+    imgui->uniform_buffer = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(NvMat4));
+    imgui->vertex_buffer = create_buffer(device, WGPUBufferUsage_Vertex, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
+    imgui->index_buffer = create_buffer(device, WGPUBufferUsage_Index, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
+
+    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
+    sampler_desc.magFilter = WGPUFilterMode_Linear;
+    sampler_desc.minFilter = WGPUFilterMode_Linear;
+    imgui->sampler = wgpuDeviceCreateSampler(device, &sampler_desc);
+}
+
+// Decides a press that has waited for `view_grab` (see NvImgui). A grabbed press becomes an ImGui
+// left button from where it went down; what the view gathered from it meanwhile is dropped.
+internal void decide_view_press(NvImgui* imgui)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    b32 touch = imgui->view_grab_touch;
+    b32 down = touch ? imgui->touch_gesture == NV_TOUCH_VIEW && imgui->view_touch_count > 0 : imgui->view_mouse_button == 1;
+    b32 multi = touch && imgui->view_touch_multi;
+    b32 grab = !multi && imgui->view_grab(imgui->view_grab_data);
+    if (grab) {
+        imgui->view_pending = (NvViewInput){0};
+        if (down && touch) {
+            imgui->touch_start_x = imgui->view_press_x;
+            imgui->touch_start_y = imgui->view_press_y;
+            imgui->touch_x = imgui->view_touch_x[0];
+            imgui->touch_y = imgui->view_touch_y[0];
+            imgui->view_touch_count = 0;
+            touch_press(imgui);
+        } else if (down) {
+            imgui->view_mouse_button = 0;
+            ImGuiIO_AddMousePosEvent(io, imgui->view_press_x, imgui->view_press_y);
+            ImGuiIO_AddMouseButtonEvent(io, 0, 1);
+            ImGuiIO_AddMousePosEvent(io, imgui->view_mouse_x, imgui->view_mouse_y);
+        }
+    } else if (imgui->view_tap_held) {
+        view_tap(imgui, imgui->view_press_x, imgui->view_press_y);
+    }
+    imgui->view_tap_held = 0;
+    if (!down && touch)
+        ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
+}
+
+internal void release_preview(NvImguiPreviewSlot* slot)
+{
+    wgpuBindGroupRelease(slot->bind_group);
+    wgpuBufferRelease(slot->params);
+    wgpuTextureViewRelease(slot->view);
+    wgpuTextureRelease(slot->key.texture);
+    *slot = (NvImguiPreviewSlot){0};
+}
+
+internal b32 same_preview(const NvImguiPreview* a, const NvImguiPreview* b)
+{
+    return a->texture == b->texture && a->mip == b->mip && a->mode == b->mode && a->depth == b->depth &&
+           a->range_min == b->range_min && a->range_max == b->range_max && a->near_z == b->near_z &&
+           a->far_z == b->far_z;
+}
+
+internal b32 is_depth_format(WGPUTextureFormat format)
+{
+    return format == WGPUTextureFormat_Depth16Unorm || format == WGPUTextureFormat_Depth24Plus ||
+           format == WGPUTextureFormat_Depth24PlusStencil8 || format == WGPUTextureFormat_Depth32Float ||
+           format == WGPUTextureFormat_Depth32FloatStencil8;
+}
+
+internal b32 is_srgb_format(WGPUTextureFormat format)
+{
+    return format == WGPUTextureFormat_RGBA8UnormSrgb || format == WGPUTextureFormat_BGRA8UnormSrgb;
+}
+
+ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
+{
+    NV_ASSERT(preview->texture);
+    s32 free_slot = -1;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
+        NvImguiPreviewSlot* slot = &imgui->previews[i];
+        if (!slot->key.texture) {
+            if (free_slot < 0)
+                free_slot = (s32)i;
+        } else if (same_preview(&slot->key, preview)) {
+            slot->used_frame = imgui->frame;
+            return (ImTextureID)(NV_IMGUI_MAX_TEXTURES + i);
+        }
+    }
+    NV_ASSERT(free_slot >= 0);
+    NvImguiPreviewSlot* slot = &imgui->previews[free_slot];
+    WGPUDevice device = imgui->gpu->device;
+    WGPUTextureFormat format = wgpuTextureGetFormat(preview->texture);
+    b32 depth = is_depth_format(format);
+    NV_ASSERT(depth == (preview->mode == NV_IMGUI_PREVIEW_DEPTH));
+    b32 multisampled = wgpuTextureGetSampleCount(preview->texture) > 1;
+    NV_ASSERT(!multisampled || depth); // only depth is shown multisampled (sample 0)
+    NV_ASSERT(preview->mip < wgpuTextureGetMipLevelCount(preview->texture));
+    NV_ASSERT(wgpuTextureGetUsage(preview->texture) & WGPUTextureUsage_TextureBinding);
+
+    slot->key = *preview;
+    slot->depth = depth;
+    slot->multisampled = multisampled;
+    slot->used_frame = imgui->frame;
+    wgpuTextureAddRef(preview->texture);
+
+    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
+    view_desc.baseMipLevel = preview->mip;
+    view_desc.mipLevelCount = 1;
+    if (depth)
+        view_desc.aspect = WGPUTextureAspect_DepthOnly;
+    slot->view = wgpuTextureCreateView(preview->texture, &view_desc);
+
+    PreviewParams params = {
+        .range = {preview->range_min, preview->range_max, preview->near_z, preview->far_z},
+        .mode = {(u32)preview->mode, !depth && !is_srgb_format(format), (u32)preview->depth, 0},
+    };
+    slot->params = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(params));
+    wgpuQueueWriteBuffer(imgui->gpu->queue, slot->params, 0, &params, sizeof(params));
+
+    WGPUBindGroupEntry entries[4] = {
+        {.binding = 0, .buffer = imgui->uniform_buffer, .size = sizeof(NvMat4)},
+        {.binding = 3, .buffer = slot->params, .size = sizeof(params)},
+        {.binding = 2, .textureView = slot->view},
+        {.binding = 1, .sampler = imgui->sampler}, // left out for depth: that pipeline has no sampler
+    };
+    WGPURenderPipeline pipeline = depth ? (multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
+    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
+    group_desc.layout = layout;
+    group_desc.entryCount = depth ? 3 : 4;
+    group_desc.entries = entries;
+    slot->bind_group = wgpuDeviceCreateBindGroup(device, &group_desc);
+    wgpuBindGroupLayoutRelease(layout);
+    return (ImTextureID)(NV_IMGUI_MAX_TEXTURES + (u32)free_slot);
+}
+
+u32 nv_imgui_preview_count(NvImgui* imgui)
+{
+    u32 count = 0;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i)
+        count += imgui->previews[i].key.texture != NULL;
+    return count;
+}
+
+void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
+{
+    // NOTE: WebGPU keeps what submitted work uses alive, so a slot could go as soon as it is unused;
+    // the few frames only save remaking slots that come back (a thumbnail scrolled out and in).
+    ++imgui->frame;
+    for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
+        NvImguiPreviewSlot* slot = &imgui->previews[i];
+        if (slot->key.texture && imgui->frame - slot->used_frame > NV_IMGUI_PREVIEW_FRAMES)
+            release_preview(slot);
+    }
+    ImGuiIO* io = igGetIO_Nil();
+    f32 scale = nv_window_pixel_ratio(imgui->window);
+    io->DisplaySize = (ImVec2_c){(f32)imgui->gpu->width / scale, (f32)imgui->gpu->height / scale};
+    io->DisplayFramebufferScale = (ImVec2_c){scale, scale};
+    io->DeltaTime = delta_seconds > 0.0f ? delta_seconds : 1.0f / 60.0f;
+
+    // Close the on-screen keyboard once ImGui stops editing text (after Enter, or a tap outside).
+    if (imgui->text_agent_grace)
+        --imgui->text_agent_grace;
+    else if (!io->WantTextInput && js_text_agent_focused())
+        js_focus_text_agent(0);
+    // The desktop types through the agent too, so an input method can compose (a touch screen
+    // focuses it from its tap handler instead).
+    if (io->WantTextInput && imgui->ui_scale <= 1.0f && !js_text_agent_focused())
+        js_focus_text_agent(1);
+
+    // A touch held still long enough becomes a press; its scrolling is applied this frame.
+    if (imgui->touch_gesture == NV_TOUCH_UNDECIDED &&
+        emscripten_get_now() / 1000.0 - imgui->touch_start_time >= TOUCH_PRESS_SECONDS)
+        touch_press(imgui);
+    imgui->touch_scroll = imgui->touch_scroll_pending;
+    imgui->touch_scroll_pending = 0.0f;
+    // A press waiting for view_grab keeps what it gathers until it is decided.
+    if (imgui->view_grab_wait && --imgui->view_grab_wait == 0)
+        decide_view_press(imgui);
+    if (imgui->view_grab_wait) {
+        imgui->view = (NvViewInput){0};
+    } else {
+        imgui->view = imgui->view_pending;
+        imgui->view_pending = (NvViewInput){0};
+    }
+
+    igNewFrame();
+}
+
+bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
+{
+    (void)imgui;
+    ImGuiIO* io = igGetIO_Nil();
+    ImFontConfig* config = ImFontConfig_ImFontConfig();
+    config->FontDataOwnedByAtlas = false; // the caller keeps the bytes
+    // Size 0: the font is dynamic, drawn at whatever size the style asks for.
+    ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, 0.0f, config, NULL);
+    ImFontConfig_destroy(config);
+    if (!font)
+        return false;
+    io->FontDefault = font;
+    igGetStyle()->FontSizeBase = pixel_size;
+    return true;
+}
+
+#define UI_FONT_FILE "/assets/fonts/Pretendard-Regular.ttf"
+#define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
+
+b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
+{
+    NvFileData font = nv_file_read(arena, UI_FONT_FILE);
+    if (!font.ok)
+        nv_log(NV_LOG_WARNING, "imgui", "font %s is missing or could not be read", UI_FONT_FILE);
+    if (!font.ok || !nv_imgui_set_font(imgui, font.bytes, (u32)font.size, UI_FONT_SIZE)) {
+        nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
+        return 0;
+    }
+    return 1;
+}
+
+void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
+{
+    NV_ASSERT(capacity >= 4); // room for "..." and the terminator
+    // The whole text, when it fits both the buffer and the room.
+    umm length = strlen(text);
+    if (length < capacity) {
+        memcpy(out, text, length + 1);
+        if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
+            return;
+    }
+    // Else the longest prefix of whole characters that fits with "..." after it, in the buffer and the room. Candidates are
+    // the characters' starts up to `limit`; the empty prefix is taken when nothing fits ("..." alone). Each candidate is
+    // written into `out` to be measured, which has room for it.
+    umm limit = nv_utf8_fit(text, (u32)(capacity - 4));
+    umm lo = 0, hi = limit + 1; // the answer is in [lo, hi): lo fits (or is the empty prefix), hi does not (or is past the limit)
+    while (lo + 1 < hi) {
+        umm mid = (lo + hi) / 2;
+        while (mid > lo && ((u8)text[mid] & 0xC0) == 0x80)
+            --mid; // back to the start of a character
+        if (mid == lo) {
+            // No character starts in (lo, middle]: try the first one after it, if it comes before hi.
+            mid = lo + 1;
+            while (mid < hi && ((u8)text[mid] & 0xC0) == 0x80)
+                ++mid;
+            if (mid >= hi)
+                break;
+        }
+        memcpy(out, text, mid);
+        memcpy(out + mid, "...", 4);
+        if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
+            lo = mid;
+        else
+            hi = mid;
+    }
+    memcpy(out, text, lo);
+    memcpy(out + lo, "...", 4);
+}
+
+f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject, f32 box[4])
+{
+    const ImU32 backdrop = 0x99000000u;
+    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+    f32 ratio = nv_window_pixel_ratio(imgui->window);
+    ImVec2_c pos = {(f32)viewport.x / ratio + 6.0f, (f32)viewport.y / ratio + 6.0f};
+    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
+    ImVec2_c min = {pos.x - 4.0f, pos.y - 2.0f};
+    ImVec2_c max = {pos.x + size.x + extra_width + 4.0f, pos.y + size.y + 2.0f};
+    ImDrawList_AddRectFilled(draw, min, max, backdrop, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
+
+    char fitted[512];
+    nv_imgui_fit_text(subject, (f32)viewport.width / ratio - 20.0f, fitted, sizeof(fitted));
+    ImVec2_c subject_size = igCalcTextSize(fitted, NULL, false, -1.0f);
+    ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
+    ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
+                             (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, backdrop, 3.0f, 0);
+    ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, fitted, NULL);
+
+    if (box) {
+        box[0] = min.x;
+        box[1] = min.y;
+        box[2] = max.x;
+        box[3] = max.y;
+    }
+    return pos.x + size.x;
+}
+
+bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)
+{
+    return nv_imgui_begin_panel_ex(imgui, name, rect, 0);
+}
+
+bool nv_imgui_begin_panel_ex(NvImgui* imgui, const char* name, NvRect rect, ImGuiWindowFlags extra_flags)
+{
+    // ImGui works in CSS pixels; `rect` is in framebuffer pixels.
+    f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
+    igSetNextWindowPos((ImVec2_c){(f32)rect.x / scale, (f32)rect.y / scale}, ImGuiCond_Always, (ImVec2_c){0.0f, 0.0f});
+    igSetNextWindowSize((ImVec2_c){(f32)rect.width / scale, (f32)rect.height / scale}, ImGuiCond_Always);
+    igSetNextWindowBgAlpha(1.0f);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus | extra_flags;
+    bool open = igBegin(name, NULL, flags);
+    nv_imgui_touch_scroll(imgui);
+    return open;
+}
+
+void nv_imgui_touch_scroll(NvImgui* imgui)
+{
+    // ImGui has no touch scrolling; on_touch collects it for the window under the finger.
+    if (imgui->touch_scroll != 0.0f && igIsWindowHovered(0))
+        igSetScrollY_Float(igGetScrollY() - imgui->touch_scroll);
+}
+
+internal const char* css_cursor(ImGuiMouseCursor cursor)
+{
+    switch (cursor) {
+    case ImGuiMouseCursor_TextInput: return "text";
+    case ImGuiMouseCursor_ResizeEW: return "ew-resize";
+    case ImGuiMouseCursor_ResizeNS: return "ns-resize";
+    case ImGuiMouseCursor_Hand: return "pointer";
+    default: return "default";
+    }
+}
+
+void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)
+{
+    js_set_cursor(css_cursor(igGetMouseCursor()));
+    igRender();
+    ImDrawData* draw_data = igGetDrawData();
+
+    if (draw_data->Textures) {
+        for (s32 i = 0; i < draw_data->Textures->Size; ++i) {
+            ImTextureData* tex = draw_data->Textures->Data[i];
+            if (tex->Status != ImTextureStatus_OK)
+                update_texture(imgui, tex);
+        }
+    }
+
+    ImVec2_c pos = draw_data->DisplayPos;
+    ImVec2_c scale = draw_data->FramebufferScale;
+    // Clip against the real target size; DisplaySize * scale can round past it.
+    f32 fb_width = (f32)imgui->gpu->width;
+    f32 fb_height = (f32)imgui->gpu->height;
+    if (fb_width <= 0.0f || fb_height <= 0.0f || draw_data->TotalIdxCount == 0)
+        return;
+
+    // Gather every list into one vertex and one index upload.
+    NV_ASSERT(draw_data->TotalVtxCount <= NV_IMGUI_MAX_VERTICES);
+    NV_ASSERT(draw_data->TotalIdxCount <= NV_IMGUI_MAX_INDICES);
+    u32 vertex_count = 0;
+    u32 index_count = 0;
+    for (s32 i = 0; i < draw_data->CmdLists.Size; ++i) {
+        ImDrawList* list = draw_data->CmdLists.Data[i];
+        memcpy(imgui->vertices + vertex_count, list->VtxBuffer.Data, list->VtxBuffer.Size * sizeof(ImDrawVert));
+        memcpy(imgui->indices + index_count, list->IdxBuffer.Data, list->IdxBuffer.Size * sizeof(ImDrawIdx));
+        vertex_count += (u32)list->VtxBuffer.Size;
+        index_count += (u32)list->IdxBuffer.Size;
+    }
+    // Buffer writes must be a multiple of 4 bytes; an odd index count gets one padding index.
+    umm index_bytes = ((umm)index_count * sizeof(ImDrawIdx) + 3) & ~(umm)3;
+    NV_ASSERT(index_bytes <= NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
+    WGPUQueue queue = imgui->gpu->queue;
+    wgpuQueueWriteBuffer(queue, imgui->vertex_buffer, 0, imgui->vertices, vertex_count * sizeof(ImDrawVert));
+    wgpuQueueWriteBuffer(queue, imgui->index_buffer, 0, imgui->indices, index_bytes);
+
+    // Maps ImGui's display rectangle (top-left origin, y down) to clip space.
+    f32 l = pos.x;
+    f32 r = pos.x + draw_data->DisplaySize.x;
+    f32 t = pos.y;
+    f32 b = pos.y + draw_data->DisplaySize.y;
+    NvMat4 mvp = {{
+        2.0f / (r - l), 0.0f, 0.0f, 0.0f,
+        0.0f, 2.0f / (t - b), 0.0f, 0.0f,
+        0.0f, 0.0f, 0.5f, 0.0f,
+        (r + l) / (l - r), (t + b) / (b - t), 0.5f, 1.0f,
+    }};
+    wgpuQueueWriteBuffer(queue, imgui->uniform_buffer, 0, &mvp, sizeof(mvp));
+
+    WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+    color.view = target;
+    color.loadOp = WGPULoadOp_Load;
+    color.storeOp = WGPUStoreOp_Store;
+    WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
+    pass_desc.label = (WGPUStringView){"imgui", WGPU_STRLEN};
+    pass_desc.colorAttachmentCount = 1;
+    pass_desc.colorAttachments = &color;
+    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
+    set_render_state(imgui, pass);
+    WGPURenderPipeline bound = imgui->pipeline;
+
+    u32 vertex_offset = 0;
+    u32 index_offset = 0;
+    for (s32 i = 0; i < draw_data->CmdLists.Size; ++i) {
+        ImDrawList* list = draw_data->CmdLists.Data[i];
+        for (s32 c = 0; c < list->CmdBuffer.Size; ++c) {
+            ImDrawCmd* cmd = &list->CmdBuffer.Data[c];
+            if (cmd->UserCallback) {
+                if (cmd->UserCallback == IMGUI_RESET_RENDER_STATE) {
+                    set_render_state(imgui, pass);
+                    bound = imgui->pipeline;
+                } else
+                    cmd->UserCallback(list, cmd);
+                continue;
+            }
+
+            f32 x0 = (cmd->ClipRect.x - pos.x) * scale.x;
+            f32 y0 = (cmd->ClipRect.y - pos.y) * scale.y;
+            f32 x1 = (cmd->ClipRect.z - pos.x) * scale.x;
+            f32 y1 = (cmd->ClipRect.w - pos.y) * scale.y;
+            if (x0 < 0.0f) x0 = 0.0f;
+            if (y0 < 0.0f) y0 = 0.0f;
+            if (x1 > fb_width) x1 = fb_width;
+            if (y1 > fb_height) y1 = fb_height;
+            if (x1 <= x0 || y1 <= y0)
+                continue;
+            wgpuRenderPassEncoderSetScissorRect(pass, (u32)x0, (u32)y0, (u32)(x1 - x0), (u32)(y1 - y0));
+
+            ImTextureID texture = ImDrawCmd_GetTexID(cmd);
+            WGPURenderPipeline pipeline = imgui->pipeline;
+            WGPUBindGroup group = NULL;
+            if (texture >= NV_IMGUI_MAX_TEXTURES) {
+                NV_ASSERT(texture < NV_IMGUI_MAX_TEXTURES + NV_IMGUI_MAX_PREVIEWS);
+                NvImguiPreviewSlot* slot = &imgui->previews[texture - NV_IMGUI_MAX_TEXTURES];
+                NV_ASSERT(slot->bind_group);
+                pipeline = slot->depth ? (slot->multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
+                group = slot->bind_group;
+            } else {
+                NV_ASSERT(texture > 0 && imgui->textures[texture].bind_group);
+                group = imgui->textures[texture].bind_group;
+            }
+            if (pipeline != bound) {
+                wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+                bound = pipeline;
+            }
+            wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, NULL);
+            wgpuRenderPassEncoderDrawIndexed(pass, cmd->ElemCount, 1, index_offset + cmd->IdxOffset,
+                                             (s32)(vertex_offset + cmd->VtxOffset), 0);
+        }
+        vertex_offset += (u32)list->VtxBuffer.Size;
+        index_offset += (u32)list->IdxBuffer.Size;
+    }
+
+    wgpuRenderPassEncoderEnd(pass);
+    wgpuRenderPassEncoderRelease(pass);
+}

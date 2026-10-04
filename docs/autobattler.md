@@ -53,7 +53,7 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 | 6 | 대량 렌더링 | 메시별 인스턴싱 배치, frustum culling, LOD(level of detail, 거리별 세부 단계) | engine |
 | 7 | 대량 애니메이션 | 메카용 리지드(관절별 강체) 애니메이션이나 VAT(vertex animation texture, 정점 애니메이션 텍스처). 애니메이터 256개 상한을 넘기 위해 | engine |
 | 8 | VFX(visual effects, 시각 효과) | GPU 파티클(compute shader), 미사일 궤적, 빔, 가산 블렌딩, bloom, 데칼. 스펙: `docs/specs/vfx.md` | engine |
-| 9 | 시간 조작 | 일시정지, 2배속, 4배속, 슬로 모션: 프레임당 틱 수만 바뀐다 | app |
+| 9 | 시간 조작 | 일시정지, 2배속, 4배속, 슬로 모션: 프레임당 틱 수만 바뀐다 (`autobattler/`에 구현됨) | app |
 | 10 | 배치 UI와 게임 UI | 그리드 스냅 배치, 드래그와 회전, 상점, 카드, 체력바, 라운드 결과. ImGui 에디터와 분리된 게임 UI | engine (UI 기반), app (화면) |
 | 11 | 오디오 | Web Audio API 래퍼, 위치 사운드, 동시 재생 수 제한, 음악 | engine |
 | 12 | 캠페인과 진행 | 스테이지 목록, 승리 조건이나 별점, 유닛과 테크 해금, 난이도. 진행은 `app/save.c`에 새 태그로 저장 | app |
@@ -63,8 +63,8 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 
 ### 추천 순서
 
-1. **전투 프로토타입** (1, 2, 3, 4): 지금의 큐브와 디버그 라인으로 그린다. ctest 테스트로 같은 배치가 같은
-   결과 해시를 내는지 확인한다.
+1. **전투 프로토타입** (1, 2, 3, 4): 엔진의 기본 도형(`docs/specs/mesh.md`)과 디버그 라인으로 그린다. ctest 테스트로 같은 배치가 같은
+   결과 해시를 내는지 확인한다. A 단계(유닛 한 종류의 한 라운드)는 `autobattler/`에 구현되었다(`docs/specs/battle.md`); B 단계가 남아 있다.
 2. **라운드 루프와 AI** (5, 9, 10의 최소한): 게임이 재미있는지 여기서 판가름 난다.
 3. **대량 렌더링과 애니메이션** (6, 7): 유닛 약 1,000기와 투사체 5,000개의 스트레스 씬 워크로드로 측정한다.
 4. **연출** (8, 11, 15).
@@ -127,7 +127,7 @@ it?
 | 6 | Mass rendering | Instanced batches per mesh, frustum culling, LOD (level of detail) | engine |
 | 7 | Mass animation | Rigid per-joint animation or VAT (vertex animation textures) for mechs, past the 256-animator limit | engine |
 | 8 | VFX (visual effects) | GPU particles (compute shaders), missile trails, beams, additive blending, bloom, decals. Spec: `docs/specs/vfx.md` | engine |
-| 9 | Time controls | Pause, 2x and 4x speed, slow motion: the number of ticks per frame changes | app |
+| 9 | Time controls | Pause, 2x and 4x speed, slow motion: the number of ticks per frame changes (built in `autobattler/`) | app |
 | 10 | Deployment and game UI | Grid-snapped placement, drag and rotate, shop, cards, health bars, round results; a game UI apart from the ImGui editor | engine (UI base), app (screens) |
 | 11 | Audio | Web Audio API wrapper, positional sound, a cap on simultaneous sounds, music | engine |
 | 12 | Campaign and progression | Stage list, win conditions or stars, unit and tech unlocks, difficulty; progress saved with new tags in `app/save.c` | app |
@@ -137,8 +137,9 @@ it?
 
 ### Suggested order
 
-1. **Battle prototype** (1, 2, 3, 4): drawn with today's cubes and debug lines. A ctest test checks
-   that the same deployment gives the same result hash.
+1. **Battle prototype** (1, 2, 3, 4): drawn with the engine's primitive shapes (`docs/specs/mesh.md`) and debug lines. A ctest test checks
+   that the same deployment gives the same result hash. Its stage A (one round with one unit type) is built in `autobattler/`
+   (`docs/specs/battle.md`); stage B is still to do.
 2. **Round loop and AI** (5, 9, the least of 10): this is where the game proves fun or not.
 3. **Mass rendering and animation** (6, 7): measured with a stress scene workload of about 1,000
    units and 5,000 projectiles.

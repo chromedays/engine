@@ -41,9 +41,9 @@ internal u32 write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 n
 {
     if (scope == SAVE_SCOPE_NODE && !node_count)
         return 0;
-    u32 size = save_write_scope(app, scope, nodes, node_count, out, UNDO_MAX_BYTES);
-    NV_ASSERT(size); // a scope that does not fit in UNDO_MAX_BYTES is not undoable
-    return size;
+    NvChunkWritten written = save_write_scope(app, scope, nodes, node_count, out, UNDO_MAX_BYTES);
+    NV_ASSERT(written.ok); // a scope that does not fit in UNDO_MAX_BYTES is not undoable
+    return written.size;
 }
 
 internal void commit(App* app, SaveScope scope)

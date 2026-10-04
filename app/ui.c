@@ -22,11 +22,11 @@ internal void tree_marks(App* app, SceneView* view)
 {
     Search* s = &app->search;
     NvScene* scene = view->scene;
-    u32 key = 2166136261u;
-    for (const char* c = s->queries[SEARCH_SCENE]; *c; ++c)
-        key = (key ^ (u8)*c) * 16777619u;
-    key = (key ^ scene->node_count) * 16777619u;
-    key = (key ^ (u32)app->shown) * 16777619u;
+    // Only a change detector, so the words are hashed by their bytes.
+    u32 shown = (u32)app->shown;
+    u32 key = nv_fnv1a(NV_FNV1A_SEED, s->queries[SEARCH_SCENE], strlen(s->queries[SEARCH_SCENE]));
+    key = nv_fnv1a(key, &scene->node_count, sizeof(scene->node_count));
+    key = nv_fnv1a(key, &shown, sizeof(shown));
     s32 frame = igGetFrameCount();
     if (key == s->tree_key && frame - s->tree_frame < 30)
         return;
@@ -375,26 +375,21 @@ internal void post_ui(App* app)
         igSliderFloat(TL("Bloom intensity"), &post->bloom_intensity, 0.0f, 0.2f, "%.3f", 0);
 }
 
-internal u32 clamp_u32(u32 value, u32 lo, u32 hi)
-{
-    return value < lo ? lo : value > hi ? hi : value;
-}
-
 // The View tab's Resolution section (docs/specs/resolution.md).
 internal void resolution_ui(App* app)
 {
-    Resolution* resolution = &app->resolution;
+    NvResolution* resolution = &app->resolution;
     search_section(app, "Resolution");
     const char* modes[] = {T("Scale"), T("Fixed size")};
     s32 mode = (s32)resolution->mode;
     if (search_row(app, "Mode", "scale fixed size")) {
         if (igCombo_Str_arr(TL("Mode"), &mode, modes, 2, -1))
-            resolution->mode = mode == 1 ? RESOLUTION_FIXED : RESOLUTION_SCALE;
+            resolution->mode = mode == 1 ? NV_RESOLUTION_FIXED : NV_RESOLUTION_SCALE;
     }
 
-    if (resolution->mode == RESOLUTION_SCALE) {
+    if (resolution->mode == NV_RESOLUTION_SCALE) {
         const char* divisors[] = {T("1/1 (full)"), "1/2", "1/3", "1/4"};
-        s32 index = (s32)clamp_u32(resolution->divisor, 1, 4) - 1;
+        s32 index = (s32)nv_clamp_u32(resolution->divisor, 1, 4) - 1;
         if (search_row(app, "Scale", "divisor lower resolution pixel")) {
             if (igCombo_Str_arr(TL("Scale"), &index, divisors, 4, -1))
                 resolution->divisor = (u32)index + 1;
@@ -424,17 +419,17 @@ internal void resolution_ui(App* app)
         s32 fit = (s32)resolution->fixed_fit;
         if (search_row(app, "Fit", "whole multiples stretch letterbox bars")) {
             if (igCombo_Str_arr(TL("Fit"), &fit, fits, 3, -1))
-                resolution->fixed_fit = (FixedFit)fit;
+                resolution->fixed_fit = (NvFixedFit)fit;
         }
         if (index == (s32)NV_ARRAY_COUNT(sizes)) {
             int width = (int)resolution->fixed_width, height = (int)resolution->fixed_height;
             if (search_row(app, "Width", "custom size")) {
                 if (igInputInt(TL("Width"), &width, 16, 128, 0))
-                    resolution->fixed_width = clamp_u32((u32)(width < 0 ? 0 : width), RESOLUTION_MIN, RESOLUTION_MAX);
+                    resolution->fixed_width = nv_clamp_u32((u32)(width < 0 ? 0 : width), NV_RESOLUTION_MIN, NV_RESOLUTION_MAX);
             }
             if (search_row(app, "Height", "custom size")) {
                 if (igInputInt(TL("Height"), &height, 16, 128, 0))
-                    resolution->fixed_height = clamp_u32((u32)(height < 0 ? 0 : height), RESOLUTION_MIN, RESOLUTION_MAX);
+                    resolution->fixed_height = nv_clamp_u32((u32)(height < 0 ? 0 : height), NV_RESOLUTION_MIN, NV_RESOLUTION_MAX);
             }
         }
     }
@@ -444,7 +439,7 @@ internal void resolution_ui(App* app)
 
     // What that comes to: the scene's pixels, and how big each one shows.
     const NvSceneOutput* scene = &app->layout.scene;
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
     f32 pw = scene->pixel_width, ph = scene->pixel_height;
     b32 whole = pw == ph && pw >= 1.0f && pw == (f32)(u32)pw;
     if (whole) {
@@ -622,10 +617,10 @@ void ui_view_tab(App* app)
             app_show_scene(app, (SceneKind)shown);
     }
     if (search_row(app, "Language", "english korean 한국어 언어")) {
-        const char* languages[LANG_COUNT] = {"English", "한국어"};
-        s32 language = (s32)strings_language();
-        if (igCombo_Str_arr(TL("Language"), &language, languages, LANG_COUNT, -1))
-            strings_set_language((Language)language);
+        const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
+        s32 language = (s32)nv_strings_language();
+        if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
+            nv_strings_set_language((NvLanguage)language);
     }
     if (search_plain(app)) {
         igText(T("%.0f FPS (%.2f ms)"), io->Framerate, 1000.0f / io->Framerate);
@@ -635,11 +630,11 @@ void ui_view_tab(App* app)
         igPopStyleColor(1);
     }
     if (search_row(app, "Camera yaw", "orbit"))
-        igSliderAngle(TL("Camera yaw"), &view->camera_yaw, -180.0f, 180.0f, "%.0f deg", 0);
+        igSliderAngle(TL("Camera yaw"), &view->orbit.yaw, -180.0f, 180.0f, "%.0f deg", 0);
     if (search_row(app, "Camera pitch", "orbit"))
-        igSliderAngle(TL("Camera pitch"), &view->camera_pitch, -10.0f, 80.0f, "%.0f deg", 0);
+        igSliderAngle(TL("Camera pitch"), &view->orbit.pitch, -10.0f, 80.0f, "%.0f deg", 0);
     if (search_row(app, "Distance", "camera zoom orbit"))
-        igSliderFloat(TL("Distance"), &view->camera_distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
+        igSliderFloat(TL("Distance"), &view->orbit.distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
     if (search_row(app, "Camera follows selection", "orbit follow"))
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
     if (app->shown == SCENE_SHOWCASE) {
@@ -666,37 +661,6 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
         snprintf(out, capacity, "%u", unseen);
 }
 
-// Copies `text` into `out`, cut and ended with "..." if it is wider than `room` pixels. The cut
-// is the longest one that fits (a binary search over the text's UTF-8 characters), never inside a
-// character.
-internal void fit_text(const char* text, f32 room, char* out, umm capacity)
-{
-    umm length = strlen(text);
-    if (length >= capacity - 4)
-        length = capacity - 5;
-    memcpy(out, text, length);
-    out[length] = 0;
-    if (igCalcTextSize(out, NULL, false, -1.0f).x <= room)
-        return;
-    umm lo = 0, hi = length; // the longest prefix that fits is in [lo, hi)
-    while (lo + 1 < hi) {
-        umm mid = (lo + hi) / 2;
-        while (mid > lo && ((u8)text[mid] & 0xC0) == 0x80)
-            --mid; // the start of a character
-        if (mid == lo) {
-            lo = hi - 1; // no character start between: stop
-            break;
-        }
-        char candidate[512];
-        snprintf(candidate, sizeof(candidate), "%.*s...", (int)mid, text);
-        if (igCalcTextSize(candidate, NULL, false, -1.0f).x <= room)
-            lo = mid;
-        else
-            hi = mid;
-    }
-    snprintf(out, capacity, "%.*s...", (int)lo, text);
-}
-
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
 // Warnings and errors that arrived while the Console tab was not shown add a badge, a dot and a
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
@@ -716,47 +680,28 @@ void ui_build_label(App* app)
     char count[8];
     format_unseen(unseen, count, sizeof(count));
 
-    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
-    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
-    // The viewport's corner, in CSS pixels: below the phone's top bar, right of the desktop's left dock.
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    ImVec2_c pos = {(f32)app->layout.viewport.x / ratio + 6.0f, (f32)app->layout.viewport.y / ratio + 6.0f};
+    // The badge goes after the text, inside the label's backdrop (the engine draws the label and the commit's subject line).
     f32 radius = igGetFontSize() * 0.3f;
     f32 badge_width = 0.0f;
     if (unseen)
         badge_width = 8.0f + radius * 2.0f + 4.0f + igCalcTextSize(count, NULL, false, -1.0f).x;
-    ImVec2_c min = {pos.x - 4.0f, pos.y - 2.0f};
-    ImVec2_c max = {pos.x + size.x + badge_width + 4.0f, pos.y + size.y + 2.0f};
-    ImDrawList_AddRectFilled(draw, min, max, 0x99000000u, 3.0f, 0);
-    ImDrawList_AddText_Vec2(draw, pos, 0xFFFFFFFFu, text, NULL);
-    // The commit's subject line under it, cut to the viewport's width. Not part of the tap box.
-    {
-        char subject[sizeof("Commit: " NV_GIT_SUBJECT) + 4];
-        fit_text("Commit: " NV_GIT_SUBJECT, (f32)app->layout.viewport.width / ratio - 20.0f, subject, sizeof(subject));
-        ImVec2_c subject_size = igCalcTextSize(subject, NULL, false, -1.0f);
-        ImVec2_c subject_pos = {pos.x, max.y + 3.0f};
-        ImDrawList_AddRectFilled(draw, (ImVec2_c){pos.x - 4.0f, subject_pos.y - 2.0f},
-                                 (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, 0x99000000u, 3.0f, 0);
-        ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, subject, NULL);
-    }
+    f32* box = app->badge_box;
+    f32 text_end = nv_imgui_build_label(&app->imgui, app->layout.viewport, text, badge_width, "Commit: " NV_GIT_SUBJECT, box);
     if (unseen) {
+        ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
         ImU32 color = console_level_color(worst);
-        f32 x = pos.x + size.x + 8.0f;
-        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, pos.y + size.y * 0.5f}, radius, color, 12);
-        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, pos.y}, color, count, NULL);
+        f32 x = text_end + 8.0f;
+        f32 text_y = box[1] + 2.0f, text_height = box[3] - box[1] - 4.0f;
+        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, text_y + text_height * 0.5f}, radius, color, 12);
+        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, text_y}, color, count, NULL);
     }
 
-    // The box a tap counts in: the label, grown to a size a finger can hit.
-    f32* box = app->badge_box;
+    // The box a tap counts in: the label (not the subject line), grown to a size a finger can hit.
     if (!unseen) {
         box[0] = box[1] = box[2] = box[3] = 0.0f;
         return;
     }
     f32 minimum = 32.0f * app->imgui.ui_scale;
-    box[0] = min.x;
-    box[1] = min.y;
-    box[2] = max.x;
-    box[3] = max.y;
     for (u32 axis = 0; axis < 2; ++axis) {
         f32 extra = minimum - (box[axis + 2] - box[axis]);
         if (extra > 0.0f) {
@@ -849,73 +794,16 @@ b32 ui_begin_textures_tab(App* app)
     return open;
 }
 
-NvRect ui_rect(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
-{
-    u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
-    u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
-    if (right < left)
-        right = left;
-    if (bottom < top)
-        bottom = top;
-    return (NvRect){left, top, right - left, bottom - top};
-}
-
-// The scene's resolution and where its image goes in the viewport (docs/specs/resolution.md).
-internal NvSceneOutput scene_output(const Resolution* resolution, NvRect viewport)
-{
-    NvSceneOutput out = {.image = viewport, .pixel_width = 1.0f, .pixel_height = 1.0f};
-    if (!viewport.width || !viewport.height) {
-        out.width = out.height = 1;
-        return out;
-    }
-    if (resolution->mode == RESOLUTION_FIXED) {
-        u32 width = clamp_u32(resolution->fixed_width, RESOLUTION_MIN, RESOLUTION_MAX);
-        u32 height = clamp_u32(resolution->fixed_height, RESOLUTION_MIN, RESOLUTION_MAX);
-        out.width = width;
-        out.height = height;
-        f32 sx = (f32)viewport.width / (f32)width, sy = (f32)viewport.height / (f32)height;
-        u32 image_width, image_height;
-        u32 fit_x = viewport.width / width, fit_y = viewport.height / height;
-        u32 multiple = fit_x < fit_y ? fit_x : fit_y;
-        if (resolution->fixed_fit == FIT_STRETCH) {
-            // The whole viewport, whatever the aspect ratio.
-            out.pixel_width = sx;
-            out.pixel_height = sy;
-            image_width = viewport.width;
-            image_height = viewport.height;
-        } else if (resolution->fixed_fit == FIT_WHOLE && multiple >= 1) {
-            // The largest whole multiple that fits, so every block is the same size.
-            out.pixel_width = out.pixel_height = (f32)multiple;
-            image_width = width * multiple;
-            image_height = height * multiple;
-        } else {
-            // The largest scale that fits keeping the aspect ratio: what FIT_VIEWPORT always does, and
-            // FIT_WHOLE does when even the size itself does not fit.
-            out.pixel_width = out.pixel_height = sx < sy ? sx : sy;
-            image_width = clamp_u32((u32)((f32)width * out.pixel_width + 0.5f), 1, viewport.width);
-            image_height = clamp_u32((u32)((f32)height * out.pixel_width + 0.5f), 1, viewport.height);
-        }
-        out.image = (NvRect){viewport.x + (viewport.width - image_width) / 2, viewport.y + (viewport.height - image_height) / 2,
-                             image_width, image_height};
-        return out;
-    }
-    u32 divisor = clamp_u32(resolution->divisor, 1, 4);
-    out.width = (viewport.width + divisor - 1) / divisor;
-    out.height = (viewport.height + divisor - 1) / divisor;
-    out.pixel_width = out.pixel_height = (f32)divisor;
-    return out;
-}
-
 void app_layout(App* app)
 {
-    f32 ratio = app->window.pixel_ratio > 0.0f ? app->window.pixel_ratio : 1.0f;
-    f32 width = (f32)app->gpu.width / ratio;
-    f32 height = (f32)app->gpu.height / ratio;
+    f32 ratio = nv_window_pixel_ratio(&app->window);
+    f32 width_css = (f32)app->gpu.width / ratio;
+    f32 height_css = (f32)app->gpu.height / ratio;
     if (app->ui_mode == UI_PHONE)
-        phone_layout(app, width, height, ratio);
+        phone_layout(app, width_css, height_css, ratio);
     else
-        desktop_layout(app, width, height, ratio);
-    app->layout.scene = scene_output(&app->resolution, app->layout.viewport);
+        desktop_layout(app, width_css, height_css, ratio);
+    app->layout.scene = nv_renderer_scene_output(&app->resolution, app->layout.viewport);
 }
 
 void app_build_ui(App* app)

@@ -36,7 +36,8 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
-      # Both builds are deployed: Release at <pages>/release/, Debug (NV_ASSERT on) at <pages>/debug/.
+      # Both builds are deployed: Release at <pages>/release/, Debug (NV_ASSERT on) at <pages>/debug/. The auto-battler is
+      # deployed apart from the editor app (docs/specs/battle.md): <pages>/autobattler/release/ and .../debug/.
       - name: Configure
         run: |
           emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -57,6 +58,8 @@ jobs:
         run: |
           cmake --install build-release --prefix dist/engine-web/release --component web
           cmake --install build-debug --prefix dist/engine-web/debug --component web
+          cmake --install build-release --prefix dist/engine-web/autobattler/release --component autobattler
+          cmake --install build-debug --prefix dist/engine-web/autobattler/debug --component autobattler
 
       - uses: actions/upload-artifact@v4
         with:
@@ -66,7 +69,8 @@ jobs:
 
   # Pages serves the gh-pages branch (deployed by pages.yml): the default branch's builds at
   # <pages>/release/ and <pages>/debug/, and every other branch's Debug build at <pages>/<branch>/
-  # ("/" in a branch name becomes "-"). Each push replaces only its own folders, in a one-commit
+  # ("/" in a branch name becomes "-"). The auto-battler follows the same pattern under <pages>/autobattler/:
+  # release/, debug/ and <branch>/. Each push replaces only its own folders, in a one-commit
   # history, so the branch does not grow with every build.
   stage:
     if: github.event_name == 'push' && github.ref_type == 'branch'
@@ -85,7 +89,7 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           folder="${GITHUB_REF_NAME//\//-}"
-          if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ] && { [ "$folder" = release ] || [ "$folder" = debug ]; }; then
+          if [ "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ] && { [ "$folder" = release ] || [ "$folder" = debug ] || [ "$folder" = autobattler ]; }; then
             echo "::warning::A branch named $folder would replace the default branch's build; not published."
             exit 0
           fi
@@ -104,11 +108,15 @@ jobs:
             fi
             cd site
             if [ "$GITHUB_REF_NAME" = "$DEFAULT_BRANCH" ]; then
-              rm -rf release debug
+              rm -rf release debug autobattler/release autobattler/debug
+              mkdir -p autobattler
               cp -r ../build/release ../build/debug .
+              cp -r ../build/autobattler/release ../build/autobattler/debug autobattler/
             else
-              rm -rf "$folder"
+              rm -rf "$folder" "autobattler/$folder"
+              mkdir -p autobattler
               cp -r ../build/debug "$folder"
+              cp -r ../build/autobattler/debug "autobattler/$folder"
             fi
             touch .nojekyll
             git checkout -q --orphan next

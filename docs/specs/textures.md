@@ -64,13 +64,13 @@
 
 ### 엔진 API 변경
 
-- **`nv/renderer.h`**
+- **`engine/renderer.h`**
   - `NvRenderTexture`에 `char name[64]`, `u32 width, height, mip_count`, `WGPUTextureFormat format`이 생긴다.
   - `nv_renderer_add_texture(renderer, name, width, height, rgba, srgb, scratch)`: 새 `name` 매개변수 (NULL = `texture N`);
     `gltf.c`가 이미지의 이름을 넘긴다.
   - `NvRenderer.depth_sampled` (b32): 깊이 타깃도 `TextureBinding`과 함께 만든다.
-  - 메모리 열을 위해 `nv/gpu.h`의 `nv_gpu_format_name` 옆에 `nv_gpu_format_bytes(WGPUTextureFormat)`.
-- **`nv/imgui.h`**
+  - 메모리 열을 위해 `engine/gpu.h`의 `nv_gpu_format_name` 옆에 `nv_gpu_format_bytes(WGPUTextureFormat)`.
+- **`engine/imgui.h`**
   - `typedef enum NvImguiPreview { NV_IMGUI_PREVIEW_RGBA, NV_IMGUI_PREVIEW_RGB, NV_IMGUI_PREVIEW_R, ..._G, ..._B, ..._A, NV_IMGUI_PREVIEW_DEPTH }`.
   - `ImTextureID nv_imgui_preview(NvImgui* imgui, WGPUTexture texture, u32 mip, NvImguiPreview mode, f32 range_min, f32 range_max, f32 near, f32 far)`:
     이번 프레임 `igImage`에 넘길 id. `near`와 `far`는 reverse-Z 깊이를 거리로 바꾼다; 0과 0은 깊이를 날것으로 읽는다.
@@ -189,14 +189,14 @@ Recommendation: write it ourselves on `igImage`. No third-party library.
 
 ### Engine API changes
 
-- **`nv/renderer.h`**
+- **`engine/renderer.h`**
   - `NvRenderTexture` gains `char name[64]`, `u32 width, height, mip_count`, `WGPUTextureFormat format`.
   - `nv_renderer_add_texture(renderer, name, width, height, rgba, srgb, scratch)`: the new `name`
     parameter (NULL = `texture N`); `gltf.c` passes the image's name.
   - `NvRenderer.depth_sampled` (b32): make the depth target with `TextureBinding` too.
-  - `nv_gpu_format_bytes(WGPUTextureFormat)` next to `nv_gpu_format_name` in `nv/gpu.h`, for the
+  - `nv_gpu_format_bytes(WGPUTextureFormat)` next to `nv_gpu_format_name` in `engine/gpu.h`, for the
     memory column.
-- **`nv/imgui.h`**
+- **`engine/imgui.h`**
   - `typedef enum NvImguiPreview { NV_IMGUI_PREVIEW_RGBA, NV_IMGUI_PREVIEW_RGB, NV_IMGUI_PREVIEW_R, ..._G, ..._B, ..._A, NV_IMGUI_PREVIEW_DEPTH }`.
   - `ImTextureID nv_imgui_preview(NvImgui* imgui, WGPUTexture texture, u32 mip, NvImguiPreview mode, f32 range_min, f32 range_max, f32 near, f32 far)`:
     the id to pass to `igImage` this frame. `near` and `far` turn reverse-Z depth into distance;

@@ -1,8 +1,8 @@
-// Checks nv/log.h without a browser: the ring wraps and drops the oldest messages, texts never wrap
+// Checks engine/log.h without a browser: the ring wraps and drops the oldest messages, texts never wrap
 // around the text ring's end, repeats collapse, long texts are cut on a character boundary, and the
 // page's queue is read. Runs under Node (ctest).
 
-#include "nv/log.h"
+#include "engine/log.h"
 
 #include <emscripten/emscripten.h>
 

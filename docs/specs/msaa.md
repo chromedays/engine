@@ -64,10 +64,10 @@
 
 ### 변경
 
-- **렌더러 (`nv/renderer.h`, `engine/src/renderer.c`).** `NvRenderer.msaa`; 4-샘플 색 텍스처와 그 뷰; 샘플 수로 깊이
+- **렌더러 (`engine/renderer.h`, `engine/renderer.c`).** `NvRenderer.msaa`; 4-샘플 색 텍스처와 그 뷰; 샘플 수로 깊이
   타깃을 만드는 `update_depth_buffer`; 그것으로 만든 씬 파이프라인 (바뀌면 다시 만듦); 캔버스를 `resolveTarget`으로
   한 4-샘플 뷰를 가리키는 씬 패스의 색 어태치먼트, Off일 때는 캔버스를 바로 가리킴; 샘플 수와 크기가 든 로그 줄.
-- **ImGui 미리보기 (`engine/src/imgui.c`).** 미리보는 깊이 텍스처의 샘플이 둘 이상일 때 고르는 다중 샘플 깊이
+- **ImGui 미리보기 (`engine/imgui.c`).** 미리보는 깊이 텍스처의 샘플이 둘 이상일 때 고르는 다중 샘플 깊이
   미리보기 파이프라인과 bind group layout.
 - **앱.** View 탭의 Anti-aliasing 콤보 (`app/ui.c`), `MSAA` 태그 (`app/save.c`와 `save.md`), Stress 탭의 줄과
   벤치마크의 열 (`app/stress.c`).
@@ -175,12 +175,12 @@ canvas after the resolve; it is left for later, once the Stress tab shows whethe
 
 ### Changes
 
-- **Renderer (`nv/renderer.h`, `engine/src/renderer.c`).** `NvRenderer.msaa`; the 4-sample color
+- **Renderer (`engine/renderer.h`, `engine/renderer.c`).** `NvRenderer.msaa`; the 4-sample color
   texture and its view; `update_depth_buffer` creating the depth target with the sample count;
   the scene pipelines created with it (remade on change); the scene pass's color attachment
   pointing at the 4-sample view with the canvas as `resolveTarget`, or straight at the canvas when
   Off; log lines with the sample count and the sizes.
-- **ImGui previews (`engine/src/imgui.c`).** A multisampled depth preview pipeline and bind group
+- **ImGui previews (`engine/imgui.c`).** A multisampled depth preview pipeline and bind group
   layout, chosen when the previewed depth texture has more than one sample.
 - **App.** The View tab's Anti-aliasing combo (`app/ui.c`), the `MSAA` tag (`app/save.c` and
   `save.md`), the Stress tab's line and the benchmark's column (`app/stress.c`).

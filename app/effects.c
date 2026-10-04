@@ -1,5 +1,5 @@
 // The effects the app fires and the View tab's Effects section (docs/specs/vfx.md). The engine
-// (nv/vfx.h) simulates and draws the particles; this file says what an explosion, sparks, smoke and
+// (engine/vfx.h) simulates and draws the particles; this file says what an explosion, sparks, smoke and
 // a missile's trail are made of, and the buttons that fire them at a point beside the orbit point.
 
 #include "app.h"
@@ -126,7 +126,7 @@ internal NvVfxEffectId make_swarm(NvVfx* vfx)
 void effects_init(App* app)
 {
     Effects* effects = &app->effects;
-    effects->rng = 0x9E3779B9u;
+    nv_random_seed(&effects->rng, 0x9E3779B9u, 1);
     make_styles(effects);
     nv_vfx_init(&app->vfx, &app->gpu, (NvVfxCapacity){0}, &app->permanent);
     effects->explosion = make_explosion(&app->vfx);
@@ -148,7 +148,7 @@ NvVec3 effects_test_point(App* app)
         right = nv_vec3_scale(right, 1.0f / length);
     else
         right = nv_vec3(1.0f, 0.0f, 0.0f);
-    return nv_vec3(view->orbit_point.x + right.x * 2.5f, 0.05f, view->orbit_point.z + right.z * 2.5f);
+    return nv_vec3(view->orbit.target.x + right.x * 2.5f, 0.05f, view->orbit.target.z + right.z * 2.5f);
 }
 
 // A scorch mark on the ground below `point`, turned at random.
@@ -199,32 +199,22 @@ void effects_clear(App* app)
 // The stress scene's Effects workload
 //
 
-internal f32 random01(Effects* effects)
-{
-    u32 x = effects->rng;
-    x ^= x << 13;
-    x ^= x >> 17;
-    x ^= x << 5;
-    effects->rng = x;
-    return (f32)(x >> 8) * (1.0f / 16777216.0f);
-}
-
 // A point on the ground in the field around the orbit point.
 internal NvVec3 field_point(App* app, f32 height)
 {
     Effects* effects = &app->effects;
-    NvVec3 orbit = app_view(app)->orbit_point;
-    return nv_vec3(orbit.x + (random01(effects) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (random01(effects) * 2.0f - 1.0f) * 12.0f);
+    NvVec3 orbit = app_view(app)->orbit.target;
+    return nv_vec3(orbit.x + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 12.0f);
 }
 
 internal void new_flight(App* app, Flight* flight)
 {
     Effects* effects = &app->effects;
-    f32 angle = random01(effects) * 6.2831853f;
-    f32 speed = 6.0f + random01(effects) * 4.0f;
+    f32 angle = nv_random_f32(&effects->rng) * 6.2831853f;
+    f32 speed = 6.0f + nv_random_f32(&effects->rng) * 4.0f;
     flight->pos = field_point(app, 0.3f);
-    flight->vel = nv_vec3(cosf(angle) * speed, 3.0f + random01(effects) * 2.0f, sinf(angle) * speed);
-    flight->life = 1.2f + random01(effects) * 0.8f;
+    flight->vel = nv_vec3(cosf(angle) * speed, 3.0f + nv_random_f32(&effects->rng) * 2.0f, sinf(angle) * speed);
+    flight->life = 1.2f + nv_random_f32(&effects->rng) * 0.8f;
 }
 
 void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
@@ -247,7 +237,7 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
     while (effects->stress_flight_count < missiles) {
         Flight* flight = &effects->stress_flights[effects->stress_flight_count++];
         new_flight(app, flight);
-        flight->life *= random01(effects); // out of step with each other
+        flight->life *= nv_random_f32(&effects->rng); // out of step with each other
     }
     for (u32 i = 0; i < effects->stress_flight_count; ++i) {
         Flight* flight = &effects->stress_flights[i];
@@ -268,7 +258,7 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
     // Beams: each is held by calling again every frame with a short life, between fixed points of its own.
     for (u32 i = 0; i < beams; ++i) {
         u32 h = i * 2654435761u + 12345u;
-        NvVec3 orbit = app_view(app)->orbit_point;
+        NvVec3 orbit = app_view(app)->orbit.target;
         f32 ax = (f32)(h & 1023u) / 1023.0f, az = (f32)((h >> 10) & 1023u) / 1023.0f;
         f32 bx = (f32)((h >> 20) & 1023u) / 1023.0f, bz = (f32)((h * 40503u >> 8) & 1023u) / 1023.0f;
         NvVec3 from = nv_vec3(orbit.x + (ax * 2.0f - 1.0f) * 16.0f, 7.0f, orbit.z + (az * 2.0f - 1.0f) * 12.0f);
@@ -300,7 +290,7 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
     effects->decal_carry += (f32)want->effect_decals * dt;
     for (u32 n = 0; effects->decal_carry >= 1.0f && n < 2000; ++n) {
         effects->decal_carry -= 1.0f;
-        scorch_at(app, field_point(app, 0.0f), 0.6f + random01(effects) * 1.2f);
+        scorch_at(app, field_point(app, 0.0f), 0.6f + nv_random_f32(&effects->rng) * 1.2f);
     }
 }
 

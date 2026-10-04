@@ -1,6 +1,6 @@
 // The GPU-free parts of the effects system (docs/specs/vfx.md): how a frame's bursts split into
 // workgroup jobs, and how the segment and decal rings hand out slots.
-#include "../engine/src/vfx_cpu.h"
+#include "engine/vfx_cpu.h"
 
 #include <stdio.h>
 #include <string.h>

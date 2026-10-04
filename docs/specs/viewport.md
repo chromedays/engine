@@ -30,7 +30,7 @@
 
 ### 엔진 변경
 
-- **입력 라우팅 (`nv/imgui.h`).**
+- **입력 라우팅 (`engine/imgui.h`).**
   - `resolution.md` 이후로 씬은 자체 해상도로 렌더링되어 뷰포트 안의 이미지 사각형 (`App.layout.scene`)에 보일 수 있다:
     picking과 팬은 그 이미지를 쓰고 (`nv_renderer_view_ray`가 `NvSceneOutput`을 받는다), 고정 크기 이미지 주변 띠의 탭은
     아무것도 하지 않는다. 공전, 팬, 줌은 여전히 뷰포트 어디서든 동작한다.
@@ -41,17 +41,17 @@
     - 줌 배율 (1 = 없음);
     - 탭 위치.
   - 다른 곳에서 시작하는 모든 것은 전처럼 동작한다.
-- **메시 경계 (`nv/renderer.h`).**
+- **메시 경계 (`engine/renderer.h`).**
   - `NvRenderMesh`가 로컬 경계 상자를 유지한다.
   - skinned 메시는 관절마다 그 관절이 가중치를 가진 모든 정점을 감싸는 bind 포즈 상자 하나도 유지한다.
     `nv_renderer_mesh_bounds`가 그 상자들을 현재 스키닝 행렬로 옮기고 합치는데, 이것이 포즈된 메시를 감싼다. skinned
     정점은 관절 이동의 가중 평균이므로 그 합집합 안에 머문다.
   - picking과 선택 윤곽은 포즈된 상자를 쓴다. (처음에는 bind 포즈 상자로 나갔는데, 애니메이션되는 동안 T-포즈 폭을
     유지했다.)
-- **Picking (`nv/renderer.h`).**
+- **Picking (`engine/renderer.h`).**
   - `nv_renderer_view_ray`는 뷰포트 위치를 씬의 활성 카메라를 지나는 월드 광선으로 바꾼다.
   - `nv_renderer_pick`은 각 노드의 자체 공간의 상자를 써서 광선이 맞는 가장 가까운 메시 노드를 돌려준다.
-- **수학 (`nv/math.h`).** 방향 변환, 쿼터니언 ↔ 오일러 (YXZ 순서).
+- **수학 (`engine/math.h`).** 방향 변환, 쿼터니언 ↔ 오일러 (YXZ 순서).
 
 ### 단계
 
@@ -89,7 +89,7 @@ touch. Rotation becomes editable in the inspector.
 
 ### Engine changes
 
-- **Input routing (`nv/imgui.h`).**
+- **Input routing (`engine/imgui.h`).**
   - Since `resolution.md` the scene may be rendered at a resolution of its own and shown in an
     image rectangle inside the viewport (`App.layout.scene`): picking and panning use that image
     (`nv_renderer_view_ray` takes an `NvSceneOutput`), and a tap on the bars around a fixed-size
@@ -102,7 +102,7 @@ touch. Rotation becomes editable in the inspector.
     - a zoom factor (1 = none);
     - a tap position.
   - Everything that starts elsewhere works as before.
-- **Mesh bounds (`nv/renderer.h`).**
+- **Mesh bounds (`engine/renderer.h`).**
   - `NvRenderMesh` keeps its local bounding box.
   - Skinned meshes also keep one bind-pose box per joint, around every vertex that joint has weight
     on. `nv_renderer_mesh_bounds` moves those boxes by the current skinning matrices and joins
@@ -110,12 +110,12 @@ touch. Rotation becomes editable in the inspector.
     moves, so it stays inside that union.
   - Picking and the selection outline use the posed box. (First shipped with the bind-pose box,
     which kept a T-pose width while animated.)
-- **Picking (`nv/renderer.h`).**
+- **Picking (`engine/renderer.h`).**
   - `nv_renderer_view_ray` turns a viewport position into a world ray through the scene's active
     camera.
   - `nv_renderer_pick` returns the nearest mesh node the ray hits, using each node's box in its own
     space.
-- **Math (`nv/math.h`).** Transforming a direction, and quaternion ↔ Euler (YXZ order).
+- **Math (`engine/math.h`).** Transforming a direction, and quaternion ↔ Euler (YXZ order).
 
 ### Phases
 

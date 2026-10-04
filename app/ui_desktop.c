@@ -20,24 +20,19 @@ typedef enum DockSplitter {
     SPLITTER_BOTTOM,
 } DockSplitter;
 
-internal f32 clampf(f32 v, f32 lo, f32 hi)
-{
-    return v < lo ? lo : v > hi ? hi : v;
-}
-
 // The docks' sizes for a window: the wanted ones, kept inside the splitters' range, then shrunk so
 // the viewport keeps a share of the window (the right dock gives way first), and never less than
 // a few pixels.
 internal void dock_sizes(const Docks* docks, f32 width, f32 height, f32* left, f32* right, f32* bottom)
 {
     f32 area = height - DESKTOP_TOP_BAR;
-    f32 l = docks->show_left ? clampf(docks->left_width, DOCK_LEFT_MIN, DOCK_SIDE_MAX) : 0.0f;
-    f32 r = docks->show_right ? clampf(docks->right_width, DOCK_RIGHT_MIN, DOCK_SIDE_MAX) : 0.0f;
+    f32 l = docks->show_left ? nv_clamp_f32(docks->left_width, DOCK_LEFT_MIN, DOCK_SIDE_MAX) : 0.0f;
+    f32 r = docks->show_right ? nv_clamp_f32(docks->right_width, DOCK_RIGHT_MIN, DOCK_SIDE_MAX) : 0.0f;
     f32 room = width * (1.0f - DESKTOP_MIN_VIEWPORT_SHARE);
     if (l + r > room) {
-        r = clampf(room - l, docks->show_right ? DOCK_RIGHT_MIN : 0.0f, r);
+        r = nv_clamp_f32(room - l, docks->show_right ? DOCK_RIGHT_MIN : 0.0f, r);
         if (l + r > room)
-            l = clampf(room - r, docks->show_left ? DOCK_LEFT_MIN : 0.0f, l);
+            l = nv_clamp_f32(room - r, docks->show_left ? DOCK_LEFT_MIN : 0.0f, l);
     }
     f32 most = width - DESKTOP_MIN_VIEWPORT;
     if (most < 0.0f)
@@ -50,7 +45,7 @@ internal void dock_sizes(const Docks* docks, f32 width, f32 height, f32* left, f
 
     f32 b = 0.0f;
     if (docks->show_bottom) {
-        b = docks->bottom_open ? clampf(docks->bottom_height, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX) : DESKTOP_STRIP;
+        b = docks->bottom_open ? nv_clamp_f32(docks->bottom_height, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX) : DESKTOP_STRIP;
         f32 limit = area * (1.0f - DESKTOP_MIN_VIEWPORT_SHARE);
         if (docks->bottom_open && b > limit)
             b = limit > DOCK_BOTTOM_MIN ? limit : DOCK_BOTTOM_MIN;
@@ -78,11 +73,11 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
     f32 top = DESKTOP_TOP_BAR;
     f32 middle = height - bottom;
     app->layout = (Layout){
-        .top_bar = ui_rect(0.0f, 0.0f, width, top, ratio),
-        .left = ui_rect(0.0f, top, left, middle, ratio),
-        .right = ui_rect(width - right, top, width, middle, ratio),
-        .bottom = ui_rect(0.0f, middle, width, height, ratio),
-        .viewport = ui_rect(left, top, width - right, middle, ratio),
+        .top_bar = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width, top, ratio),
+        .left = nv_window_framebuffer_rect_from_css(0.0f, top, left, middle, ratio),
+        .right = nv_window_framebuffer_rect_from_css(width - right, top, width, middle, ratio),
+        .bottom = nv_window_framebuffer_rect_from_css(0.0f, middle, width, height, ratio),
+        .viewport = nv_window_framebuffer_rect_from_css(left, top, width - right, middle, ratio),
     };
 }
 
@@ -327,11 +322,11 @@ internal void splitter(App* app, const char* name, NvRect rect, DockSplitter whi
             f32 moved = along - docks->drag_start_mouse;
             // The right and bottom docks grow as their border moves away from the window's edge.
             if (which == SPLITTER_LEFT)
-                docks->left_width = clampf(docks->drag_start_size + moved, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
+                docks->left_width = nv_clamp_f32(docks->drag_start_size + moved, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
             else if (which == SPLITTER_RIGHT)
-                docks->right_width = clampf(docks->drag_start_size - moved, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
+                docks->right_width = nv_clamp_f32(docks->drag_start_size - moved, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
             else
-                docks->bottom_height = clampf(docks->drag_start_size - moved, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
+                docks->bottom_height = nv_clamp_f32(docks->drag_start_size - moved, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
         }
         if (!igIsItemActive() && docks->dragging == (s32)which)
             docks->dragging = SPLITTER_NONE;
