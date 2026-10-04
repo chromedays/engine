@@ -1151,9 +1151,11 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
-bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
+b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
 {
     (void)imgui;
+    if (size == 0)
+        return 0; // ImGui asserts on empty font data
     ImGuiIO* io = igGetIO_Nil();
     ImFontConfig* config = ImFontConfig_ImFontConfig();
     config->FontDataOwnedByAtlas = false; // the caller keeps the bytes
@@ -1161,10 +1163,10 @@ bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
     ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, 0.0f, config, NULL);
     ImFontConfig_destroy(config);
     if (!font)
-        return false;
+        return 0;
     io->FontDefault = font;
     igGetStyle()->FontSizeBase = pixel_size;
-    return true;
+    return 1;
 }
 
 #define UI_FONT_FILE "/assets/fonts/Pretendard-Regular.ttf"
@@ -1220,7 +1222,7 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
     memcpy(out + lo, "...", 4);
 }
 
-f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject, f32 box[4])
+NvBuildLabel nv_imgui_draw_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject)
 {
     const ImU32 backdrop = 0x99000000u;
     ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
@@ -1240,13 +1242,12 @@ f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 
                              (ImVec2_c){pos.x + subject_size.x + 4.0f, subject_pos.y + subject_size.y + 2.0f}, backdrop, 3.0f, 0);
     ImDrawList_AddText_Vec2(draw, subject_pos, 0xFFBBBBBBu, fitted, NULL);
 
-    if (box) {
-        box[0] = min.x;
-        box[1] = min.y;
-        box[2] = max.x;
-        box[3] = max.y;
-    }
-    return pos.x + size.x;
+    return (NvBuildLabel){
+        .text_end = pos.x + size.x,
+        .text_top = pos.y,
+        .text_height = size.y,
+        .box = {min.x, min.y, max.x, max.y},
+    };
 }
 
 bool nv_imgui_begin_panel(NvImgui* imgui, const char* name, NvRect rect)

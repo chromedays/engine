@@ -29,8 +29,11 @@ static inline f32 nv_window_pixel_ratio(const NvWindow* window)
 // overlap). Corners given in the wrong order make an empty rectangle.
 static inline NvRect nv_window_framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1, f32 y1, f32 ratio)
 {
-    u32 left = (u32)(x0 * ratio + 0.5f), top = (u32)(y0 * ratio + 0.5f);
-    u32 right = (u32)(x1 * ratio + 0.5f), bottom = (u32)(y1 * ratio + 0.5f);
+    // Rounded, and never below 0: a negative float converted to u32 is undefined.
+    f32 corners[4] = {x0 * ratio + 0.5f, y0 * ratio + 0.5f, x1 * ratio + 0.5f, y1 * ratio + 0.5f};
+    for (u32 i = 0; i < 4; ++i)
+        corners[i] = corners[i] > 0.0f ? corners[i] : 0.0f;
+    u32 left = (u32)corners[0], top = (u32)corners[1], right = (u32)corners[2], bottom = (u32)corners[3];
     if (right < left)
         right = left;
     if (bottom < top)

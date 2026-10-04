@@ -664,7 +664,7 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
 // The build type in the viewport's top-left corner, so a Debug page is never mistaken for Release.
 // Warnings and errors that arrived while the Console tab was not shown add a badge, a dot and a
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
-void ui_build_label(App* app)
+void ui_draw_build_label(App* app)
 {
     // A popup (the command palette, the help window) is above everything but this foreground
     // drawing, so the label waits.
@@ -685,15 +685,15 @@ void ui_build_label(App* app)
     f32 badge_width = 0.0f;
     if (unseen)
         badge_width = 8.0f + radius * 2.0f + 4.0f + igCalcTextSize(count, NULL, false, -1.0f).x;
+    NvBuildLabel label = nv_imgui_draw_build_label(&app->imgui, app->layout.viewport, text, badge_width, "Commit: " NV_GIT_SUBJECT);
     f32* box = app->badge_box;
-    f32 text_end = nv_imgui_build_label(&app->imgui, app->layout.viewport, text, badge_width, "Commit: " NV_GIT_SUBJECT, box);
+    memcpy(box, label.box, sizeof(label.box));
     if (unseen) {
         ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
         ImU32 color = console_level_color(worst);
-        f32 x = text_end + 8.0f;
-        f32 text_y = box[1] + 2.0f, text_height = box[3] - box[1] - 4.0f;
-        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, text_y + text_height * 0.5f}, radius, color, 12);
-        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, text_y}, color, count, NULL);
+        f32 x = label.text_end + 8.0f;
+        ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, label.text_top + label.text_height * 0.5f}, radius, color, 12);
+        ImDrawList_AddText_Vec2(draw, (ImVec2_c){x + radius * 2.0f + 4.0f, label.text_top}, color, count, NULL);
     }
 
     // The box a tap counts in: the label (not the subject line), grown to a size a finger can hit.
@@ -814,7 +814,7 @@ void app_build_ui(App* app)
     app->textures.shown_last = app->textures.shown_now;
     app->textures.shown_now = 0;
     search_frame(app);
-    ui_build_label(app);
+    ui_draw_build_label(app);
     if (app->ui_mode == UI_PHONE)
         phone_build_ui(app);
     else

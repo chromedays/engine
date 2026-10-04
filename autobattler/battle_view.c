@@ -446,12 +446,12 @@ void view_update(Game* game, f32 game_dt)
 
 // What the page's top-left corner of the viewport says: the build type, the commit, what the page downloaded and the commit's
 // subject.
-void view_build_label(Game* game)
+void view_draw_build_label(Game* game)
 {
     char text[160];
     snprintf(text, sizeof(text), "%s build %s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, game->download_text[0] ? " \xC2\xB7 " : "",
              game->download_text);
-    nv_imgui_build_label(&game->imgui, game->layout.viewport, text, 0.0f, "Commit: " NV_GIT_SUBJECT, NULL);
+    nv_imgui_draw_build_label(&game->imgui, game->layout.viewport, text, 0.0f, "Commit: " NV_GIT_SUBJECT);
 }
 
 // A button that acts once when clicked and once a frame while held past STEP_HOLD_SECONDS. Not ImGui's ButtonRepeat: that

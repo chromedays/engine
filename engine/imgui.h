@@ -161,8 +161,8 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
 
 // Makes the TrueType font in `ttf` (`size` bytes, which must outlive the ImGui context) the font of
 // every window, at `pixel_size` CSS pixels (before the touch scale). Call before the first frame;
-// returns false, keeping the built-in font, if `ttf` is no font.
-bool nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size);
+// returns false, keeping the built-in font, if `ttf` is empty or no font.
+b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size);
 
 // The UI font (docs/specs/fonts.md): Pretendard Regular, which has both Latin (drawn after Inter) and all 11,172 Hangul
 // syllables, 14 px, read from /assets/fonts/ into `arena` for good, since ImGui keeps pointing at the bytes. A file that is
@@ -178,9 +178,13 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 // The build label in a viewport's top-left corner (AGENTS.md): `text` (the build, the commit, what was downloaded) in white on a
 // dark backdrop, and `subject` (the commit's subject line) in gray under it, cut to the viewport's width. `viewport` is in
 // framebuffer pixels. `extra_width` CSS pixels widen the first backdrop for what the caller draws after the text (a badge).
-// Draws in the foreground. Returns the x where the text ends (CSS pixels); `box`, when not NULL, gets the first line's
-// backdrop (min x, min y, max x, max y; CSS pixels). Call between nv_imgui_new_frame and nv_imgui_render.
-f32 nv_imgui_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject, f32 box[4]);
+// Draws in the foreground. Call between nv_imgui_new_frame and nv_imgui_render. `subject` is cut to 511 bytes.
+typedef struct NvBuildLabel { // CSS pixels
+    f32 text_end;               // x where `text` ends: what the caller draws goes after it
+    f32 text_top, text_height;  // the first line's text
+    f32 box[4];                 // the first line's backdrop: min x, min y, max x, max y
+} NvBuildLabel;
+NvBuildLabel nv_imgui_draw_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject);
 
 void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds);
 

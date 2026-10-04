@@ -85,7 +85,7 @@ void view_input(Game* game); // the camera from drags and the wheel; taps place 
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
 void view_panel(Game* game);  // the Battle panel
-void view_build_label(Game* game);
+void view_draw_build_label(Game* game);
 
 // strings.c
 void game_strings_init(void);

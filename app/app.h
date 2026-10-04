@@ -691,7 +691,7 @@ void ui_playing_note(App* app);
 b32 ui_begin_console_tab(App* app);
 b32 ui_begin_textures_tab(App* app); // the Textures tab item; jumps to it on app->open_textures
 // The build label in the viewport's top-left corner, with its badge.
-void ui_build_label(App* app);
+void ui_draw_build_label(App* app);
 // A tint for the panels while the showcase plays: push before igBegin, pop after.
 b32 ui_push_play_tint(App* app);
 void ui_pop_play_tint(b32 pushed);

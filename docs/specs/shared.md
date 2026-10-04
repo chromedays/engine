@@ -41,7 +41,7 @@
 | `app/ui.c`: `fit_text` | 폭에 맞춰 자르고 "..." | **옮김**: 빌드 표시 |
 | `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | 커밋 해시와 제목 헤더 | **옮김** (CMake 함수): 게임 페이지도 어느 커밋인지 보여 준다 |
 | 중복된 작은 도우미 | `clampf`(ui_desktop.c), `clamp`(save.c), `clamp_u32`(ui.c), FNV-1a 세 곳(strings.c, save.c, ui.c), xorshift(effects.c), `pixel_ratio > 0 ? … : 1` 일곱 곳 | **옮김**: 게임은 FNV-1a 해시와 시드 난수가 필요하다 |
-| `app/ui.c`: `ui_build_label` | 빌드 표시와 콘솔 배지 | 남김: 배지가 콘솔 탭과 묶여 있다. 게임은 `nv_imgui_fit_text`로 제 표시를 그린다 |
+| `app/ui.c`: `ui_build_label` | 빌드 표시와 콘솔 배지 | **일부 옮김** (구현 뒤, `ecfaf54`): 표시는 엔진의 `nv_imgui_draw_build_label`이 그리고, 배지는 콘솔 탭과 묶여 있어 앱(`ui_draw_build_label`)에 남는다 |
 | `app/effects.c` | 폭발, 불꽃, 연기, 미사일 궤적의 정의 | 남김: 내용(content)이다. 게임은 무기마다 제 이펙트를 정의한다 (해결된 질문 1) |
 | `app/console.c` | Console 탭 | 남김: 게임 스펙에 없다. 로그 링은 이미 엔진에 있다 (해결된 질문 2) |
 | `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | 저장, undo, 선택, 검색과 팔레트, 단축키, 도크, 폰 패널, Textures 탭, 스트레스 씬 | 남김: 에디터만의 것 |
@@ -149,7 +149,7 @@ NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
   `gpu_format_test`처럼 `--use-port=emdawnwebgpu`로 헤더만 받고 아무것도 링크하지 않는다.
 - 열거형의 값 순서가 지금과 같으므로 저장 태그 `RSMD`, `RSFT`의 값이 같은 뜻이다.
 - 앱: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX`, `scene_output`이 없어진다. `pick`은
-  `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 앱에 남는다(도크 배치).
+  `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 처음엔 앱에 남았다가(도크 배치) 뒤에 엔진의 `nv_window_framebuffer_rect_from_css`로 바뀌었다(`ecfaf54`).
 - 게임: 폰에서 divisor 2, 배치 입력의 탭.
 
 #### 5. 궤도 카메라 (`engine/camera.h`)
@@ -336,7 +336,7 @@ and save format do not change.
 | `app/ui.c`: `fit_text` | Cut to a width with "..." | **Moves**: for a build label |
 | `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | The commit hash and subject header | **Moves** (a CMake function): the game's page also shows its commit |
 | Repeated small helpers | `clampf` (ui_desktop.c), `clamp` (save.c), `clamp_u32` (ui.c), FNV-1a in three places (strings.c, save.c, ui.c), xorshift (effects.c), `pixel_ratio > 0 ? … : 1` in seven places | **Move**: the game needs an FNV-1a hash and seeded random numbers |
-| `app/ui.c`: `ui_build_label` | The build label and the Console badge | Stays: the badge is tied to the Console tab. The game draws its own label with `nv_imgui_fit_text` |
+| `app/ui.c`: `ui_build_label` | The build label and the Console badge | **Partly moves** (after the build, `ecfaf54`): the engine's `nv_imgui_draw_build_label` draws the label; the badge is tied to the Console tab and stays in the app (`ui_draw_build_label`) |
 | `app/effects.c` | What an explosion, sparks, smoke and a missile trail are made of | Stays: it is content. The game defines its own effects per weapon (resolved question 1) |
 | `app/console.c` | The Console tab | Stays: not in the game's spec. The log ring is already in the engine (resolved question 2) |
 | `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | Saving, undo, selection, search and palette, shortcuts, docks, the phone panel, the Textures tab, the stress scene | Stay: editor only |
@@ -446,7 +446,7 @@ NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
   WebGPU header), so the test, like `gpu_format_test`, takes the headers with `--use-port=emdawnwebgpu` and links nothing.
 - The enum value order is unchanged, so the `RSMD` and `RSFT` save tags keep their meaning.
 - App: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX` and `scene_output` go. `pick` starts with
-  `nv_renderer_tap_ray`. `ui_rect` stays in the app (dock layout).
+  `nv_renderer_tap_ray`. `ui_rect` first stayed in the app (dock layout), then became the engine's `nv_window_framebuffer_rect_from_css` (`ecfaf54`).
 - Game: divisor 2 on phones, taps for deployment.
 
 #### 5. Orbit camera (`engine/camera.h`)

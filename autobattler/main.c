@@ -75,7 +75,7 @@ internal void frame(void* userdata)
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
-    view_build_label(game);
+    view_draw_build_label(game);
     view_panel(game);
     view_input(game);
 

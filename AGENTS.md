@@ -188,7 +188,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   rects, rows, scroll, selection) for tests.
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
-  viewport's width; both executables draw it with `nv_imgui_build_label` (`engine/imgui.h`), the app adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+  viewport's width; both executables draw it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the app adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
   `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
   makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
   (`App.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and

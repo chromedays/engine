@@ -74,6 +74,9 @@ int main(void)
     // Corners in the wrong order make an empty rectangle at the first corner.
     NvRect empty = nv_window_framebuffer_rect_from_css(5.0f, 5.0f, 2.0f, 1.0f, 2.0f);
     CHECK(empty.x == 10 && empty.y == 10 && empty.width == 0 && empty.height == 0);
+    // Corners left of or above the canvas (a window narrower than its docks) are held at 0.
+    NvRect clipped = nv_window_framebuffer_rect_from_css(-40.0f, -3.0f, 10.0f, -1.0f, 2.0f);
+    CHECK(clipped.x == 0 && clipped.y == 0 && clipped.width == 20 && clipped.height == 0);
 
     if (failures == 0)
         printf("base_test: all passed\n");
