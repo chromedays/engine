@@ -127,7 +127,7 @@ internal void frame(void* userdata)
 #if !defined(NDEBUG)
 // For tests (Debug builds). Module._battle_debug(n): 0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive,
 // 5 the state's hash, 6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the game clock's speed
-// in hundredths (0 while paused).
+// in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters.
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -144,6 +144,8 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 8: return game->defs_ok ? (int)battle_supply_left(battle) : -1;
     case 9: return game->defs_ok;
     case 11: return game->paused ? 0 : (int)(game->speed * 100.0f + 0.5f);
+    case 12: return (int)game->renderer.shadow_size;
+    case 13: return (int)(game->renderer.shadows.distance + 0.5f);
     default: return (int)game->selected_def;
     }
 }
@@ -232,6 +234,13 @@ int main(void)
     nv_strings_set_language(nv_strings_browser_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
+    // Shadows (docs/specs/shadows.md) as in the editor app: lighter on touch screens. The distance follows the camera
+    // (view_update).
+    game->renderer.shadows = (NvShadowSettings){
+        .size = touch ? 1024 : 2048,
+        .format = NV_SHADOW_FORMAT_DEPTH32F,
+        .filter = touch ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH,
+    };
     game->renderer.msaa = 4;
     game->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
     // The scene is drawn at the viewport's own pixels; a phone's GPU is the limit, so at half (as the editor app does).
