@@ -22,10 +22,8 @@ int main(void)
 {
     NvArena arena;
     nv_arena_init(&arena, memory, sizeof(memory));
-    nv_arena_push(&arena, 3, 1); // so the file's bytes need aligning
-
     NvFileData file = nv_file_read(&arena, FILE_TEST_SOURCE);
-    CHECK(file.ok && file.bytes != NULL && ((umm)file.bytes & 15) == 0);
+    CHECK(file.ok && file.bytes == memory); // nothing skipped before it
     CHECK(file.size > 100 && file.bytes[file.size] == 0 && strlen((const char*)file.bytes) == file.size);
     CHECK(strncmp((const char*)file.bytes, "// engine/file.h without a browser", 34) == 0);
 
@@ -33,11 +31,14 @@ int main(void)
     NvFileData missing = nv_file_read(&arena, "/no/such/file");
     CHECK(!missing.ok && !missing.bytes && !missing.size && arena.used == used);
 
-    // Less room left than the file needs.
+    // Less room left than the file needs: one byte short, then exactly enough.
     NvArena small;
     nv_arena_init(&small, memory, file.size); // the file and its 0 do not fit
     NvFileData too_big = nv_file_read(&small, FILE_TEST_SOURCE);
     CHECK(!too_big.ok && !too_big.bytes && !too_big.size && small.used == 0);
+    nv_arena_init(&small, memory, file.size + 1);
+    NvFileData exact = nv_file_read(&small, FILE_TEST_SOURCE);
+    CHECK(exact.ok && exact.size == file.size && small.used == small.size);
 
     if (failures == 0)
         printf("file_test: all passed\n");

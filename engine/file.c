@@ -11,10 +11,9 @@ NvFileData nv_file_read(NvArena* arena, const char* path)
     umm mark = arena->used;
     if (fseek(file, 0, SEEK_END) == 0) {
         long length = ftell(file);
-        // The room left, less what aligning to 16 may skip.
         umm room = arena->size - arena->used;
-        if (length >= 0 && (umm)length + 1 + 15 <= room && fseek(file, 0, SEEK_SET) == 0) {
-            u8* bytes = nv_arena_push(arena, (umm)length + 1, 16); // zeroed, so the byte after the file is 0
+        if (length >= 0 && (umm)length + 1 <= room && fseek(file, 0, SEEK_SET) == 0) {
+            u8* bytes = nv_arena_push(arena, (umm)length + 1, 1); // zeroed, so the byte after the file is 0
             if (fread(bytes, 1, (umm)length, file) == (umm)length)
                 result = (NvFileData){.ok = 1, .bytes = bytes, .size = (umm)length};
             else
