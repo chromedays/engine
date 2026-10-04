@@ -1,7 +1,7 @@
-// Checks nv/chunk.h without a browser: a round trip, and that malformed input fails the reader
+// Checks engine/chunk.h without a browser: a round trip, and that malformed input fails the reader
 // instead of reading out of bounds. Runs under Node (ctest).
 
-#include "nv/chunk.h"
+#include "engine/chunk.h"
 
 #include <stdio.h>
 #include <math.h>
@@ -25,7 +25,7 @@ global int failures;
 #define TAG_LIST NV_TAG('L', 'I', 'S', 'T')
 #define TAG_NEWS NV_TAG('N', 'E', 'W', 'S')
 
-internal u32 write_sample(u8* buffer, u32 capacity)
+internal NvChunkWritten write_sample(u8* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
@@ -46,15 +46,14 @@ internal u32 write_sample(u8* buffer, u32 capacity)
 internal void test_round_trip(void)
 {
     u8 buffer[512];
-    u32 size = write_sample(buffer, sizeof(buffer));
-    CHECK(size > NV_CHUNK_FILE_HEADER_SIZE);
+    NvChunkWritten written = write_sample(buffer, sizeof(buffer));
+    u32 size = written.size;
+    CHECK(written.ok && size > NV_CHUNK_FILE_HEADER_SIZE);
 
-    u32 version = 0;
-    NvChunk root;
-    CHECK(nv_chunk_file_open(buffer, size, MAGIC, 2, &version, &root) == NV_CHUNK_FILE_OK);
-    CHECK(version == 2);
+    NvChunkFile file = nv_chunk_file_open(buffer, size, MAGIC, 2);
+    CHECK(file.ok && file.status == NV_CHUNK_FILE_OK && file.version == 2);
     NvChunkReader r = {0};
-    NvChunk body = nv_chunk_find(&r, root, TAG_BODY);
+    NvChunk body = nv_chunk_find(&r, file.root, TAG_BODY);
     CHECK(body.data != NULL);
     u32 nums[2] = {0};
     CHECK(nv_chunk_read_u32s(&r, body, TAG_NUMS, nums, 2));
@@ -66,33 +65,33 @@ internal void test_round_trip(void)
     CHECK(nv_chunk_read_string(&r, body, TAG_NAME, name, sizeof(name)));
     CHECK(strcmp(name, "mo") == 0); // truncated to fit
     u32 list[4];
-    u32 count = 0;
-    CHECK(nv_chunk_read_u32_list(&r, body, TAG_LIST, list, 4, &count));
-    CHECK(count == 3 && list[0] == 4 && list[2] == 2);
+    NvChunkList read_list = nv_chunk_read_u32_list(&r, body, TAG_LIST, list, 4);
+    CHECK(read_list.ok && read_list.count == 3 && list[0] == 4 && list[2] == 2);
+    NvChunkList no_list = nv_chunk_read_u32_list(&r, body, NV_TAG('N', 'O', 'N', 'E'), list, 4);
+    CHECK(!no_list.ok && no_list.count == 0 && list[0] == 4);
     u32 missing = 99;
     CHECK(!nv_chunk_read_u32s(&r, body, NV_TAG('N', 'O', 'N', 'E'), &missing, 1));
     CHECK(missing == 99);
     CHECK(!r.failed);
 
-    // A newer version is refused; so is another magic.
-    CHECK(nv_chunk_file_open(buffer, size, MAGIC, 1, &version, &root) == NV_CHUNK_FILE_NEWER);
-    CHECK(nv_chunk_file_open(buffer, size, NV_TAG('O', 'T', 'H', 'R'), 2, &version, &root) == NV_CHUNK_FILE_WRONG_MAGIC);
+    // A newer version is refused; so is another magic. A refused file has only its status.
+    NvChunkFile newer = nv_chunk_file_open(buffer, size, MAGIC, 1);
+    CHECK(!newer.ok && newer.status == NV_CHUNK_FILE_NEWER && newer.version == 0 && !newer.root.data);
+    CHECK(nv_chunk_file_open(buffer, size, NV_TAG('O', 'T', 'H', 'R'), 2).status == NV_CHUNK_FILE_WRONG_MAGIC);
 }
 
 internal void test_damaged_files(void)
 {
     u8 buffer[512];
-    u32 size = write_sample(buffer, sizeof(buffer));
-    u32 version;
-    NvChunk root;
+    u32 size = write_sample(buffer, sizeof(buffer)).size;
     // Every truncation is caught by the header's size.
     for (u32 cut = 0; cut < size; ++cut)
-        CHECK(nv_chunk_file_open(buffer, cut, MAGIC, 2, &version, &root) != NV_CHUNK_FILE_OK);
+        CHECK(!nv_chunk_file_open(buffer, cut, MAGIC, 2).ok);
     // Every flipped bit after the header is caught by the checksum.
     for (u32 i = NV_CHUNK_FILE_HEADER_SIZE; i < size; ++i) {
         for (u32 bit = 0; bit < 8; ++bit) {
             buffer[i] ^= (u8)(1u << bit);
-            CHECK(nv_chunk_file_open(buffer, size, MAGIC, 2, &version, &root) == NV_CHUNK_FILE_WRONG_CHECKSUM);
+            CHECK(nv_chunk_file_open(buffer, size, MAGIC, 2).status == NV_CHUNK_FILE_WRONG_CHECKSUM);
             buffer[i] ^= (u8)(1u << bit);
         }
     }
@@ -134,12 +133,11 @@ internal void test_malformed_chunks(void)
 
     // A list longer than the caller's room, and one that is not whole u32s.
     r = (NvChunkReader){0};
-    u32 count;
-    CHECK(!nv_chunk_read_u32_list(&r, parent, TAG_NUMS, two, 0, &count));
+    CHECK(!nv_chunk_read_u32_list(&r, parent, TAG_NUMS, two, 0).ok);
     CHECK(r.failed);
     bytes[4] = 3;
     r = (NvChunkReader){0};
-    CHECK(!nv_chunk_read_u32_list(&r, parent, TAG_NUMS, two, 2, &count));
+    CHECK(!nv_chunk_read_u32_list(&r, parent, TAG_NUMS, two, 2).ok);
     CHECK(r.failed);
 
     // An empty parent has no children, and that is not a failure.
@@ -153,10 +151,13 @@ internal void test_malformed_chunks(void)
 internal void test_overflow(void)
 {
     u8 buffer[512];
-    u32 full = write_sample(buffer, sizeof(buffer));
-    for (u32 capacity = 0; capacity < full; ++capacity)
-        CHECK(write_sample(buffer, capacity) == 0);
-    CHECK(write_sample(buffer, full) == full);
+    u32 full = write_sample(buffer, sizeof(buffer)).size;
+    for (u32 capacity = 0; capacity < full; ++capacity) {
+        NvChunkWritten written = write_sample(buffer, capacity);
+        CHECK(!written.ok && written.size == 0);
+    }
+    NvChunkWritten exact = write_sample(buffer, full);
+    CHECK(exact.ok && exact.size == full);
 }
 
 int main(void)

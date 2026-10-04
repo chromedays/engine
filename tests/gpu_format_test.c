@@ -1,6 +1,6 @@
-// Checks the texture memory helpers in nv/gpu.h without a browser. Runs under Node (ctest).
+// Checks the texture memory helpers in engine/gpu.h without a browser. Runs under Node (ctest).
 
-#include "nv/gpu.h"
+#include "engine/gpu.h"
 
 #include <stdio.h>
 

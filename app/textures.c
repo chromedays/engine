@@ -67,7 +67,7 @@ internal ImTextureID entry_image(App* app, const TextureEntry* entry, b32 full)
         preview.mode = NV_IMGUI_PREVIEW_DEPTH;
         camera_depth(app, &preview);
         preview.range_min = 0.0f;
-        preview.range_max = full ? viewer->depth_range : app_view(app)->camera_distance * 2.0f;
+        preview.range_max = full ? viewer->depth_range : app_view(app)->orbit.distance * 2.0f;
     } else if (entry->kind == TEXTURE_SHADOW) {
         preview.mode = NV_IMGUI_PREVIEW_DEPTH;
         preview.range_min = full ? viewer->shadow_range[0] : 0.0f;
@@ -421,7 +421,7 @@ internal void detail(App* app, const TextureEntry* entry)
     if (viewer->zoom < 1.0f)
         viewer->zoom = 1.0f;
     if (viewer->depth_range <= 0.0f)
-        viewer->depth_range = app_view(app)->camera_distance * 2.0f;
+        viewer->depth_range = app_view(app)->orbit.distance * 2.0f;
     if (viewer->shadow_range[1] <= viewer->shadow_range[0]) {
         viewer->shadow_range[0] = 0.0f;
         viewer->shadow_range[1] = 1.0f;

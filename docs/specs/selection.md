@@ -48,9 +48,9 @@ Recommendation: a primary node plus a list of others. No third-party library.
 
 ## Engine changes
 
-- `nv/scene.h`: `nv_scene_alive(scene, id)`, whether an id refers to a live node, for the stale-node
+- `engine/scene.h`: `nv_scene_alive(scene, id)`, whether an id refers to a live node, for the stale-node
   check (`nv_scene_get` asserts instead).
-- `nv/imgui.h`: `NvViewInput.tap_mods`, the modifier keys (`ImGuiMod_Ctrl`, `Shift`, `Alt`) held when
+- `engine/imgui.h`: `NvViewInput.tap_mods`, the modifier keys (`ImGuiMod_Ctrl`, `Shift`, `Alt`) held when
   a tap's press went down. A left press in the viewport waits two frames for the gizmo's hit test,
   so reading the keys when the tap arrives missed a quick Ctrl+click on a slow frame.
 

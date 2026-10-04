@@ -5,6 +5,14 @@
 
 ## 한국어
 
+참고 (2026-10-03): UI 글꼴은 이제 Pretendard Regular 하나다(`assets/fonts/Pretendard-Regular.ttf`). 라틴과 한글 11,172
+음절이 모두 한 파일에 있어서, Inter, 한글 서브셋(`Hangul-Subset.ttf`), `tools/subset_hangul.sh`와 `nv_imgui_set_font`의
+폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
+
+참고 (2026-10-02, `shared.md`): `T`, `TL`, 언어와 조회는 엔진으로 옮겨졌다(`engine/strings.h`, `engine/strings.c`; 이름은 `nv_strings_*`,
+`NvLanguage`, `NV_LANGUAGE_*`). 표는 실행 파일마다 남는다(앱의 것은 `app/strings.c`, `app_strings_init`이 엔진에 넘긴다). 아래의
+`app/strings.h`, `strings_*`, `Language`, `LANG_*`는 옛 이름이다. 한글 글꼴은 `nv_imgui_load_ui_font`가 읽는다.
+
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
@@ -13,7 +21,7 @@
 
 1. **한글 표시.** 지금 UI 글꼴 (Inter, `fonts.md`)에는 한글이 없어서, 한국어로 이름을 바꾼 노드가 "?" 상자로
    보인다.
-2. **데스크톱에서 한글 입력.** 데스크톱은 `keydown`마다 텍스트를 받는다 (`engine/src/imgui.c`의 `on_key`).
+2. **데스크톱에서 한글 입력.** 데스크톱은 `keydown`마다 텍스트를 받는다 (`engine/imgui.c`의 `on_key`).
    한국어 입력기 (IME)는 여러 키에 걸쳐 음절을 조합하고 그것을 "Process" 키로 알리므로, 조합된 텍스트가 결코
    도착하지 않는다. 폰은 이미 숨겨진 `<input id="nv-text-agent">`로 입력하는데, 그 `compositionend`와
    `input` 이벤트가 완성된 텍스트를 실어 오지만, 음절을 조합하는 동안에는 아무것도 보여 주지 않는다.
@@ -93,9 +101,9 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 
 ### 변경
 
-- **엔진 (`nv/imgui.h`, `engine/src/imgui.c`).** `nv_imgui_set_font`의 한글 폴백 (두 번째 글꼴 인자), 데스크톱의
+- **엔진 (`engine/imgui.h`, `engine/imgui.c`).** `nv_imgui_set_font`의 한글 폴백 (두 번째 글꼴 인자), 데스크톱의
   텍스트 에이전트, `Platform_SetImeDataFn`, 조합 오버레이, 조합 중 막는 키, 문자 경계에서 이름 자르기
-  (`engine/src/scene.c`).
+  (`engine/scene.c`).
 - **앱.** `app/strings.c`와 `app/strings.h` (표, `T`, `TL`, 언어), `app/*.c`의 모든 UI 문자열을 감싸는 `T`/`TL`,
   View 탭의 Language 행, `app/save.c`의 `LANG` 태그, 두 언어의 검색 텍스트 (`app/search.c`), `app/main.c`에서
   불러오는 글꼴 파일.
@@ -127,9 +135,9 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
   사용자에게 보이는 이름을 다루는데, 앱은 그것을 보여 주지 않는다); 글꼴 자체의 name 테이블은 저자가 공개한
   서브셋처럼 여전히 Pretendard의 것이다. `nv_imgui_set_font`는 폴백을 두 번째 글꼴로 받아 합친다
   (`MergeMode`); 한글은 조정 없이 같은 크기로 Inter의 기준선에 앉았다. 패키지가 0.39 MB 커졌다.
-- **이름.** `nv_utf8_fit` (`nv/base.h`)은 문자 단위로 자른다: `nv_scene_add_node`와 저장에서 읽은 이름은 온전한
+- **이름.** `nv_utf8_fit` (`engine/base.h`)은 문자 단위로 자른다: `nv_scene_add_node`와 저장에서 읽은 이름은 온전한
   음절을 유지한다 (32바이트에 10자가 들어간다). ImGui 자체 텍스트 필드는 이미 들어가지 않는 문자를 거부한다.
-- **텍스트를 자르거나 비교하는 모든 곳에 UTF-8.** `nv_utf8_length`, `nv_utf8_fit`, `nv_utf8_trim` (`nv/base.h`,
+- **텍스트를 자르거나 비교하는 모든 곳에 UTF-8.** `nv_utf8_length`, `nv_utf8_fit`, `nv_utf8_trim` (`engine/base.h`,
   `tests/utf8_test.c`가 테스트): `snprintf`로 고정 버퍼에 복사한 문자열 (undo 단계 이름, 팔레트 행, 검색의 라벨,
   섹션, 키워드, 후보와 질의 단어, 저장 뷰어의 문자열, 번역된 위젯 라벨)은 어떤 문자도 반으로 잘리지 않게
   다듬는다. 검색은 바이트가 아닌 문자 단위로 대소문자를 접는다: ASCII, Latin-1과 Latin Extended-A, 그리스,
@@ -176,6 +184,16 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 
 ## English
 
+Note (2026-10-03): the UI font is now Pretendard Regular alone (`assets/fonts/Pretendard-Regular.ttf`). Latin and all
+11,172 Hangul syllables are in one file, so Inter, the Hangul subset (`Hangul-Subset.ttf`), `tools/subset_hangul.sh` and the
+fallback arguments of `nv_imgui_set_font` are gone. The size stays 14 px (the two fonts' vertical metrics are nearly the same).
+What follows about Inter and the subset is the design before that.
+
+Note (2026-10-02, `shared.md`): `T`, `TL`, the language and the lookup moved to the engine (`engine/strings.h`,
+`engine/strings.c`; the names are `nv_strings_*`, `NvLanguage`, `NV_LANGUAGE_*`). Each executable keeps its own table (the app's is
+`app/strings.c`, which `app_strings_init` hands to the engine). `app/strings.h`, `strings_*`, `Language` and `LANG_*` below are the
+old names. The Hangul font is read by `nv_imgui_load_ui_font`.
+
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
 ### Goal
@@ -185,7 +203,7 @@ Let the editor be used in Korean:
 1. **Show Hangul.** Today the UI font (Inter, `fonts.md`) has no Hangul, so a node renamed in Korean
    shows as "?" boxes.
 2. **Type Hangul on the desktop.** The desktop takes text from each `keydown` (`on_key` in
-   `engine/src/imgui.c`). A Korean input method (IME) composes a syllable over several keys and
+   `engine/imgui.c`). A Korean input method (IME) composes a syllable over several keys and
    reports them as "Process" keys, so composed text never arrives. The phone already types through
    the hidden `<input id="nv-text-agent">`, whose `compositionend` and `input` events carry the
    finished text, but it shows nothing while a syllable is being composed.
@@ -269,10 +287,10 @@ confirmed.
 
 ### Changes
 
-- **Engine (`nv/imgui.h`, `engine/src/imgui.c`).** The Hangul fallback in `nv_imgui_set_font` (a
+- **Engine (`engine/imgui.h`, `engine/imgui.c`).** The Hangul fallback in `nv_imgui_set_font` (a
   second face argument), the text agent on the desktop, `Platform_SetImeDataFn`, the composing
   overlay, keys held back during composition, cutting names at character boundaries
-  (`engine/src/scene.c`).
+  (`engine/scene.c`).
 - **App.** `app/strings.c` and `app/strings.h` (the table, `T`, `TL`, the language), `T`/`TL`
   around every UI string in `app/*.c`, the Language row in the View tab, the `LANG` tag in
   `app/save.c`, the search texts in both languages (`app/search.c`), the font file loaded in
@@ -311,11 +329,11 @@ As built, with the notes the build taught:
   never shows); the font's own name table is still Pretendard's, as in the author's published
   subsets. `nv_imgui_set_font` takes the fallback as a second face and merges it (`MergeMode`);
   Hangul sat on Inter's baseline at the same size with no tuning. The package grew by 0.39 MB.
-- **Names.** `nv_utf8_fit` (`nv/base.h`) cuts at a character: `nv_scene_add_node` and a name read from a
+- **Names.** `nv_utf8_fit` (`engine/base.h`) cuts at a character: `nv_scene_add_node` and a name read from a
   save keep whole syllables (10 fit in 32 bytes). ImGui's own text field already refuses a character
   that does not fit.
 - **UTF-8 everywhere text is cut or compared.** `nv_utf8_length`, `nv_utf8_fit` and `nv_utf8_trim`
-  (`nv/base.h`, tested by `tests/utf8_test.c`): a string copied into a fixed buffer with `snprintf`
+  (`engine/base.h`, tested by `tests/utf8_test.c`): a string copied into a fixed buffer with `snprintf`
   (undo step names, palette rows, the search's labels, sections, keywords, candidates and query
   words, the save viewer's strings, the translated widget labels) is trimmed so no character is cut
   in half. The search folds case by character, not byte: ASCII, Latin-1 and Latin Extended-A, Greek and

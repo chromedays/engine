@@ -97,7 +97,7 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
 
 ### 변경
 
-- **엔진 (`nv/imgui.h`, `engine/src/imgui.c`).**
+- **엔진 (`engine/imgui.h`, `engine/imgui.c`).**
   - `nv_editor_layout`은 두 UI가 부르는 사각형 도우미로 바뀐다: 상단 바 사각형, 그리고 나머지의 분할. 뷰포트는
     더 이상 (0, 0)에서 시작하지 않아도 된다.
   - `in_view`는 이미 `view_rect`를 사각형으로 검사하므로 입력 라우팅은 바뀔 것이 없다. 분할선이나 도크에서
@@ -249,7 +249,7 @@ and no splitters.
 
 ### Changes
 
-- **Engine (`nv/imgui.h`, `engine/src/imgui.c`).**
+- **Engine (`engine/imgui.h`, `engine/imgui.c`).**
   - `nv_editor_layout` is replaced by rectangle helpers the two UIs call: a top bar rectangle, and
     a split of the rest. The viewport no longer has to start at (0, 0).
   - `in_view` already tests `view_rect` as a rectangle, so input routing needs no change. A press

@@ -12,7 +12,7 @@
 태양이 그림자를 드리운다: 캐릭터, 행성, 스트레스 씬의 큐브가 빛에서 보아 뒤에 있는 것을 어둡게 하고, 캐릭터가
 지면 위에 떠 있지 않고 서 있다. 벤치마크가 이미 GPU를 한계로 발견한 폰에서도 감당할 만해야 한다.
 
-지금 렌더러에는 씬 패스 하나가 있다 (`engine/src/renderer.c`): 메시 노드마다 그리기 하나이고, 프래그먼트 셰이더가 첫
+지금 렌더러에는 씬 패스 하나가 있다 (`engine/renderer.c`): 메시 노드마다 그리기 하나이고, 프래그먼트 셰이더가 첫
 방향광 (Lambert 더하기 ambient)으로 그림자 없이 비춘다.
 
 ### 접근법
@@ -66,7 +66,7 @@
 
 ### 엔진 변경
 
-- **렌더러 (`nv/renderer.h`, `engine/src/renderer.c`).**
+- **렌더러 (`engine/renderer.h`, `engine/renderer.c`).**
   - `NvShadowSettings` (크기, 형식, 필터, 거리)와 `nv_renderer_set_shadows`.
   - 크기나 형식이 바뀌면 다시 만드는 그림자 맵 텍스처와 그 뷰; 비교 샘플러.
   - `FrameUniforms`에 빛의 view-projection 행렬, 맵의 텍셀 크기, 필터, 거리가 생긴다; 프레임 bind group에 맵과 샘플러가
@@ -105,7 +105,7 @@ The sun casts shadows: the character, the planet and the stress scene's cubes da
 behind them from the light, and the character stands on the ground instead of floating over it.
 It has to stay affordable on a phone, where the benchmark already found the GPU to be the limit.
 
-Today the renderer has one scene pass (`engine/src/renderer.c`): every mesh node is one draw, and
+Today the renderer has one scene pass (`engine/renderer.c`): every mesh node is one draw, and
 the fragment shader lights it with the first directional light (Lambert plus ambient), with no
 shadows.
 
@@ -165,7 +165,7 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
 
 ### Engine changes
 
-- **Renderer (`nv/renderer.h`, `engine/src/renderer.c`).**
+- **Renderer (`engine/renderer.h`, `engine/renderer.c`).**
   - `NvShadowSettings` (size, format, filter, distance) and `nv_renderer_set_shadows`.
   - The shadow map texture and its views, remade when the size or the format changes; a
     comparison sampler.

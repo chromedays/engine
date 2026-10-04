@@ -21,7 +21,7 @@ ozz-animation의 경고. 지금 이것들은 `fprintf(stderr, ...)`나 `console.
 
 | 접근법 | 무엇인가 | 맞음 | 장단점 |
 |---|---|---|---|
-| **자체 로그 링과 Console 탭** (추천) | `nv/log.h`: 정적 메모리의 고정 메시지 링 하나, `nv_log`가 씀; `app/console.c`가 Dear ImGui 자체 `ExampleAppLog` 데모의 패턴을 따라 ImGui로 그린다 | 순수 C17, 고정 용량, 할당 없음; 약 300줄. ImGui 데모가 UI 부품을 보여 준다 (`ImGuiListClipper`, `ImGuiTextFilter`, 맨 아래 붙는 스크롤) | 우리가 쓰고 테스트해야 한다 |
+| **자체 로그 링과 Console 탭** (추천) | `engine/log.h`: 정적 메모리의 고정 메시지 링 하나, `nv_log`가 씀; `app/console.c`가 Dear ImGui 자체 `ExampleAppLog` 데모의 패턴을 따라 ImGui로 그린다 | 순수 C17, 고정 용량, 할당 없음; 약 300줄. ImGui 데모가 UI 부품을 보여 준다 (`ImGuiListClipper`, `ImGuiTextFilter`, 맨 아래 붙는 스크롤) | 우리가 쓰고 테스트해야 한다 |
 | Dear ImGui의 `ExampleAppLog` / `ExampleAppConsole` (`imgui_demo.cpp`, MIT) | 라이브러리가 아닌 데모 코드 | UI 참고 자료로 따른다 | C++이고, `ImGuiTextBuffer`가 힙에서 무한히 자란다. 그대로는 못 쓴다 |
 | rxi/log.c (C99, MIT) | 아주 작은 로깅 라이브러리: 레벨, `stderr` 출력, 콜백 | C, 작음 | 이력을 남기지 않는데 그것이 여기서 핵심이다; 어차피 우리가 쓸 링 위에 콜백 계층을 더할 뿐. 의존성으로 둘 가치가 없다 |
 | `ringbuffer_sink`가 있는 spdlog (C++, MIT) | 완전한 로깅 라이브러리 | 메시지 링이 있다 | 엔진 핵심에 C++, 힙 할당, 작은 일에 큰 의존성 |
@@ -35,7 +35,7 @@ ozz-animation의 경고. 지금 이것들은 `fprintf(stderr, ...)`나 `console.
 |---|---|
 | 레벨 | Info, Warning, Error |
 | 출처 | 메시지마다 붙는 짧은 태그: `nv` (엔진), `wgpu` (WebGPU 콜백), `app`, `stdout`, `stderr`, `js` (페이지 오류). 자체 열에 보이고 텍스트 필터로 거를 수 있다 |
-| 저장 공간 | `engine/src/log.c`의 엔진 전역 링 하나, 정적 메모리: 최대 1024개 메시지, 텍스트는 128 KB 텍스트 링을 나눠 쓴다. 어느 쪽이든 가득 차면 가장 오래된 메시지를 버린다. 4 KB보다 긴 메시지는 잘리고 `...`로 끝난다 |
+| 저장 공간 | `engine/log.c`의 엔진 전역 링 하나, 정적 메모리: 최대 1024개 메시지, 텍스트는 128 KB 텍스트 링을 나눠 쓴다. 어느 쪽이든 가득 차면 가장 오래된 메시지를 버린다. 4 KB보다 긴 메시지는 잘리고 `...`로 끝난다 |
 | 전역 하나인 이유 | 메시지는 앱이 손에 없는 곳(WebGPU 콜백, glTF 로더, `anim.cpp`)에서 온다; 페이지 하나에 로그 하나다 |
 | 반복 | 가장 최근 메시지와 같은 메시지 (같은 레벨, 출처, 텍스트)는 새로 추가되지 않고 그 메시지의 반복 횟수와 시간을 올린다. 그래서 매 프레임 나는 오류는 한 행을 차지한다 ("x240") |
 | 브라우저 콘솔 | `nv_log`는 레벨에 따라 `console.log` / `console.warn` / `console.error`에도 `[source] text`로 쓴다. 그래서 개발자 도구와 Playwright의 `page.on("console")`이 계속 모두를 본다. `stderr`를 거치지 않으므로 두 번 잡히지 않는다 |
@@ -46,7 +46,7 @@ ozz-animation의 경고. 지금 이것들은 `fprintf(stderr, ...)`나 `console.
 | 저장 | 안 함. 로그는 저장에 없고, 새로고침하면 빈 상태로 시작한다. Console 탭의 설정 (레벨 필터, 자동 스크롤)도 저장하지 않는다: 텍스트 필터처럼 보기 상태다 |
 | Undo | undo 불가이며, undo가 비교하는 어떤 것도 건드리지 않는다: 로그 지우기는 한 단계가 아니다 |
 | 탭 | 패널 탭 바에서 View 다음의 **Console** 탭 (데스크톱 UI, `layout.md`에서는 하단 도크의 첫 탭; 배지를 탭하면 접힌 도크가 열린다). 보이지 않는 동안 라벨은 마지막으로 보인 뒤 도착한 경고와 오류 수를 반복 포함해 센다: `Console (3)`, 하나라도 오류면 빨강, 경고만이면 노랑 (폰처럼 좁은 패널에서는 색만: 숫자 때문에 탭 바가 스크롤되고, 배지가 센다). Info는 세지 않는다. 라벨의 ImGui id는 고정 (`###console`)이라 탭이 제자리를 지킨다 |
-| 배지 | 뷰포트 왼쪽 위 빌드 라벨 (`ui.c`의 `ui_build_label`)의 텍스트 뒤에 같은 수: 점과 숫자, `Release build 1a2b3c · ● 3`, 하나라도 오류면 빨강, 경고만이면 노랑. 수가 없으면 배지도 없다. 라벨처럼 foreground draw list에 그리므로 ImGui 아이템이 아니다. 빌드 라벨은 이미 "에디터 UI는 패널 안에" 규칙의 예외이고, 배지는 새 예외를 더하지 않는다 |
+| 배지 | 뷰포트 왼쪽 위 빌드 라벨 (`ui.c`의 `ui_draw_build_label`)의 텍스트 뒤에 같은 수: 점과 숫자, `Release build 1a2b3c · ● 3`, 하나라도 오류면 빨강, 경고만이면 노랑. 수가 없으면 배지도 없다. 라벨처럼 foreground draw list에 그리므로 ImGui 아이템이 아니다. 빌드 라벨은 이미 "에디터 UI는 패널 안에" 규칙의 예외이고, 배지는 새 예외를 더하지 않는다 |
 | 배지 탭 | 배지가 보이는 동안 빌드 라벨 상자에 떨어진 탭이나 클릭은 picking 대신 Console 탭을 연다 (수가 지워진다). 뷰포트 입력은 ImGui를 건너뛰므로 (`NvImgui.view`), 앱은 `pick`이 돌기 전에 `view.tap_x` / `tap_y` (CSS 픽셀, 라벨을 그리는 좌표)를 상자와 비교한다. 상자는 손가락이 맞출 수 있게 최소 32 × 32 CSS 픽셀 × `NvImgui.ui_scale`로 키운다. 그 위에서 시작한 드래그는 여전히 카메라를 공전시킨다 |
 | 툴바 | Info, Warning, Error 체크박스, 각각 링이 담은 수와 함께 ("Error 2"; 좁은 패널은 툴바를 두 줄로 유지하려고 "Warn"에 수 없음); 텍스트 필터 (`ImGuiTextFilter`, 출처와 텍스트에 맞춤); **Clear**; **Copy** (보이는 메시지를 텍스트로, 브라우저까지 닿는 ImGui 클립보드로); **Auto-scroll** (좁은 패널에서는 "Auto"). 좁은 패널에서는 아이템이 다음 줄로 넘어간다 (`ui.c`의 `ui_same_line_if_fits`). 행이 링의 인덱스이므로 Clear는 목록을 그린 뒤에 실행한다 |
 | 목록 | 상세 상자 위에서 탭을 채우는 자식 창. 메시지마다 한 줄짜리 행: 시간, 레벨 (색), 출처, 반복 횟수 (둘 이상일 때 `x3`), 첫 줄바꿈까지의 텍스트 (최대 512 바이트). 더 긴 텍스트는 `...`로 끝난다. 좁은 패널 (44글자 미만)은 시간을 빼고 상세에서 보여 준다. 행은 필터를 통과한 인덱스 (매 프레임 scratch 아레나에 만듦)에 대해 `ImGuiListClipper`로 그리므로, 1024개 메시지라도 보이는 행만큼만 든다 |
@@ -59,7 +59,7 @@ ozz-animation의 경고. 지금 이것들은 `fprintf(stderr, ...)`나 `console.
 
 ### 엔진 API
 
-**`nv/log.h`** (새로 생김; `anim.cpp`의 `extern "C"` 블록 안에서 쓸 수 있음):
+**`engine/log.h`** (새로 생김; `anim.cpp`의 `extern "C"` 블록 안에서 쓸 수 있음):
 
 ```c
 typedef enum NvLogLevel {
@@ -113,7 +113,7 @@ NvLogMessage* nv_log_message(u32 i);
 
 메시지의 텍스트는 `nv_log_ring.text + message->text_offset`이고, 길이는 `text_size` 바이트다.
 
-**`nv/imgui.h`**: `void nv_imgui_touch_scroll(NvImgui* imgui);`는 이번 프레임의 터치 스크롤을 현재 창에
+**`engine/imgui.h`**: `void nv_imgui_touch_scroll(NvImgui* imgui);`는 이번 프레임의 터치 스크롤을 현재 창에
 마우스가 올라가 있으면 적용한다. `nv_imgui_begin_panel`은 그것을 직접 하는 대신 이 함수를 부른다.
 
 ### 앱 변경
@@ -156,7 +156,7 @@ NvLogMessage* nv_log_message(u32 i);
 
 ### 단계
 
-1. **로그:** `nv/log.h`, `log.c`, Node 테스트, 그리고 기존의 모든 `fprintf(stderr, ...)`와 `console.*` 호출을
+1. **로그:** `engine/log.h`, `log.c`, Node 테스트, 그리고 기존의 모든 `fprintf(stderr, ...)`와 `console.*` 호출을
    그리로 옮김. 확인: 브라우저 콘솔이 전과 같은 메시지를 보여 준다.
 2. **Console 탭:** 탭, 툴바, clipper가 있는 목록, 상세 상자, 탭 수, 빌드 라벨 배지와 그 탭,
    `nv_imgui_touch_scroll`, 페이지의 훅.
@@ -185,7 +185,7 @@ Out of scope: typing commands (a REPL), logging to a file or a server, and messa
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
-| **Our own log ring and Console tab** (recommended) | `nv/log.h`: one fixed ring of messages in static memory, written by `nv_log`; `app/console.c` draws it with ImGui, following the pattern of Dear ImGui's own `ExampleAppLog` demo | Plain C17, fixed capacities, no allocation; about 300 lines. The ImGui demo shows the UI parts (`ImGuiListClipper`, `ImGuiTextFilter`, stick-to-bottom scrolling) | Ours to write and test |
+| **Our own log ring and Console tab** (recommended) | `engine/log.h`: one fixed ring of messages in static memory, written by `nv_log`; `app/console.c` draws it with ImGui, following the pattern of Dear ImGui's own `ExampleAppLog` demo | Plain C17, fixed capacities, no allocation; about 300 lines. The ImGui demo shows the UI parts (`ImGuiListClipper`, `ImGuiTextFilter`, stick-to-bottom scrolling) | Ours to write and test |
 | Dear ImGui's `ExampleAppLog` / `ExampleAppConsole` (`imgui_demo.cpp`, MIT) | Demo code, not a library | A reference for the UI, which we follow | C++, and its `ImGuiTextBuffer` grows on the heap without limit. Not usable as it is |
 | rxi/log.c (C99, MIT) | A tiny logging library: levels, `stderr` output, callbacks | C, small | Keeps no history, which is the whole point here; would add a callback layer over a ring we still write. Not worth a dependency |
 | spdlog with its `ringbuffer_sink` (C++, MIT) | A full logging library | Has a ring of messages | C++ in the engine's core, heap allocation, a large dependency for a small job |
@@ -199,7 +199,7 @@ Recommendation: write it ourselves. No third-party library.
 |---|---|
 | Levels | Info, Warning, Error |
 | Source | A short tag kept with each message: `nv` (engine), `wgpu` (WebGPU callbacks), `app`, `stdout`, `stderr`, `js` (page errors). Shown in its own column and filterable by the text filter |
-| Storage | One engine-wide ring in `engine/src/log.c`, in static memory: up to 1024 messages whose text shares a 128 KB text ring. When either is full, the oldest messages are dropped. A message longer than 4 KB is cut and ends in `...` |
+| Storage | One engine-wide ring in `engine/log.c`, in static memory: up to 1024 messages whose text shares a 128 KB text ring. When either is full, the oldest messages are dropped. A message longer than 4 KB is cut and ends in `...` |
 | Why one global | Messages come from places with no app at hand (WebGPU callbacks, the glTF loader, `anim.cpp`); there is one page and one log |
 | Repeats | A message equal to the newest one (same level, source and text) raises that message's repeat count and time instead of adding a new one, so an error raised every frame takes one row ("x240") |
 | Browser console | `nv_log` also writes to `console.log` / `console.warn` / `console.error` by level, as `[source] text`, so developer tools and Playwright's `page.on("console")` keep seeing everything. It does not go through `stderr`, so it is not captured twice |
@@ -210,7 +210,7 @@ Recommendation: write it ourselves. No third-party library.
 | Saved | No. The log is not in the save, and a reload starts empty. The Console tab's settings (level filters, auto-scroll) are not saved either: they are view state, like the text filter |
 | Undo | Not undoable, and touching nothing undo compares: clearing the log is not a step |
 | Tab | A **Console** tab after View in the panel's tab bar (on the desktop UI, `layout.md`, the first tab of the bottom dock; a badge tap opens the dock if it is collapsed). While it is not shown, its label counts the warnings and errors that arrived since it was last shown, repeats included: `Console (3)`, red when one is an error, yellow for warnings only (on a narrow panel, a phone's, only the color: the number would make the tab bar scroll, and the badge counts). Info does not count. The label's ImGui id stays fixed (`###console`), so the tab keeps its place |
-| Badge | The same count on the build label in the viewport's top-left corner (`ui.c`'s `ui_build_label`), after its text: a dot and the number, `Release build 1a2b3c · ● 3`, red when one is an error, yellow for warnings only. No count, no badge. It is drawn on the foreground draw list like the label, so it is not an ImGui item. The build label is already an exception to "editor UI stays in the panel"; the badge adds no new one |
+| Badge | The same count on the build label in the viewport's top-left corner (`ui.c`'s `ui_draw_build_label`), after its text: a dot and the number, `Release build 1a2b3c · ● 3`, red when one is an error, yellow for warnings only. No count, no badge. It is drawn on the foreground draw list like the label, so it is not an ImGui item. The build label is already an exception to "editor UI stays in the panel"; the badge adds no new one |
 | Badge tap | A tap or click that lands on the build label's box while the badge shows opens the Console tab (which clears the count) instead of picking. Input in the viewport skips ImGui (`NvImgui.view`), so the app tests `view.tap_x` / `tap_y` (CSS pixels, the coordinates the label is drawn in) against the box before `pick` runs. The box is grown to at least 32 × 32 CSS pixels times `NvImgui.ui_scale`, so a finger can hit it. Drags that start on it still orbit the camera |
 | Toolbar | Info, Warning and Error checkboxes, each with the count the ring holds ("Error 2"; a narrow panel gets "Warn" and no counts, to keep the toolbar to two lines); a text filter (`ImGuiTextFilter`, matching the source and the text); **Clear**; **Copy** (the shown messages as text, through ImGui's clipboard, which reaches the browser's); **Auto-scroll** ("Auto" on a narrow panel). Items wrap to the next line on a narrow panel (`ui_same_line_if_fits` in `ui.c`). Clear runs after the list is drawn, since the rows are indices into the ring |
 | List | A child window filling the tab above the detail box. One row per message, one line each: time, level (colored), source, the repeat count (`x3`, when more than one), and the text up to its first line break (at most 512 bytes). Longer text ends in `...`. A narrow panel (under 44 characters wide) leaves out the time; the detail shows it. Rows are drawn with `ImGuiListClipper` over the indices that pass the filters (built in the scratch arena each frame), so 1024 messages cost only the visible rows |
@@ -223,7 +223,7 @@ Recommendation: write it ourselves. No third-party library.
 
 ### Engine API
 
-**`nv/log.h`** (new; usable from `anim.cpp` inside its `extern "C"` block):
+**`engine/log.h`** (new; usable from `anim.cpp` inside its `extern "C"` block):
 
 ```c
 typedef enum NvLogLevel {
@@ -277,7 +277,7 @@ NvLogMessage* nv_log_message(u32 i);
 
 A message's text is `nv_log_ring.text + message->text_offset`, `text_size` bytes long.
 
-**`nv/imgui.h`**: `void nv_imgui_touch_scroll(NvImgui* imgui);` applies this frame's touch scroll to
+**`engine/imgui.h`**: `void nv_imgui_touch_scroll(NvImgui* imgui);` applies this frame's touch scroll to
 the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of doing it inline.
 
 ### App changes
@@ -325,7 +325,7 @@ the current window if it is hovered. `nv_imgui_begin_panel` calls it instead of 
 
 ### Phases
 
-1. **Log:** `nv/log.h`, `log.c`, the Node test, and every existing `fprintf(stderr, ...)` and
+1. **Log:** `engine/log.h`, `log.c`, the Node test, and every existing `fprintf(stderr, ...)` and
    `console.*` call moved to it. Checked: the browser console shows the same messages as before.
 2. **Console tab:** the tab, toolbar, list with the clipper, detail box, tab count, the build-label
    badge and its tap, `nv_imgui_touch_scroll`, and the page's hooks.

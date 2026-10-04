@@ -1,9 +1,9 @@
-// The autosave's contents: the app state as chunks (nv/chunk.h), and loading it back. What is
+// The autosave's contents: the app state as chunks (engine/chunk.h), and loading it back. What is
 // saved, tag by tag, is listed in docs/specs/save.md; keep the two in step.
 
 #include "app.h"
 
-#include <nv/chunk.h>
+#include <engine/chunk.h>
 
 #include <math.h>
 #include <string.h>
@@ -101,12 +101,17 @@ internal u32 depth_of(NvScene* scene, u32 index)
     return depth;
 }
 
-// Returns the path's length, or 0 if it is deeper than SAVE_MAX_PATH.
-internal u32 path_of(NvScene* scene, u32 index, u32* path)
+typedef struct NodePath {
+    b32 ok;
+    u32 length;
+} NodePath;
+
+// Writes the node's path into `path` (SAVE_MAX_PATH entries). Fails when it is deeper than that.
+internal NodePath path_of(NvScene* scene, u32 index, u32* path)
 {
     u32 length = depth_of(scene, index) + 1;
     if (length > SAVE_MAX_PATH)
-        return 0;
+        return (NodePath){0};
     u32 at = index;
     for (u32 level = length; level-- > 0;) {
         u32 parent = scene->nodes[at].parent;
@@ -119,7 +124,7 @@ internal u32 path_of(NvScene* scene, u32 index, u32* path)
         path[level] = position;
         at = parent;
     }
-    return length;
+    return (NodePath){.ok = 1, .length = length};
 }
 
 // The node at `path`, or 0.
@@ -140,12 +145,13 @@ internal u32 node_at(NvScene* scene, const u32* path, u32 length)
 u32 save_scene_layout(NvScene* scene)
 {
     // FNV-1a over every node's depth and name, in tree order.
-    u32 hash = 2166136261u;
+    u32 hash = NV_FNV1A_SEED;
     for (u32 index = scene->first_root; index; index = next_in_tree(scene, index)) {
-        hash = (hash ^ depth_of(scene, index)) * 16777619u;
-        for (const char* c = scene->nodes[index].name; *c; ++c)
-            hash = (hash ^ (u8)*c) * 16777619u;
-        hash = (hash ^ 0xFFu) * 16777619u; // ends the name
+        // NOTE: The depth goes in as one word, not as a byte: a saved layout hash depends on it.
+        hash = (hash ^ depth_of(scene, index)) * NV_FNV1A_PRIME;
+        const char* name = scene->nodes[index].name;
+        hash = nv_fnv1a(hash, name, strlen(name));
+        hash = (hash ^ 0xFFu) * NV_FNV1A_PRIME; // ends the name
     }
     return hash;
 }
@@ -157,24 +163,24 @@ u32 save_scene_layout(NvScene* scene)
 internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view)
 {
     nv_chunk_begin(w, TAG_VIEW);
-    nv_chunk_f32(w, TAG_YAW, view->camera_yaw);
-    nv_chunk_f32(w, TAG_PTCH, view->camera_pitch);
-    nv_chunk_f32(w, TAG_DIST, view->camera_distance);
+    nv_chunk_f32(w, TAG_YAW, view->orbit.yaw);
+    nv_chunk_f32(w, TAG_PTCH, view->orbit.pitch);
+    nv_chunk_f32(w, TAG_DIST, view->orbit.distance);
     nv_chunk_u32(w, TAG_FOLW, view->follow_selection);
-    nv_chunk_f32s(w, TAG_ORBT, &view->orbit_point.x, 3);
+    nv_chunk_f32s(w, TAG_ORBT, &view->orbit.target.x, 3);
     nv_chunk_f32s(w, TAG_PAN, &view->pan.x, 3);
     u32 path[SAVE_MAX_PATH];
-    u32 length = view->selected.index ? path_of(scene, view->selected.index, path) : 0;
-    nv_chunk_u32s(w, TAG_SELN, path, length);
+    NodePath selected = view->selected.index ? path_of(scene, view->selected.index, path) : (NodePath){0};
+    nv_chunk_u32s(w, TAG_SELN, path, selected.length);
     // The others: each path as its length, then its indices.
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
     u32 count = 0;
     for (u32 i = 0; i < view->other_count; ++i) {
-        u32 other_length = path_of(scene, view->others[i].index, &others[count + 1]);
-        if (!other_length)
+        NodePath other = path_of(scene, view->others[i].index, &others[count + 1]);
+        if (!other.ok)
             continue;
-        others[count] = other_length;
-        count += 1 + other_length;
+        others[count] = other.length;
+        count += 1 + other.length;
     }
     if (count)
         nv_chunk_u32s(w, TAG_SELO, others, count);
@@ -254,16 +260,16 @@ internal void write_node_fields(NvChunkWriter* w, App* app, u32 index, b32 undo)
 internal void write_node(NvChunkWriter* w, App* app, u32 index)
 {
     u32 path[SAVE_MAX_PATH];
-    u32 length = path_of(app->scene, index, path);
-    if (!length)
+    NodePath node_path = path_of(app->scene, index, path);
+    if (!node_path.ok)
         return;
     nv_chunk_begin(w, TAG_NODE);
-    nv_chunk_u32s(w, TAG_PATH, path, length);
+    nv_chunk_u32s(w, TAG_PATH, path, node_path.length);
     write_node_fields(w, app, index, 0);
     nv_chunk_end(w);
 }
 
-u32 save_write(App* app, void* buffer, u32 capacity)
+NvChunkWritten save_write(App* app, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
@@ -294,7 +300,7 @@ u32 save_write(App* app, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_DKRW, (u32)(app->docks.right_width + 0.5f));
     nv_chunk_u32(&w, TAG_DKBH, (u32)(app->docks.bottom_height + 0.5f));
     nv_chunk_u32(&w, TAG_DKBO, app->docks.bottom_open);
-    nv_chunk_u32(&w, TAG_LANG, (u32)strings_language());
+    nv_chunk_u32(&w, TAG_LANG, (u32)nv_strings_language());
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
@@ -328,11 +334,6 @@ internal b32 read_bool(NvChunkReader* r, NvChunk parent, u32 tag, bool* out)
     return 1;
 }
 
-internal f32 clamp(f32 v, f32 lo, f32 hi)
-{
-    return v < lo ? lo : v > hi ? hi : v;
-}
-
 internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
 {
     bool autosave = app->autosave, local = app->gizmo_local, snap = app->gizmo_snap;
@@ -356,7 +357,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_f32s(r, edit, TAG_EXPO, &post.exposure, 1);
     nv_chunk_read_u32s(r, edit, TAG_BLOM, (u32*)&post.bloom, 1);
     nv_chunk_read_f32s(r, edit, TAG_BLMI, &post.bloom_intensity, 1);
-    Resolution resolution = app->resolution;
+    NvResolution resolution = app->resolution;
     u32 mode = (u32)resolution.mode;
     nv_chunk_read_u32s(r, edit, TAG_RSMD, &mode, 1);
     nv_chunk_read_u32s(r, edit, TAG_RSCL, &resolution.divisor, 1);
@@ -371,7 +372,7 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
     nv_chunk_read_u32s(r, edit, TAG_DKRW, &dock_right, 1);
     nv_chunk_read_u32s(r, edit, TAG_DKBH, &dock_bottom, 1);
     read_bool(r, edit, TAG_DKBO, &bottom_open);
-    u32 language = (u32)strings_language(); // a save without the tag keeps the browser's language
+    u32 language = (u32)nv_strings_language(); // a save without the tag keeps the browser's language
     nv_chunk_read_u32s(r, edit, TAG_LANG, &language, 1);
     if (!apply)
         return;
@@ -384,35 +385,35 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, App* app, b32 apply)
         shadows.size = 0;
     shadows.format = format == NV_SHADOW_FORMAT_DEPTH16 ? NV_SHADOW_FORMAT_DEPTH16 : NV_SHADOW_FORMAT_DEPTH32F;
     shadows.filter = filter == NV_SHADOW_FILTER_LOW ? NV_SHADOW_FILTER_LOW : NV_SHADOW_FILTER_HIGH;
-    shadows.distance = clamp(shadows.distance, 5.0f, 100.0f);
+    shadows.distance = nv_clamp_f32(shadows.distance, 5.0f, 100.0f);
     shadows.show_box = shadows.show_box != 0;
     app->renderer.shadows = shadows;
     // The two counts the View tab offers; anything else is the default.
     app->renderer.msaa = msaa == 1 ? 1 : 4;
     // The tone mappers the View tab offers (anything else is PBR Neutral), exposure 0.25 to 4, bloom 0 to 0.2.
     post.tone = tone < NV_TONE_COUNT ? (NvToneMap)tone : NV_TONE_PBR_NEUTRAL;
-    post.exposure = clamp(post.exposure, 0.25f, 4.0f);
+    post.exposure = nv_clamp_f32(post.exposure, 0.25f, 4.0f);
     post.bloom = post.bloom != 0;
-    post.bloom_intensity = clamp(post.bloom_intensity, 0.0f, 0.2f);
+    post.bloom_intensity = nv_clamp_f32(post.bloom_intensity, 0.0f, 0.2f);
     app->renderer.post = post;
     // The modes and counts the View tab offers; anything else is the device's default (the phone
     // shows a quarter of the pixels by default, the desktop all of them) or 1280 x 720.
-    resolution.mode = mode == RESOLUTION_FIXED ? RESOLUTION_FIXED : RESOLUTION_SCALE;
-    resolution.fixed_fit = fit == FIT_VIEWPORT ? FIT_VIEWPORT : fit == FIT_STRETCH ? FIT_STRETCH : FIT_WHOLE;
+    resolution.mode = mode == NV_RESOLUTION_FIXED ? NV_RESOLUTION_FIXED : NV_RESOLUTION_SCALE;
+    resolution.fixed_fit = fit == NV_FIT_VIEWPORT ? NV_FIT_VIEWPORT : fit == NV_FIT_STRETCH ? NV_FIT_STRETCH : NV_FIT_WHOLE;
     if (resolution.divisor < 1 || resolution.divisor > 4)
         resolution.divisor = app->ui_mode == UI_PHONE ? 2 : 1;
-    if (resolution.fixed_width < RESOLUTION_MIN || resolution.fixed_width > RESOLUTION_MAX)
+    if (resolution.fixed_width < NV_RESOLUTION_MIN || resolution.fixed_width > NV_RESOLUTION_MAX)
         resolution.fixed_width = 1280;
-    if (resolution.fixed_height < RESOLUTION_MIN || resolution.fixed_height > RESOLUTION_MAX)
+    if (resolution.fixed_height < NV_RESOLUTION_MIN || resolution.fixed_height > NV_RESOLUTION_MAX)
         resolution.fixed_height = 720;
     app->resolution = resolution;
     // Docks: within what the splitters allow (ui_desktop.c clamps again to the window).
-    app->docks.left_width = clamp((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
-    app->docks.right_width = clamp((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
-    app->docks.bottom_height = clamp((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
+    app->docks.left_width = nv_clamp_f32((f32)dock_left, DOCK_LEFT_MIN, DOCK_SIDE_MAX);
+    app->docks.right_width = nv_clamp_f32((f32)dock_right, DOCK_RIGHT_MIN, DOCK_SIDE_MAX);
+    app->docks.bottom_height = nv_clamp_f32((f32)dock_bottom, DOCK_BOTTOM_MIN, DOCK_BOTTOM_MAX);
     app->docks.bottom_open = bottom_open;
     // The two languages the View tab offers; anything else is English.
-    strings_set_language(language == LANG_KO ? LANG_KO : LANG_EN);
+    nv_strings_set_language(language == NV_LANGUAGE_KO ? NV_LANGUAGE_KO : NV_LANGUAGE_EN);
 }
 
 internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)
@@ -421,26 +422,23 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     if (!chunk.data)
         return;
     SceneView v = *view;
-    nv_chunk_read_f32s(r, chunk, TAG_YAW, &v.camera_yaw, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_PTCH, &v.camera_pitch, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_DIST, &v.camera_distance, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_YAW, &v.orbit.yaw, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_PTCH, &v.orbit.pitch, 1);
+    nv_chunk_read_f32s(r, chunk, TAG_DIST, &v.orbit.distance, 1);
     read_bool(r, chunk, TAG_FOLW, &v.follow_selection);
-    nv_chunk_read_f32s(r, chunk, TAG_ORBT, &v.orbit_point.x, 3);
+    nv_chunk_read_f32s(r, chunk, TAG_ORBT, &v.orbit.target.x, 3);
     nv_chunk_read_f32s(r, chunk, TAG_PAN, &v.pan.x, 3);
     u32 path[SAVE_MAX_PATH];
-    u32 length = 0;
-    b32 has_selection = nv_chunk_read_u32_list(r, chunk, TAG_SELN, path, SAVE_MAX_PATH, &length);
+    NvChunkList selection = nv_chunk_read_u32_list(r, chunk, TAG_SELN, path, SAVE_MAX_PATH);
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
-    u32 others_size = 0;
-    if (!nv_chunk_read_u32_list(r, chunk, TAG_SELO, others, NV_ARRAY_COUNT(others), &others_size))
-        others_size = 0;
+    u32 others_size = nv_chunk_read_u32_list(r, chunk, TAG_SELO, others, NV_ARRAY_COUNT(others)).count; // 0 when missing
     if (!apply)
         return;
-    v.camera_pitch = clamp(v.camera_pitch, CAMERA_MIN_PITCH, CAMERA_MAX_PITCH);
-    v.camera_distance = clamp(v.camera_distance, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+    v.orbit.pitch = nv_clamp_f32(v.orbit.pitch, v.orbit.min_pitch, v.orbit.max_pitch);
+    v.orbit.distance = nv_clamp_f32(v.orbit.distance, v.orbit.min_distance, v.orbit.max_distance);
     // A selection path only means something while the tree is the one it was saved from.
-    if (has_selection && nodes_match) {
-        u32 index = length ? node_at(scene, path, length) : 0;
+    if (selection.ok && nodes_match) {
+        u32 index = selection.count ? node_at(scene, path, selection.count) : 0;
         v.selected = index ? (NvNodeId){index, scene->nodes[index].gen} : (NvNodeId){0};
         v.other_count = 0;
         v.range_anchor = v.selected;
@@ -495,7 +493,7 @@ internal void read_character_fields(NvChunkReader* r, NvChunk chunk, App* app, b
     app->turn_rate = turn;
     app->look_at = look_at;
     app->show_sword = sword;
-    app->blend_weight = clamp(blend_weight, 0.0f, 1.0f);
+    app->blend_weight = nv_clamp_f32(blend_weight, 0.0f, 1.0f);
     for (u32 i = 0; i < app->clip_count; ++i) {
         if (strcmp(nv_anim_clip_name(app->clips[i]), blend_name) == 0)
             app->blend_clip = (s32)i;
@@ -509,7 +507,7 @@ internal void read_character_fields(NvChunkReader* r, NvChunk chunk, App* app, b
         app->fade_seconds = 0.0f;
         app_play(app, clip);
     }
-    app->fade_seconds = clamp(fade, 0.0f, 1.0f);
+    app->fade_seconds = nv_clamp_f32(fade, 0.0f, 1.0f);
     if (has_time)
         animator->layers[0].time = time;
     animator->layers[0].speed = speed;
@@ -564,7 +562,7 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, App* app, u32 in
             node->attach.joint = (u32)found;
     }
     if (node->camera.projection)
-        node->camera.fov_y = clamp(n.camera.fov_y, 1.0f * NV_PI / 180.0f, 179.0f * NV_PI / 180.0f);
+        node->camera.fov_y = nv_clamp_f32(n.camera.fov_y, 1.0f * NV_PI / 180.0f, 179.0f * NV_PI / 180.0f);
     if (node->light.type) {
         node->light.color = n.light.color;
         node->light.intensity = n.light.intensity;
@@ -574,10 +572,10 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, App* app, u32 in
 internal void read_node(NvChunkReader* r, NvChunk chunk, App* app, b32 apply)
 {
     u32 path[SAVE_MAX_PATH];
-    u32 length = 0;
-    if (!nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH, &length) || !length)
+    NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
+    if (!node_path.ok || !node_path.count)
         return;
-    read_node_fields(r, chunk, app, node_at(app->scene, path, length), apply);
+    read_node_fields(r, chunk, app, node_at(app->scene, path, node_path.count), apply);
 }
 
 internal void read_scene(NvChunkReader* r, NvChunk scene, App* app, b32 apply, u32 parts)
@@ -623,20 +621,18 @@ internal b32 read_state(NvChunk root, App* app, b32 apply, u32 parts)
     return !r.failed;
 }
 
-const char* save_load_parts(App* app, const void* bytes, u32 size, u32 parts)
+SaveLoad save_load_parts(App* app, const void* bytes, u32 size, u32 parts)
 {
-    u32 version = 0;
-    NvChunk root;
-    NvChunkFileStatus status = nv_chunk_file_open(bytes, size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
-    if (status != NV_CHUNK_FILE_OK)
-        return nv_chunk_file_status_name(status);
-    if (!read_state(root, app, 0, parts))
-        return "malformed";
-    read_state(root, app, 1, parts);
-    return NULL;
+    NvChunkFile file = nv_chunk_file_open(bytes, size, SAVE_MAGIC, SAVE_VERSION);
+    if (!file.ok)
+        return (SaveLoad){.error = nv_chunk_file_status_name(file.status)};
+    if (!read_state(file.root, app, 0, parts))
+        return (SaveLoad){.error = "malformed"};
+    read_state(file.root, app, 1, parts);
+    return (SaveLoad){.ok = 1};
 }
 
-const char* save_load(App* app, const void* bytes, u32 size)
+SaveLoad save_load(App* app, const void* bytes, u32 size)
 {
     return save_load_parts(app, bytes, size, SAVE_PART_ALL);
 }
@@ -647,10 +643,11 @@ b32 save_round_trip_matches(App* app)
     umm mark = scratch->used;
     u8* first = NV_PUSH_ARRAY(scratch, SAVE_MAX_SIZE, u8);
     u8* second = NV_PUSH_ARRAY(scratch, SAVE_MAX_SIZE, u8);
-    u32 first_size = save_write(app, first, SAVE_MAX_SIZE);
-    b32 matches = first_size && !save_load(app, first, first_size);
-    u32 second_size = matches ? save_write(app, second, SAVE_MAX_SIZE) : 0;
-    matches = matches && second_size == first_size && memcmp(first, second, first_size) == 0;
+    NvChunkWritten first_written = save_write(app, first, SAVE_MAX_SIZE);
+    b32 matches = first_written.ok && save_load(app, first, first_written.size).ok;
+    NvChunkWritten second_written = matches ? save_write(app, second, SAVE_MAX_SIZE) : (NvChunkWritten){0};
+    matches = matches && second_written.ok && second_written.size == first_written.size &&
+              memcmp(first, second, first_written.size) == 0;
     scratch->used = mark;
     return matches;
 }
@@ -665,7 +662,7 @@ u32 save_driven_fields(App* app, u32 node)
     return driven_fields(app, node);
 }
 
-u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
+NvChunkWritten save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
@@ -689,7 +686,7 @@ u32 save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_
         NV_INVALID_CODE_PATH;
         break;
     }
-    return w.overflow ? 0 : w.size;
+    return w.overflow ? (NvChunkWritten){0} : (NvChunkWritten){.ok = 1, .size = w.size};
 }
 
 internal b32 read_scope(NvChunk chunk, App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, b32 apply)
@@ -779,14 +776,15 @@ void save_now(App* app, b32 force)
     if (!app->storage.available || app->save_stopped)
         return;
     // While playing, the edit state is the snapshot taken at Play; the running scene is never saved.
-    u32 size = 0;
+    NvChunkWritten written;
     if (app->playing) {
-        size = app->play_snapshot_size;
-        memcpy(app->next_save, app->play_snapshot, size);
+        written = (NvChunkWritten){.ok = 1, .size = app->play_snapshot_size};
+        memcpy(app->next_save, app->play_snapshot, written.size);
     } else {
-        size = save_write(app, app->next_save, SAVE_MAX_SIZE);
+        written = save_write(app, app->next_save, SAVE_MAX_SIZE);
     }
-    if (!size) {
+    u32 size = written.size;
+    if (!written.ok) {
         snprintf(app->save_notice, sizeof(app->save_notice), T("Not saved: the state is larger than %u KB."),
                  (u32)(SAVE_MAX_SIZE / 1024));
         nv_log(NV_LOG_WARNING, "app", "%s", app->save_notice);
@@ -938,11 +936,10 @@ internal void view_chunks(NvChunkReader* r, NvChunk parent, u32 parent_tag)
 internal void load_viewed(App* app, b32 bad)
 {
     umm mark = app->scratch.used;
-    u8* bytes = NULL;
-    u32 size = nv_storage_read(&app->storage, bad ? SAVE_BAD_FILE : SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
-    if (size)
-        memcpy(app->viewed, bytes, size);
-    app->viewed_size = size;
+    NvFileData file = nv_storage_read(&app->storage, bad ? SAVE_BAD_FILE : SAVE_FILE, &app->scratch, SAVE_MAX_SIZE);
+    if (file.ok)
+        memcpy(app->viewed, file.bytes, file.size);
+    app->viewed_size = (u32)file.size;
     app->viewed_bad = bad;
     app->scratch.used = mark;
 }
@@ -962,10 +959,8 @@ internal void save_viewer(App* app)
         igTextDisabled("%s is missing or empty.", file);
         return;
     }
-    u32 version = 0;
-    NvChunk root;
-    NvChunkFileStatus status = nv_chunk_file_open(app->viewed, app->viewed_size, SAVE_MAGIC, SAVE_VERSION, &version, &root);
-    igText("%s: %u bytes, %s", file, app->viewed_size, nv_chunk_file_status_name(status));
+    NvChunkFile opened = nv_chunk_file_open(app->viewed, app->viewed_size, SAVE_MAGIC, SAVE_VERSION);
+    igText("%s: %u bytes, %s", file, app->viewed_size, nv_chunk_file_status_name(opened.status));
     if (app->viewed_size < NV_CHUNK_FILE_HEADER_SIZE)
         return;
     u32 magic = nv_chunk_load_u32(app->viewed);
@@ -974,7 +969,8 @@ internal void save_viewer(App* app)
     igText("Header: %s, version %u, %u bytes after it, checksum %08x", magic_text, nv_chunk_load_u32(app->viewed + 4),
            nv_chunk_load_u32(app->viewed + 8), nv_chunk_load_u32(app->viewed + 12));
     // A damaged file is still walked as far as it goes, to show where it breaks.
-    if (status != NV_CHUNK_FILE_OK)
+    NvChunk root = opened.root;
+    if (!opened.ok)
         root = (NvChunk){.size = app->viewed_size - NV_CHUNK_FILE_HEADER_SIZE, .data = app->viewed + NV_CHUNK_FILE_HEADER_SIZE};
     NvChunkReader r = {0};
     view_chunks(&r, root, 0);
@@ -989,13 +985,14 @@ void save_init(App* app)
         return;
 
     umm mark = app->scratch.used;
-    u8* bytes = NULL;
-    u32 size = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE, &bytes);
+    NvFileData file = nv_storage_read(&app->storage, SAVE_FILE, &app->scratch, SAVE_MAX_SIZE);
     const char* problem = NULL;
-    if (size)
-        problem = save_load(app, bytes, size);
-    else if (nv_storage_exists(&app->storage, SAVE_FILE))
+    if (file.ok) {
+        SaveLoad load = save_load(app, file.bytes, (u32)file.size);
+        problem = load.error;
+    } else if (nv_storage_exists(&app->storage, SAVE_FILE)) {
         problem = "empty, unreadable or too large";
+    }
     app->scratch.used = mark;
     if (problem) {
         // The app starts as on a first visit. The file is set aside rather than deleted, so it can
@@ -1010,7 +1007,7 @@ void save_init(App* app)
     app->viewed = NV_PUSH_ARRAY(&app->permanent, SAVE_MAX_SIZE, u8);
 
     // What is on screen now counts as saved, so an unchanged state is not written again.
-    app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE);
+    app->saved_size = save_write(app, app->saved, SAVE_MAX_SIZE).size;
     app->last_save_check = nv_time_seconds();
     nv_window_on_hidden(&app->window, save_on_hidden, app);
 }

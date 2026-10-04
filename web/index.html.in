@@ -91,6 +91,8 @@
 
     var Module = {
       canvas: document.getElementById("canvas"),
+      // For nv_window_download_text: which files are this page's own.
+      nvTarget: target,
       nvLogQueue: [],
       nvLogDropped: 0,
       // For the engine's JavaScript (EM_JS): the console and the queue.

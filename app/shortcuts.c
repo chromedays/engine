@@ -56,10 +56,7 @@ internal void run_follow(App* app)
 internal void run_home(App* app)
 {
     SceneView* view = app_view(app);
-    view->camera_yaw = view->home_yaw;
-    view->camera_pitch = view->home_pitch;
-    view->camera_distance = view->home_distance;
-    view->orbit_point = view->home_orbit;
+    view->orbit = view->home;
     view->pan = nv_vec3(0, 0, 0);
 }
 internal void run_dock_left(App* app) { app->docks.show_left = !app->docks.show_left; }

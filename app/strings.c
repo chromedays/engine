@@ -1,20 +1,11 @@
-#include "strings.h"
+#include "app.h"
 
-#include <emscripten.h>
-#include <stdio.h>
-#include <string.h>
-
-// The Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in
-// the code, and its Korean. tests/strings_test.mjs checks that every string the code wraps has a
-// row and that a row keeps its printf conversions. Hangul that is not among KS X 1001's 2,350
-// syllables is added to the font by tools/subset_hangul.sh.
-typedef struct Entry {
-    const char* english;
-    const char* korean;
-} Entry;
+// The editor app's Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in
+// the code, and its Korean. The lookup is the engine's (engine/strings.h). tests/strings_test.mjs checks that every string the
+// code wraps has a row and that a row keeps its printf conversions. The UI font (Pretendard) has every Hangul syllable.
 
 // clang-format off
-local_persist const Entry entries[] = {
+global const NvStringPair entries[] = {
     {"Info", "정보"},
     {"Warning", "경고"},
     {"Error", "오류"},
@@ -276,94 +267,7 @@ local_persist const Entry entries[] = {
 };
 // clang-format on
 
-#define ENTRY_COUNT (sizeof(entries) / sizeof(entries[0]))
-#define TABLE_SIZE 2048 // a power of two, more than twice the entries
-#define TL_SLOTS 64
-#define TL_SIZE 192
-
-local_persist Language language = LANG_EN;
-local_persist u16 table[TABLE_SIZE]; // entry index + 1; 0 = empty
-local_persist b32 table_built;
-
-EM_JS(int, js_browser_is_korean, (void), {
-    const language = (navigator.language || "").toLowerCase();
-    return language.startsWith("ko") ? 1 : 0;
-});
-
-Language strings_language(void) { return language; }
-void strings_set_language(Language value) { language = value < LANG_COUNT ? value : LANG_EN; }
-Language strings_browser_language(void) { return js_browser_is_korean() ? LANG_KO : LANG_EN; }
-
-internal u32 hash_text(const char* text, umm length)
+void app_strings_init(void)
 {
-    u32 hash = 2166136261u;
-    for (umm i = 0; i < length; ++i)
-        hash = (hash ^ (u8)text[i]) * 16777619u;
-    return hash;
-}
-
-internal void build_table(void)
-{
-    table_built = 1;
-    for (u32 i = 0; i < ENTRY_COUNT; ++i) {
-        u32 slot = hash_text(entries[i].english, strlen(entries[i].english)) & (TABLE_SIZE - 1);
-        while (table[slot])
-            slot = (slot + 1) & (TABLE_SIZE - 1);
-        table[slot] = (u16)(i + 1);
-    }
-}
-
-// The entry for `length` bytes of English, or NULL.
-internal const Entry* find(const char* english, umm length)
-{
-    if (!table_built)
-        build_table();
-    u32 slot = hash_text(english, length) & (TABLE_SIZE - 1);
-    while (table[slot]) {
-        const Entry* entry = &entries[table[slot] - 1];
-        if (strlen(entry->english) == length && memcmp(entry->english, english, length) == 0)
-            return entry;
-        slot = (slot + 1) & (TABLE_SIZE - 1);
-    }
-    return NULL;
-}
-
-const char* strings_find_korean(const char* english)
-{
-    const Entry* entry = find(english, strlen(english));
-    return entry ? entry->korean : NULL;
-}
-
-const char* T(const char* english)
-{
-    if (language != LANG_KO)
-        return english;
-    const Entry* entry = find(english, strlen(english));
-    return entry ? entry->korean : english;
-}
-
-const char* TL(const char* english)
-{
-    local_persist char slots[TL_SLOTS][TL_SIZE];
-    local_persist u32 next;
-    char* out = slots[next++ % TL_SLOTS];
-    // The text is what comes before any "##"; the id is what follows "###", or all of it.
-    const char* mark = strstr(english, "##");
-    umm text_length = mark ? (umm)(mark - english) : strlen(english);
-    const char* id = english;
-    const char* triple = strstr(english, "###");
-    if (triple)
-        id = triple + 3;
-    const char* shown = english;
-    if (language == LANG_KO) {
-        const Entry* entry = find(english, text_length);
-        if (entry) {
-            snprintf(out, TL_SIZE, "%s###%s", entry->korean, id);
-            nv_utf8_trim(out);
-            return out;
-        }
-    }
-    snprintf(out, TL_SIZE, "%.*s###%s", (int)text_length, shown, id);
-    nv_utf8_trim(out);
-    return out;
+    nv_strings_set_table(entries, NV_ARRAY_COUNT(entries));
 }

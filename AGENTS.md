@@ -9,6 +9,8 @@ Guidance for AI coding agents working in this repository.
 - Commit messages and code comments stay in English.
 - Every document is written in both Korean and English in one file: the Korean version first, then
   the English version with the same content.
+- When a response refers to code, give the file path and line (`engine/file.c:16`) and quote the code itself in a snippet
+  under it, so the reader sees what is meant without opening the file.
 
 ## Project
 
@@ -17,15 +19,19 @@ WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emd
 There is no native build.
 
 ```
-engine/include/nv/         public API: base.h (types, asserts, arenas), math.h, scene.h, window.h, gpu.h,
-                           imgui.h (Dear ImGui, ImGuizmo), renderer.h (meshes, materials, skinning, debug lines),
-                           gltf.h (cgltf loading), anim.h (skeletal animation over ozz-animation),
-                           chunk.h (tagged binary files), storage.h (files kept in IndexedDB),
-                           log.h (the log ring the Console tab shows),
-                           vfx.h (effects: compute particles, trails, beams, decals)
-engine/src/                window.c, gpu.c, scene.c, imgui.c, renderer.c, gltf.c, chunk.c, storage.c, log.c,
-                           vfx.c and vfx_cpu.c (the effects; vfx_cpu holds the GPU-free parts tests run),
-                           anim.cpp (the ozz wrapper; our only C++ file)
+engine/                    each module's header and source side by side, included as <engine/name.h>:
+                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.c/.h, gpu.c/.h,
+                           imgui.c/.h (Dear ImGui, ImGuizmo), renderer.c/.h (meshes, materials, skinning, debug lines),
+                           gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
+                           C++ file), chunk.c/.h (tagged binary files), file.c/.h (reading a packed file whole into an arena),
+                           storage.c/.h (files kept in IndexedDB),
+                           log.c/.h (the log ring the Console tab shows),
+                           vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
+                           GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
+                           mesh.c/.h (vertex types; box, plane, sphere, cylinder, cone, capsule and torus primitives;
+                           docs/specs/mesh.md), camera.c/.h (orbit camera math),
+                           strings.c/.h (T, TL and the language; each executable brings its own table),
+                           renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
 app/                       the app: main.c (showcase scene, frame), stress.c (stress scene and
                            benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
                            undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
@@ -33,8 +39,11 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), app.h (shared state)
+autobattler/               the auto-battler, a second executable with its own page (docs/specs/battle.md): battle.c/.h (the rules and
+                           the 30 Hz tick; no GPU), defs.c (reads data/units.txt and stage.txt), main.c (window, frame loop),
+                           battle_view.c (drawing, deployment input, the Battle panel), game.h (its state), strings.c (its Korean table)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
-                           assets/fonts/ holds the UI font (Inter) and its Hangul fallback (from Pretendard)
+                           assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the app with a progress bar, then
@@ -49,7 +58,7 @@ Where code goes: `engine/` holds what any app would need (rendering, GPU, window
 animation, chunks, storage, log, ImGui's platform glue) and never refers to `App`; `app/` holds what
 only this editor needs (its scenes, panels, search, shortcuts, saved state, undo, strings). Ask "would
 another app use this?": yes goes in the engine, no in the app. Dependencies point one way, `app` to
-`engine`.
+`engine`; `autobattler/` is a second app on the same terms and uses nothing from `app/`.
 
 ## Build and run
 
@@ -75,10 +84,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `nv_imgui_new_frame` and `nv_imgui_render`.
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
-  in `engine/src/imgui.c`.
-- `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Inter
-  Regular (`assets/fonts/`, 14 px, `nv_imgui_set_font`; `docs/specs/fonts.md`) with a Hangul fallback, not
-  ImGui's built-in one.
+  in `engine/imgui.c`.
+- `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Pretendard
+  Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
+  syllable, not ImGui's built-in one.
 - The app has two editor UIs, chosen once at start from the primary pointer (`App.ui_mode`; touch
   gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `app_layout` fills
   `App.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
@@ -96,8 +105,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `_app_debug_ui_mode`, `_app_debug_dock`, `_app_debug_view` and `_app_debug_playing` for tests.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the app turns it into camera moves and picking
-  (`nv_renderer_view_ray`, `nv_renderer_pick`). Playwright drives it with mouse drags, the wheel and
-  CDP `Input.dispatchTouchEvent` for multi-touch.
+  (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
+  `SceneView.orbit`, with the limits `ORBIT_LIMITS` set where a view is made). Playwright drives it with mouse drags,
+  the wheel and CDP `Input.dispatchTouchEvent` for multi-touch.
 - The transform gizmo is ImGuizmo through cimguizmo (`#include <cimguizmo.h>`, `ImGuizmo_*`).
   A press on its handle reaches ImGui through `NvImgui.view_grab`: a left press or one-finger touch
   in the viewport waits two frames before the hook decides. Tests must hold the press longer than
@@ -157,15 +167,15 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `_app_debug_palette_query(k)` for tests.
 - UI text is written in English in the code and goes through `T("text")` (a printf format keeps
   its conversions) or `TL("label")` (a widget label: it keeps its ImGui id in both languages),
-  from `app/strings.h`; each string needs a Korean row in `app/strings.c` (`docs/specs/korean.md`).
+  from `engine/strings.h`; each executable keeps its own table of Korean rows (the app's is `app/strings.c`, handed to
+  the engine by `app_strings_init`) and each string needs a row there (`docs/specs/korean.md`).
   `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
   conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
-  rows, node, clip and texture names and the benchmark's copied table stay English. Hangul that is not
-  among KS X 1001's 2,350 syllables needs `tools/subset_hangul.sh` run again. Text copied into a fixed
-  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`nv/base.h`), never in the middle of a character. The desktop types
+  rows, node, clip and texture names and the benchmark's copied table stay English. Text copied into a fixed
+  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`engine/base.h`), never in the middle of a character. The desktop types
   through the text agent too (an input method composes there); a key that types no text is kept from it
   in `on_key`.
-- Report through `nv_log(level, source, format, ...)` (`nv/log.h`), not `fprintf(stderr, ...)`
+- Report through `nv_log(level, source, format, ...)` (`engine/log.h`), not `fprintf(stderr, ...)`
   (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
   Console tab shows; an equal message in a row is one row with a count. The page's own output
   (`Module.print`, `printErr`, uncaught errors, `Module.nvLog` for `EM_JS` code) is queued in
@@ -178,11 +188,11 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   rects, rows, scroll, selection) for tests.
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
-  viewport's width. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
-  `NV_GIT_SUBJECT`) on every build, through the `app_version` target, so they are never those of
-  an older configure. Beside the build it shows what the page downloaded (`App.download_text`, from
-  the Resource Timing entries of `app.wasm`, `app.data` and `app.js`: "3.2 MB downloaded", or "from
-  cache"). The label also gets a badge (a dot and the count of warnings and
+  viewport's width; both executables draw it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the app adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+  `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
+  makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
+  (`App.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
+  `.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
   errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
   instead of picking (`pick` in `app/main.c`, through `App.badge_box`).
 - The Textures tab (`docs/specs/textures.md`, `app/textures.c`) draws engine textures with
@@ -205,7 +215,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   then an upscale pass clears the canvas to black and shows it with the nearest filter
   (`textureLoad`). The app computes it each frame in `app_layout` from `App.resolution` (Scale: a
   divisor 1 to 4 of the viewport; Fixed: an exact size, by default at the largest whole multiple
-  that fits, centered, with black bars, or fitted or stretched to the viewport: `FixedFit`):
+  that fits, centered, with black bars, or fitted or stretched to the viewport: `NvFixedFit`; `NvResolution` and
+  `nv_renderer_scene_output` are the engine's):
   `App.layout.scene`. Picking, panning and the gizmo use it
   (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
   does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
@@ -216,7 +227,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   end. A shader writes linear light that may exceed 1; never apply a transfer curve in a scene shader. The MSAA resolve
   averages in linear space. Bloom (`renderer.c`: `update_bloom`, `record_bloom`) is a 6-level chain between the scene
   pass and the upscale pass, remade only when the scene's size changes.
-- Effects (`nv/vfx.h`, `engine/src/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
+- Effects (`engine/vfx.h`, `engine/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
   passes recorded in `nv_renderer_draw` (emit, simulate, prepare; the free list, two alive lists and a visible list).
   The app registers effects once (`nv_vfx_add_effect`, see `app/effects.c`), calls `nv_vfx_update(dt)` with the game
   clock's dt every frame (0 pauses them) and `nv_vfx_burst`, `nv_vfx_emit`, `nv_vfx_trail`, `nv_vfx_beam` and
@@ -241,7 +252,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
   camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay
   standard 0..1. The shadow map keeps standard depth, since its projection is orthographic.
-- In `engine/src/anim.cpp`, ozz headers are included before nv headers: `nv/base.h` defines
+- In `engine/anim.cpp`, ozz headers are included before engine headers: `engine/base.h` defines
   `internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
   Assert on `nv_anim_find_joint` results.
@@ -250,13 +261,25 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model; call `nv_anim_init`
   first.
-- There is one executable, `app`. Its assets are packaged with
-  `nv_setup_executable(app ROOT ASSETS <dir>)` (the whole `assets/` directory) and read from `/assets/...` with `fopen`. CI installs
-  the Release build to `release/` and the Debug build to `debug/` on Pages (the site root has
-  nothing); every other pushed branch publishes only its Debug build to `<branch>/` (`/` becomes
-  `-`). Builds are staged in the `gh-pages` branch (one commit, rewritten by CI) and deployed by
-  `.github/workflows/pages.yml`. Debug builds keep their DWARF in `app.debug.wasm`, which only browser developer tools
-  download.
+- There are two executables, `app` (the editor) and `autobattler` (`docs/specs/battle.md`), each with its own page.
+  `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])` packs the files a program reads
+  into `<target>.data`, read with `fopen`: `app` takes the whole `assets/` directory (`ASSETS`, at `/assets`), `autobattler` only the
+  font folder and its `data/` (`PRELOAD`), and its own install `COMPONENT`. CI installs the editor's Release build to `release/` and
+  Debug build to `debug/` on Pages (the site root has nothing), and the auto-battler's to `autobattler/release/` and
+  `autobattler/debug/`; every other pushed branch publishes only its Debug builds, to `<branch>/` and `autobattler/<branch>/` (`/`
+  becomes `-`; a branch named `release`, `debug` or `autobattler` is not published). Builds are staged in the `gh-pages` branch (one
+  commit, rewritten by CI) and deployed by `.github/workflows/pages.yml`. Debug builds keep their DWARF in `<target>.debug.wasm`,
+  which only browser developer tools download.
+- The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
+  rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
+  `battle_remove`, `battle_start` and `battle_retry`. Units, weapons and the stage are the text files in `autobattler/data/`, read by
+  `defs.c` (a bad file blocks Start and is reported with its line); a new key goes in `defs.c`'s field tables and the spec's. Its
+  viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
+  `autobattler/strings.c`, like the app's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
+  `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout` and `_battle_debug_project` for tests. Speed controls change only
+  how many ticks a frame runs (the game clock), never the tick, and the effects take the same game clock's dt. Stepping back is `battle_seek` (a replay from the start, which
+  the deterministic rules make exact). A touch on a panel widget takes a few frames to
+  count as a tap: tests that touch buttons wait about two seconds.
 
 ## Assets
 
@@ -283,7 +306,8 @@ There is no physical display in cloud sessions. Headless Chromium renders WebGPU
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
-`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds); `battle_test` reads the
+auto-battler's `autobattler/data/` directly.
 Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can

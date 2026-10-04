@@ -26,14 +26,20 @@ target_link_options(webgpu INTERFACE
     -sENVIRONMENT=web)
 
 # Emits <target>.js, .wasm and .manifest.json plus index.html (from web/index.html.in) into the
-# target's directory, and installs them into <prefix>/<target>/ as the "web" install component.
-#   nv_setup_executable(<target> [ROOT] [ASSETS <dir>])
+# target's directory, and installs them into <prefix>/<target>/ as an install component ("web" unless COMPONENT says
+# otherwise).
+#   nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])
 # ROOT installs into <prefix>/ instead, so the page is the package's index.html.
-# ASSETS preloads <dir> as /assets, readable with fopen; it ships as <target>.data.
+# COMPONENT names the install component: executables that are deployed apart (docs/specs/battle.md) take one each.
+# PRELOAD packs each <dir> at <path> in the executable's file system, readable with fopen; they ship as <target>.data.
+# ASSETS <dir> is PRELOAD <dir>@/assets.
 # Debug builds keep their DWARF debug info in <target>.debug.wasm next to the page. The page does
 # not download it; browser developer tools fetch it for source-level debugging.
 function(nv_setup_executable target)
-    cmake_parse_arguments(ARG "ROOT" "ASSETS" "" ${ARGN})
+    cmake_parse_arguments(ARG "ROOT" "ASSETS;COMPONENT" "PRELOAD" ${ARGN})
+    if(NOT ARG_COMPONENT)
+        set(ARG_COMPONENT web)
+    endif()
     set_target_properties(${target} PROPERTIES SUFFIX ".js")
     set(NV_WEB_TARGET "${target}")
     configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
@@ -55,17 +61,28 @@ function(nv_setup_executable target)
                 -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"
         VERBATIM)
 
+    set(preloads ${ARG_PRELOAD})
     if(ARG_ASSETS)
-        # A Git LFS pointer instead of the real file means the clone skipped LFS.
-        file(GLOB_RECURSE asset_files "${ARG_ASSETS}/*")
-        foreach(asset ${asset_files})
-            file(READ "${asset}" head LIMIT 40)
-            if(head MATCHES "^version https://git-lfs")
-                message(FATAL_ERROR "${asset} is a Git LFS pointer. Run: git lfs install && git lfs pull")
-            endif()
+        list(APPEND preloads "${ARG_ASSETS}@/assets")
+    endif()
+    if(preloads)
+        set(packed_files)
+        foreach(preload ${preloads})
+            string(REGEX REPLACE "@.*$" "" preload_dir "${preload}")
+            # CONFIGURE_DEPENDS: a file added or removed re-runs the glob, so an old build directory does not stop on a
+            # file that is gone.
+            file(GLOB_RECURSE found CONFIGURE_DEPENDS "${preload_dir}/*")
+            # A Git LFS pointer instead of the real file means the clone skipped LFS.
+            foreach(asset ${found})
+                file(READ "${asset}" head LIMIT 40)
+                if(head MATCHES "^version https://git-lfs")
+                    message(FATAL_ERROR "${asset} is a Git LFS pointer. Run: git lfs install && git lfs pull")
+                endif()
+            endforeach()
+            list(APPEND packed_files ${found})
+            target_link_options(${target} PRIVATE "--preload-file=${preload}")
         endforeach()
-        target_link_options(${target} PRIVATE "--preload-file=${ARG_ASSETS}@/assets")
-        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${asset_files})
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${packed_files})
         list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.data")
     endif()
 
@@ -73,7 +90,23 @@ function(nv_setup_executable target)
     if(ARG_ROOT)
         set(destination .)
     endif()
-    install(FILES ${files} DESTINATION ${destination} COMPONENT web)
+    install(FILES ${files} DESTINATION ${destination} COMPONENT ${ARG_COMPONENT})
+endfunction()
+
+# Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in the target's binary
+# directory (cmake/version.cmake rewrites it on every build, so it is never the commit of an older configure), and the build
+# type as NV_BUILD_NAME. Shown on build labels and in benchmark reports.
+#   nv_add_version(<target>)
+function(nv_add_version target)
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/nv_version.h")
+    add_custom_target(${target}_version
+        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DOUTPUT=${header}
+                -P ${PROJECT_SOURCE_DIR}/cmake/version.cmake
+        BYPRODUCTS ${header}
+        COMMENT "Recording the commit")
+    add_dependencies(${target} ${target}_version)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
 endfunction()
 
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
@@ -149,4 +182,5 @@ endforeach()
 enable_testing()
 add_subdirectory(engine)
 add_subdirectory(app)
+add_subdirectory(autobattler)
 add_subdirectory(tests)

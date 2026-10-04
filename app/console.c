@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// The Console tab (docs/specs/console.md): the engine's log (nv/log.h) as a list with filters.
+// The Console tab (docs/specs/console.md): the engine's log (engine/log.h) as a list with filters.
 
 // The row's first line is drawn up to this many bytes; the detail box below shows all of it.
 #define ROW_MAX_BYTES 512

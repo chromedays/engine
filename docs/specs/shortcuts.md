@@ -80,7 +80,7 @@ Ctrl+S가 브라우저의 "페이지 저장" 대화 상자를 연다.
 
 ### 변경
 
-- **엔진 (`nv/imgui.h`, `engine/src/imgui.c`).** `NvImgui.claims_key`와 `claims_key_data`; 훅이 키를 가져가면 `on_key`가
+- **엔진 (`engine/imgui.h`, `engine/imgui.c`).** `NvImgui.claims_key`와 `claims_key_data`; 훅이 키를 가져가면 `on_key`가
   true를 돌려준다.
 - **앱.**
   - `app/shortcuts.c` (새로 생김): 표, `shortcuts_update` (행을 발동, 데스크톱만), `shortcut_label`, `shortcuts_claim`
@@ -201,7 +201,7 @@ that has something to run, and the help window only the rows that have keys.
 
 ### Changes
 
-- **Engine (`nv/imgui.h`, `engine/src/imgui.c`).** `NvImgui.claims_key` and `claims_key_data`; `on_key`
+- **Engine (`engine/imgui.h`, `engine/imgui.c`).** `NvImgui.claims_key` and `claims_key_data`; `on_key`
   returns true when the hook claims the key.
 - **App.**
   - `app/shortcuts.c` (new): the table, `shortcuts_update` (fires rows, desktop only),
