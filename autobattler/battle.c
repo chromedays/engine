@@ -164,7 +164,7 @@ void battle_retry(Battle* battle)
     rebuild_units(battle);
 }
 
-// TODO: Replaying from the start is cheap for stage A's armies (a few dozen units); with B's larger ones, keep snapshots every
+// TODO: Replaying from the start is cheap for stage A's armies (a few dozen units); with larger ones, keep snapshots every
 // second of battle and replay from the nearest one.
 void battle_seek(Battle* battle, u32 tick)
 {
