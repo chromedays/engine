@@ -21,6 +21,10 @@
 #define CAMERA_MIN_DISTANCE 15.0f
 #define CAMERA_MAX_DISTANCE 140.0f
 #define CAMERA_RADIANS_PER_PIXEL 0.008f
+// The shadow distance is the camera's distance times this. From the starting camera the field's far corners are about 1.4
+// times its distance away, before the fade that starts at 0.9 of the shadow distance, so every unit is shadowed; and the
+// map's texels keep about the same size on screen as the camera zooms.
+#define SHADOW_DISTANCE_PER_CAMERA_DISTANCE 1.6f
 
 // The field, in meters.
 #define FIELD_WIDTH  (BATTLE_GRID_WIDTH * BATTLE_CELL_SIZE)

@@ -524,6 +524,10 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - 포탄은 틱마다 지난 구간에 `nv_vfx_trail`, 이벤트는 효과로: 발사는 총구의 작은 섬광, 명중은 작은 폭발과 `nv_vfx_decal`의 그을음,
     실드 피격은 파란 불꽃, 죽음은 큰 폭발(`nv_vfx_burst`). 실드는 남은 에너지에 따라 밝기가 바뀌는 디버그 라인 원(세 축) 셋이다.
     이벤트와 포탄 구간은 틱마다(한 프레임에 틱이 여럿 돌아도) 처리하고 이벤트 목록을 비운다.
+  - 태양(방향광)이 그림자를 드리운다(`docs/specs/shadows.md`): 에디터 앱처럼 데스크톱은 2048 맵과 High 필터, 터치 화면은 1024와 Low.
+    그림자 거리는 카메라 거리의 1.6배다(`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). 처음 카메라에서 전장의 먼 구석이 카메라 거리의
+    약 1.4배라 모든 유닛에 그림자가 지고, 확대해도 맵의 텍셀이 화면에서 비슷한 크기로 남는다. 옮기거나 돌려도 거리는 그대로라 그림자가
+    떨리지 않는다. 설정 UI는 없다.
 - **시간 조작:** 게임 시각은 실제 시각 × 속도이고 일시정지 중에는 멈춘다. 패널의 Pause와 0.5x, 1x, 2x, 4x 버튼이 바꾼다(고른 것이
   밝다; 일시정지는 속도를 기억한다; Start는 일시정지를 푼다; 저장하지 않는다). 규칙은 같은 30 Hz 틱을 돌고 속도는 한 프레임에 도는 틱
   수만 바꾸므로, 결과는 속도와 상관없이 같다. 누산기는 한 프레임에 최대 `4 × max(1, 속도)`틱만 돌리고, 더 밀리면 남은 시간을 버린다
@@ -541,7 +545,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
-  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
   `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
@@ -1175,6 +1179,11 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
     muzzle, a hit a small explosion and a scorch (`nv_vfx_decal`), a shield hit blue sparks, a death a big explosion (`nv_vfx_burst`).
     A shield is three debug-line circles (one per axis) whose brightness follows its energy left. Events and shell stretches are
     handled after every tick (several may run in one frame), and the event list is emptied then.
+  - The sun (a directional light) casts shadows (`docs/specs/shadows.md`): as in the editor app, a 2048 map with the High filter on
+    desktop, 1024 and Low on a touch screen. The shadow distance is 1.6 times the camera's distance
+    (`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). From the starting camera the field's far corners are about 1.4 times its distance away, so
+    every unit is shadowed, and the map's texels keep about the same size on screen as the camera zooms. Moving or turning the view
+    keeps the distance, so shadows do not shimmer. There is no settings UI.
 - **Time controls:** the game clock is real time times the speed, stopped while paused. The panel's Pause, 0.5x, 1x, 2x and 4x
   buttons change it (the chosen one is lit; a pause keeps the speed; Start un-pauses; not saved). The rules run the same 30 Hz ticks
   and a speed only changes how many run in a frame, so the result is the same at any speed. The accumulator runs at most
@@ -1197,7 +1206,8 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
-  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)`,
+  6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused, 12 the shadow
+  map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)`,
   `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.

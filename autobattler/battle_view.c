@@ -440,6 +440,8 @@ void view_update(Game* game, f32 game_dt)
     nv_vfx_update(&game->vfx, game_dt); // the game clock: a pause freezes the effects, a speed-up hurries them
     nv_scene_update(game->scene);
     nv_orbit_camera_place(&game->orbit, camera);
+    // The shadow map covers the view up to this distance; panning and turning keep it, so shadows do not shimmer then.
+    renderer->shadows.distance = game->orbit.distance * SHADOW_DISTANCE_PER_CAMERA_DISTANCE;
 }
 
 // The panel and the build label
