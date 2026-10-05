@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 // The selection (docs/specs/selection.md): a primary node, the one picked last, and up to
 // SELECTION_MAX - 1 others, oldest first.
@@ -58,7 +58,7 @@ internal void promote_last_other(SceneView* view)
     view->selected = view->other_count ? view->others[--view->other_count] : (NvNodeId){0};
 }
 
-void selection_add(App* app, SceneView* view, NvNodeId id)
+void selection_add(Sandbox* sandbox, SceneView* view, NvNodeId id)
 {
     if (!id.index || same_node(view->selected, id))
         return;
@@ -66,9 +66,9 @@ void selection_add(App* app, SceneView* view, NvNodeId id)
         // Already among the others: it becomes the primary.
         remove_other(view, id);
     } else if (selection_count(view) == SELECTION_MAX) {
-        if (!app->selection_full_warned)
-            nv_log(NV_LOG_WARNING, "app", "The selection holds at most %u nodes.", SELECTION_MAX);
-        app->selection_full_warned = 1;
+        if (!sandbox->selection_full_warned)
+            nv_log(NV_LOG_WARNING, "sandbox", "The selection holds at most %u nodes.", SELECTION_MAX);
+        sandbox->selection_full_warned = 1;
         return;
     }
     if (view->selected.index)
@@ -76,7 +76,7 @@ void selection_add(App* app, SceneView* view, NvNodeId id)
     view->selected = id;
 }
 
-void selection_toggle(App* app, SceneView* view, NvNodeId id)
+void selection_toggle(Sandbox* sandbox, SceneView* view, NvNodeId id)
 {
     if (!id.index)
         return;
@@ -89,7 +89,7 @@ void selection_toggle(App* app, SceneView* view, NvNodeId id)
         remove_other(view, id);
         return;
     }
-    selection_add(app, view, id);
+    selection_add(sandbox, view, id);
 }
 
 void selection_keep_primary(SceneView* view)

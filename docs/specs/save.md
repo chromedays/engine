@@ -13,7 +13,7 @@
 
 ### 목표
 
-탭을 닫고 돌아와도 앱이 떠난 그대로 있게 한다. 앱은 자기 상태 (쇼케이스 씬과 에디터 설정)를 저장 하나로, 스스로,
+탭을 닫고 돌아와도 샌드박스가 떠난 그대로 있게 한다. 샌드박스는 자기 상태 (쇼케이스 씬과 에디터 설정)를 저장 하나로, 스스로,
 Emscripten의 IDBFS를 통해 브라우저의 IndexedDB에 저장한다; 잊어버릴 저장 버튼이 없다.
 
 스트레스 씬은 저장하지 않는다: 벤치마크이고, 매 방문마다 기본값으로 시작하므로 모든 실행이 같은 곳에서 시작한다.
@@ -23,11 +23,11 @@ Emscripten의 IDBFS를 통해 브라우저의 IndexedDB에 저장한다; 잊어�
 
 ### IDBFS의 동작 방식
 
-- Emscripten의 파일 시스템은 JavaScript 메모리 (MEMFS)에 산다. 앱은 이미 `fopen`으로 거기서 `/assets/...`를 읽고,
+- Emscripten의 파일 시스템은 JavaScript 메모리 (MEMFS)에 산다. 샌드박스는 이미 `fopen`으로 거기서 `/assets/...`를 읽고,
   페이지가 닫히면 사라진다.
 - IDBFS는 디렉터리 하나가 IndexedDB 데이터베이스와 짝지어진 MEMFS다. 거기 파일도 여전히 메모리에서 읽고 쓰므로
   `fopen`과 `fwrite`가 그대로 동작한다.
-- 앱이 요청하기 전까지는 아무것도 IndexedDB에 닿지 않는다. `FS.syncfs(true)`는 시작할 때 한 번 IndexedDB를 메모리로
+- 샌드박스가 요청하기 전까지는 아무것도 IndexedDB에 닿지 않는다. `FS.syncfs(true)`는 시작할 때 한 번 IndexedDB를 메모리로
   복사한다. `FS.syncfs(false)`는 저장 뒤 메모리를 IndexedDB로 복사한다 (타임스탬프가 바뀐 파일만). 둘 다 비동기이고
   끝나면 콜백한다.
 - 데이터베이스는 페이지의 origin `chromedays.github.io`에 속하고, 마운트 경로를 따라 이름이 붙는다.
@@ -59,7 +59,7 @@ u8  payload[size]
 - **순서.** 필드는 어떤 순서로든 올 수 있고, 스펙이 그렇다고 하는 곳에서만 반복된다 (`SCNE` 안의 `NODE`). 리더는
   태그로 필드를 찾는다.
 - **모르는 태그는** 크기만큼 **건너뛴다**, 그래서 옛 빌드가 새 저장을 읽고 모르는 것은 무시한다.
-- **없는 필드는 앱이 시작할 때의 값을 유지한다**, 그래서 옛 빌드의 저장은 가진 것을 불러오고 나머지는 첫 방문처럼
+- **없는 필드는 샌드박스가 시작할 때의 값을 유지한다**, 그래서 옛 빌드의 저장은 가진 것을 불러오고 나머지는 첫 방문처럼
   둔다 (아래 "없음" 열). 리더 자체는 없는 필드를 0으로 읽고 (ZII) 없다고 알린다.
 - **타입에 맞지 않는 크기의 필드** (12바이트가 아닌 `POS `)는 저장을 나쁘게 만든다 (아래 참고): 손상이나 버그에서만
   생길 수 있다.
@@ -76,15 +76,15 @@ Header (16 bytes)
   u32 checksum  CRC-32 of the bytes after the header
 Chunks
   'EDIT'  editor settings
-  'SCNE'  the scene (the app's showcase)
+  'SCNE'  the scene (the sandbox's showcase)
 ```
 
-체크섬과 크기가 짧게 잘렸거나 손상된 저장을 잡는다. 모든 태그는 `app/save.c`의 한 곳에 있다.
+체크섬과 크기가 짧게 잘렸거나 손상된 저장을 잡는다. 모든 태그는 `sandbox/save.c`의 한 곳에 있다.
 
 ### 저장되는 것
 
 저장은 사용자가 바꿀 수 있고 다시 찾기를 기대할 모든 것을 담고, 다시 만들거나, 측정하거나, 순간적인 것은 담지 않는다.
-표가 모든 태그를 나열한다. "없음"은 태그가 없을 때 (옛 저장) 불러오기가 하는 일이다: 지금 앱이 시작할 때의 값.
+표가 모든 태그를 나열한다. "없음"은 태그가 없을 때 (옛 저장) 불러오기가 하는 일이다: 지금 샌드박스가 시작할 때의 값.
 
 #### 쇼케이스 노드를 저장하는 방법
 
@@ -97,7 +97,7 @@ Chunks
   바꿔 번호가 달라지면, 저장된 노드는 건너뛰고 (경로가 다른 노드를 가리킬 수 있다) 나머지는 여전히 불러온다.
 - 존재하지 않는 저장된 경로는 건너뛴다.
 
-불러오기가 노드를 결코 대신하지 않으므로, 앱의 참조 (`app->planet`, `app->moon`, `app->sword`, 캐릭터)가 유효하게
+불러오기가 노드를 결코 대신하지 않으므로, 샌드박스의 참조 (`sandbox->planet`, `sandbox->moon`, `sandbox->sword`, 캐릭터)가 유효하게
 남는다. 에디터가 노드를 추가하고 제거하게 되면 새 태그가 만들어진 노드를 설명할 것이다; 옛 빌드는 그것을 건너뛸
 것이다.
 
@@ -106,9 +106,9 @@ Chunks
 | 태그 | 타입 | 저장하는 값 | 없음 |
 |---|---|---|---|
 | `AUTO` | u32 | 자동 저장 켜짐 (View 탭 체크박스) | 1 |
-| `GZOP` | u32 | `app->gizmo_operation`: 0 이동, 1 회전, 2 크기 | 0 |
-| `GZLC` | u32 | `app->gizmo_local` | 0 |
-| `GZSN` | u32 | `app->gizmo_snap` | 0 |
+| `GZOP` | u32 | `sandbox->gizmo_operation`: 0 이동, 1 회전, 2 크기 | 0 |
+| `GZLC` | u32 | `sandbox->gizmo_local` | 0 |
+| `GZSN` | u32 | `sandbox->gizmo_snap` | 0 |
 | `SHSZ` | u32 | 그림자 맵 크기: 512, 1024, 2048; 다른 값은 꺼짐 (0) | 시작 값 (2048, 터치 화면에서 1024) |
 | `SHFM` | u32 | 그림자 맵 형식: 0 `depth32float`, 1 `depth16unorm` | 0 |
 | `SHFL` | u32 | 그림자 필터: 0 Low, 1 High | 시작 값 (High, 터치 화면에서 Low) |
@@ -152,7 +152,7 @@ Chunks
 | `LAYT` | u32 | 배치 번호 (위) | 노드를 건너뜀 |
 | `VIEW` | container | 쇼케이스의 뷰 | 시작 뷰 |
 | `PLNT` | f32[2] | `orbit_speed` (rad/s)와 `orbit_angle` (rad). Edit와 Play 모드 (`play.md`) 이후로 각도는 0으로 쓴다: 회전은 재생 중에만, 0부터, 행성의 지정한 회전 위에서 돈다 | 0.7, 0 |
-| `BONE` | u32 | `app->show_bones` | 0 |
+| `BONE` | u32 | `sandbox->show_bones` | 0 |
 | `CHAR` | container | 캐릭터 (아래) | 만든 그대로 |
 | `NODE` | container, 반복 | 노드마다 하나, 트리 순서로 (아래) | 만든 그대로 |
 
@@ -160,7 +160,7 @@ Chunks
 
 | 태그 | 타입 | 저장하는 값 | 없음 |
 |---|---|---|---|
-| `CLIP` | string | 레이어 0에서 재생 중인 클립의 이름, 루트 모션 사본 제외 (`app_regular_clip`). 점프 중에는 점프가 돌아갈 클립 | `Idle_Loop` |
+| `CLIP` | string | 레이어 0에서 재생 중인 클립의 이름, 루트 모션 사본 제외 (`sandbox_regular_clip`). 점프 중에는 점프가 돌아갈 클립 | `Idle_Loop` |
 | `CTIM` | f32 | 그 클립 안에서 레이어 0의 시간, 초. Edit와 Play 모드 (`play.md`) 이후로 더 이상 쓰지 않는다: 실행은 모든 클립을 처음부터 시작한다. 그것이 있는 옛 저장도 여전히 불러온다 | 0 |
 | `SPED` | f32 | 레이어 0의 속도 | 1 |
 | `FADE` | f32 | `fade_seconds` | 0.3 |
@@ -171,7 +171,7 @@ Chunks
 | `LOOK` | u32 | `look_at` | 만든 그대로 |
 | `SWRD` | u32 | `show_sword` | 1 |
 
-불러올 때 클립은 페이드 없이 `CTIM`에서 `app_play`로 시작한다 (그래서 루트 모션이 그 사본을 고른다). 빌드에 없는 클립
+불러올 때 클립은 페이드 없이 `CTIM`에서 `sandbox_play`로 시작한다 (그래서 루트 모션이 그 사본을 고른다). 빌드에 없는 클립
 이름은 `Idle_Loop`로 돌아간다.
 
 **`NODE`: 노드 하나의 편집 가능한 값**
@@ -195,7 +195,7 @@ Chunks
 
 #### 저장하지 않는 것
 
-- 스트레스 씬: 그 설정, 카메라, 선택, 노드 편집, 벤치마크 결과. 앱은 항상 쇼케이스에서 시작한다.
+- 스트레스 씬: 그 설정, 카메라, 선택, 노드 편집, 벤치마크 결과. 샌드박스는 항상 쇼케이스에서 시작한다.
 - 프레임 시간과 통계.
 - 진행 중인 점프 (돌아갈 클립은 저장된다), 진행 중인 크로스페이드, 블렌드 레이어 자체의 시간.
 - 패널 상태: 열린 탭, 스크롤 위치, 어떤 트리 노드가 열려 있는지.
@@ -205,14 +205,14 @@ Chunks
 
 | 주제 | 결정 |
 |---|---|
-| 저장소 | `/nv-save`에 마운트한 IDBFS를 통한 IndexedDB. 파일 하나 `state.nvs`가 앱 상태 전체를 담는다 |
+| 저장소 | `/nv-save`에 마운트한 IDBFS를 통한 IndexedDB. 파일 하나 `state.nvs`가 샌드박스 상태 전체를 담는다 |
 | 언제 저장하나 | 바이트가 마지막 저장과 다를 때 10초마다, 그리고 페이지가 숨겨질 때 (`visibilitychange`). 숨겨짐이 폰에서 마지막으로 믿을 만한 순간이다; `beforeunload`는 아니다. 쓰기는 먼저 임시 이름으로 간 다음 이름을 바꾸므로, 반쯤 쓴 저장이 결코 좋은 것을 대신하지 않는다 |
-| 시작할 때 | 앱은 지금처럼 쇼케이스를 만들고, 저장이 있으면 첫 프레임 전에 불러온다: 쇼케이스와 에디터 설정. 항상 쇼케이스에서 시작한다 |
-| 나쁜 저장 | 잘못된 magic, 크기, 체크섬, 잘못된 크기의 필드, 또는 새 버전: 파일 이름을 `state.nvs.bad`로 바꾸고 앱은 첫 방문처럼 시작한다. View 탭의 메시지가 그렇다고 말한다. 불러오기는 전부 아니면 전무다: 앱의 어떤 것이 바뀌기 전에 파일 전체를 확인한다 |
-| `#stress` | 제거. 주소가 더 이상 씬을 가리키지 않고, 앱은 항상 쇼케이스에서 시작한다 |
+| 시작할 때 | 샌드박스는 지금처럼 쇼케이스를 만들고, 저장이 있으면 첫 프레임 전에 불러온다: 쇼케이스와 에디터 설정. 항상 쇼케이스에서 시작한다 |
+| 나쁜 저장 | 잘못된 magic, 크기, 체크섬, 잘못된 크기의 필드, 또는 새 버전: 파일 이름을 `state.nvs.bad`로 바꾸고 샌드박스는 첫 방문처럼 시작한다. View 탭의 메시지가 그렇다고 말한다. 불러오기는 전부 아니면 전무다: 샌드박스의 어떤 것이 바뀌기 전에 파일 전체를 확인한다 |
+| `#stress` | 제거. 주소가 더 이상 씬을 가리키지 않고, 샌드박스는 항상 쇼케이스에서 시작한다 |
 | UI | View 탭의 **Autosave** 섹션: 켜기/끄기 체크박스 (기본 켜짐, 그 자체도 저장됨; 끄면 선택이 남도록 한 번 쓴다), 마지막으로 저장한 때, **Save now**, **Reset** (먼저 묻고, 저장과 `.bad` 파일을 지우고 IndexedDB가 따라잡으면 페이지를 새로고침해 첫 방문처럼 시작한다; 애니메이터는 제거할 수 없어서 제자리에서 다시 만들면 누수가 생긴다; 새로고침하는 동안 아무것도 저장하지 않는다), **Show save** (아래) |
 | 저장 뷰어 | **Show save**는 저장의 청크 트리를 연다: 헤더 (magic, 버전, 크기, 체크섬과 그것이 맞는지), 그다음 태그, 크기, 값 (숫자, 문자열, 모르는 태그는 16진수; 노드는 이름으로 라벨). 로더처럼 파일을 읽고, 손상된 파일은 갈 수 있는 데까지 걸으므로, 나쁜 저장이 어디서 깨지는지 보여 준다. `.bad` 파일로 바꿀 수 있다 |
-| 지속성 | 앱은 `navigator.storage.persist()`를 요청하므로, 브라우저가 저장 공간 압박에서 데이터를 지우지 않는다 |
+| 지속성 | 샌드박스는 `navigator.storage.persist()`를 요청하므로, 브라우저가 저장 공간 압박에서 데이터를 지우지 않는다 |
 | 서드파티 | 없음 |
 
 ### 엔진 변경
@@ -232,19 +232,19 @@ Chunks
   - `nv_storage_flush`는 기다리지 않고 IndexedDB로의 동기화를 시작한다. 하나가 도는 동안 요청한 flush는 그것이 끝나면
     시작한다.
   - `NvStorage`는 저장소가 사용 가능한지 (비공개 창은 IndexedDB를 거부할 수 있다)와 마지막 동기화 오류를 알린다.
-    저장소가 없으면 앱은 지금처럼 돌고 아무것도 저장되지 않는다고 말한다. `nv_storage_init`은 마운트 전에 IndexedDB를
+    저장소가 없으면 샌드박스는 지금처럼 돌고 아무것도 저장되지 않는다고 말한다. `nv_storage_init`은 마운트 전에 IndexedDB를
     확인한다: Emscripten의 IDBFS는 그것이 없으면 런타임 전체를 중단시킨다.
   - `nv_storage_flush_then_reload`는 호출을 덮는 flush 뒤에 페이지를 새로고침한다 (Reset).
-- **창 (`engine/window.h`).** `NvWindow`가 페이지가 숨겨질 때를 알리므로, 앱이 그때 저장할 수 있다.
+- **창 (`engine/window.h`).** `NvWindow`가 페이지가 숨겨질 때를 알리므로, 샌드박스가 그때 저장할 수 있다.
 - **링크 플래그.** `-lidbfs.js`.
 
-### 앱 변경
+### 샌드박스 변경
 
-- `app/save.c`가 청크 도우미로 앱 상태 전체를 쓰고 읽는다. 불러오기는 같은 코드로 파일 전체를 두 번 읽는다: 확인만
+- `sandbox/save.c`가 청크 도우미로 샌드박스 상태 전체를 쓰고 읽는다. 불러오기는 같은 코드로 파일 전체를 두 번 읽는다: 확인만
   하는 시험 실행, 그다음 통과하면 쇼케이스의 노드, 캐릭터, 쇼케이스의 뷰, 에디터 설정에 값을 적용하는 패스. 두 패스가
   같은 필드를 읽으므로 두 번째는 중간에 실패할 수 없다.
 - 불러오기는 이미 단위 길이인 회전을 그대로 둔다 (다시 정규화하면 마지막 비트가 바뀐다), 그래서 저장, 불러오기, 다시
-  저장이 같은 바이트를 준다. Debug 빌드는 시작할 때 그것을 확인하고, 테스트는 편집 뒤 `Module._app_debug_save_round_trip()`을
+  저장이 같은 바이트를 준다. Debug 빌드는 시작할 때 그것을 확인하고, 테스트는 편집 뒤 `Module._sandbox_debug_save_round_trip()`을
   부른다.
 - 자동 저장 타이머, 페이지 숨김 저장, 시작할 때 불러오기, 저장 뷰어가 있는 View 탭의 Autosave 섹션.
 - 쇼케이스를 만든 뒤 계산하는 배치 번호.
@@ -270,7 +270,7 @@ Chunks
 
 모든 단계는 헤드리스 Chromium에서 Release와 Debug로 확인한다. 2단계는 쇼케이스를 편집하고, 페이지를 새로고침하고,
 편집이 돌아왔는지, 그리고 스트레스 씬이 여전히 기본값으로 열리는지 확인한다. 3단계는 잘린 저장, 바이트 하나가 뒤집힌
-저장, 새 버전의 저장을 쓰고, 앱이 첫 방문처럼 시작하고 `.bad` 파일을 유지하는지 확인한다.
+저장, 새 버전의 저장을 쓰고, 샌드박스가 첫 방문처럼 시작하고 `.bad` 파일을 유지하는지 확인한다.
 
 ## English
 
@@ -282,7 +282,7 @@ Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
 ### Goal
 
-Close the tab, come back, and find the app as it was left. The app saves its state (the showcase
+Close the tab, come back, and find the sandbox as it was left. The sandbox saves its state (the showcase
 scene and the editor settings) as one save, by itself, into the browser's IndexedDB through
 Emscripten's IDBFS; there is no save button to forget.
 
@@ -294,11 +294,11 @@ Cloudflare R2 behind a Worker). Both could carry this spec's save bytes unchange
 
 ### How IDBFS works
 
-- Emscripten's file system lives in JavaScript memory (MEMFS). The app already reads
+- Emscripten's file system lives in JavaScript memory (MEMFS). The sandbox already reads
   `/assets/...` from it with `fopen`, and it is gone when the page closes.
 - IDBFS is MEMFS with one directory paired to an IndexedDB database. Files there are still read and
   written in memory, so `fopen` and `fwrite` work unchanged.
-- Nothing reaches IndexedDB until the app asks. `FS.syncfs(true)` copies IndexedDB into memory, once
+- Nothing reaches IndexedDB until the sandbox asks. `FS.syncfs(true)` copies IndexedDB into memory, once
   at start. `FS.syncfs(false)` copies memory into IndexedDB (only files whose timestamps changed)
   after a save. Both are asynchronous and call back when done.
 - The database belongs to the page's origin, `chromedays.github.io`, and is named after the mount
@@ -333,7 +333,7 @@ u8  payload[size]
   `SCNE`). A reader finds fields by tag.
 - **Unknown tags are skipped** by their size, so an older build reads a newer save and ignores what
   it does not know.
-- **A missing field keeps the value the app starts with**, so a save from an older build loads
+- **A missing field keeps the value the sandbox starts with**, so a save from an older build loads
   what it has and leaves the rest as on a first visit (the "Missing" columns below). The reader
   itself reads a missing field as zero (ZII) and reports it as missing.
 - **A field whose size is wrong** for its type (a `POS ` that is not 12 bytes) makes the save bad
@@ -351,17 +351,17 @@ Header (16 bytes)
   u32 checksum  CRC-32 of the bytes after the header
 Chunks
   'EDIT'  editor settings
-  'SCNE'  the scene (the app's showcase)
+  'SCNE'  the scene (the sandbox's showcase)
 ```
 
 The checksum and the size catch a save that was cut short or damaged. Every tag lives in one place
-in `app/save.c`.
+in `sandbox/save.c`.
 
 ### What is saved
 
 The save holds everything the user can change and would expect to find again, and nothing that
 is rebuilt, measured or momentary. The tables list every tag. "Missing" is what a load does when
-the tag is absent (an older save): the value the app starts with today.
+the tag is absent (an older save): the value the sandbox starts with today.
 
 #### How showcase nodes are saved
 
@@ -377,7 +377,7 @@ nodes are never created from the save.
   saved nodes are skipped (their paths might point at other nodes) and the rest still loads.
 - A saved path that does not exist is skipped.
 
-This keeps the app's references (`app->planet`, `app->moon`, `app->sword`, the character) valid,
+This keeps the sandbox's references (`sandbox->planet`, `sandbox->moon`, `sandbox->sword`, the character) valid,
 since loading never replaces nodes. When the editor learns to add and remove nodes, new tags will
 describe created nodes; older builds will skip them.
 
@@ -386,9 +386,9 @@ describe created nodes; older builds will skip them.
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
 | `AUTO` | u32 | autosave on (the View tab checkbox) | 1 |
-| `GZOP` | u32 | `app->gizmo_operation`: 0 move, 1 rotate, 2 scale | 0 |
-| `GZLC` | u32 | `app->gizmo_local` | 0 |
-| `GZSN` | u32 | `app->gizmo_snap` | 0 |
+| `GZOP` | u32 | `sandbox->gizmo_operation`: 0 move, 1 rotate, 2 scale | 0 |
+| `GZLC` | u32 | `sandbox->gizmo_local` | 0 |
+| `GZSN` | u32 | `sandbox->gizmo_snap` | 0 |
 | `SHSZ` | u32 | shadow map size: 512, 1024, 2048; anything else is off (0) | the start value (2048, 1024 on touch screens) |
 | `SHFM` | u32 | shadow map format: 0 `depth32float`, 1 `depth16unorm` | 0 |
 | `SHFL` | u32 | shadow filter: 0 Low, 1 High | the start value (High, Low on touch screens) |
@@ -434,7 +434,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 | `LAYT` | u32 | the layout number (above) | nodes are skipped |
 | `VIEW` | container | the showcase's view | start view |
 | `PLNT` | f32[2] | `orbit_speed` (rad/s) and `orbit_angle` (rad). Since Edit and Play modes (`play.md`) the angle is written as 0: the spin only runs while playing, from 0, on top of the planet's authored rotation | 0.7, 0 |
-| `BONE` | u32 | `app->show_bones` | 0 |
+| `BONE` | u32 | `sandbox->show_bones` | 0 |
 | `CHAR` | container | the character (below) | as built |
 | `NODE` | container, repeated | one per node, in tree order (below) | as built |
 
@@ -442,7 +442,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 
 | Tag | Type | Saved from | Missing |
 |---|---|---|---|
-| `CLIP` | string | the name of the clip playing on layer 0, without its root-motion copy (`app_regular_clip`). During a jump, the clip the jump returns to | `Idle_Loop` |
+| `CLIP` | string | the name of the clip playing on layer 0, without its root-motion copy (`sandbox_regular_clip`). During a jump, the clip the jump returns to | `Idle_Loop` |
 | `CTIM` | f32 | layer 0's time into that clip, seconds. No longer written since Edit and Play modes (`play.md`): a run starts every clip from its start. Older saves that have it still load | 0 |
 | `SPED` | f32 | layer 0's speed | 1 |
 | `FADE` | f32 | `fade_seconds` | 0.3 |
@@ -453,7 +453,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 | `LOOK` | u32 | `look_at` | as built |
 | `SWRD` | u32 | `show_sword` | 1 |
 
-On load the clip starts with `app_play` (so root motion picks its copy) at `CTIM`, with no fade.
+On load the clip starts with `sandbox_play` (so root motion picks its copy) at `CTIM`, with no fade.
 A clip name the build does not have falls back to `Idle_Loop`.
 
 **`NODE`: one node's editable values**
@@ -478,7 +478,7 @@ name the skeleton does not have leaves the attachment as built.
 
 #### Not saved
 
-- The stress scene: its settings, camera, selection, node edits and benchmark results. The app
+- The stress scene: its settings, camera, selection, node edits and benchmark results. The sandbox
   always starts on the showcase.
 - Frame times and stats.
 - A jump in progress (the returning clip is saved), crossfades in progress, and blend layers'
@@ -491,14 +491,14 @@ name the skeleton does not have leaves the attachment as built.
 
 | Topic | Decision |
 |---|---|
-| Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file, `state.nvs`, holds the whole app state |
+| Storage | IndexedDB through IDBFS, mounted at `/nv-save`. One file, `state.nvs`, holds the whole sandbox state |
 | When it saves | Every 10 seconds when the bytes would differ from the last save, and when the page is hidden (`visibilitychange`). Hidden is the last reliable moment on phones; `beforeunload` is not. A write goes to a temporary name first and is then renamed, so a half-written save never replaces a good one |
-| On start | The app builds the showcase as today, then loads the save if there is one, before the first frame: the showcase and the editor settings. It always starts on the showcase |
-| A bad save | A wrong magic, size or checksum, a field of the wrong size, or a newer version: the file is renamed to `state.nvs.bad` and the app starts as on a first visit. A message in the View tab says so. Loading is all or nothing: the whole file is checked before anything in the app changes |
-| `#stress` | Removed. The address no longer names the scene, and the app always starts on the showcase |
+| On start | The sandbox builds the showcase as today, then loads the save if there is one, before the first frame: the showcase and the editor settings. It always starts on the showcase |
+| A bad save | A wrong magic, size or checksum, a field of the wrong size, or a newer version: the file is renamed to `state.nvs.bad` and the sandbox starts as on a first visit. A message in the View tab says so. Loading is all or nothing: the whole file is checked before anything in the sandbox changes |
+| `#stress` | Removed. The address no longer names the scene, and the sandbox always starts on the showcase |
 | UI | An **Autosave** section in the View tab: an on/off checkbox (on by default, and itself saved; turning it off writes once so the choice sticks), when the state was last saved, **Save now**, **Reset** (asks first, then deletes the save and any `.bad` file and reloads the page once IndexedDB has caught up, which starts as on a first visit; animators cannot be removed, so rebuilding in place would leak them; nothing is saved while it reloads), and **Show save** (below) |
 | Save viewer | **Show save** opens a tree of the save's chunks: the header (magic, version, size, checksum and whether it checks out), then tags, sizes and values (numbers, strings, hex for tags it does not know; nodes labeled by name). It reads the file as the loader does, and walks a damaged file as far as it goes, so it shows where a bad save breaks. It can switch to the `.bad` file |
-| Durability | The app asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
+| Durability | The sandbox asks for `navigator.storage.persist()`, so the browser does not clear the data under storage pressure |
 | Third-party | None |
 
 ### Engine changes
@@ -519,23 +519,23 @@ name the skeleton does not have leaves the attachment as built.
   - `nv_storage_flush` starts a sync to IndexedDB without waiting for it. A flush asked for while
     one is running starts when that one ends.
   - `NvStorage` reports whether storage is available (private windows may refuse IndexedDB) and
-    the last sync error. Without storage the app runs as today and says nothing is saved.
+    the last sync error. Without storage the sandbox runs as today and says nothing is saved.
     `nv_storage_init` checks for IndexedDB before mounting: Emscripten's IDBFS aborts the whole
     runtime when it is missing.
   - `nv_storage_flush_then_reload` reloads the page after the flush that covers the call (Reset).
-- **Window (`engine/window.h`).** `NvWindow` reports when the page becomes hidden, so the app can save
+- **Window (`engine/window.h`).** `NvWindow` reports when the page becomes hidden, so the sandbox can save
   then.
 - **Link flags.** `-lidbfs.js`.
 
-### App changes
+### Sandbox changes
 
-- `app/save.c` writes and reads the whole app state with the chunk helpers. Loading reads the
+- `sandbox/save.c` writes and reads the whole sandbox state with the chunk helpers. Loading reads the
   whole file twice through the same code: a dry run that only checks it, then, if that passed, a
   pass that applies the values to the showcase's nodes, the character, the showcase's view and the
   editor settings. Both passes read the same fields, so the second cannot fail halfway.
 - A load leaves a rotation that is already of unit length as it is (renormalizing would change its
   last bits), so saving, loading and saving again gives the same bytes. Debug builds check that at
-  start, and tests call `Module._app_debug_save_round_trip()` after editing.
+  start, and tests call `Module._sandbox_debug_save_round_trip()` after editing.
 - The autosave timer, the page-hidden save, loading on start, and the View tab's Autosave section
   with the save viewer.
 - The showcase's layout number, computed after it is built.
@@ -566,4 +566,4 @@ Every phase is checked in Release and Debug in headless Chromium. Phase 2 edits 
 reloads the page and checks that the edits came back, and that the stress scene still opens with
 its defaults. Phase 3 writes a
 truncated save, a save with a flipped byte and a save with a newer version, and checks that the
-app starts as on a first visit and keeps the `.bad` file.
+sandbox starts as on a first visit and keeps the `.bad` file.

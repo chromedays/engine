@@ -76,7 +76,7 @@
   - `nv_renderer_draw`는 그림자 패스를 먼저, 그다음 씬 패스를 기록한다; 프래그먼트 셰이더가 방향광 항에 그림자를
     적용한다.
   - 요청하면 빛 상자를 디버그 라인으로; 그림자 그리기와 그림자 패스 GPU 시간 통계.
-- **앱.** View 탭의 Shadows 섹션, 그 저장 태그, 터치 화면 기본값, 벤치마크의 그림자 열.
+- **샌드박스.** View 탭의 Shadows 섹션, 그 저장 태그, 터치 화면 기본값, 벤치마크의 그림자 열.
 
 ### 단계
 
@@ -178,7 +178,7 @@ These hold for WebGPU as specified, whatever GPU or driver the browser runs on.
     applies the shadow to the directional term.
   - The light box as debug lines on request; stats for shadow draws and the shadow pass's GPU
     time.
-- **App.** The View tab's Shadows section, its save tags, the touch-screen defaults, and the
+- **Sandbox.** The View tab's Shadows section, its save tags, the touch-screen defaults, and the
   benchmark's shadow column.
 
 ### Phases

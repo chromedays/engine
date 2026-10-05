@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -47,9 +47,9 @@ internal void checkerboard(ImDrawList* draw, ImVec2_c min, ImVec2_c max, f32 cel
 }
 
 // The scene camera's planes and projection, for turning reverse-Z depth into distance.
-internal void camera_depth(App* app, NvImguiPreview* preview)
+internal void camera_depth(Sandbox* sandbox, NvImguiPreview* preview)
 {
-    SceneView* view = app_view(app);
+    SceneView* view = sandbox_view(sandbox);
     NvNode* camera = nv_scene_get(view->scene, view->scene->active_camera);
     preview->near_z = camera->camera.near_z;
     preview->far_z = camera->camera.far_z;
@@ -59,15 +59,15 @@ internal void camera_depth(App* app, NvImguiPreview* preview)
 
 // What a thumbnail or the detail draws of an entry. `full` applies the detail's mip, channel and
 // range; thumbnails show the top level as it is (depth over its default range).
-internal ImTextureID entry_image(App* app, const TextureEntry* entry, b32 full)
+internal ImTextureID entry_image(Sandbox* sandbox, const TextureEntry* entry, b32 full)
 {
-    TextureViewer* viewer = &app->textures;
+    TextureViewer* viewer = &sandbox->textures;
     NvImguiPreview preview = {.texture = entry->texture};
     if (entry->kind == TEXTURE_DEPTH) {
         preview.mode = NV_IMGUI_PREVIEW_DEPTH;
-        camera_depth(app, &preview);
+        camera_depth(sandbox, &preview);
         preview.range_min = 0.0f;
-        preview.range_max = full ? viewer->depth_range : app_view(app)->orbit.distance * 2.0f;
+        preview.range_max = full ? viewer->depth_range : sandbox_view(sandbox)->orbit.distance * 2.0f;
     } else if (entry->kind == TEXTURE_SHADOW) {
         preview.mode = NV_IMGUI_PREVIEW_DEPTH;
         preview.range_min = full ? viewer->shadow_range[0] : 0.0f;
@@ -76,18 +76,18 @@ internal ImTextureID entry_image(App* app, const TextureEntry* entry, b32 full)
         preview.mode = (NvImguiPreviewMode)viewer->channels;
         preview.mip = viewer->mip < entry->mip_count ? viewer->mip : entry->mip_count - 1;
     }
-    return nv_imgui_preview(&app->imgui, &preview);
+    return nv_imgui_preview(&sandbox->imgui, &preview);
 }
 
 // The part of the texture shown at zoom 1: the scene's part of the scene's targets, else all of it.
-internal void base_uv(App* app, const TextureEntry* entry, ImVec2_c* uv0, ImVec2_c* uv1)
+internal void base_uv(Sandbox* sandbox, const TextureEntry* entry, ImVec2_c* uv0, ImVec2_c* uv1)
 {
     *uv0 = (ImVec2_c){0.0f, 0.0f};
     *uv1 = (ImVec2_c){1.0f, 1.0f};
-    if ((entry->kind == TEXTURE_DEPTH || entry->kind == TEXTURE_SCENE) && app->renderer.target_width && app->renderer.target_height) {
+    if ((entry->kind == TEXTURE_DEPTH || entry->kind == TEXTURE_SCENE) && sandbox->renderer.target_width && sandbox->renderer.target_height) {
         // The targets are allocated a little larger than the scene; the scene is their top-left part.
-        *uv1 = (ImVec2_c){(f32)app->renderer.scene_width / (f32)app->renderer.target_width,
-                          (f32)app->renderer.scene_height / (f32)app->renderer.target_height};
+        *uv1 = (ImVec2_c){(f32)sandbox->renderer.scene_width / (f32)sandbox->renderer.target_width,
+                          (f32)sandbox->renderer.scene_height / (f32)sandbox->renderer.target_height};
     }
 }
 
@@ -116,10 +116,10 @@ internal u64 entry_bytes(const TextureEntry* entry)
 }
 
 // Every texture, grouped by kind. Returns the count; `entries` holds at most `capacity`.
-internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
+internal u32 gather(Sandbox* sandbox, TextureEntry* entries, u32 capacity)
 {
-    NvRenderer* renderer = &app->renderer;
-    NvScene* scene = app_view(app)->scene;
+    NvRenderer* renderer = &sandbox->renderer;
+    NvScene* scene = sandbox_view(sandbox)->scene;
     u32 users[NV_MAX_TEXTURES] = {0};
     for (u32 i = 1; i <= scene->node_count; ++i) {
         NvNode* node = &scene->nodes[i];
@@ -221,16 +221,16 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
         entries[count++] = (TextureEntry){
             .kind = TEXTURE_SWAPCHAIN,
             .name = "swapchain (color target)",
-            .width = app->gpu.width,
-            .height = app->gpu.height,
+            .width = sandbox->gpu.width,
+            .height = sandbox->gpu.height,
             .mip_count = 1,
-            .format = app->gpu.config_format,
+            .format = sandbox->gpu.config_format,
             .in_use = 1,
             .note = "No preview: the UI pass is drawing into it, and a pass cannot sample its own target.",
         };
     }
     for (u32 i = 1; i < NV_IMGUI_MAX_TEXTURES && count < capacity; ++i) {
-        NvImguiTexture* texture = &app->imgui.textures[i];
+        NvImguiTexture* texture = &sandbox->imgui.textures[i];
         if (!texture->texture)
             continue;
         entries[count++] = (TextureEntry){
@@ -250,7 +250,7 @@ internal u32 gather(App* app, TextureEntry* entries, u32 capacity)
 }
 
 // A thumbnail of `entry` at the cursor, `side` pixels square, on a checkerboard.
-internal void thumbnail(App* app, const TextureEntry* entry, f32 side)
+internal void thumbnail(Sandbox* sandbox, const TextureEntry* entry, f32 side)
 {
     ImVec2_c origin = igGetCursorScreenPos();
     ImVec2_c box_max = {origin.x + side, origin.y + side};
@@ -262,12 +262,12 @@ internal void thumbnail(App* app, const TextureEntry* entry, f32 side)
         return;
     }
     ImVec2_c uv0, uv1;
-    base_uv(app, entry, &uv0, &uv1);
+    base_uv(sandbox, entry, &uv0, &uv1);
     ImVec2_c size = fit((f32)entry->width * (uv1.x - uv0.x), (f32)entry->height * (uv1.y - uv0.y), side, side);
     ImVec2_c min = {origin.x + (side - size.x) * 0.5f, origin.y + (side - size.y) * 0.5f};
     ImVec2_c max = {min.x + size.x, min.y + size.y};
     checkerboard(draw, min, max, 6.0f);
-    ImDrawList_AddImage(draw, (ImTextureRef_c){NULL, entry_image(app, entry, 0)}, min, max, uv0, uv1, 0xFFFFFFFFu);
+    ImDrawList_AddImage(draw, (ImTextureRef_c){NULL, entry_image(sandbox, entry, 0)}, min, max, uv0, uv1, 0xFFFFFFFFu);
 }
 
 // Two short lines, so a phone's panel shows them whole: "1024x1024 RGBA8UnormSrgb" and
@@ -296,9 +296,9 @@ internal void pick(TextureViewer* viewer, TextureKind kind, u32 index)
 }
 
 // One row: the thumbnail, then the name, size, format, mips, memory and users. A tap opens it.
-internal void row(App* app, const TextureEntry* entry, f32 height, u32 number)
+internal void row(Sandbox* sandbox, const TextureEntry* entry, f32 height, u32 number)
 {
-    TextureViewer* viewer = &app->textures;
+    TextureViewer* viewer = &sandbox->textures;
     igPushID_Int((int)number);
     ImVec2_c start = igGetCursorScreenPos();
     bool selected = same_entry(viewer, entry);
@@ -319,7 +319,7 @@ internal void row(App* app, const TextureEntry* entry, f32 height, u32 number)
         return;
     }
     igSetCursorScreenPos(start);
-    thumbnail(app, entry, height);
+    thumbnail(sandbox, entry, height);
     igSameLine(0.0f, -1.0f);
     igBeginGroup();
     if (entry->in_use)
@@ -337,10 +337,10 @@ internal void row(App* app, const TextureEntry* entry, f32 height, u32 number)
     igPopID();
 }
 
-internal void section(App* app, const char* label, TextureKind first, TextureKind last, const TextureEntry* entries,
+internal void section(Sandbox* sandbox, const char* label, TextureKind first, TextureKind last, const TextureEntry* entries,
                       u32 count, u32* number)
 {
-    TextureViewer* viewer = &app->textures;
+    TextureViewer* viewer = &sandbox->textures;
     u64 bytes = 0;
     for (u32 i = 0; i < count; ++i) {
         if (entries[i].kind >= first && entries[i].kind <= last)
@@ -349,14 +349,14 @@ internal void section(App* app, const char* label, TextureKind first, TextureKin
     char memory[32];
     format_bytes(bytes, memory, sizeof(memory));
     // The search matches a texture's name and its section's: "materials" lists the whole section.
-    search_section(app, label);
-    b32 searching = search_active(app);
+    search_section(sandbox, label);
+    b32 searching = search_active(sandbox);
     if (searching) {
         u32 matching = 0;
         for (u32 i = 0; i < count; ++i) {
             const TextureEntry* entry = &entries[i];
             if (entry->kind >= first && entry->kind <= last && (viewer->show_unused || entry->in_use) &&
-                search_match(app, entry->name))
+                search_match(sandbox, entry->name))
                 ++matching;
         }
         if (!matching)
@@ -367,26 +367,26 @@ internal void section(App* app, const char* label, TextureKind first, TextureKin
     snprintf(header, sizeof(header), "%s (%s)###%s", T(label), memory, label);
     if (!igCollapsingHeader_TreeNodeFlags(header, ImGuiTreeNodeFlags_DefaultOpen))
         return;
-    f32 height = THUMBNAIL * app->imgui.ui_scale;
+    f32 height = THUMBNAIL * sandbox->imgui.ui_scale;
     for (u32 i = 0; i < count; ++i) {
         const TextureEntry* entry = &entries[i];
         if (entry->kind < first || entry->kind > last)
             continue;
         if (!viewer->show_unused && !entry->in_use)
             continue;
-        if (searching && !search_match(app, entry->name))
+        if (searching && !search_match(sandbox, entry->name))
             continue;
-        ++app->search.rows_now[SEARCH_TEXTURES];
-        row(app, entry, height, (*number)++);
+        ++sandbox->search.rows_now[SEARCH_TEXTURES];
+        row(sandbox, entry, height, (*number)++);
     }
 }
 
 // The nodes that use a material texture; a tap selects one and opens the Inspector.
-internal void used_by(App* app, u32 texture)
+internal void used_by(Sandbox* sandbox, u32 texture)
 {
-    SceneView* view = app_view(app);
+    SceneView* view = sandbox_view(sandbox);
     NvScene* scene = view->scene;
-    NvRenderer* renderer = &app->renderer;
+    NvRenderer* renderer = &sandbox->renderer;
     igSeparatorText(T("Used by"));
     u32 shown = 0;
     for (u32 i = 1; i <= scene->node_count; ++i) {
@@ -403,10 +403,10 @@ internal void used_by(App* app, u32 texture)
         NvNodeId id = {i, node->gen};
         if (igSelectable_Bool(node->name, view->selected.index == i, 0, (ImVec2_c){0.0f, 0.0f})) {
             view->selected = id;
-            app->open_inspector = 1;
+            sandbox->open_inspector = 1;
         }
         if (shown == 0)
-            textures_record(&app->textures, TEXTURES_RECT_FIRST_USER);
+            textures_record(&sandbox->textures, TEXTURES_RECT_FIRST_USER);
         igPopID();
         ++shown;
     }
@@ -414,14 +414,14 @@ internal void used_by(App* app, u32 texture)
         igTextDisabled(T("No node of this scene."));
 }
 
-internal void detail(App* app, const TextureEntry* entry)
+internal void detail(Sandbox* sandbox, const TextureEntry* entry)
 {
-    TextureViewer* viewer = &app->textures;
+    TextureViewer* viewer = &sandbox->textures;
     // Zero means "not set yet": the defaults.
     if (viewer->zoom < 1.0f)
         viewer->zoom = 1.0f;
     if (viewer->depth_range <= 0.0f)
-        viewer->depth_range = app_view(app)->orbit.distance * 2.0f;
+        viewer->depth_range = sandbox_view(sandbox)->orbit.distance * 2.0f;
     if (viewer->shadow_range[1] <= viewer->shadow_range[0]) {
         viewer->shadow_range[0] = 0.0f;
         viewer->shadow_range[1] = 1.0f;
@@ -442,7 +442,7 @@ internal void detail(App* app, const TextureEntry* entry)
     if (depth) {
         if (entry->kind == TEXTURE_DEPTH) {
             NvImguiPreview camera = {0};
-            camera_depth(app, &camera);
+            camera_depth(sandbox, &camera);
             igSetNextItemWidth(igGetContentRegionAvail().x * 0.5f);
             igSliderFloat(TL("White at"), &viewer->depth_range, camera.near_z, camera.far_z, "%.1f m", ImGuiSliderFlags_Logarithmic);
             igSetItemTooltip("%s", T("Distance from the camera shown white; nearer is darker"));
@@ -485,11 +485,11 @@ internal void detail(App* app, const TextureEntry* entry)
     // The image: the shown part fits the width, and a drag pans it (sideways on touch, since a
     // vertical finger drag scrolls the panel).
     ImVec2_c uv0, uv1;
-    base_uv(app, entry, &uv0, &uv1);
+    base_uv(sandbox, entry, &uv0, &uv1);
     f32 part_w = (f32)entry->width * (uv1.x - uv0.x);
     f32 part_h = (f32)entry->height * (uv1.y - uv0.y);
     ImVec2_c avail = igGetContentRegionAvail();
-    f32 minimum = 160.0f * app->imgui.ui_scale;
+    f32 minimum = 160.0f * sandbox->imgui.ui_scale;
     f32 max_height = avail.y - igGetTextLineHeightWithSpacing();
     if (max_height < minimum)
         max_height = minimum;
@@ -518,7 +518,7 @@ internal void detail(App* app, const TextureEntry* entry)
     ImDrawList* draw = igGetWindowDrawList();
     if (!depth && !viewer->no_checkerboard)
         checkerboard(draw, min, max, 8.0f);
-    ImDrawList_AddImage(draw, (ImTextureRef_c){NULL, entry_image(app, entry, 1)}, min, max, w0, w1, 0xFFFFFFFFu);
+    ImDrawList_AddImage(draw, (ImTextureRef_c){NULL, entry_image(sandbox, entry, 1)}, min, max, w0, w1, 0xFFFFFFFFu);
 
     // The texel under the pointer, in the shown mip level.
     u32 level = depth ? 0 : viewer->mip;
@@ -539,15 +539,15 @@ internal void detail(App* app, const TextureEntry* entry)
     }
 }
 
-void textures_tab(App* app)
+void textures_tab(Sandbox* sandbox)
 {
-    TextureViewer* viewer = &app->textures;
+    TextureViewer* viewer = &sandbox->textures;
     viewer->shown_now = 1;
-    NvArena* scratch = &app->scratch;
+    NvArena* scratch = &sandbox->scratch;
     umm mark = scratch->used;
     u32 capacity = NV_MAX_TEXTURES + NV_IMGUI_MAX_TEXTURES + 4;
     TextureEntry* entries = NV_PUSH_ARRAY(scratch, capacity, TextureEntry);
-    u32 count = gather(app, entries, capacity);
+    u32 count = gather(sandbox, entries, capacity);
 
     u64 total = 0;
     const TextureEntry* picked = NULL;
@@ -561,12 +561,12 @@ void textures_tab(App* app)
     // Wide (a desktop's bottom of a wide window): the list and the picked texture side by side.
     // Narrow (a dock, a phone): one or the other, with Back from the picked one to the list.
     ImVec2_c avail = igGetContentRegionAvail();
-    b32 side_by_side = avail.x >= SIDE_BY_SIDE_WIDTH * app->imgui.ui_scale;
+    b32 side_by_side = avail.x >= SIDE_BY_SIDE_WIDTH * sandbox->imgui.ui_scale;
     b32 show_list = side_by_side || !picked || !viewer->detail_open;
     b32 show_detail = side_by_side || (picked && viewer->detail_open);
     // The search box filters the list; the picked texture alone has nothing to filter.
     if (show_list)
-        search_panel_begin(app, SEARCH_TEXTURES);
+        search_panel_begin(sandbox, SEARCH_TEXTURES);
 
     bool in_use_only = !viewer->show_unused;
     if (igCheckbox(TL("In use only"), &in_use_only))
@@ -587,9 +587,9 @@ void textures_tab(App* app)
         if (side_by_side)
             igBeginChild_Str("##texture list", (ImVec2_c){avail.x * 0.42f, 0.0f}, ImGuiChildFlags_Borders, 0);
         u32 number = 0;
-        section(app, "Materials", TEXTURE_MATERIAL, TEXTURE_MATERIAL, entries, count, &number);
-        section(app, "Render targets", TEXTURE_SHADOW, TEXTURE_SWAPCHAIN, entries, count, &number);
-        section(app, "UI", TEXTURE_UI, TEXTURE_UI, entries, count, &number);
+        section(sandbox, "Materials", TEXTURE_MATERIAL, TEXTURE_MATERIAL, entries, count, &number);
+        section(sandbox, "Render targets", TEXTURE_SHADOW, TEXTURE_SWAPCHAIN, entries, count, &number);
+        section(sandbox, "UI", TEXTURE_UI, TEXTURE_UI, entries, count, &number);
         viewer->listed = number;
         if (side_by_side) {
             igEndChild();
@@ -605,9 +605,9 @@ void textures_tab(App* app)
             textures_record(viewer, TEXTURES_RECT_BACK);
         }
         if (picked) {
-            detail(app, picked);
+            detail(sandbox, picked);
             if (picked->kind == TEXTURE_MATERIAL)
-                used_by(app, picked->index);
+                used_by(sandbox, picked->index);
         } else {
             igTextDisabled(T("Pick a texture to see it large."));
         }
@@ -615,24 +615,24 @@ void textures_tab(App* app)
             igEndChild();
     }
     if (show_list)
-        search_panel_end(app);
+        search_panel_end(sandbox);
     scratch->used = mark;
 }
 
-void textures_inspector_thumbnail(App* app, NvTextureId texture)
+void textures_inspector_thumbnail(Sandbox* sandbox, NvTextureId texture)
 {
-    NvRenderTexture* slot = &app->renderer.textures[texture.index];
-    f32 side = THUMBNAIL * app->imgui.ui_scale;
+    NvRenderTexture* slot = &sandbox->renderer.textures[texture.index];
+    f32 side = THUMBNAIL * sandbox->imgui.ui_scale;
     NvImguiPreview preview = {.texture = slot->texture};
-    ImTextureID id = nv_imgui_preview(&app->imgui, &preview);
+    ImTextureID id = nv_imgui_preview(&sandbox->imgui, &preview);
     ImVec2_c min = igGetCursorScreenPos();
     checkerboard(igGetWindowDrawList(), min, (ImVec2_c){min.x + side, min.y + side}, 6.0f);
     if (igImageButton("##texture", (ImTextureRef_c){NULL, id}, (ImVec2_c){side, side}, (ImVec2_c){0.0f, 0.0f},
                       (ImVec2_c){1.0f, 1.0f}, (ImVec4_c){0.0f, 0.0f, 0.0f, 0.0f}, (ImVec4_c){1.0f, 1.0f, 1.0f, 1.0f})) {
-        pick(&app->textures, TEXTURE_MATERIAL, texture.index);
-        app->open_textures = 1;
+        pick(&sandbox->textures, TEXTURE_MATERIAL, texture.index);
+        sandbox->open_textures = 1;
     }
-    textures_record(&app->textures, TEXTURES_RECT_INSPECTOR);
+    textures_record(&sandbox->textures, TEXTURES_RECT_INSPECTOR);
     igSetItemTooltip("%s", T("Show it in the Textures tab"));
     igSameLine(0.0f, -1.0f);
     igBeginGroup();

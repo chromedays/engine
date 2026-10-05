@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -215,9 +215,9 @@ internal void candidate_text(char* out, umm capacity, const char* label, const c
 //
 
 // Draws a translucent box behind each query word found in `text`, which is drawn at `origin`.
-void search_mark(App* app, const char* text, ImVec2_c origin, f32 height)
+void search_mark(Sandbox* sandbox, const char* text, ImVec2_c origin, f32 height)
 {
-    const SearchQuery* query = &app->search.query;
+    const SearchQuery* query = &sandbox->search.query;
     ImDrawList* draw = igGetWindowDrawList();
     char folded[256];
     fold_text(text, folded, sizeof(folded)); // the same offsets as `text`
@@ -233,45 +233,45 @@ void search_mark(App* app, const char* text, ImVec2_c origin, f32 height)
 }
 
 // Marks the label of the row just drawn: its widget's label sits at the right end of its rectangle.
-internal void flush_mark(App* app)
+internal void flush_mark(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (!s->pending_highlight)
         return;
     s->pending_highlight = 0;
     f32 width = igCalcTextSize(s->pending_label, NULL, false, -1.0f).x;
     ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
     f32 pad = igGetStyle()->FramePadding.y;
-    search_mark(app, s->pending_label, (ImVec2_c){max.x - width, min.y + pad}, igGetFontSize());
+    search_mark(sandbox, s->pending_label, (ImVec2_c){max.x - width, min.y + pad}, igGetFontSize());
 }
 
 //
 // Rows
 //
 
-void search_frame(App* app)
+void search_frame(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     s->hover_panel = -1;
     s->right_panel = -1;
     s->tree_filtering = 0;
 }
 
-b32 search_active(App* app)
+b32 search_active(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     return !s->collecting && s->queries[s->panel][0];
 }
 
-b32 search_plain(App* app)
+b32 search_plain(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     return !s->collecting && !s->queries[s->panel][0];
 }
 
-b32 search_match(App* app, const char* text)
+b32 search_match(Sandbox* sandbox, const char* text)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (!s->queries[s->panel][0])
         return 1;
     char candidate[200];
@@ -279,25 +279,25 @@ b32 search_match(App* app, const char* text)
     return query_match(&s->query, candidate).ok;
 }
 
-void search_set_query(App* app, SearchPanel panel, const char* text)
+void search_set_query(Sandbox* sandbox, SearchPanel panel, const char* text)
 {
-    snprintf(app->search.queries[panel], SEARCH_QUERY_MAX, "%s", text);
-    nv_utf8_trim(app->search.queries[panel]);
+    snprintf(sandbox->search.queries[panel], SEARCH_QUERY_MAX, "%s", text);
+    nv_utf8_trim(sandbox->search.queries[panel]);
 }
 
-void search_section(App* app, const char* heading)
+void search_section(Sandbox* sandbox, const char* heading)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (!s->collecting)
-        flush_mark(app);
+        flush_mark(sandbox);
     snprintf(s->section, sizeof(s->section), "%s", heading ? heading : "");
     nv_utf8_trim(s->section);
     s->section_pending = heading != NULL;
 }
 
-internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
+internal b32 row(Sandbox* sandbox, const char* label, const char* keywords, b32 mark)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (s->collecting) {
         if (s->setting_count < SEARCH_MAX_SETTINGS) {
             SearchSetting* setting = &s->settings[s->setting_count++];
@@ -310,7 +310,7 @@ internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
         }
         return 0;
     }
-    flush_mark(app);
+    flush_mark(sandbox);
     const char* query = s->queries[s->panel];
     if (query[0]) {
         char candidate[200];
@@ -330,23 +330,23 @@ internal b32 row(App* app, const char* label, const char* keywords, b32 mark)
     return 1;
 }
 
-b32 search_row(App* app, const char* label, const char* keywords)
+b32 search_row(Sandbox* sandbox, const char* label, const char* keywords)
 {
-    return row(app, label, keywords, 1);
+    return row(sandbox, label, keywords, 1);
 }
 
-b32 search_group(App* app, const char* label, const char* keywords)
+b32 search_group(Sandbox* sandbox, const char* label, const char* keywords)
 {
-    return row(app, label, keywords, 0);
+    return row(sandbox, label, keywords, 0);
 }
 
 //
 // The box and the panel's child window
 //
 
-void search_panel_begin(App* app, SearchPanel panel)
+void search_panel_begin(Sandbox* sandbox, SearchPanel panel)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     s->panel = panel;
     s->section[0] = 0;
     s->section_pending = 0;
@@ -391,15 +391,15 @@ void search_panel_begin(App* app, SearchPanel panel)
 
     igPushID_Int((int)panel + 100);
     igBeginChild_Str("##content", (ImVec2_c){0.0f, 0.0f}, 0, 0);
-    nv_imgui_touch_scroll(&app->imgui);
+    nv_imgui_touch_scroll(&sandbox->imgui);
 }
 
-void search_panel_end(App* app)
+void search_panel_end(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (s->collecting)
         return;
-    flush_mark(app);
+    flush_mark(sandbox);
     if (s->queries[s->panel][0] && s->rows_now[s->panel] == 0)
         igTextDisabled(T("No match for '%s'"), s->queries[s->panel]);
     igEndChild();
@@ -407,9 +407,9 @@ void search_panel_end(App* app)
     s->rows[s->panel] = s->rows_now[s->panel];
 }
 
-void search_focus_box(App* app)
+void search_focus_box(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (s->hover_panel >= 0)
         s->focus_panel = s->hover_panel + 1;
     else if (s->right_panel >= 0)
@@ -426,9 +426,9 @@ void search_focus_box(App* app)
 // The command palette
 //
 
-void search_open_palette(App* app)
+void search_open_palette(Sandbox* sandbox)
 {
-    app->search.palette_request = 1;
+    sandbox->search.palette_request = 1;
 }
 
 internal u64 make_key(b32 disabled, u32 score, u32 length, u32 kind, u32 seq)
@@ -454,9 +454,9 @@ internal void add_result(Search* s, PaletteKind kind, b32 enabled, u32 index, u6
 }
 
 // Everything the query finds: actions, settings of the panels, nodes of the shown scene.
-internal void build_results(App* app)
+internal void build_results(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     s->result_count = 0;
     SearchQuery query;
     query_parse(&query, s->palette_query);
@@ -465,7 +465,7 @@ internal void build_results(App* app)
         // The last actions run from here, then every action in table order.
         for (u32 i = 0; i < s->recent_count; ++i) {
             u32 id = (u32)s->recent[i];
-            add_result(s, PALETTE_ACTION, command_enabled(app, id), id, make_key(!command_enabled(app, id), 0, 0, 0, i));
+            add_result(s, PALETTE_ACTION, command_enabled(sandbox, id), id, make_key(!command_enabled(sandbox, id), 0, 0, 0, i));
         }
         for (u32 id = 0; id < SHORTCUT_COUNT; ++id) {
             if (!command_listed(id))
@@ -474,7 +474,7 @@ internal void build_results(App* app)
             for (u32 i = 0; i < s->recent_count; ++i)
                 recent |= (u32)s->recent[i] == id;
             if (!recent)
-                add_result(s, PALETTE_ACTION, command_enabled(app, id), id, make_key(!command_enabled(app, id), 1, 0, 0, id));
+                add_result(s, PALETTE_ACTION, command_enabled(sandbox, id), id, make_key(!command_enabled(sandbox, id), 1, 0, 0, id));
         }
         qsort(s->results, s->result_count, sizeof(PaletteResult), compare_results);
         return;
@@ -487,8 +487,8 @@ internal void build_results(App* app)
         candidate_text(text, sizeof(text), command_name(id), command_group(id), NULL);
         QueryMatch match = query_match(&query, text);
         if (match.ok)
-            add_result(s, PALETTE_ACTION, command_enabled(app, id), id,
-                       make_key(!command_enabled(app, id), match.score, (u32)strlen(command_name(id)), PALETTE_ACTION, id));
+            add_result(s, PALETTE_ACTION, command_enabled(sandbox, id), id,
+                       make_key(!command_enabled(sandbox, id), match.score, (u32)strlen(command_name(id)), PALETTE_ACTION, id));
     }
     for (u32 i = 0; i < s->setting_count; ++i) {
         const SearchSetting* setting = &s->settings[i];
@@ -499,7 +499,7 @@ internal void build_results(App* app)
     }
 
     // Nodes: the best SEARCH_MAX_NODES by rank, found without sorting thousands.
-    NvScene* scene = app_view(app)->scene;
+    NvScene* scene = sandbox_view(sandbox)->scene;
     PaletteResult best[SEARCH_MAX_NODES];
     u32 best_count = 0, matched = 0;
     for (u32 i = 1; i <= scene->node_count; ++i) {
@@ -533,9 +533,9 @@ internal void close_palette(Search* s)
     igCloseCurrentPopup();
 }
 
-internal void run_result(App* app, const PaletteResult* result, b32 shift)
+internal void run_result(Sandbox* sandbox, const PaletteResult* result, b32 shift)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     if (!result->enabled)
         return;
     if (result->kind == PALETTE_ACTION) {
@@ -552,35 +552,35 @@ internal void run_result(App* app, const PaletteResult* result, b32 shift)
             s->recent[at] = s->recent[at - 1];
         s->recent[0] = (s32)id;
         close_palette(s);
-        command_run(app, id);
+        command_run(sandbox, id);
     } else if (result->kind == PALETTE_NODE) {
-        SceneView* view = app_view(app);
+        SceneView* view = sandbox_view(sandbox);
         selection_set(view, (NvNodeId){result->index, view->scene->nodes[result->index].gen});
-        app->open_inspector = 1;
-        if (app->ui_mode == UI_DESKTOP)
-            app->docks.show_right = 1;
+        sandbox->open_inspector = 1;
+        if (sandbox->ui_mode == UI_DESKTOP)
+            sandbox->docks.show_right = 1;
         if (shift)
-            app_focus_selection(app);
+            sandbox_focus_selection(sandbox);
         close_palette(s);
     } else if (result->kind == PALETTE_SETTING) {
         // Shows the row's tab with its label typed into the panel's box, so it is the first thing there.
         const SearchSetting* setting = &s->settings[result->index];
-        search_set_query(app, (SearchPanel)setting->panel, setting->label);
+        search_set_query(sandbox, (SearchPanel)setting->panel, setting->label);
         if (setting->panel == SEARCH_INSPECTOR)
-            app->open_inspector = 1;
+            sandbox->open_inspector = 1;
         else if (setting->panel == SEARCH_VIEW)
-            app->open_view = 1;
+            sandbox->open_view = 1;
         else if (setting->panel == SEARCH_STRESS)
-            app->open_stress = 1;
-        if (app->ui_mode == UI_DESKTOP && setting->panel != SEARCH_STRESS)
-            app->docks.show_right = 1;
+            sandbox->open_stress = 1;
+        if (sandbox->ui_mode == UI_DESKTOP && setting->panel != SEARCH_STRESS)
+            sandbox->docks.show_right = 1;
         close_palette(s);
     }
 }
 
-internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
+internal void draw_result_row(Sandbox* sandbox, u32 i, f32 width, f32 row_height)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     const PaletteResult* result = &s->results[i];
     igPushID_Int((int)i);
     ImVec2_c pos = igGetCursorScreenPos();
@@ -590,7 +590,7 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
                                     (ImVec2_c){width, row_height});
     igEndDisabled();
     if (clicked)
-        run_result(app, result, igGetIO_Nil()->KeyShift);
+        run_result(sandbox, result, igGetIO_Nil()->KeyShift);
     if (highlighted && s->scroll_to_highlight)
         igSetScrollHereY(0.5f);
 
@@ -612,7 +612,7 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
         break;
     }
     case PALETTE_NODE: {
-        const NvScene* scene = app_view(app)->scene;
+        const NvScene* scene = sandbox_view(sandbox)->scene;
         const NvNode* node = &scene->nodes[result->index];
         snprintf(kind, sizeof(kind), "%s", T("Node"));
         snprintf(name, sizeof(name), "%s", node->name);
@@ -645,7 +645,7 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
         query_parse(&query, s->palette_query);
         SearchQuery saved = s->query;
         s->query = query;
-        search_mark(app, name, (ImVec2_c){name_x, text_y}, igGetFontSize());
+        search_mark(sandbox, name, (ImVec2_c){name_x, text_y}, igGetFontSize());
         s->query = saved;
     }
     ImDrawList_AddText_Vec2(draw, (ImVec2_c){name_x, text_y}, text, name, NULL);
@@ -657,9 +657,9 @@ internal void draw_result_row(App* app, u32 i, f32 width, f32 row_height)
 }
 
 // Notes the settings of the searchable panels as they are now, by running them without drawing.
-internal void collect_settings(App* app)
+internal void collect_settings(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     s->setting_count = 0;
     s->collecting = 1;
     igSetNextWindowPos((ImVec2_c){-4000.0f, -4000.0f}, ImGuiCond_Always, (ImVec2_c){0.0f, 0.0f});
@@ -667,18 +667,18 @@ internal void collect_settings(App* app)
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoNav;
     if (igBegin("##search collect", NULL, flags)) {
-        ui_inspector_tab(app);
-        ui_view_tab(app);
-        if (app->shown == SCENE_STRESS)
-            stress_ui(app);
+        ui_inspector_tab(sandbox);
+        ui_view_tab(sandbox);
+        if (sandbox->shown == SCENE_STRESS)
+            stress_ui(sandbox);
     }
     igEnd();
     s->collecting = 0;
 }
 
-void search_palette(App* app)
+void search_palette(Sandbox* sandbox)
 {
-    Search* s = &app->search;
+    Search* s = &sandbox->search;
     local_persist const char* title = "Command palette";
     if (s->palette_request) {
         s->palette_request = 0;
@@ -694,16 +694,16 @@ void search_palette(App* app)
     }
     if (!s->palette_open)
         return;
-    collect_settings(app);
-    build_results(app);
+    collect_settings(sandbox);
+    build_results(sandbox);
 
     ImGuiViewport* viewport = igGetMainViewport();
     f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
-    f32 scale = app->imgui.ui_scale;
+    f32 scale = sandbox->imgui.ui_scale;
     f32 width = PALETTE_WIDTH * scale;
     if (width > viewport->Size.x - PALETTE_MARGIN * 2.0f)
         width = viewport->Size.x - PALETTE_MARGIN * 2.0f;
-    f32 top = (f32)(app->layout.top_bar.y + app->layout.top_bar.height) / ratio + 8.0f;
+    f32 top = (f32)(sandbox->layout.top_bar.y + sandbox->layout.top_bar.height) / ratio + 8.0f;
     ImGuiStyle* style = igGetStyle();
     f32 row_height = igGetFrameHeight();
     u32 shown_rows = s->result_count < PALETTE_ROWS ? s->result_count : PALETTE_ROWS;
@@ -729,7 +729,7 @@ void search_palette(App* app)
     if (igInputTextWithHint("##palette", T("Type a command, node or setting"), s->palette_query, SEARCH_QUERY_MAX, 0, NULL, NULL)) {
         s->highlight = 0;
         s->scroll_to_top = 1;
-        build_results(app);
+        build_results(sandbox);
     }
     s32 count = (s32)s->result_count;
     s32 page = PALETTE_ROWS - 1;
@@ -758,21 +758,21 @@ void search_palette(App* app)
     if (s->highlight >= count)
         s->highlight = count ? count - 1 : 0;
     if ((igIsKeyPressed_Bool(ImGuiKey_Enter, false) || igIsKeyPressed_Bool(ImGuiKey_KeypadEnter, false)) && count)
-        run_result(app, &s->results[s->highlight], igGetIO_Nil()->KeyShift);
+        run_result(sandbox, &s->results[s->highlight], igGetIO_Nil()->KeyShift);
 
     b32 close = igGetFrameCount() != s->palette_opened_frame &&
                 (igIsKeyPressed_Bool(ImGuiKey_Escape, false) ||
                  (igIsMouseClicked_Bool(ImGuiMouseButton_Left, false) && !igIsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows)));
     if (count) {
         if (igBeginChild_Str("##results", (ImVec2_c){inner, list_height}, 0, ImGuiWindowFlags_NoScrollWithMouse * 0)) {
-            nv_imgui_touch_scroll(&app->imgui);
+            nv_imgui_touch_scroll(&sandbox->imgui);
             if (s->scroll_to_top) {
                 igSetScrollY_Float(0.0f);
                 s->scroll_to_top = 0;
             }
             f32 row_width = inner - (s->result_count > PALETTE_ROWS ? style->ScrollbarSize : 0.0f);
             for (u32 i = 0; i < s->result_count; ++i)
-                draw_result_row(app, i, row_width, row_height);
+                draw_result_row(sandbox, i, row_width, row_height);
             s->scroll_to_highlight = 0;
         }
         igEndChild();

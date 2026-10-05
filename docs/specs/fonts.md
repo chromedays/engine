@@ -9,7 +9,7 @@
 음절이 모두 한 파일에 있어서, Inter, 한글 서브셋(`Hangul-Subset.ttf`), `tools/subset_hangul.sh`와 `nv_imgui_set_font`의
 폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
 
-참고 (2026-10-02, `shared.md`): 글꼴 읽기는 엔진으로 옮겨졌다. `nv_imgui_load_ui_font`(`engine/imgui.h`)가 `app/main.c`의
+참고 (2026-10-02, `shared.md`): 글꼴 읽기는 엔진으로 옮겨졌다. `nv_imgui_load_ui_font`(`engine/imgui.h`)가 `sandbox/main.c`의
 `read_asset`과 `load_font`를 대신하고, 경고의 출처는 `"imgui"`다.
 
 상태: 더 작은 범위로 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
@@ -20,7 +20,7 @@
 
 ### 목표
 
-에디터의 기본 내장 글꼴을 더 보기 좋은 것으로 바꾸고, 사용자가 앱에서 글꼴 (과 크기)을 고를 수 있게 한다.
+에디터의 기본 내장 글꼴을 더 보기 좋은 것으로 바꾸고, 사용자가 샌드박스에서 글꼴 (과 크기)을 고를 수 있게 한다.
 지금 모든 ImGui 창은 Dear ImGui의 내장 글꼴 (ProggyClean, 디버그 도구용으로 만든 13 px 고정폭 글꼴)을
 쓴다: 각지고, 문자 집합이 좁고 (한글이 없어 한국어로 이름 지은 노드는 "?"로 보인다), 바꿀 수 없다.
 
@@ -71,14 +71,14 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 
 | 주제 | 결정 |
 |---|---|
-| 선택지 | 앱의 고정 목록: Classic (ProggyClean), Inter, JetBrains Mono, 그 밖에 포함된 글꼴. 파일 선택기가 아니다 |
+| 선택지 | 샌드박스의 고정 목록: Classic (ProggyClean), Inter, JetBrains Mono, 그 밖에 포함된 글꼴. 파일 선택기가 아니다 |
 | 설정 | View 탭의 **Font** 섹션 (행은 `search_row`를 거쳐 팔레트가 찾는다): **Face** 콤보, **Size** 슬라이더 (10–24 CSS 픽셀, 기본 크기: 터치 배율 1.3이 여전히 곱해진다), Pretendard를 가져와 합치는 **Korean text** 체크박스. **Reset** 버튼이 기본값으로 되돌린다. 두 UI 모두 |
 | 적용 범위 | 모든 ImGui 창 (도크, 메뉴, 팔레트, 팝업, Console). foreground 목록에 그리는 빌드 라벨도 쓴다 |
-| 방법 | `NvImgui`가 글꼴의 작은 테이블 (`NvImguiFont`: 이름, 바이트, 불러온 글꼴)을 가진다. `nv_imgui_set_font(imgui, face, size)`는 처음 쓸 때 글꼴을 만들고 (`ImFontAtlas_AddFontFromMemoryTTF`, 크기 0 = 동적), 한글 폴백이 불러와져 있으면 합치고, `io->FontDefault`와 `style.FontSizeBase`를 설정한다. 엔진은 "글꼴 하나와 크기"만 안다; 어떤 글꼴이 있는지는 앱의 목록이다 |
-| 크기와 배치 | 창, 버튼, 행은 이미 크기를 글꼴에서 가져온다 (`FontSize`, `FramePadding`). 앱의 고정 픽셀 크기 (도크 너비, `DESKTOP_TOP_BAR` 28, 폰의 48과 버튼 크기, Console의 좁은 기준)를 가장 큰 크기와 새 글꼴에 대해 확인하고, 따라가지 못하는 것은 `igGetFontSize()`의 배수가 된다 |
+| 방법 | `NvImgui`가 글꼴의 작은 테이블 (`NvImguiFont`: 이름, 바이트, 불러온 글꼴)을 가진다. `nv_imgui_set_font(imgui, face, size)`는 처음 쓸 때 글꼴을 만들고 (`ImFontAtlas_AddFontFromMemoryTTF`, 크기 0 = 동적), 한글 폴백이 불러와져 있으면 합치고, `io->FontDefault`와 `style.FontSizeBase`를 설정한다. 엔진은 "글꼴 하나와 크기"만 안다; 어떤 글꼴이 있는지는 샌드박스의 목록이다 |
+| 크기와 배치 | 창, 버튼, 행은 이미 크기를 글꼴에서 가져온다 (`FontSize`, `FramePadding`). 샌드박스의 고정 픽셀 크기 (도크 너비, `DESKTOP_TOP_BAR` 28, 폰의 48과 버튼 크기, Console의 좁은 기준)를 가장 큰 크기와 새 글꼴에 대해 확인하고, 따라가지 못하는 것은 `igGetFontSize()`의 배수가 된다 |
 | 저장 | 새 `EDIT` 태그 두 개: `FONT` (글꼴 이름을 텍스트로, 그래서 저장된 값의 뜻을 바꾸지 않고 글꼴을 추가하거나 순서를 바꿀 수 있다; 모르는 이름은 기본값으로 불러온다)와 `FSIZ` (f32, 10..24로 제한; 없으면 기본값). `SAVE_VERSION`은 그대로; 옛 저장은 기본값으로 불러온다. 크기와 글꼴은 에디터 설정이고, undo되지 않으며 Play의 스냅샷 (`SAVE_PART_EDITOR`)에 들지 않는다 |
 | Korean text | `KRFN` 태그 (u32 0 또는 1). 불러올 때 1이면 즉시 가져오기를 시작하고 도착하면 폴백을 합친다; 그때까지 한글은 빠진 글리프 상자로 보인다. 가져오기가 실패하면 (오프라인) Console에 경고로 기록하고 체크박스를 끈다 |
-| 가져오기 | 페이지에서 `app.js` 옆의 `fonts/Pretendard-Regular.otf` (Pages 패키지에 있지만 앱 자체 패키지가 미리 불러오지 않는 파일)를 `fetch()`하고, 바이트를 앱에 넘기는 `EM_JS` 도우미를 거친다; 진행률은 보이지 않고 (약 2 MB), 그동안 체크박스가 "loading..."이라고 말한다. IndexedDB의 `/nv-save` 아래 저장 옆에 두고, 이후 방문에서는 거기서 읽는다 |
+| 가져오기 | 페이지에서 `sandbox.js` 옆의 `fonts/Pretendard-Regular.otf` (Pages 패키지에 있지만 샌드박스 자체 패키지가 미리 불러오지 않는 파일)를 `fetch()`하고, 바이트를 샌드박스에 넘기는 `EM_JS` 도우미를 거친다; 진행률은 보이지 않고 (약 2 MB), 그동안 체크박스가 "loading..."이라고 말한다. IndexedDB의 `/nv-save` 아래 저장 옆에 두고, 이후 방문에서는 거기서 읽는다 |
 | 시작 | 고른 글꼴은 첫 프레임 전에 패키지에서 불러오므로 잘못된 글꼴의 프레임이 없다. 저장을 먼저 읽는다 (지금 `save_init`은 `nv_imgui_init` 뒤에 돈다), 그래서 첫 프레임은 기본값을 쓰고 저장이 불러와지면 바뀐다: 불러오기가 이미 첫 그리기 전에 있지 않을 때만 스펙이 받아들이는 깜박임이다; 아니면 `save_init`을 앞으로 옮긴다 |
 | Textures 탭 | 글꼴 아틀라스는 이미 "UI" 아래 나열된다; 그 크기가 보이므로 글리프 캐시의 증가를 지켜볼 수 있다 |
 | 메모리 | 글꼴의 바이트는 상주한다: 포함된 것은 약 0.4 MB, Pretendard는 불러오면 약 2 MB. 글꼴은 처음 쓸 때 만들므로 안 쓰는 것은 비용이 없다 |
@@ -89,9 +89,9 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 
 - **엔진 (`engine/imgui.h`, `engine/imgui.c`).** 글꼴 테이블, `nv_imgui_set_font`, 한글 폴백 합치기, 메모리에서
   불러오기, 저장소 캐시가 있는 가져오기 도우미 (`EM_JS`).
-- **앱.** `app/ui.c`의 Font 섹션 (View 탭), `app/save.c`의 `FONT`, `FSIZ`, `KRFN` 태그, `app/ui_desktop.c`,
-  `app/ui_phone.c`, `app/console.c`의 고정 크기 중 글꼴을 따라가야 하는 것은 글꼴 높이로 표현,
-  `app/main.c`의 포함 글꼴 목록.
+- **샌드박스.** `sandbox/ui.c`의 Font 섹션 (View 탭), `sandbox/save.c`의 `FONT`, `FSIZ`, `KRFN` 태그, `sandbox/ui_desktop.c`,
+  `sandbox/ui_phone.c`, `sandbox/console.c`의 고정 크기 중 글꼴을 따라가야 하는 것은 글꼴 높이로 표현,
+  `sandbox/main.c`의 포함 글꼴 목록.
 - **에셋.** 글꼴과 라이선스가 있는 `assets/fonts/`; `web/manifest.cmake`와 CI 패키지에 필요할 때 가져오는 한글
   파일이 더해진다.
 - **문서.** `save.md` (태그), `layout.md` (글꼴 높이 단위 크기), `search.md` (행), `AGENTS.md`, README 크레딧.
@@ -120,14 +120,14 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 - 패키지는 이제 `assets/` 디렉터리 전체를 `/assets`로 미리 불러온다 (전에는 `assets/quaternius`), 그래서
   glTF 파일은 `/assets/quaternius/*.glb`에, 글꼴은 `/assets/fonts/`에 있다.
 - `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`engine/imgui.h`)는 메모리에서 글꼴을 동적 글꼴 (크기 0)로
-  추가하고, `io->FontDefault`로 만들고, `style.FontSizeBase`를 설정한다; 바이트는 앱의 영구 아레나에 남는다.
-  `app/main.c` (`load_font`)는 `nv_imgui_init` 뒤, 첫 프레임 전에 파일을 읽고, 파일이 없으면 Console 경고를
+  추가하고, `io->FontDefault`로 만들고, `style.FontSizeBase`를 설정한다; 바이트는 샌드박스의 영구 아레나에 남는다.
+  `sandbox/main.c` (`load_font`)는 `nv_imgui_init` 뒤, 첫 프레임 전에 파일을 읽고, 파일이 없으면 Console 경고를
   기록하고 내장 글꼴을 유지한다.
 - Inter 14 px는 옛 13 px 글꼴과 줄 높이와 평균 너비가 거의 같아서 배치를 바꿀 필요가 없었다: 도크, 상단 바,
   탭이 데스크톱과 폰 (390×664)에서 여전히 들어맞고, 폰에서는 Inspector 탭의 라벨을 더 이상 자를 필요가 없다.
-- 패키지가 0.4 MB 커진다 (`app.data` 1.7 MB); `korean.md`가 그 뒤에 한글 폴백 글꼴을 더한다 (0.39 MB).
+- 패키지가 0.4 MB 커진다 (`sandbox.data` 1.7 MB); `korean.md`가 그 뒤에 한글 폴백 글꼴을 더한다 (0.39 MB).
 - 옛 글꼴의 픽셀 위치에 맞춰 쓴 Playwright 스크립트 (메뉴 항목, Reset 대화 상자의 버튼, Scene 트리의 행)는
-  엉뚱한 곳을 클릭하므로 새 좌표가 필요하다; 앱의 동작은 바뀌지 않았다.
+  엉뚱한 곳을 클릭하므로 새 좌표가 필요하다; 샌드박스의 동작은 바뀌지 않았다.
 
 ### 범위 밖
 
@@ -143,7 +143,7 @@ fallback arguments of `nv_imgui_set_font` are gone. The size stays 14 px (the tw
 What follows about Inter and the subset is the design before that.
 
 Note (2026-10-02, `shared.md`): reading the font moved to the engine. `nv_imgui_load_ui_font` (`engine/imgui.h`) replaces
-`read_asset` and `load_font` in `app/main.c`, and its warnings come from the source `"imgui"`.
+`read_asset` and `load_font` in `sandbox/main.c`, and its warnings come from the source `"imgui"`.
 
 Status: implemented in a smaller scope (2026-10-01). Changes to this spec are agreed first.
 
@@ -156,7 +156,7 @@ under "As built".
 ### Goal
 
 Replace the editor's built-in font with a better-looking one, and let the user pick the font (and
-its size) in the app. Today every ImGui window uses Dear ImGui's built-in font (ProggyClean, a
+its size) in the sandbox. Today every ImGui window uses Dear ImGui's built-in font (ProggyClean, a
 13 px monospaced face made for debugging tools): it is blocky, has a narrow character set (no
 Hangul, so a node named in Korean shows as "?"), and cannot be changed.
 
@@ -211,14 +211,14 @@ Recommendation:
 
 | Topic | Decision |
 |---|---|
-| Choices | A fixed list in the app: Classic (ProggyClean), Inter, JetBrains Mono, plus any other bundled face. Not a file picker |
+| Choices | A fixed list in the sandbox: Classic (ProggyClean), Inter, JetBrains Mono, plus any other bundled face. Not a file picker |
 | Setting | A **Font** section in the View tab (rows go through `search_row`, so the palette finds them): a **Face** combo, a **Size** slider (10 to 24 CSS pixels, a base size: the touch scale 1.3 still multiplies it), and a **Korean text** checkbox that fetches and merges Pretendard. A **Reset** button puts the default back. Both UIs |
 | Where it applies | Every ImGui window (docks, menus, palette, popups, Console). The build label, drawn on the foreground list, uses it too |
-| How | `NvImgui` keeps a small table of faces (`NvImguiFont`: name, bytes, loaded font). `nv_imgui_set_font(imgui, face, size)` makes the font on first use (`ImFontAtlas_AddFontFromMemoryTTF`, size 0 = dynamic), merges the Hangul fallback when it is loaded, sets `io->FontDefault` and `style.FontSizeBase`. The engine only knows "a face and a size"; which faces exist is the app's list |
-| Sizes and layout | Windows, buttons and rows already take their sizes from the font (`FontSize`, `FramePadding`). The fixed pixel sizes in the app (the dock widths, `DESKTOP_TOP_BAR` 28, the phone's 48 and button sizes, the Console's compact limit) are checked against the largest size and the new faces; those that cannot follow become multiples of `igGetFontSize()` |
+| How | `NvImgui` keeps a small table of faces (`NvImguiFont`: name, bytes, loaded font). `nv_imgui_set_font(imgui, face, size)` makes the font on first use (`ImFontAtlas_AddFontFromMemoryTTF`, size 0 = dynamic), merges the Hangul fallback when it is loaded, sets `io->FontDefault` and `style.FontSizeBase`. The engine only knows "a face and a size"; which faces exist is the sandbox's list |
+| Sizes and layout | Windows, buttons and rows already take their sizes from the font (`FontSize`, `FramePadding`). The fixed pixel sizes in the sandbox (the dock widths, `DESKTOP_TOP_BAR` 28, the phone's 48 and button sizes, the Console's compact limit) are checked against the largest size and the new faces; those that cannot follow become multiples of `igGetFontSize()` |
 | Saved | Two new `EDIT` tags: `FONT` (the face's name as text, so a face can be added or reordered without changing what a saved value means; an unknown name loads as the default) and `FSIZ` (f32, clamped to 10..24; missing = the default). `SAVE_VERSION` stays; old saves load with the default. The size and face are editor settings, not undoable and not part of Play's snapshot (`SAVE_PART_EDITOR`) |
 | Korean text | `KRFN` tag (u32 0 or 1). When 1 at load, the fetch starts at once and the fallback is merged when it arrives; until then Hangul shows as the missing-glyph box. A failed fetch (offline) is logged as a warning in the Console and the box is turned off |
-| Fetching | `fetch()` from the page of `fonts/Pretendard-Regular.otf` next to `app.js` (a file in the Pages package that the app's own package does not preload), through an `EM_JS` helper that hands the bytes to the app; progress is not shown (about 2 MB), the checkbox says "loading..." meanwhile. Stored in IndexedDB under `/nv-save` beside the save, read from there on later visits |
+| Fetching | `fetch()` from the page of `fonts/Pretendard-Regular.otf` next to `sandbox.js` (a file in the Pages package that the sandbox's own package does not preload), through an `EM_JS` helper that hands the bytes to the sandbox; progress is not shown (about 2 MB), the checkbox says "loading..." meanwhile. Stored in IndexedDB under `/nv-save` beside the save, read from there on later visits |
 | Startup | The chosen face is loaded before the first frame, from the package, so there is no frame in the wrong font. The save is read first (`save_init` runs after `nv_imgui_init` today), so the first frame uses the default and switches when the save is loaded: a flicker the spec accepts only if the load is not already before the first draw; otherwise `save_init` is moved earlier |
 | Textures tab | The font atlas is already listed under "UI"; its size is shown, which is how the glyph cache's growth is watched |
 | Memory | A face's bytes stay resident: about 0.4 MB for the bundled ones, about 2 MB for Pretendard once loaded. Faces are made on first use, so unused ones cost nothing |
@@ -229,9 +229,9 @@ Recommendation:
 
 - **Engine (`engine/imgui.h`, `engine/imgui.c`).** The face table, `nv_imgui_set_font`, the Hangul
   fallback merge, loading from memory, the fetch helper (`EM_JS`) with its storage cache.
-- **App.** A Font section in `app/ui.c` (View tab), the `FONT`, `FSIZ` and `KRFN` tags in
-  `app/save.c`, fixed sizes in `app/ui_desktop.c`, `app/ui_phone.c` and `app/console.c` expressed
-  in font heights where they must follow the font, the list of bundled faces in `app/main.c`.
+- **Sandbox.** A Font section in `sandbox/ui.c` (View tab), the `FONT`, `FSIZ` and `KRFN` tags in
+  `sandbox/save.c`, fixed sizes in `sandbox/ui_desktop.c`, `sandbox/ui_phone.c` and `sandbox/console.c` expressed
+  in font heights where they must follow the font, the list of bundled faces in `sandbox/main.c`.
 - **Assets.** `assets/fonts/` with the faces and their licenses; `web/manifest.cmake` and the
   CI package gain the on-demand Hangul file.
 - **Docs.** `save.md` (the tags), `layout.md` (sizes in font heights), `search.md` (the rows),
@@ -265,15 +265,15 @@ Every phase is checked in Release and Debug in headless Chromium, the desktop UI
   so the glTF files are at `/assets/quaternius/*.glb` and the font at `/assets/fonts/`.
 - `nv_imgui_set_font(imgui, ttf, size, pixel_size)` (`engine/imgui.h`) adds the font from memory as a
   dynamic font (size 0), makes it `io->FontDefault` and sets `style.FontSizeBase`; the bytes stay
-  in the app's permanent arena. `app/main.c` (`load_font`) reads the file after `nv_imgui_init` and
+  in the sandbox's permanent arena. `sandbox/main.c` (`load_font`) reads the file after `nv_imgui_init` and
   before the first frame, and logs a Console warning and keeps the built-in font if it is missing.
 - Inter 14 px has about the same line height and average width as the old 13 px face, so the
   layout needed no changes: the docks, top bars and tabs still fit on desktop and on the phone
   (390×664), where the Inspector tab's label no longer needs to be cut.
-- The package grows by 0.4 MB (`app.data` 1.7 MB); `korean.md` adds a Hangul fallback face behind it (0.39 MB).
+- The package grows by 0.4 MB (`sandbox.data` 1.7 MB); `korean.md` adds a Hangul fallback face behind it (0.39 MB).
 - Playwright scripts written against the old font's pixel positions (menu items, the Reset
   dialog's buttons, rows of the Scene tree) click the wrong places and need new coordinates; the
-  app's behavior is unchanged.
+  sandbox's behavior is unchanged.
 
 ### Out of scope
 

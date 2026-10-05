@@ -193,10 +193,10 @@ s32  nv_anim_find_joint(NvSkeletonId skeleton, const char* name);        // for 
 - **렌더러:** skinned 그리기는 `NvNode.animator`로 인덱싱한 `nv_anim_skins()`에서 행렬을 읽는다.
   애니메이터가 없는 skinned 노드는 bind 포즈로 그려진다.
 - **루트 모션**은 ozz의 `MotionExtractor` (`root` 관절의 수평 루트 이동)와 `Float3Track`을 쓴다.
-  `nv_anim_update`는 모델 공간 이동을 `NvAnimator.root_motion`에 누적한다. 앱 스펙
-  (`docs/specs/app.md`) 이후로는 `nv_anim_update_scene`이 그만큼 애니메이터의 `owner` 노드를 움직이고, 앱은
+  `nv_anim_update`는 모델 공간 이동을 `NvAnimator.root_motion`에 누적한다. 샌드박스 스펙
+  (`docs/specs/sandbox.md`) 이후로는 `nv_anim_update_scene`이 그만큼 애니메이터의 `owner` 노드를 움직이고, 샌드박스는
   회전만 더한다.
-- **크로스페이드**는 레이어 0 (페이드 인)과 1 (페이드 아웃)을 쓴다. 앱의 수동 블렌드는 레이어 0과 시간이
+- **크로스페이드**는 레이어 0 (페이드 인)과 1 (페이드 아웃)을 쓴다. 샌드박스의 수동 블렌드는 레이어 0과 시간이
   맞춰진 레이어 2를 쓴다.
 - **Aim IK**는 ozz의 `IKAimJob`으로 관절 하나 (`Head`)를 고친다. 관절의 앞과 위 축은 하드코딩하지 않고
   rest 포즈에서 찾는다.
@@ -408,9 +408,9 @@ What shipped, and where it differs from the plan above:
   `NvNode.animator`; a skinned node without an animator draws in its bind pose.
 - **Root motion** uses ozz's `MotionExtractor` (horizontal root translation of the `root` joint)
   and a `Float3Track`; `nv_anim_update` accumulates the model-space motion in
-  `NvAnimator.root_motion`. Since the app spec (`docs/specs/app.md`), `nv_anim_update_scene`
-  moves the animator's `owner` node by it; the app only adds turning.
-- **Crossfades** use layers 0 (fading in) and 1 (fading out); the app's manual blend uses
+  `NvAnimator.root_motion`. Since the sandbox spec (`docs/specs/sandbox.md`), `nv_anim_update_scene`
+  moves the animator's `owner` node by it; the sandbox only adds turning.
+- **Crossfades** use layers 0 (fading in) and 1 (fading out); the sandbox's manual blend uses
   layer 2, time-synchronized to layer 0.
 - **Aim IK** corrects one joint (`Head`) with ozz's `IKAimJob`. The joint's forward and up axes are
   found from the rest pose instead of being hard-coded.

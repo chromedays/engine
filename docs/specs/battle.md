@@ -376,7 +376,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 코드 위치
 
-에디터 앱(`app/`)과 따로, 자기 실행 파일을 가진 `autobattler/` 폴더에 둔다. 엔진(`nv`)만 링크하고 `app/`의 코드는 쓰지 않는다.
+샌드박스(`sandbox/`)과 따로, 자기 실행 파일을 가진 `autobattler/` 폴더에 둔다. 엔진(`nv`)만 링크하고 `sandbox/`의 코드는 쓰지 않는다.
 
 | 파일 | 내용 |
 |---|---|
@@ -393,21 +393,21 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 ### 실행 파일
 
 - **페이지:** 기본 브랜치의 Release는 Pages의 `autobattler/release/`, Debug는 `autobattler/debug/`, 다른 브랜치의 Debug는
-  `autobattler/<branch>/`(`/`는 `-`가 된다). 에디터 앱의 폴더(`release/`, `debug/`, `<branch>/`)는 그대로다. 에디터 앱과 따로
+  `autobattler/<branch>/`(`/`는 `-`가 된다). 샌드박스의 폴더(`release/`, `debug/`, `<branch>/`)는 그대로다. 샌드박스와 따로
   내려받는다.
   - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
   - `nv_setup_executable`에 `PRELOAD <폴더>@<패키지 안 경로> ...` 인수를 더한다(`ASSETS <폴더>`는 `<폴더>@/assets`와 같다).
     게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴 폴더 `assets/fonts`만 `/assets/fonts`에 넣는다.
     `assets/` 전체는 넣지 않는다(쓰지 않는 캐릭터 모델이 빠진다).
   - `nv_setup_executable`에 `COMPONENT <name>` 인수를 더한다(기본값 `web`). `autobattler`는
-    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 앱의 `web` 패키지에 섞이지 않는다.
+    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`이므로 샌드박스의 `web` 패키지에 섞이지 않는다.
   - `build.yml`의 Package가 `--component autobattler`를 `dist/engine-web/autobattler/release`와 `.../debug`에 설치하고,
     stage가 기본 브랜치에서는 `autobattler/release`, `autobattler/debug`를, 다른 브랜치에서는 `autobattler/<branch>`를
     바꾼다. `autobattler`라는 이름의 브랜치는 `release`, `debug`처럼 게시하지 않는다(그 폴더를 덮어쓰므로).
 - **화면:** 전장이 뷰포트이고 ImGui 창 하나(Battle 패널)가 그 옆에 붙는다: 넓은 화면에서는 오른쪽(폭 300), 세로로 긴 화면에서는 아래
   (높이 42%). 뷰포트에서 시작한 입력은 ImGui를 건너뛰므로 둘은 겹치지 않는다. 에디터의 도크, 검색, 팔레트, 저장, undo, 선택, 콘솔
-  탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(에디터 앱처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
-  내려받은 양, 커밋 제목)은 에디터 앱과 같은 엔진 함수 `nv_imgui_draw_build_label`이 그린다(배지 없음).
+  탭은 없다. 씬 해상도는 뷰포트와 같게 시작하고, 터치 화면에서는 절반이다(샌드박스처럼). 구석의 빌드 라벨(빌드 종류, 커밋,
+  내려받은 양, 커밋 제목)은 샌드박스와 같은 엔진 함수 `nv_imgui_draw_build_label`이 그린다(배지 없음).
 - **카메라:** 플레이어 진영(-Z) 뒤 위에서 비스듬히(피치 62°, 거리 104 m, 96 m 길이의 전장 기준으로 전장 길이에 비례) 전장 전체가 보이게 본다. 왼쪽 드래그나 한 손가락은 땅 위로
   화면을 옮기고(손가락을 따라가고, 목표는 전장 안으로 제한), 오른쪽이나 가운데 버튼 드래그와 두 손가락은 돌리고, 휠과 핀치는
   확대한다(거리 15–140 m, 더 긴 전장에서는 최대 거리가 그에 따라 커진다, 피치 20°–85°).
@@ -421,7 +421,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   - 포탄은 틱마다 지난 구간에 `nv_vfx_trail`, 이벤트는 효과로: 발사는 총구의 작은 섬광, 명중은 작은 폭발과 `nv_vfx_decal`의 그을음,
     실드 피격은 파란 불꽃, 죽음은 큰 폭발(`nv_vfx_burst`). 실드는 남은 에너지에 따라 밝기가 바뀌는 디버그 라인 원(세 축) 셋이다.
     이벤트와 포탄 구간은 틱마다(한 프레임에 틱이 여럿 돌아도) 처리하고 이벤트 목록을 비운다.
-  - 태양(방향광)이 그림자를 드리운다(`docs/specs/shadows.md`): 에디터 앱처럼 데스크톱은 2048 맵과 High 필터, 터치 화면은 1024와 Low.
+  - 태양(방향광)이 그림자를 드리운다(`docs/specs/shadows.md`): 샌드박스처럼 데스크톱은 2048 맵과 High 필터, 터치 화면은 1024와 Low.
     그림자 거리는 카메라 거리의 1.6배다(`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). 처음 카메라에서 전장의 먼 구석이 카메라 거리의
     약 1.4배라 모든 유닛에 그림자가 지고, 확대해도 맵의 텍셀이 화면에서 비슷한 크기로 남는다. 옮기거나 돌려도 거리는 그대로라 그림자가
     떨리지 않는다. 설정 UI는 없다.
@@ -923,8 +923,8 @@ module, so no fixed-point math is needed. Finished battles are compared by a has
 
 ### Where the code goes
 
-In a folder of its own, `autobattler/`, with its own executable, apart from the editor app (`app/`). It links only the engine
-(`nv`) and uses no code from `app/`.
+In a folder of its own, `autobattler/`, with its own executable, apart from the sandbox (`sandbox/`). It links only the engine
+(`nv`) and uses no code from `sandbox/`.
 
 | File | Contents |
 |---|---|
@@ -941,22 +941,22 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 ### Executable
 
 - **Page:** the default branch's Release at `autobattler/release/` on Pages and its Debug at `autobattler/debug/`; other
-  branches' Debug at `autobattler/<branch>/` (`/` becomes `-`). The editor app's folders (`release/`, `debug/`, `<branch>/`)
-  stay as they are. Downloaded apart from the editor app.
+  branches' Debug at `autobattler/<branch>/` (`/` becomes `-`). The sandbox's folders (`release/`, `debug/`, `<branch>/`)
+  stay as they are. Downloaded apart from the sandbox.
   - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
   - `nv_setup_executable` gets a `PRELOAD <dir>@<path in the package> ...` argument (`ASSETS <dir>` is `<dir>@/assets`). The game
     puts the definition folder `autobattler/data` at `/data` and only the font folder `assets/fonts` at `/assets/fonts`, not all of
     `assets/` (the unused character models stay out).
   - `nv_setup_executable` gets a `COMPONENT <name>` argument (default `web`). The game is
-    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the app's `web` package.
+    `nv_setup_executable(autobattler ROOT COMPONENT autobattler)`, so it stays out of the sandbox's `web` package.
   - In `build.yml`, Package installs `--component autobattler` into `dist/engine-web/autobattler/release` and `.../debug`,
     and stage replaces `autobattler/release` and `autobattler/debug` for the default branch, `autobattler/<branch>` for others.
     A branch named `autobattler` is not published, like `release` and `debug` (it would replace that folder).
 - **Screen:** the battlefield is the viewport, with one ImGui window (the Battle panel) beside it: on its right (300 wide) on a wide
   screen, under it (42% high) on a tall one. They do not overlap, since input that starts in the viewport skips ImGui. None of the
   editor's docks, search, palette, saving, undo, selection or Console tab. The scene resolution starts equal to the viewport, and
-  half of it on a touch screen (as in the editor app). The build label in the corner (build type, commit, what was downloaded,
-  the commit's subject) is drawn by the engine's `nv_imgui_draw_build_label`, as the editor app's is (no badge).
+  half of it on a touch screen (as in the sandbox). The build label in the corner (build type, commit, what was downloaded,
+  the commit's subject) is drawn by the engine's `nv_imgui_draw_build_label`, as the sandbox's is (no badge).
 - **Camera:** an angled view from above and behind the player's side (-Z) at 62° pitch and 104 m, so that all of the field is in view. A
   left drag or one finger moves the view over the ground (it follows the finger; the target is kept inside the field), a right or middle
   drag or two fingers turn it, the wheel and pinch zoom (15 to 140 m, pitch 20° to 85°).
@@ -973,7 +973,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
     muzzle, a hit a small explosion and a scorch (`nv_vfx_decal`), a shield hit blue sparks, a death a big explosion (`nv_vfx_burst`).
     A shield is three debug-line circles (one per axis) whose brightness follows its energy left. Events and shell stretches are
     handled after every tick (several may run in one frame), and the event list is emptied then.
-  - The sun (a directional light) casts shadows (`docs/specs/shadows.md`): as in the editor app, a 2048 map with the High filter on
+  - The sun (a directional light) casts shadows (`docs/specs/shadows.md`): as in the sandbox, a 2048 map with the High filter on
     desktop, 1024 and Low on a touch screen. The shadow distance is 1.6 times the camera's distance
     (`SHADOW_DISTANCE_PER_CAMERA_DISTANCE`). From the starting camera the field's far corners are about 1.4 times its distance away, so
     every unit is shadowed, and the map's texels keep about the same size on screen as the camera zooms. Moving or turning the view

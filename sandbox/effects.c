@@ -1,8 +1,8 @@
-// The effects the app fires and the View tab's Effects section (docs/specs/vfx.md). The engine
+// The effects the sandbox fires and the View tab's Effects section (docs/specs/vfx.md). The engine
 // (engine/vfx.h) simulates and draws the particles; this file says what an explosion, sparks, smoke and
 // a missile's trail are made of, and the buttons that fire them at a point beside the orbit point.
 
-#include "app.h"
+#include "sandbox.h"
 
 #include <math.h>
 
@@ -123,24 +123,24 @@ internal NvVfxEffectId make_swarm(NvVfx* vfx)
     return nv_vfx_add_effect(vfx, &effect);
 }
 
-void effects_init(App* app)
+void effects_init(Sandbox* sandbox)
 {
-    Effects* effects = &app->effects;
+    Effects* effects = &sandbox->effects;
     nv_random_seed(&effects->rng, 0x9E3779B9u, 1);
     make_styles(effects);
-    nv_vfx_init(&app->vfx, &app->gpu, (NvVfxCapacity){0}, &app->permanent);
-    effects->explosion = make_explosion(&app->vfx);
-    effects->sparks = make_sparks(&app->vfx);
-    effects->smoke = make_smoke(&app->vfx);
-    effects->missile = make_missile(&app->vfx);
-    effects->swarm = make_swarm(&app->vfx);
-    app->renderer.vfx = &app->vfx;
+    nv_vfx_init(&sandbox->vfx, &sandbox->gpu, (NvVfxCapacity){0}, &sandbox->permanent);
+    effects->explosion = make_explosion(&sandbox->vfx);
+    effects->sparks = make_sparks(&sandbox->vfx);
+    effects->smoke = make_smoke(&sandbox->vfx);
+    effects->missile = make_missile(&sandbox->vfx);
+    effects->swarm = make_swarm(&sandbox->vfx);
+    sandbox->renderer.vfx = &sandbox->vfx;
 }
 
 // Where the test effects go: beside the orbit point, to the right of what the camera sees, on the ground.
-NvVec3 effects_test_point(App* app)
+NvVec3 effects_test_point(Sandbox* sandbox)
 {
-    SceneView* view = app_view(app);
+    SceneView* view = sandbox_view(sandbox);
     NvNode* camera = nv_scene_get(view->scene, view->scene->active_camera);
     NvVec3 right = nv_vec3(camera->world.e[0], 0.0f, camera->world.e[2]);
     f32 length = sqrtf(right.x * right.x + right.z * right.z);
@@ -152,22 +152,22 @@ NvVec3 effects_test_point(App* app)
 }
 
 // A scorch mark on the ground below `point`, turned at random.
-internal void scorch_at(App* app, NvVec3 point, f32 size)
+internal void scorch_at(Sandbox* sandbox, NvVec3 point, f32 size)
 {
-    f32 angle = (f32)(app->vfx.random & 1023u) * (6.2831853f / 1024.0f);
-    nv_vfx_decal(&app->vfx, &app->effects.scorch, nv_vec3(point.x, 0.02f, point.z), angle, size);
+    f32 angle = (f32)(sandbox->vfx.random & 1023u) * (6.2831853f / 1024.0f);
+    nv_vfx_decal(&sandbox->vfx, &sandbox->effects.scorch, nv_vec3(point.x, 0.02f, point.z), angle, size);
 }
 
 // Fires one of the test effects (0 explosion, 1 sparks, 2 smoke, 3 missile, 4 laser, 5 scorch).
-void effects_fire(App* app, u32 which)
+void effects_fire(Sandbox* sandbox, u32 which)
 {
-    Effects* effects = &app->effects;
-    NvVec3 point = effects_test_point(app);
+    Effects* effects = &sandbox->effects;
+    NvVec3 point = effects_test_point(sandbox);
     NvVec3 up = nv_vec3(0.0f, 1.0f, 0.0f);
     switch (which) {
-    case 0: nv_vfx_burst(&app->vfx, effects->explosion, point, up, 1.0f); break;
-    case 1: nv_vfx_burst(&app->vfx, effects->sparks, nv_vec3_add(point, nv_vec3(0.0f, 0.1f, 0.0f)), up, 1.0f); break;
-    case 2: nv_vfx_burst(&app->vfx, effects->smoke, nv_vec3_add(point, nv_vec3(0.0f, 0.2f, 0.0f)), up, 1.0f); break;
+    case 0: nv_vfx_burst(&sandbox->vfx, effects->explosion, point, up, 1.0f); break;
+    case 1: nv_vfx_burst(&sandbox->vfx, effects->sparks, nv_vec3_add(point, nv_vec3(0.0f, 0.1f, 0.0f)), up, 1.0f); break;
+    case 2: nv_vfx_burst(&sandbox->vfx, effects->smoke, nv_vec3_add(point, nv_vec3(0.0f, 0.2f, 0.0f)), up, 1.0f); break;
     case 3:
         // A missile that climbs out of the ground toward a target some meters on, then explodes there.
         if (effects->flight_count < NV_ARRAY_COUNT(effects->flights)) {
@@ -178,21 +178,21 @@ void effects_fire(App* app, u32 which)
     case 4: {
         // A laser from above and to the side onto the ground: a beam, sparks where it hits and a mark.
         NvVec3 from = nv_vec3_add(point, nv_vec3(-3.0f, 3.0f, -1.5f));
-        nv_vfx_beam(&app->vfx, &effects->laser, from, point, effects->laser.life);
-        nv_vfx_burst(&app->vfx, effects->sparks, point, up, 0.6f);
-        scorch_at(app, point, 0.9f);
+        nv_vfx_beam(&sandbox->vfx, &effects->laser, from, point, effects->laser.life);
+        nv_vfx_burst(&sandbox->vfx, effects->sparks, point, up, 0.6f);
+        scorch_at(sandbox, point, 0.9f);
         break;
     }
-    case 5: scorch_at(app, point, 2.0f); break;
+    case 5: scorch_at(sandbox, point, 2.0f); break;
     }
 }
 
-void effects_clear(App* app)
+void effects_clear(Sandbox* sandbox)
 {
-    nv_vfx_clear(&app->vfx);
-    app->effects.flight_count = 0;
-    app->effects.stress_flight_count = 0;
-    app->effects.swarm_carry = app->effects.explosion_carry = app->effects.decal_carry = 0.0f;
+    nv_vfx_clear(&sandbox->vfx);
+    sandbox->effects.flight_count = 0;
+    sandbox->effects.stress_flight_count = 0;
+    sandbox->effects.swarm_carry = sandbox->effects.explosion_carry = sandbox->effects.decal_carry = 0.0f;
 }
 
 //
@@ -200,27 +200,27 @@ void effects_clear(App* app)
 //
 
 // A point on the ground in the field around the orbit point.
-internal NvVec3 field_point(App* app, f32 height)
+internal NvVec3 field_point(Sandbox* sandbox, f32 height)
 {
-    Effects* effects = &app->effects;
-    NvVec3 orbit = app_view(app)->orbit.target;
+    Effects* effects = &sandbox->effects;
+    NvVec3 orbit = sandbox_view(sandbox)->orbit.target;
     return nv_vec3(orbit.x + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 12.0f);
 }
 
-internal void new_flight(App* app, Flight* flight)
+internal void new_flight(Sandbox* sandbox, Flight* flight)
 {
-    Effects* effects = &app->effects;
+    Effects* effects = &sandbox->effects;
     f32 angle = nv_random_f32(&effects->rng) * 6.2831853f;
     f32 speed = 6.0f + nv_random_f32(&effects->rng) * 4.0f;
-    flight->pos = field_point(app, 0.3f);
+    flight->pos = field_point(sandbox, 0.3f);
     flight->vel = nv_vec3(cosf(angle) * speed, 3.0f + nv_random_f32(&effects->rng) * 2.0f, sinf(angle) * speed);
     flight->life = 1.2f + nv_random_f32(&effects->rng) * 0.8f;
 }
 
-void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
+void effects_stress_update(Sandbox* sandbox, const StressWorkloads* want, f32 dt)
 {
-    Effects* effects = &app->effects;
-    NvVfx* vfx = &app->vfx;
+    Effects* effects = &sandbox->effects;
+    NvVfx* vfx = &sandbox->vfx;
     if (dt > 0.1f)
         dt = 0.1f;
     b32 on = want->effects_on;
@@ -236,7 +236,7 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
         effects->stress_flight_count = missiles;
     while (effects->stress_flight_count < missiles) {
         Flight* flight = &effects->stress_flights[effects->stress_flight_count++];
-        new_flight(app, flight);
+        new_flight(sandbox, flight);
         flight->life *= nv_random_f32(&effects->rng); // out of step with each other
     }
     for (u32 i = 0; i < effects->stress_flight_count; ++i) {
@@ -252,13 +252,13 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
             nv_vfx_trail(vfx, &effects->missile_trail, before, flight->pos);
         }
         if (flight->life <= 0.0f || flight->pos.y < 0.05f)
-            new_flight(app, flight);
+            new_flight(sandbox, flight);
     }
 
     // Beams: each is held by calling again every frame with a short life, between fixed points of its own.
     for (u32 i = 0; i < beams; ++i) {
         u32 h = i * 2654435761u + 12345u;
-        NvVec3 orbit = app_view(app)->orbit.target;
+        NvVec3 orbit = sandbox_view(sandbox)->orbit.target;
         f32 ax = (f32)(h & 1023u) / 1023.0f, az = (f32)((h >> 10) & 1023u) / 1023.0f;
         f32 bx = (f32)((h >> 20) & 1023u) / 1023.0f, bz = (f32)((h * 40503u >> 8) & 1023u) / 1023.0f;
         NvVec3 from = nv_vec3(orbit.x + (ax * 2.0f - 1.0f) * 16.0f, 7.0f, orbit.z + (az * 2.0f - 1.0f) * 12.0f);
@@ -276,28 +276,28 @@ void effects_stress_update(App* app, const StressWorkloads* want, f32 dt)
     while (effects->swarm_carry >= 1.0f) {
         effects->swarm_carry -= 1.0f;
         if (limit) {
-            nv_vfx_burst(vfx, effects->swarm, field_point(app, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
+            nv_vfx_burst(vfx, effects->swarm, field_point(sandbox, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
             --limit;
         }
     }
     effects->explosion_carry += (f32)want->effect_explosions * dt;
     for (u32 n = 0; effects->explosion_carry >= 1.0f && n < 300; ++n) {
         effects->explosion_carry -= 1.0f;
-        nv_vfx_burst(vfx, effects->explosion, field_point(app, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
+        nv_vfx_burst(vfx, effects->explosion, field_point(sandbox, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
     }
     if (effects->explosion_carry > 1.0f)
         effects->explosion_carry = 0.0f;
     effects->decal_carry += (f32)want->effect_decals * dt;
     for (u32 n = 0; effects->decal_carry >= 1.0f && n < 2000; ++n) {
         effects->decal_carry -= 1.0f;
-        scorch_at(app, field_point(app, 0.0f), 0.6f + nv_random_f32(&effects->rng) * 1.2f);
+        scorch_at(sandbox, field_point(sandbox, 0.0f), 0.6f + nv_random_f32(&effects->rng) * 1.2f);
     }
 }
 
-void effects_update(App* app, f32 dt)
+void effects_update(Sandbox* sandbox, f32 dt)
 {
-    Effects* effects = &app->effects;
-    nv_vfx_update(&app->vfx, dt);
+    Effects* effects = &sandbox->effects;
+    nv_vfx_update(&sandbox->vfx, dt);
     // The test missiles fly in a straight line, leave a trail and explode where they end.
     for (u32 i = 0; i < effects->flight_count;) {
         Flight* flight = &effects->flights[i];
@@ -308,12 +308,12 @@ void effects_update(App* app, f32 dt)
         // About 60 particles per meter along the path, so the trail is unbroken at any frame rate.
         f32 length = sqrtf(nv_vec3_dot(nv_vec3_sub(flight->pos, before), nv_vec3_sub(flight->pos, before)));
         if (dt > 0.0f) {
-            nv_vfx_emit(&app->vfx, effects->missile, before, flight->pos, (u32)(length * 60.0f) + 1);
-            nv_vfx_trail(&app->vfx, &effects->missile_trail, before, flight->pos);
+            nv_vfx_emit(&sandbox->vfx, effects->missile, before, flight->pos, (u32)(length * 60.0f) + 1);
+            nv_vfx_trail(&sandbox->vfx, &effects->missile_trail, before, flight->pos);
         }
         if (flight->life <= 0.0f) {
-            nv_vfx_burst(&app->vfx, effects->explosion, flight->pos, nv_vec3(0.0f, 1.0f, 0.0f), 0.8f);
-            scorch_at(app, flight->pos, 1.8f);
+            nv_vfx_burst(&sandbox->vfx, effects->explosion, flight->pos, nv_vec3(0.0f, 1.0f, 0.0f), 0.8f);
+            scorch_at(sandbox, flight->pos, 1.8f);
             *flight = effects->flights[--effects->flight_count];
         } else {
             ++i;
@@ -322,22 +322,22 @@ void effects_update(App* app, f32 dt)
 }
 
 // The View tab's Effects section.
-void effects_ui(App* app)
+void effects_ui(Sandbox* sandbox)
 {
-    search_section(app, "Effects");
-    if (search_group(app, "Fire", "effect explosion sparks smoke missile laser scorch test particles")) {
+    search_section(sandbox, "Effects");
+    if (search_group(sandbox, "Fire", "effect explosion sparks smoke missile laser scorch test particles")) {
         const char* names[6] = {TL("Explosion"), TL("Sparks"), TL("Smoke"), TL("Missile"), TL("Laser"), TL("Scorch")};
         for (u32 i = 0; i < 6; ++i) {
             if (i)
                 ui_same_line_if_fits(igCalcTextSize(names[i], NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
             if (igButton(names[i], (ImVec2_c){0, 0}))
-                effects_fire(app, i);
+                effects_fire(sandbox, i);
         }
     }
-    if (search_row(app, "Wind", "particles force"))
-        igSliderFloat(TL("Wind"), &app->vfx.wind.x, -6.0f, 6.0f, "%.1f", 0);
-    if (search_plain(app)) {
-        NvVfxStats stats = nv_vfx_stats(&app->vfx);
+    if (search_row(sandbox, "Wind", "particles force"))
+        igSliderFloat(TL("Wind"), &sandbox->vfx.wind.x, -6.0f, 6.0f, "%.1f", 0);
+    if (search_plain(sandbox)) {
+        NvVfxStats stats = nv_vfx_stats(&sandbox->vfx);
         igText(T("Particles: %u alive, %u visible, %u dropped"), stats.alive, stats.visible, (u32)stats.dropped);
         igText(T("Segments: %u, decals: %u"), stats.segments, stats.decals);
     }

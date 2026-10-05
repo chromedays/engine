@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get install -y ninja-build
 
       # Both builds are deployed: Release at <pages>/release/, Debug (NV_ASSERT on) at <pages>/debug/. The auto-battler is
-      # deployed apart from the editor app (docs/specs/battle.md): <pages>/autobattler/release/ and .../debug/.
+      # deployed apart from the sandbox (docs/specs/battle.md): <pages>/autobattler/release/ and .../debug/.
       - name: Configure
         run: |
           emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release

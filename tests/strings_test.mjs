@@ -1,14 +1,14 @@
 // Checks the Korean UI strings (docs/specs/korean.md): every English text an executable's code wraps in
 // T() or TL(), or hands to the search, the shortcut table and the stats, has a row in that folder's
 // strings.c, and a row keeps the printf conversions of its English text, in order.
-//   node tests/strings_test.mjs [--missing] [folder ...]   (default: app; --missing prints the missing rows as table lines)
+//   node tests/strings_test.mjs [--missing] [folder ...]   (default: sandbox; --missing prints the missing rows as table lines)
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 const folders = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-if (!folders.length) folders.push('app');
+if (!folders.length) folders.push('sandbox');
 const unescape = (text) => text.replace(/\\(["\\n])/g, (_, c) => (c === 'n' ? '\n' : c));
 const str = String.raw`"((?:[^"\\]|\\.)*)"`;
 
@@ -43,13 +43,13 @@ function check(root, label) {
         }
         for (const q of text.matchAll(new RegExp(str, 'g'))) note(q[1], where);
       }
-      for (const m of line.matchAll(new RegExp(String.raw`search_(?:row|group|section)\(app, ${str}`, 'g'))) note(m[1], where);
+      for (const m of line.matchAll(new RegExp(String.raw`search_(?:row|group|section)\(sandbox, ${str}`, 'g'))) note(m[1], where);
       // The shortcut table: group, name and the keys text ("Ctrl (held)").
       const row = line.match(new RegExp(String.raw`\[SC_\w+\] = \{${str}, ${str}, \{[^}]*\}, (?:NULL|${str})`));
       if (row) { note(row[1], where); note(row[2], where); if (row[3]) note(row[3], where); }
       for (const m of line.matchAll(new RegExp(String.raw`\.note = [^"]*${str}`, 'g'))) note(m[1], where);
       if (/\bstat(?:_text)?\(stats/.test(line)) for (const m of line.matchAll(new RegExp(str, 'g'))) if (!m[1].includes('%')) note(m[1], where);
-      for (const m of line.matchAll(new RegExp(String.raw`\bsection\(app, ${str}`, 'g'))) note(m[1], where);
+      for (const m of line.matchAll(new RegExp(String.raw`\bsection\(sandbox, ${str}`, 'g'))) note(m[1], where);
       if (/panel_names\[[^\]]*\]\s*=/.test(line)) for (const m of line.matchAll(new RegExp(str, 'g'))) note(m[1], where);
     });
   }

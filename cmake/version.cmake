@@ -1,5 +1,5 @@
 # Writes the header that names the commit a build comes from: its short hash and its subject line.
-# Run by the `app_version` target on every build, so the label is never the commit of an older
+# Run by the `sandbox_version` target on every build, so the label is never the commit of an older
 # configure. The header is replaced only when it changed, so an unchanged commit rebuilds nothing.
 #   cmake -DSOURCE_DIR=<repo> -DOUTPUT=<header> -P version.cmake
 find_package(Git QUIET)

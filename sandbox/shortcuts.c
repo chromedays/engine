@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <cimguizmo.h>
 #include <emscripten.h>
@@ -29,42 +29,42 @@ typedef struct Command {
     const char* keys_text;   // shown instead of the chords' text (a held modifier, a shifted key)
     u32 when;
     b32 repeat; // fires again while the key is held
-    void (*run)(App*);
+    void (*run)(Sandbox*);
 } Command;
 
-internal void run_save(App* app) { save_now(app, 1); }
-internal void run_undo(App* app) { app->undo.request = -1; }
-internal void run_redo(App* app) { app->undo.request = 1; }
-internal void run_deselect(App* app) { selection_set(app_view(app), (NvNodeId){0}); }
-internal void run_play(App* app)
+internal void run_save(Sandbox* sandbox) { save_now(sandbox, 1); }
+internal void run_undo(Sandbox* sandbox) { sandbox->undo.request = -1; }
+internal void run_redo(Sandbox* sandbox) { sandbox->undo.request = 1; }
+internal void run_deselect(Sandbox* sandbox) { selection_set(sandbox_view(sandbox), (NvNodeId){0}); }
+internal void run_play(Sandbox* sandbox)
 {
-    if (app->playing)
-        app_stop_playing(app);
+    if (sandbox->playing)
+        sandbox_stop_playing(sandbox);
     else
-        app_start_playing(app);
+        sandbox_start_playing(sandbox);
 }
-internal void run_move(App* app) { app->gizmo_operation = GIZMO_MOVE; }
-internal void run_rotate(App* app) { app->gizmo_operation = GIZMO_ROTATE; }
-internal void run_scale(App* app) { app->gizmo_operation = GIZMO_SCALE; }
-internal void run_axes(App* app) { app->gizmo_local = !app->gizmo_local; }
-internal void run_focus(App* app) { app_focus_selection(app); }
-internal void run_follow(App* app)
+internal void run_move(Sandbox* sandbox) { sandbox->gizmo_operation = GIZMO_MOVE; }
+internal void run_rotate(Sandbox* sandbox) { sandbox->gizmo_operation = GIZMO_ROTATE; }
+internal void run_scale(Sandbox* sandbox) { sandbox->gizmo_operation = GIZMO_SCALE; }
+internal void run_axes(Sandbox* sandbox) { sandbox->gizmo_local = !sandbox->gizmo_local; }
+internal void run_focus(Sandbox* sandbox) { sandbox_focus_selection(sandbox); }
+internal void run_follow(Sandbox* sandbox)
 {
-    SceneView* view = app_view(app);
+    SceneView* view = sandbox_view(sandbox);
     view->follow_selection = !view->follow_selection;
 }
-internal void run_home(App* app)
+internal void run_home(Sandbox* sandbox)
 {
-    SceneView* view = app_view(app);
+    SceneView* view = sandbox_view(sandbox);
     view->orbit = view->home;
     view->pan = nv_vec3(0, 0, 0);
 }
-internal void run_dock_left(App* app) { app->docks.show_left = !app->docks.show_left; }
-internal void run_dock_right(App* app) { app->docks.show_right = !app->docks.show_right; }
-internal void run_dock_bottom(App* app)
+internal void run_dock_left(Sandbox* sandbox) { sandbox->docks.show_left = !sandbox->docks.show_left; }
+internal void run_dock_right(Sandbox* sandbox) { sandbox->docks.show_right = !sandbox->docks.show_right; }
+internal void run_dock_bottom(Sandbox* sandbox)
 {
     // Shows the dock, opens it if it is a strip, and hides it when it is already open.
-    Docks* docks = &app->docks;
+    Docks* docks = &sandbox->docks;
     if (!docks->show_bottom) {
         docks->show_bottom = 1;
         docks->bottom_open = 1;
@@ -74,27 +74,27 @@ internal void run_dock_bottom(App* app)
         docks->show_bottom = 0;
     }
 }
-internal void run_help(App* app) { app->show_shortcuts = 1; }
-internal void run_palette(App* app) { search_open_palette(app); }
-internal void run_find(App* app) { search_focus_box(app); }
-internal void run_show_save(App* app)
+internal void run_help(Sandbox* sandbox) { sandbox->show_shortcuts = 1; }
+internal void run_palette(Sandbox* sandbox) { search_open_palette(sandbox); }
+internal void run_find(Sandbox* sandbox) { search_focus_box(sandbox); }
+internal void run_show_save(Sandbox* sandbox)
 {
-    search_set_query(app, SEARCH_VIEW, ""); // the viewer is drawn under the Reset row
-    save_show_viewer(app);
-    app->docks.show_right = 1;
-    app->open_view = 1;
+    search_set_query(sandbox, SEARCH_VIEW, ""); // the viewer is drawn under the Reset row
+    save_show_viewer(sandbox);
+    sandbox->docks.show_right = 1;
+    sandbox->open_view = 1;
 }
-internal void run_reset(App* app) { app->request_reset = 1; }
-internal void run_scene_showcase(App* app) { app_show_scene(app, SCENE_SHOWCASE); }
-internal void run_scene_stress(App* app) { app_show_scene(app, SCENE_STRESS); }
-internal void run_textures(App* app)
+internal void run_reset(Sandbox* sandbox) { sandbox->request_reset = 1; }
+internal void run_scene_showcase(Sandbox* sandbox) { sandbox_show_scene(sandbox, SCENE_SHOWCASE); }
+internal void run_scene_stress(Sandbox* sandbox) { sandbox_show_scene(sandbox, SCENE_STRESS); }
+internal void run_textures(Sandbox* sandbox)
 {
-    app->open_textures = 1;
-    app->docks.show_right = 1;
+    sandbox->open_textures = 1;
+    sandbox->docks.show_right = 1;
 }
-internal void run_clear_console(App* app)
+internal void run_clear_console(Sandbox* sandbox)
 {
-    (void)app;
+    (void)sandbox;
     nv_log_clear();
 }
 
@@ -129,18 +129,18 @@ local_persist const Command shortcuts[SHORTCUT_COUNT] = {
     [SC_CLEAR_CONSOLE] = {"View", "Clear the console", {0}, NULL, 0, 0, run_clear_console},
 };
 
-internal b32 applies(App* app, u32 when)
+internal b32 applies(Sandbox* sandbox, u32 when)
 {
-    b32 showcase = app->shown == SCENE_SHOWCASE;
+    b32 showcase = sandbox->shown == SCENE_SHOWCASE;
     if ((when & WHEN_SHOWCASE) && !showcase)
         return 0;
-    if ((when & WHEN_EDITING) && !(showcase && !app->playing))
+    if ((when & WHEN_EDITING) && !(showcase && !sandbox->playing))
         return 0;
-    if ((when & WHEN_SELECTION) && !app_view(app)->selected.index)
+    if ((when & WHEN_SELECTION) && !sandbox_view(sandbox)->selected.index)
         return 0;
-    if ((when & WHEN_STORAGE) && !app->storage.available)
+    if ((when & WHEN_STORAGE) && !sandbox->storage.available)
         return 0;
-    if ((when & WHEN_DESKTOP) && app->ui_mode != UI_DESKTOP)
+    if ((when & WHEN_DESKTOP) && sandbox->ui_mode != UI_DESKTOP)
         return 0;
     return 1;
 }
@@ -154,18 +154,18 @@ internal b32 keys_are_free(void)
            !igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
 }
 
-void shortcuts_update(App* app)
+void shortcuts_update(Sandbox* sandbox)
 {
     if (!keys_are_free())
         return;
     for (u32 i = 0; i < SHORTCUT_COUNT; ++i) {
         const Command* shortcut = &shortcuts[i];
-        if (!shortcut->run || !applies(app, shortcut->when))
+        if (!shortcut->run || !applies(sandbox, shortcut->when))
             continue;
         ImGuiInputFlags flags = ImGuiInputFlags_RouteGlobal | (shortcut->repeat ? ImGuiInputFlags_Repeat : 0);
         for (u32 c = 0; c < 2; ++c) {
             if (shortcut->chords[c] && igShortcut_Nil(shortcut->chords[c], flags)) {
-                shortcut->run(app);
+                shortcut->run(sandbox);
                 break;
             }
         }
@@ -174,8 +174,8 @@ void shortcuts_update(App* app)
 
 b32 shortcuts_claim(void* data, ImGuiKeyChord chord)
 {
-    App* app = data;
-    if (app->ui_mode != UI_DESKTOP || igGetIO_Nil()->WantTextInput)
+    Sandbox* sandbox = data;
+    if (sandbox->ui_mode != UI_DESKTOP || igGetIO_Nil()->WantTextInput)
         return 0;
     // Escape stays the browser's (it leaves full screen).
     if ((chord & ~ImGuiMod_Mask_) == ImGuiKey_Escape)
@@ -246,11 +246,11 @@ const char* shortcut_label(ShortcutId id)
     return out;
 }
 
-void shortcuts_help(App* app)
+void shortcuts_help(Sandbox* sandbox)
 {
     local_persist s32 opened_frame;
     const char* help_title = TL("Keyboard shortcuts");
-    if (app->show_shortcuts && !igIsPopupOpen_Str(help_title, 0)) {
+    if (sandbox->show_shortcuts && !igIsPopupOpen_Str(help_title, 0)) {
         igOpenPopup_Str(help_title, 0);
         opened_frame = igGetFrameCount();
     }
@@ -275,7 +275,7 @@ void shortcuts_help(App* app)
                 igSeparatorText(T(group));
             }
             // Greyed while it does not apply (no selection, playing, ...).
-            igBeginDisabled(!applies(app, shortcut->when));
+            igBeginDisabled(!applies(sandbox, shortcut->when));
             igTextUnformatted(shortcut_label((ShortcutId)i), NULL);
             igSameLine(170.0f, 0.0f);
             igTextUnformatted(T(shortcut->name), NULL);
@@ -284,12 +284,12 @@ void shortcuts_help(App* app)
         igSeparator();
         igTextDisabled(T("Keys do nothing while a text field is being edited or a popup is open."));
         if (!open) {
-            app->show_shortcuts = 0;
+            sandbox->show_shortcuts = 0;
             igCloseCurrentPopup();
         }
         igEndPopup();
-    } else if (app->show_shortcuts) {
-        app->show_shortcuts = 0;
+    } else if (sandbox->show_shortcuts) {
+        sandbox->show_shortcuts = 0;
     }
 }
 
@@ -306,13 +306,13 @@ b32 command_listed(u32 id)
 const char* command_name(u32 id) { return shortcuts[id].name; }
 const char* command_group(u32 id) { return shortcuts[id].group; }
 
-b32 command_enabled(App* app, u32 id)
+b32 command_enabled(Sandbox* sandbox, u32 id)
 {
-    return applies(app, shortcuts[id].when);
+    return applies(sandbox, shortcuts[id].when);
 }
 
-void command_run(App* app, u32 id)
+void command_run(Sandbox* sandbox, u32 id)
 {
-    if (shortcuts[id].run && applies(app, shortcuts[id].when))
-        shortcuts[id].run(app);
+    if (shortcuts[id].run && applies(sandbox, shortcuts[id].when))
+        shortcuts[id].run(sandbox);
 }

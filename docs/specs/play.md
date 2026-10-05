@@ -15,7 +15,7 @@ Unity, Unreal, Godot처럼 쇼케이스를 편집하는 것과 실행하는 것�
 - **Play 모드:** 씬이 돈다 (행성이 돌고, 캐릭터가 걷고 뛰고, 머리가 타깃을 따라간다). Stop을 누르면 씬이 Play를
   누른 때와 정확히 같게 돌아간다.
 
-지금 쇼케이스는 편집하는 동안 항상 돌므로, undo와 자동 저장이 앱이 매 프레임 바꾸는 값을 빼야 하고, 움직이는 것
+지금 쇼케이스는 편집하는 동안 항상 돌므로, undo와 자동 저장이 샌드박스가 매 프레임 바꾸는 값을 빼야 하고, 움직이는 것
 (걷는 캐릭터)에 대한 편집은 undo할 수 없다. 모드를 나누면 둘 다 편집 상태만 본다.
 
 ### 다른 엔진은 어떻게 하는가
@@ -28,7 +28,7 @@ Unity, Unreal, Godot처럼 쇼케이스를 편집하는 것과 실행하는 것�
 
 우리는 Unity를 따른다: 실행되는 씬은 편집된 씬이고, Stop은 스냅숏에서 그것을 복원한다. 스냅숏은 이미 가진 저장
 형식 (`docs/specs/save.md`)이므로, Stop이 복원하는 것은 자동 저장이 유지하는 것과 정확히 같다. 월드 전체를
-복사하려면 (Unreal) `NvScene` 밖에 사는 애니메이터, 머티리얼, 앱 상태도 복사해야 한다.
+복사하려면 (Unreal) `NvScene` 밖에 사는 애니메이터, 머티리얼, 샌드박스 상태도 복사해야 한다.
 
 해당하는 서드파티 라이브러리는 없다.
 
@@ -54,7 +54,7 @@ Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방�
 |---|---|
 | 조작 | 화면 위쪽 가운데, 두 UI의 상단 바 안의 **Play** / **Stop** 버튼 (`layout.md`; 원래는 패널 탭 위 줄의 시작). 단축키: 데스크톱 UI에서 어떤 필드도 키보드를 잡고 있지 않은 동안 Space (Ctrl+P는 브라우저에서 인쇄한다) |
 | 모드 보이기 | 재생 중에는 패널에 색조가 들고 뷰포트의 빌드 라벨이 "... · Playing"이라고 읽힌다; 안내 ("Playing: edits are lost on Stop.")가 편집이 Stop에서 사라진다고 말한다: 데스크톱 상단 바에서는 Play 버튼 옆에, 폰에서는 패널 맨 위에 (줄바꿈되어), 재생 중에는 탭을 한 줄 아래로 민다 |
-| 테스트 | Debug 빌드는 `Module._app_debug_save_crc()`를 노출한다, 상태가 지금 쓸 저장의 CRC-32; Play 전과 Stop 뒤의 값이 같으면 Stop이 씬을 복원한 것이다 |
+| 테스트 | Debug 빌드는 `Module._sandbox_debug_save_crc()`를 노출한다, 상태가 지금 쓸 저장의 CRC-32; Play 전과 Stop 뒤의 값이 같으면 Stop이 씬을 복원한 것이다 |
 | Play | 스냅숏을 찍는다: 씬의 저장 바이트 (`save_write`). Play 시간은 0에서 시작한다 |
 | Stop | 저장 리더로 스냅숏의 씬 부분 (노드, 캐릭터 설정, 씬 설정)을 복원하므로, 진행 중인 점프, 크로스페이드, 걷기가 씬이 원래대로인 채로 끝난다. 카메라 뷰와 선택은 복원하지 않는다: 씬 내용이 아니다 |
 | 재생 중 편집 | 허용 (기즈모와 Inspector가 동작), Unity처럼 Stop에서 사라진다 |
@@ -67,14 +67,14 @@ Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방�
 
 ### 변경
 
-- **앱 (`app/main.c`).** `App.playing`, `App.play_time`, 스냅숏 버퍼 (`SAVE_MAX_SIZE`). `update_showcase`는 항상 도는
+- **샌드박스 (`sandbox/main.c`).** `Sandbox.playing`, `Sandbox.play_time`, 스냅숏 버퍼 (`SAVE_MAX_SIZE`). `update_showcase`는 항상 도는
   것 (애니메이션 미리보기, 블렌드)과 재생 중에만 도는 것 (회전, 점프, look 타깃 훑기, 루트 모션과 회전)으로
-  나뉜다. `app_play`는 재생 중에만 루트 모션 클립을 고른다. look 타깃은 Edit 모드에서 더 이상 훑지 않으므로 머리
+  나뉜다. `sandbox_play`는 재생 중에만 루트 모션 클립을 고른다. look 타깃은 Edit 모드에서 더 이상 훑지 않으므로 머리
   앞의 시작 위치를 받는다.
-- **저장 (`app/save.c`).** `save_load`에 부분 마스크가 생겨서, Stop이 뷰나 에디터 설정 없이 씬을 복원한다. `CTIM`과
+- **저장 (`sandbox/save.c`).** `save_load`에 부분 마스크가 생겨서, Stop이 뷰나 에디터 설정 없이 씬을 복원한다. `CTIM`과
   공전 각도는 더 이상 쓰지 않는다. `driven_fields`는 공전 카메라만 남긴다.
-- **Undo (`app/undo.c`).** 재생 중 꺼짐; 버튼 비활성.
-- **UI (`app/ui.c`).** Play/Stop 버튼, 색조, 라벨, 사라지는 편집에 관한 줄; Edit 모드에서 Jump 비활성.
+- **Undo (`sandbox/undo.c`).** 재생 중 꺼짐; 버튼 비활성.
+- **UI (`sandbox/ui.c`).** Play/Stop 버튼, 색조, 라벨, 사라지는 편집에 관한 줄; Edit 모드에서 Jump 비활성.
 - **스펙.** 위의 필드에 맞춰 `save.md`와 `undo.md`를 고침.
 
 ### 단계
@@ -102,7 +102,7 @@ Separate editing the showcase from running it, as Unity, Unreal and Godot do.
   follows the target). Pressing Stop puts the scene back exactly as it was when Play was pressed.
 
 Today the showcase always runs while it is edited, so undo and the autosave have to leave out the
-values the app changes every frame, and an edit to something moving (a walking character) cannot
+values the sandbox changes every frame, and an edit to something moving (a walking character) cannot
 be undone. With the modes apart, both only ever see the edit state.
 
 ### How other engines do it
@@ -116,7 +116,7 @@ be undone. With the modes apart, both only ever see the edit state.
 We follow Unity: the running scene is the edited one, and Stop restores it from a snapshot. The
 snapshot is the save format we already have (`docs/specs/save.md`), so what Stop restores is
 exactly what the autosave keeps. Copying the whole world (Unreal) would also have to copy
-animators, materials and app state, which live outside `NvScene`.
+animators, materials and sandbox state, which live outside `NvScene`.
 
 No third-party library applies.
 
@@ -142,7 +142,7 @@ planet from its authored rotation.
 |---|---|
 | Controls | A **Play** / **Stop** button at the top center of the screen, in the top bar of both UIs (`layout.md`; originally at the start of the row above the panel's tabs). Shortcut: Space on the desktop UI, while no field holds the keyboard (Ctrl+P prints in browsers) |
 | Showing the mode | While playing, the panel is tinted and the build label in the viewport reads "... · Playing"; a note ("Playing: edits are lost on Stop.") says edits are lost on Stop: beside the Play button in the desktop top bar, and at the top of the panel on the phone (wrapped), where it pushes the tabs down one line while playing |
-| Tests | Debug builds expose `Module._app_debug_save_crc()`, a CRC-32 of the save the state would write now; equal values before Play and after Stop mean Stop restored the scene |
+| Tests | Debug builds expose `Module._sandbox_debug_save_crc()`, a CRC-32 of the save the state would write now; equal values before Play and after Stop mean Stop restored the scene |
 | Play | Takes a snapshot: the save bytes of the scene (`save_write`). Play time starts at 0 |
 | Stop | Restores the scene part of the snapshot (nodes, character settings, scene settings) with the save reader, so a jump, a crossfade or a walk in progress ends with the scene as it was. The camera view and the selection are not restored: they are not scene content |
 | Edits while playing | Allowed (the gizmo and the Inspector work), and lost on Stop, as in Unity |
@@ -155,16 +155,16 @@ planet from its authored rotation.
 
 ### Changes
 
-- **App (`app/main.c`).** `App.playing`, `App.play_time`, and the snapshot buffer (`SAVE_MAX_SIZE`).
+- **Sandbox (`sandbox/main.c`).** `Sandbox.playing`, `Sandbox.play_time`, and the snapshot buffer (`SAVE_MAX_SIZE`).
   `update_showcase` splits into what always runs (the animation preview, blends) and what only
-  runs while playing (spin, jump, look target sweep, root motion and turning). `app_play` picks the
+  runs while playing (spin, jump, look target sweep, root motion and turning). `sandbox_play` picks the
   root-motion clip only while playing. The look target gets a start position in front of the
   head, since it no longer sweeps in Edit mode.
-- **Save (`app/save.c`).** `save_load` gains a parts mask, so Stop restores the scene without the
+- **Save (`sandbox/save.c`).** `save_load` gains a parts mask, so Stop restores the scene without the
   view or the editor settings. `CTIM` and the orbit angle are no longer written. `driven_fields`
   keeps only the orbit camera.
-- **Undo (`app/undo.c`).** Off while playing; buttons disabled.
-- **UI (`app/ui.c`).** The Play/Stop button, the tint, the label, the line about lost edits; Jump
+- **Undo (`sandbox/undo.c`).** Off while playing; buttons disabled.
+- **UI (`sandbox/ui.c`).** The Play/Stop button, the tint, the label, the line about lost edits; Jump
   disabled in Edit mode.
 - **Specs.** `save.md` and `undo.md` updated for the fields above.
 

@@ -383,7 +383,7 @@ int main(void)
     nv_strings_set_language(nv_strings_browser_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
-    // Shadows (docs/specs/shadows.md) as in the editor app: lighter on touch screens. The distance follows the camera
+    // Shadows (docs/specs/shadows.md) as in the sandbox: lighter on touch screens. The distance follows the camera
     // (view_update).
     game->renderer.shadows = (NvShadowSettings){
         .size = touch ? 1024 : 2048,
@@ -392,7 +392,7 @@ int main(void)
     };
     game->renderer.msaa = 4;
     game->renderer.post = (NvPostSettings){.tone = NV_TONE_PBR_NEUTRAL, .exposure = 1.0f, .bloom = 1, .bloom_intensity = 0.04f};
-    // The scene is drawn at the viewport's own pixels; a phone's GPU is the limit, so at half (as the editor app does).
+    // The scene is drawn at the viewport's own pixels; a phone's GPU is the limit, so at half (as the sandbox does).
     game->speed = 1.0f;
     game->resolution = (NvResolution){.mode = NV_RESOLUTION_SCALE, .divisor = touch ? 2 : 1};
 
