@@ -128,7 +128,7 @@ internal NvMaterialId add_color(Game* game, f32 r, f32 g, f32 b)
 
 // A unit's mesh: a capsule body, and a cone in front for its facing (+Z in the unit's space). The body is as wide as the unit
 // but no wider than it is tall, so a squat unit is a rounded blob.
-internal NvMeshId make_unit_mesh(Game* game, const UnitDef* def)
+internal void set_unit_mesh(Game* game, u32 index, const UnitDef* def)
 {
     NvVertex vertices[NV_MESH_CAPSULE_VERTICES(16, 6) + NV_MESH_CONE_VERTICES(12)];
     u32 indices[NV_MESH_CAPSULE_INDICES(16, 6) + NV_MESH_CONE_INDICES(12)];
@@ -154,10 +154,17 @@ internal NvMeshId make_unit_mesh(Game* game, const UnitDef* def)
         v->normal[2] = ny;
     }
     NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(&game->renderer, &data);
+    // A project loaded again remakes the meshes in the slots it has (nv_renderer_replace_mesh), so loads use up none.
+    if (index < game->unit_meshes_made) {
+        nv_renderer_replace_mesh(&game->renderer, game->unit_meshes[index], &data);
+    } else {
+        game->unit_meshes[index] = nv_renderer_add_mesh(&game->renderer, &data);
+        game->unit_meshes_made = index + 1;
+    }
 }
 
-internal NvMeshId make_plane(Game* game, f32 half_x, f32 half_z)
+// The plane `field` (FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE) at its size and place, its mesh remade in its slot.
+internal void set_plane(Game* game, u32 field, f32 half_x, f32 half_z, NvVec3 position)
 {
     NvVertex vertices[NV_MESH_PLANE_VERTICES];
     u32 indices[NV_MESH_PLANE_INDICES];
@@ -165,28 +172,22 @@ internal NvMeshId make_plane(Game* game, f32 half_x, f32 half_z)
                           .index_capacity = NV_ARRAY_COUNT(indices)};
     nv_mesh_append_plane(&mesh, half_x, half_z);
     NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(&game->renderer, &data);
-}
-
-internal NvNodeId add_plane(Game* game, const char* name, f32 half_x, f32 half_z, NvVec3 position, NvMaterialId material)
-{
-    NvNodeId id = nv_scene_add_node(game->scene, (NvNodeId){0}, name);
-    NvNode* node = nv_scene_get(game->scene, id);
-    node->mesh = make_plane(game, half_x, half_z);
-    node->material = material;
+    NvNode* node = nv_scene_get(game->scene, game->field_nodes[field]);
+    if (node->mesh.index)
+        nv_renderer_replace_mesh(&game->renderer, node->mesh, &data);
+    else
+        node->mesh = nv_renderer_add_mesh(&game->renderer, &data);
     node->position = position;
-    return id;
 }
 
-void view_build(Game* game)
+internal void add_plane_node(Game* game, u32 field, const char* name, NvMaterialId material)
 {
-    NvScene* scene = game->scene;
-    NvNodeId none = {0};
+    game->field_nodes[field] = nv_scene_add_node(game->scene, (NvNodeId){0}, name);
+    nv_scene_get(game->scene, game->field_nodes[field])->material = material;
+}
 
-    game->camera = nv_scene_add_node(scene, none, "camera");
-    nv_scene_get(scene, game->camera)->camera = (NvCamera){
-        .projection = NV_PROJECTION_PERSPECTIVE, .fov_y = 45.0f * NV_PI / 180.0f, .near_z = 0.5f, .far_z = 400.0f};
-    scene->active_camera = game->camera;
+void view_apply_project(Game* game)
+{
     // The field, in meters, from the rules (the project file's `grid` and `cell_size`).
     const BattleRules* rules = &game->defs.rules;
     game->field_width = (f32)rules->grid_width * rules->cell_size;
@@ -200,21 +201,42 @@ void view_build(Game* game)
         .target = {field_width * 0.5f, 0.0f, field_length * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
         .distance = start_distance, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
         .min_distance = CAMERA_MIN_DISTANCE, .max_distance = max_distance};
-    nv_scene_get(scene, game->camera)->camera.far_z = fmaxf(CAMERA_FAR_Z, 2.0f * max_distance);
+    nv_scene_get(game->scene, game->camera)->camera.far_z = fmaxf(CAMERA_FAR_Z, 2.0f * max_distance);
+
+    // The ground, and a tint on each side's deployment zone (a little above it, so the two do not fight over depth).
+    f32 zone_half = (f32)rules->zone_rows * rules->cell_size * 0.5f;
+    set_plane(game, FIELD_GROUND, field_width * 0.5f, field_length * 0.5f, nv_vec3(field_width * 0.5f, 0.0f, field_length * 0.5f));
+    set_plane(game, FIELD_PLAYER_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, zone_half));
+    set_plane(game, FIELD_ENEMY_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, field_length - zone_half));
+
+    for (u32 i = 0; i < game->defs.unit_count; ++i)
+        set_unit_mesh(game, i, &game->defs.units[i]);
+    if (game->selected_def >= game->defs.unit_count)
+        game->selected_def = 0;
+    game->hover_cell_x = game->hover_cell_row = -1;
+    nv_vfx_clear(&game->vfx);
+    game->accumulator = 0.0f;
+}
+
+void view_build(Game* game)
+{
+    NvScene* scene = game->scene;
+    NvNodeId none = {0};
+
+    game->camera = nv_scene_add_node(scene, none, "camera");
+    nv_scene_get(scene, game->camera)->camera = (NvCamera){
+        .projection = NV_PROJECTION_PERSPECTIVE, .fov_y = 45.0f * NV_PI / 180.0f, .near_z = 0.5f, .far_z = 400.0f};
+    scene->active_camera = game->camera;
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
     NvNode* sun_node = nv_scene_get(scene, sun);
     sun_node->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.5f), nv_quat_axis_angle(nv_vec3(1, 0, 0), -0.9f));
     sun_node->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.3f};
 
-    // The ground, and a tint on each side's deployment zone (a little above it, so the two do not fight over depth).
-    f32 zone_half = (f32)rules->zone_rows * rules->cell_size * 0.5f;
-    add_plane(game, "ground", field_width * 0.5f, field_length * 0.5f, nv_vec3(field_width * 0.5f, 0.0f, field_length * 0.5f),
-              add_color(game, 0.07f, 0.08f, 0.09f));
-    add_plane(game, "player zone", field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, zone_half),
-              add_color(game, 0.04f, 0.09f, 0.2f));
-    add_plane(game, "enemy zone", field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, field_length - zone_half),
-              add_color(game, 0.2f, 0.06f, 0.05f));
+    // The field's planes; their size comes with the project (view_apply_project).
+    add_plane_node(game, FIELD_GROUND, "ground", add_color(game, 0.07f, 0.08f, 0.09f));
+    add_plane_node(game, FIELD_PLAYER_ZONE, "player zone", add_color(game, 0.04f, 0.09f, 0.2f));
+    add_plane_node(game, FIELD_ENEMY_ZONE, "enemy zone", add_color(game, 0.2f, 0.06f, 0.05f));
 
     game->team_materials[TEAM_PLAYER] = add_color(game, 0.1f, 0.35f, 1.0f);
     game->team_materials[TEAM_ENEMY] = add_color(game, 1.0f, 0.18f, 0.12f);
@@ -226,8 +248,6 @@ void view_build(Game* game)
     nv_mesh_append_sphere(&mesh, nv_vec3(0.0f, 0.0f, 0.0f), 0.15f, 8, 6);
     NvMeshData data = nv_mesh_builder_data(&mesh);
     game->shell_mesh = nv_renderer_add_mesh(&game->renderer, &data);
-    for (u32 i = 0; i < game->defs.unit_count; ++i)
-        game->unit_meshes[i] = make_unit_mesh(game, &game->defs.units[i]);
 
     make_effects(game);
     game->hover_cell_x = game->hover_cell_row = -1;
@@ -497,6 +517,27 @@ void view_panel(Game* game)
         igSetNextItemWidth(igGetFontSize() * 8.0f);
         if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
             nv_strings_set_language((NvLanguage)language);
+
+        // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
+        // (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
+        igSeparator();
+        igTextWrapped(T("Project: %s"), game->project_name);
+        const char* labels[4] = {TL("Open..."), TL("Reload"), TL("Save"), TL("Save as...")};
+        for (u32 i = 0; i < NV_ARRAY_COUNT(labels); ++i) {
+            if (i)
+                igSameLine(0.0f, -1.0f);
+            igBeginDisabled(!game_project_action_allowed(game, (ProjectAction)i));
+            if (igButton(labels[i], (ImVec2_c){0, 0}))
+                game_project_action(game, (ProjectAction)i);
+            igEndDisabled();
+        }
+        if (game->project_message[0]) {
+            if (game->project_message_bad)
+                igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
+            igTextWrapped("%s", game->project_message);
+            if (game->project_message_bad)
+                igPopStyleColor(1);
+        }
 
         if (!game->defs_ok) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});

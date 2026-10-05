@@ -9,6 +9,7 @@
 #include <emscripten/emscripten.h>
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -42,24 +43,142 @@ global const BattleRules fallback_rules = {
     .cell_size = 2.0f, .grid_width = 32, .grid_length = 48, .zone_rows = 14, .round_ticks = 1800, .retarget_ticks = 8,
     .gravity = 9.8f, .stop_fraction = 0.9f, .min_damage_fraction = 0.25f};
 
-// Reads data/default.abproj; on any failure `defs.first_error` says what, for the panel.
-internal b32 load_defs(Game* game)
+internal void set_message(Game* game, b32 bad, const char* format, ...) __attribute__((format(printf, 3, 4)));
+
+internal void set_message(Game* game, b32 bad, const char* format, ...)
 {
-    BattleDefs* defs = &game->defs;
+    va_list arguments;
+    va_start(arguments, format);
+    vsnprintf(game->project_message, sizeof(game->project_message), format, arguments);
+    va_end(arguments);
+    nv_utf8_trim(game->project_message);
+    game->project_message_bad = bad;
+}
+
+b32 game_load_project(Game* game, const char* name, const char* text, umm size)
+{
     umm mark = game->scratch.used;
-    NvFileData project = nv_file_read(&game->scratch, "/data/default.abproj");
+    BattleDefs* next = NV_PUSH_STRUCT(&game->scratch, BattleDefs);
     b32 ok = false;
-    if (!project.ok) {
-        snprintf(defs->first_error, sizeof(defs->first_error), "default.abproj: cannot read the file");
-        ++defs->error_count;
-        nv_log(NV_LOG_ERROR, "battle", "%s", defs->first_error);
+    if (size > PROJECT_MAX_SIZE) {
+        snprintf(next->first_error, sizeof(next->first_error), "%s: larger than %u KB", name, (u32)(PROJECT_MAX_SIZE / 1024));
+        nv_utf8_trim(next->first_error);
+        next->error_count = 1;
+        nv_log(NV_LOG_ERROR, "battle", "%s", next->first_error);
     } else {
-        ok = defs_read_project(defs, "default.abproj", (const char*)project.bytes, project.size);
+        ok = defs_read_project(next, name, text, size);
+    }
+
+    if (ok) {
+        game->defs = *next;
+        game->defs_ok = true;
+        memcpy(game->project_text, text, size);
+        game->project_size = size;
+        snprintf(game->project_name, sizeof(game->project_name), "%s", name);
+        nv_utf8_trim(game->project_name);
+        ++game->project_loads;
+        battle_init(&game->battle, &game->defs);
+        view_apply_project(game);
+    } else if (!game->defs_ok) {
+        // Nothing good to keep: the panel shows this one's errors over an empty field.
+        game->defs = *next;
+        game->defs.rules = fallback_rules;
+        game->project_size = 0;
+        snprintf(game->project_name, sizeof(game->project_name), "%s", name);
+        nv_utf8_trim(game->project_name);
+        view_apply_project(game);
+    } else {
+        set_message(game, true, T("%s has %u error(s), so the project in use stays. The first: %s"), name, next->error_count,
+                    next->first_error);
     }
     game->scratch.used = mark;
-    if (!ok)
-        defs->rules = fallback_rules;
     return ok;
+}
+
+b32 game_project_action_allowed(const Game* game, ProjectAction action)
+{
+    if (game->local_file.status == NV_LOCAL_FILE_BUSY)
+        return false;
+    switch (action) {
+    case PROJECT_OPEN: return true;
+    case PROJECT_RELOAD: return game->local_file.kept;
+    // In place only to the project's own file: after a bad file was opened the browser keeps that one instead.
+    case PROJECT_SAVE: return game->project_size && game->kept_is_project && game->local_file.kept;
+    case PROJECT_SAVE_AS: return game->project_size > 0;
+    }
+    return false;
+}
+
+b32 game_project_action(Game* game, ProjectAction action)
+{
+    if (!game_project_action_allowed(game, action))
+        return false;
+    switch (action) {
+    case PROJECT_OPEN: return nv_local_file_open(PROJECT_EXTENSION);
+    case PROJECT_RELOAD: return nv_local_file_reload();
+    case PROJECT_SAVE: return nv_local_file_save(game->project_name, game->project_text, game->project_size, false);
+    case PROJECT_SAVE_AS: return nv_local_file_save(game->project_name, game->project_text, game->project_size, true);
+    }
+    return false;
+}
+
+// The project packed with the game; on any failure `defs.first_error` says what, for the panel.
+internal void load_built_in_project(Game* game)
+{
+    umm mark = game->scratch.used;
+    NvFileData project = nv_file_read(&game->scratch, "/data/" PROJECT_BUILT_IN);
+    if (project.ok) {
+        game_load_project(game, PROJECT_BUILT_IN, (const char*)project.bytes, project.size);
+    } else {
+        BattleDefs* defs = &game->defs;
+        snprintf(defs->first_error, sizeof(defs->first_error), PROJECT_BUILT_IN ": cannot read the file");
+        ++defs->error_count;
+        nv_log(NV_LOG_ERROR, "battle", "%s", defs->first_error);
+        defs->rules = fallback_rules;
+        snprintf(game->project_name, sizeof(game->project_name), PROJECT_BUILT_IN);
+        view_apply_project(game);
+    }
+    game->scratch.used = mark;
+}
+
+// What the browser's file dialogs came back with (docs/specs/local_files.md): a file read is loaded as the project.
+internal void poll_local_file(Game* game)
+{
+    NvLocalFile* file = &game->local_file;
+    nv_local_file_poll(file);
+    switch (file->status) {
+    case NV_LOCAL_FILE_READ: {
+        umm mark = game->scratch.used;
+        NvFileData data = nv_local_file_take(&game->scratch, PROJECT_MAX_SIZE);
+        if (!data.ok) {
+            set_message(game, true, T("%s is larger than %u KB"), file->name, (u32)(PROJECT_MAX_SIZE / 1024));
+            game->kept_is_project = false;
+        } else if (game_load_project(game, file->name, (const char*)data.bytes, data.size)) {
+            set_message(game, false, T("Opened %s"), file->name);
+            game->kept_is_project = file->kept;
+        } else {
+            game->kept_is_project = false; // the browser now keeps the bad file: Reload reads it again, Save must not write it
+            if (!game->defs_ok)
+                set_message(game, true, T("%s has %u error(s)"), file->name, game->defs.error_count);
+        }
+        game->scratch.used = mark;
+    } break;
+    case NV_LOCAL_FILE_WRITTEN:
+        if (file->kept) {
+            snprintf(game->project_name, sizeof(game->project_name), "%s", file->name);
+            nv_utf8_trim(game->project_name);
+            game->kept_is_project = true;
+        }
+        set_message(game, false, T("Saved %s"), file->name);
+        break;
+    case NV_LOCAL_FILE_FAILED:
+        set_message(game, true, T("The file could not be opened or saved: %s"), file->error);
+        break;
+    case NV_LOCAL_FILE_IDLE:
+    case NV_LOCAL_FILE_BUSY:
+    case NV_LOCAL_FILE_CANCELED:
+        break;
+    }
 }
 
 internal void frame(void* userdata)
@@ -79,6 +198,7 @@ internal void frame(void* userdata)
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
+    poll_local_file(game);
     view_draw_build_label(game);
     view_panel(game);
     view_input(game);
@@ -131,7 +251,9 @@ internal void frame(void* userdata)
 #if !defined(NDEBUG)
 // For tests (Debug builds). Module._battle_debug(n): 0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive,
 // 5 the state's hash, 6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the game clock's speed
-// in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters.
+// in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
+// in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
+// local file's status (NvLocalFileStatus, as last polled).
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -150,6 +272,10 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 11: return game->paused ? 0 : (int)(game->speed * 100.0f + 0.5f);
     case 12: return (int)game->renderer.shadow_size;
     case 13: return (int)(game->renderer.shadows.distance + 0.5f);
+    case 14: return (int)game->project_loads;
+    case 15: return game->kept_is_project && game->local_file.kept;
+    case 16: return (int)game->defs.rules.grid_width;
+    case 17: return (int)game->local_file.status;
     default: return (int)game->selected_def;
     }
 }
@@ -167,6 +293,25 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_step(int direction)
 {
     game_state.step = direction > 0 ? 1 : -1;
     game_state.paused = true;
+}
+
+// Loads `text` as a project named `name`, as a local file opened in the panel would be; 1 when it was good.
+EMSCRIPTEN_KEEPALIVE int battle_debug_load(const char* name, const char* text)
+{
+    return game_load_project(&game_state, name, text, strlen(text));
+}
+
+// Presses a project button of the panel (ProjectAction: 0 Open..., 1 Reload, 2 Save, 3 Save as...); 1 when it started, 0 when
+// the button is disabled.
+EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
+{
+    return game_project_action(&game_state, (ProjectAction)action);
+}
+
+// The panel's project message, for tests.
+EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_message(void)
+{
+    return game_state.project_message;
 }
 
 // Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
@@ -251,10 +396,9 @@ int main(void)
     game->speed = 1.0f;
     game->resolution = (NvResolution){.mode = NV_RESOLUTION_SCALE, .divisor = touch ? 2 : 1};
 
-    game->defs_ok = load_defs(game);
+    game->project_text = NV_PUSH_ARRAY(&game->permanent, PROJECT_MAX_SIZE, char);
     view_build(game);
-    if (game->defs_ok)
-        battle_init(&game->battle, &game->defs);
+    load_built_in_project(game);
     game->last_time = nv_time_seconds();
     nv_window_run(&game->window, frame, game);
     return 0;

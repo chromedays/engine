@@ -7,6 +7,7 @@
 
 #include <engine/camera.h>
 #include <engine/imgui.h>
+#include <engine/local_file.h>
 #include <engine/log.h>
 #include <engine/renderer.h>
 #include <engine/strings.h>
@@ -31,6 +32,17 @@
 #define CAMERA_START_DISTANCE   104.0f
 #define CAMERA_REFERENCE_LENGTH 96.0f
 #define CAMERA_FAR_Z            400.0f
+
+// The project file (docs/specs/abproj.md, "Loading and saving"): the one packed with the game, and the most a local one may be.
+#define PROJECT_BUILT_IN  "default.abproj"
+#define PROJECT_EXTENSION ".abproj"
+#define PROJECT_MAX_SIZE  NV_KILOBYTES(256)
+
+// What the panel's project buttons do (game_project_action).
+typedef enum ProjectAction { PROJECT_OPEN, PROJECT_RELOAD, PROJECT_SAVE, PROJECT_SAVE_AS } ProjectAction;
+
+// The field's planes.
+enum { FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE, FIELD_PLANE_COUNT };
 
 typedef struct Layout {
     NvRect viewport; // framebuffer pixels: where the field is drawn and the camera and taps are read
@@ -61,6 +73,16 @@ typedef struct Game {
     BattleDefs defs;
     b32 defs_ok;
     f32 field_width, field_length; // meters, from the rules
+
+    // The project the defs were read from. Its text is kept as it was, so Save writes it back with its comments.
+    char* project_text; // PROJECT_MAX_SIZE bytes of permanent memory
+    umm project_size;   // 0 while no good project is in place
+    char project_name[128];
+    b32 kept_is_project; // the local file the browser keeps (NvLocalFile.kept) is this project's, so Save may write it
+    NvLocalFile local_file;
+    char project_message[320]; // what the last open, reload or save did
+    b32 project_message_bad;
+    u32 project_loads;          // projects put in place, the packed one included
     Battle battle;
     f32 accumulator; // seconds of game time not yet run as ticks
     f32 speed;       // game time per real second: 0.5, 1, 2 or 4 (docs/specs/battle.md, "Time controls")
@@ -72,6 +94,8 @@ typedef struct Game {
     // The view (battle_view.c)
     Effects effects;
     NvMeshId unit_meshes[BATTLE_MAX_UNIT_DEFS];
+    u32 unit_meshes_made;
+    NvNodeId field_nodes[FIELD_PLANE_COUNT];
     NvMaterialId team_materials[2];
     NvMeshId shell_mesh;
     NvMaterialId shell_material;
@@ -85,9 +109,16 @@ typedef struct Game {
 
 // main.c
 void game_layout(Game* game);
+// Reads `text` as a project. A good one is put in place (the battle back in deployment, the view remade for it) and its text
+// kept; a bad one is reported in the panel and changes nothing, unless no good project is in place yet. True when it was good.
+b32 game_load_project(Game* game, const char* name, const char* text, umm size);
+// Whether a project button can be pressed now, and pressing it (it starts a dialog, read or write; false when it cannot).
+b32 game_project_action_allowed(const Game* game, ProjectAction action);
+b32 game_project_action(Game* game, ProjectAction action);
 
 // battle_view.c
-void view_build(Game* game); // meshes, materials, the field, the camera and the effects, once
+void view_build(Game* game); // materials, the shell mesh, the field's nodes, the camera and the effects, once
+void view_apply_project(Game* game); // the field, the unit meshes and the camera for the project in place
 void view_input(Game* game); // the camera from drags and the wheel; taps place and remove units
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
