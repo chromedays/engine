@@ -97,8 +97,8 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
     } NvFileData;
     NvFileData nv_file_read(NvArena* arena, const char* path);
 
-    NvFileData units = nv_file_read(arena, "/data/units.txt");
-    if (!units.ok)
+    NvFileData project = nv_file_read(arena, "/data/default.abproj");
+    if (!project.ok)
         ...
     ```
   - 실패는 아니어도 입력에 따라 결과가 없을 수 있는 함수도 같다: 이미지 밖을 누른 탭(`NvTapRay`), 맞지 않는
@@ -107,7 +107,7 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   - 찾는 것이 없을 수 있는 조회는 결과 하나를 돌려주고, 없으면 그 타입의 "없음"을 돌려준다: 핸들은 0, 포인터는
     NULL, 배열 안의 위치는 -1(`nv_anim_find_joint`).
   - 함수가 다루는 대상은 결과가 아니다: 함수가 설정하거나 바꾸는 객체(`nv_gpu_create`의 `gpu`,
-    `defs_read_units`의 `defs`), 호출 사이에 이어지는 커서(`nv_chunk_next`의 `child`), 값이 있을 때만 덮어쓰는
+    `defs_read_project`의 `defs`), 호출 사이에 이어지는 커서(`nv_chunk_next`의 `child`), 값이 있을 때만 덮어쓰는
     자리(`nv_chunk_read_u32s`의 `out`), 호출자가 크기와 함께 넘기는 채울 버퍼(`char* out, umm capacity`).
   - JavaScript 함수(`EM_JS`)는 숫자만 주고받으므로 포인터 매개변수를 쓴다. 그것을 감싸는 C 함수가 규칙을 따른다.
 
@@ -232,8 +232,8 @@ The table sets the shape of names. What a name has to say:
     } NvFileData;
     NvFileData nv_file_read(NvArena* arena, const char* path);
 
-    NvFileData units = nv_file_read(arena, "/data/units.txt");
-    if (!units.ok)
+    NvFileData project = nv_file_read(arena, "/data/default.abproj");
+    if (!project.ok)
         ...
     ```
   - The same holds for a function that may have no result for its input without anything failing: a tap outside the
@@ -242,7 +242,7 @@ The table sets the shape of names. What a name has to say:
   - A lookup that may find nothing returns its one result, or that type's "none" when there is nothing: 0 for a handle,
     NULL for a pointer, -1 for a position in an array (`nv_anim_find_joint`).
   - What a function works on is not a result: the object it sets up or changes (`gpu` of `nv_gpu_create`, `defs` of
-    `defs_read_units`), a cursor carried from call to call (`child` of `nv_chunk_next`), a place it overwrites only when
+    `defs_read_project`), a cursor carried from call to call (`child` of `nv_chunk_next`), a place it overwrites only when
     there is a value (`out` of `nv_chunk_read_u32s`), and a buffer the caller hands in to be filled, with its size
     (`char* out, umm capacity`).
   - JavaScript functions (`EM_JS`) pass only numbers, so they use pointer parameters; the C function around one follows

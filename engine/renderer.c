@@ -606,6 +606,25 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
     return (NvMeshId){renderer->mesh_count++};
 }
 
+void nv_renderer_replace_mesh(NvRenderer* renderer, NvMeshId id, const NvMeshData* data)
+{
+    NV_ASSERT(id.index > 0 && id.index < renderer->mesh_count);
+    NV_ASSERT(data->vertices && !data->skinned_vertices);
+    NvRenderMesh* mesh = &renderer->meshes[id.index];
+    NV_ASSERT(!mesh->skinned);
+    // Commands already submitted keep the old buffers alive until they finish; releasing only drops our reference.
+    wgpuBufferRelease(mesh->vertices);
+    wgpuBufferRelease(mesh->indices);
+    mesh->vertices = create_buffer(renderer->gpu, WGPUBufferUsage_Vertex, data->vertices, data->vertex_count * sizeof(NvVertex));
+    mesh->indices = create_buffer(renderer->gpu, WGPUBufferUsage_Index, data->indices, data->index_count * sizeof(u32));
+    mesh->index_count = data->index_count;
+    mesh->bounds = nv_box_empty();
+    for (u32 v = 0; v < data->vertex_count; ++v) {
+        const f32* p = data->vertices[v].position;
+        mesh->bounds = nv_box_add_point(mesh->bounds, nv_vec3(p[0], p[1], p[2]));
+    }
+}
+
 NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 width, u32 height, const u8* rgba,
                                     b32 srgb, NvArena* scratch)
 {

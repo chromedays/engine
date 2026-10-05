@@ -15,14 +15,15 @@ permissions:
   pages: write
   id-token: write
 
-# One deploy at a time; a deploy always takes the newest gh-pages, so a skipped one loses nothing.
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
 jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    # One deploy at a time; a deploy always takes the newest gh-pages, so a cancelled one loses nothing. The group is the
+    # job's, not the workflow's: a run whose job is skipped (a pull request's build) must not cancel a deploy under way, as a
+    # workflow-level group did when a branch's push and its pull request finished together.
+    concurrency:
+      group: pages
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     environment:
       name: github-pages

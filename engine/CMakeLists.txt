@@ -6,6 +6,7 @@ add_library(nv STATIC
     gltf.c
     gpu.c
     imgui.c
+    local_file.c
     log.c
     mesh.c
     renderer.c

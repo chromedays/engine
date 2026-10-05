@@ -1,6 +1,6 @@
-// Reads the definition files (docs/specs/battle.md, "Definition files"): the line-based text of data/units.txt and
-// data/stage.txt. It takes text in memory, so tests can try strings, and it uses no GPU or ImGui. A bad line never stops
-// the read: every error is reported (nv_log, with the file name and line) and the read fails at the end.
+// Reads the project file (docs/specs/abproj.md): the line-based text of data/default.abproj, with its rules, units and
+// stage. It takes text in memory, so tests can try strings, and it uses no GPU or ImGui. A bad line never stops the read:
+// every error is reported (nv_log, with the file name and line) and the read fails at the end.
 
 #include "battle.h"
 
@@ -197,6 +197,8 @@ typedef enum FieldKind {
     FIELD_NUMBER,  // f32
     FIELD_ANGLE,   // f32, degrees in the file and radians when read
     FIELD_VECTOR,  // three f32
+    FIELD_TICKS,   // u32, seconds in the file and whole ticks when read
+    FIELD_GRID,    // two integers, the width and the length, into a BattleRules (their own ranges)
 } FieldKind;
 
 typedef struct Field {
@@ -236,6 +238,22 @@ global const Field shield_fields[] = {
     {"regen_delay", FIELD_NUMBER, offsetof(AbilityDef, shield.regen_delay), 0, NO_LIMIT, false, false, true},
 };
 
+global const Field rules_fields[] = {
+    {"cell_size", FIELD_NUMBER, offsetof(BattleRules, cell_size), 0, 10, true, false, true},
+    {"grid", FIELD_GRID, 0, 0, 0, false, false, true},
+    {"zone_rows", FIELD_INTEGER, offsetof(BattleRules, zone_rows), 1, BATTLE_MAX_ZONE_ROWS, false, false, true},
+    {"round_time", FIELD_TICKS, offsetof(BattleRules, round_ticks), 0, 600, true, false, true},
+    {"gravity", FIELD_NUMBER, offsetof(BattleRules, gravity), 0, 100, true, false, true},
+    {"retarget_interval", FIELD_TICKS, offsetof(BattleRules, retarget_ticks), 0, 10, true, false, true},
+    {"stop_fraction", FIELD_NUMBER, offsetof(BattleRules, stop_fraction), 0, 1, true, false, true},
+    {"min_damage_fraction", FIELD_NUMBER, offsetof(BattleRules, min_damage_fraction), 0, 1, false, false, true},
+};
+
+global const Field stage_fields[] = {
+    {"supply", FIELD_INTEGER, offsetof(BattleDefs, supply), 1, 100000, false, false, true},
+    {"seed", FIELD_INTEGER, offsetof(BattleDefs, seed), 0, 4294967295.0, false, false, false},
+};
+
 #define FIELD_COUNT(fields) ((u32)NV_ARRAY_COUNT(fields))
 
 internal const Field* find_field(const Field* fields, u32 count, Token key)
@@ -258,9 +276,9 @@ internal void report_range(Reader* reader, u32 line, const Field* field)
     char text[64] = "";
     u32 used = 0;
     if (field->min > -NO_LIMIT)
-        used += (u32)snprintf(text + used, sizeof(text) - used, "%s %g", field->min_open ? ">" : ">=", field->min);
+        used += (u32)snprintf(text + used, sizeof(text) - used, "%s %.10g", field->min_open ? ">" : ">=", field->min);
     if (field->max < NO_LIMIT)
-        used += (u32)snprintf(text + used, sizeof(text) - used, "%s%s %g", used ? " and " : "", field->max_open ? "<" : "<=", field->max);
+        used += (u32)snprintf(text + used, sizeof(text) - used, "%s%s %.10g", used ? " and " : "", field->max_open ? "<" : "<=", field->max);
     report(reader, line, "'%s' must be %s", field->key, text);
 }
 
@@ -272,22 +290,33 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
         return;
     }
     *seen |= 1u << index; // a bad value is not "missing" on top of that
-    u32 values = field->kind == FIELD_VECTOR ? 3 : 1;
+    u32 values = field->kind == FIELD_VECTOR ? 3 : field->kind == FIELD_GRID ? 2 : 1;
     if (line->token_count != 1 + values) {
         report(reader, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
         return;
     }
     f64 numbers[3];
     for (u32 i = 0; i < values; ++i) {
-        Number number = parse_number(reader, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER);
+        Number number = parse_number(reader, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER || field->kind == FIELD_GRID);
         if (!number.ok)
             return;
         numbers[i] = number.value;
     }
-    for (u32 i = 0; i < values; ++i) {
-        if (!in_range(field, numbers[i])) {
-            report_range(reader, line->number, field);
+    if (field->kind == FIELD_GRID) {
+        if (numbers[0] < 1 || numbers[0] > BATTLE_MAX_GRID_WIDTH) {
+            report(reader, line->number, "'grid' width must be 1 to %d", BATTLE_MAX_GRID_WIDTH);
             return;
+        }
+        if (numbers[1] < 2 || numbers[1] > BATTLE_MAX_GRID_LENGTH) {
+            report(reader, line->number, "'grid' length must be 2 to %d", BATTLE_MAX_GRID_LENGTH);
+            return;
+        }
+    } else {
+        for (u32 i = 0; i < values; ++i) {
+            if (!in_range(field, numbers[i])) {
+                report_range(reader, line->number, field);
+                return;
+            }
         }
     }
     u8* destination = (u8*)base + field->offset;
@@ -307,6 +336,15 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
     case FIELD_VECTOR: {
         f32 value[3] = {(f32)numbers[0], (f32)numbers[1], (f32)numbers[2]};
         memcpy(destination, value, sizeof(value));
+    } break;
+    case FIELD_TICKS: {
+        u32 value = battle_seconds_to_ticks((f32)numbers[0]);
+        memcpy(destination, &value, sizeof(value));
+    } break;
+    case FIELD_GRID: {
+        BattleRules* rules = base;
+        rules->grid_width = (u32)numbers[0];
+        rules->grid_length = (u32)numbers[1];
     } break;
     }
 }
@@ -349,9 +387,9 @@ internal LineText next_line(Lines* lines)
     return (LineText){.ok = true, .begin = begin, .end = p};
 }
 
-// units.txt
+// The project file
 
-typedef enum BlockKind { BLOCK_ROOT, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_SKIP } BlockKind;
+typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
 enum { SEEN_WEAPON = 1 << 8, SEEN_ABILITY = 1 << 9 }; // beyond the unit's own fields in Block.seen
 
@@ -364,35 +402,71 @@ typedef struct Block {
     u32 seen;
 } Block;
 
-typedef struct UnitsReader {
+// The last top-level statement that was in its place; they come in this order (docs/specs/abproj.md, "Syntax").
+typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_UNIT, TOP_STAGE } Top;
+
+typedef struct ProjectReader {
     Reader base;
-    Block stack[3]; // root, unit, weapon or ability
+    Block stack[3]; // root, then rules, unit or stage, then a unit's weapon or ability
     u32 depth;
+    Top last;
+    b32 first_statement; // the next top-level statement is the file's first
+    b32 stop;            // nothing more can be read (a newer format)
+
     UnitDef unit;   // the unit being read
     b32 unit_named; // its name is a good one, so what it lacks can be reported by name
     b32 unit_kept;  // there was room for it
-} UnitsReader;
 
-internal void close_block(UnitsReader* reader)
+    u32 rules_errors_start, zone_rows_line;
+    b32 rules_ok;   // the rules block was read without an error, so the grid is known
+    u32 stage_errors_start, places_seen; // `place` lines, also those that could not be judged against a wrong grid
+    u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells with a unit, by row in the zone
+    u32 place_lines[BATTLE_MAX_PLACES];                   // the line of each enemy place
+} ProjectReader;
+
+internal void close_block(ProjectReader* reader)
 {
+    Reader* base = &reader->base;
+    BattleDefs* defs = base->defs;
     Block* block = &reader->stack[--reader->depth];
     switch (block->kind) {
+    case BLOCK_RULES: {
+        check_required(base, rules_fields, FIELD_COUNT(rules_fields), block->seen, block->header_line, "block", "rules");
+        const BattleRules* rules = &defs->rules;
+        if (rules->grid_length && rules->zone_rows && rules->zone_rows * 2 > rules->grid_length)
+            report(base, reader->zone_rows_line, "'zone_rows' must be at most %u (half the grid's length)", rules->grid_length / 2);
+        reader->rules_ok = base->errors == reader->rules_errors_start;
+    } break;
     case BLOCK_UNIT:
         if (reader->unit_named) {
-            check_required(&reader->base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
+            check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
             if (!(block->seen & SEEN_WEAPON))
-                report(&reader->base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
+                report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
         }
-        if (reader->unit_kept) {
-            BattleDefs* defs = reader->base.defs;
+        if (reader->unit_kept)
             defs->units[defs->unit_count++] = reader->unit;
-        }
         break;
     case BLOCK_WEAPON:
-        check_required(&reader->base, weapon_fields, FIELD_COUNT(weapon_fields), block->seen, block->header_line, "weapon", reader->unit.weapon.name);
+        check_required(base, weapon_fields, FIELD_COUNT(weapon_fields), block->seen, block->header_line, "weapon", reader->unit.weapon.name);
         break;
     case BLOCK_SHIELD:
-        check_required(&reader->base, shield_fields, FIELD_COUNT(shield_fields), block->seen, block->header_line, "ability", "shield");
+        check_required(base, shield_fields, FIELD_COUNT(shield_fields), block->seen, block->header_line, "ability", "shield");
+        break;
+    case BLOCK_STAGE:
+        check_required(base, stage_fields, FIELD_COUNT(stage_fields), block->seen, block->header_line, "block", "stage");
+        if (reader->places_seen == 0 && base->errors == reader->stage_errors_start)
+            report(base, block->header_line, "'stage' has no 'place' lines");
+        if (defs->supply) {
+            // The first place that takes the total over the supply is the one reported.
+            u32 total = 0;
+            for (u32 i = 0; i < defs->enemy_count; ++i) {
+                total += defs->units[defs->enemy[i].def].cost;
+                if (total > defs->supply) {
+                    report(base, reader->place_lines[i], "the total cost is over the supply (%u)", defs->supply);
+                    break;
+                }
+            }
+        }
         break;
     case BLOCK_ROOT:
     case BLOCK_SKIP:
@@ -400,13 +474,39 @@ internal void close_block(UnitsReader* reader)
     }
 }
 
-internal void open_block(UnitsReader* reader, BlockKind kind, const Line* line)
+internal void open_block(ProjectReader* reader, BlockKind kind, const Line* line)
 {
     NV_ASSERT(reader->depth < NV_ARRAY_COUNT(reader->stack));
     reader->stack[reader->depth++] = (Block){.kind = kind, .header_indent = (s32)line->indent, .child_indent = -1, .header_line = line->number};
 }
 
-internal void read_unit_header(UnitsReader* reader, const Line* line)
+// Top-level statements
+
+internal void read_version(ProjectReader* reader, const Line* line)
+{
+    Reader* base = &reader->base;
+    if (reader->last != TOP_NONE) {
+        report(base, line->number, "'abproj_version' must be the first statement");
+        return;
+    }
+    reader->last = TOP_VERSION;
+    if (line->token_count != 2) {
+        report(base, line->number, "'abproj_version' takes one integer");
+        return;
+    }
+    Number number = parse_number(base, line->number, line->tokens[1], true);
+    if (!number.ok)
+        return;
+    if (number.value < 1) {
+        report(base, line->number, "'abproj_version' must be 1 to %d", ABPROJ_VERSION);
+    } else if (number.value > ABPROJ_VERSION) {
+        // A newer format may mean anything by what follows, so the rest is not read.
+        report(base, line->number, "format %.0f is newer than this build reads (%d)", number.value, ABPROJ_VERSION);
+        reader->stop = true;
+    }
+}
+
+internal void read_unit_header(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
@@ -434,7 +534,64 @@ internal void read_unit_header(UnitsReader* reader, const Line* line)
     reader->unit_kept = true;
 }
 
-internal void read_unit_line(UnitsReader* reader, const Line* line, Block* block)
+// A statement at the left edge. Each is allowed in one place only; one out of place is reported and its block skipped, so
+// that a swap of two blocks is one error and not the errors of everything that depends on them.
+internal void read_top_line(ProjectReader* reader, const Line* line)
+{
+    Reader* base = &reader->base;
+    Token key = line->tokens[0];
+    if (reader->first_statement) {
+        reader->first_statement = false;
+        if (!token_is(key, "abproj_version")) {
+            report(base, line->number, "the file must start with 'abproj_version <version>'");
+            reader->last = TOP_VERSION; // read on as if it had, so a missing line is one error
+        }
+    }
+
+    if (token_is(key, "abproj_version")) {
+        read_version(reader, line);
+    } else if (token_is(key, "rules")) {
+        if (reader->last == TOP_VERSION) {
+            if (line->token_count != 1)
+                report(base, line->number, "'rules' takes no value");
+            reader->last = TOP_RULES;
+            reader->rules_errors_start = base->errors;
+            open_block(reader, BLOCK_RULES, line);
+        } else {
+            report(base, line->number, "'rules' is given twice");
+            open_block(reader, BLOCK_SKIP, line);
+        }
+    } else if (token_is(key, "unit")) {
+        if (reader->last == TOP_RULES || reader->last == TOP_UNIT) {
+            reader->last = TOP_UNIT;
+            read_unit_header(reader, line);
+        } else {
+            report(base, line->number, reader->last == TOP_STAGE ? "'unit' must come before 'stage'" : "'unit' must come after 'rules'");
+            open_block(reader, BLOCK_SKIP, line);
+        }
+    } else if (token_is(key, "stage")) {
+        if (reader->last == TOP_UNIT) {
+            if (line->token_count != 1)
+                report(base, line->number, "'stage' takes no value");
+            reader->last = TOP_STAGE;
+            reader->stage_errors_start = base->errors;
+            base->defs->seed = 1;
+            open_block(reader, BLOCK_STAGE, line);
+        } else {
+            report(base, line->number, reader->last == TOP_STAGE   ? "'stage' is given twice"
+                                       : reader->last == TOP_RULES ? "'stage' must come after the units"
+                                                                   : "'stage' must come after 'rules' and the units");
+            open_block(reader, BLOCK_SKIP, line);
+        }
+    } else {
+        report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+        open_block(reader, BLOCK_SKIP, line);
+    }
+}
+
+// Lines inside blocks
+
+internal void read_unit_line(ProjectReader* reader, const Line* line, Block* block)
 {
     Reader* base = &reader->base;
     Token key = line->tokens[0];
@@ -469,7 +626,67 @@ internal void read_unit_line(UnitsReader* reader, const Line* line, Block* block
         read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
 }
 
-internal void read_units_line(UnitsReader* reader, const Line* line)
+typedef struct UnitIndex {
+    b32 ok;
+    u32 index; // into BattleDefs.units
+} UnitIndex;
+
+// Fails when no unit has that name.
+internal UnitIndex find_unit(const BattleDefs* defs, Token name)
+{
+    for (u32 i = 0; i < defs->unit_count; ++i)
+        if (token_is(name, defs->units[i].name))
+            return (UnitIndex){.ok = true, .index = i};
+    return (UnitIndex){0};
+}
+
+internal void read_place(ProjectReader* reader, const Line* line)
+{
+    Reader* base = &reader->base;
+    BattleDefs* defs = base->defs;
+    const BattleRules* rules = &defs->rules;
+    if (line->token_count != 4) {
+        report(base, line->number, "'place' takes a unit name, a cell x and a cell row");
+        return;
+    }
+    ++reader->places_seen;
+    b32 ok = true;
+    UnitIndex unit = find_unit(defs, line->tokens[1]);
+    if (!unit.ok) {
+        report(base, line->number, "unknown unit '%.*s'", shown(line->tokens[1]), line->tokens[1].text);
+        ok = false;
+    }
+    Number x_number = parse_number(base, line->number, line->tokens[2], true);
+    if (!x_number.ok)
+        return;
+    Number row_number = parse_number(base, line->number, line->tokens[3], true);
+    if (!row_number.ok)
+        return;
+    if (!reader->rules_ok)
+        return; // the grid is not known, so a cell cannot be judged (and no cell is reported against a wrong grid)
+    f64 x = x_number.value, row = row_number.value;
+    u32 first_row = battle_enemy_first_row(rules);
+    if (x < 0 || x >= rules->grid_width) {
+        report(base, line->number, "cell x must be 0 to %u", rules->grid_width - 1);
+        ok = false;
+    }
+    if (row < first_row || row >= rules->grid_length) {
+        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, rules->grid_length - 1);
+        ok = false;
+    }
+    if (!ok)
+        return;
+    u32 cell_x = (u32)x, cell_row = (u32)row - first_row;
+    if (reader->taken[cell_row][cell_x]) {
+        report(base, line->number, "cell (%u, %u) already has a unit", cell_x, (u32)row);
+        return;
+    }
+    reader->taken[cell_row][cell_x] = 1;
+    reader->place_lines[defs->enemy_count] = line->number;
+    defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
+}
+
+internal void read_project_line(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     while (reader->depth > 1 && (s32)line->indent <= reader->stack[reader->depth - 1].header_indent)
@@ -487,14 +704,32 @@ internal void read_units_line(UnitsReader* reader, const Line* line)
     Token key = line->tokens[0];
     switch (block->kind) {
     case BLOCK_ROOT:
-        if (token_is(key, "unit"))
-            read_unit_header(reader, line);
-        else
-            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+        read_top_line(reader, line);
         break;
     case BLOCK_UNIT:
         read_unit_line(reader, line, block);
         break;
+    case BLOCK_RULES: {
+        const Field* field = find_field(rules_fields, FIELD_COUNT(rules_fields), key);
+        if (!field) {
+            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+            break;
+        }
+        if (token_is(key, "zone_rows"))
+            reader->zone_rows_line = line->number;
+        read_field(base, line, field, (u32)(field - rules_fields), &base->defs->rules, &block->seen);
+    } break;
+    case BLOCK_STAGE: {
+        if (token_is(key, "place")) {
+            read_place(reader, line);
+            break;
+        }
+        const Field* field = find_field(stage_fields, FIELD_COUNT(stage_fields), key);
+        if (!field)
+            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+        else
+            read_field(base, line, field, (u32)(field - stage_fields), base->defs, &block->seen);
+    } break;
     case BLOCK_WEAPON:
     case BLOCK_SHIELD: {
         const Field* fields = block->kind == BLOCK_WEAPON ? weapon_fields : shield_fields;
@@ -511,143 +746,31 @@ internal void read_units_line(UnitsReader* reader, const Line* line)
     }
 }
 
-b32 defs_read_units(BattleDefs* defs, const char* file_name, const char* text, umm size)
+b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size)
 {
-    UnitsReader reader = {.base = {defs, file_name, 0}};
+    ProjectReader reader = {.base = {defs, file_name, 0}, .first_statement = true};
     reader.stack[0] = (Block){.kind = BLOCK_ROOT, .header_indent = -1, .child_indent = 0};
     reader.depth = 1;
-
-    Lines lines = {text, size, 0, 0};
-    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
-        Tokenized tokenized = tokenize(&reader.base, text_line.begin, text_line.end, lines.number);
-        if (tokenized.ok && tokenized.line.token_count)
-            read_units_line(&reader, &tokenized.line);
-    }
-    while (reader.depth > 1)
-        close_block(&reader);
-    if (defs->unit_count == 0 && reader.base.errors == 0)
-        report(&reader.base, 0, "no units");
-    return reader.base.errors == 0;
-}
-
-// stage.txt
-
-typedef struct UnitIndex {
-    b32 ok;
-    u32 index; // into BattleDefs.units
-} UnitIndex;
-
-// Fails when no unit has that name.
-internal UnitIndex find_unit(const BattleDefs* defs, Token name)
-{
-    for (u32 i = 0; i < defs->unit_count; ++i)
-        if (token_is(name, defs->units[i].name))
-            return (UnitIndex){.ok = true, .index = i};
-    return (UnitIndex){0};
-}
-
-internal void read_place(Reader* reader, const Line* line, u8 taken[BATTLE_ZONE_ROWS][BATTLE_GRID_WIDTH], u32 place_lines[BATTLE_MAX_PLACES])
-{
-    BattleDefs* defs = reader->defs;
-    if (line->token_count != 4) {
-        report(reader, line->number, "'place' takes a unit name, a cell x and a cell row");
-        return;
-    }
-    b32 ok = true;
-    UnitIndex unit = find_unit(defs, line->tokens[1]);
-    if (!unit.ok) {
-        report(reader, line->number, "unknown unit '%.*s'", shown(line->tokens[1]), line->tokens[1].text);
-        ok = false;
-    }
-    Number x_number = parse_number(reader, line->number, line->tokens[2], true);
-    if (!x_number.ok)
-        return;
-    Number row_number = parse_number(reader, line->number, line->tokens[3], true);
-    if (!row_number.ok)
-        return;
-    f64 x = x_number.value, row = row_number.value;
-    if (x < 0 || x >= BATTLE_GRID_WIDTH) {
-        report(reader, line->number, "cell x must be 0 to %d", BATTLE_GRID_WIDTH - 1);
-        ok = false;
-    }
-    if (row < BATTLE_ENEMY_FIRST_ROW || row >= BATTLE_GRID_LENGTH) {
-        report(reader, line->number, "cell row must be %d to %d (the enemy zone)", BATTLE_ENEMY_FIRST_ROW, BATTLE_GRID_LENGTH - 1);
-        ok = false;
-    }
-    if (!ok)
-        return;
-    u32 cell_x = (u32)x, cell_row = (u32)row - BATTLE_ENEMY_FIRST_ROW;
-    if (taken[cell_row][cell_x]) {
-        report(reader, line->number, "cell (%u, %u) already has a unit", cell_x, (u32)row);
-        return;
-    }
-    taken[cell_row][cell_x] = 1;
-    place_lines[defs->enemy_count] = line->number;
-    defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
-}
-
-b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, umm size)
-{
-    Reader reader = {defs, file_name, 0};
-    u8 taken[BATTLE_ZONE_ROWS][BATTLE_GRID_WIDTH] = {0};
-    u32 place_lines[BATTLE_MAX_PLACES];
-    b32 has_supply = false, has_seed = false, supply_ok = false;
-    f64 supply = 0, seed = 1;
     defs->seed = 1;
 
     Lines lines = {text, size, 0, 0};
-    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
-        Tokenized tokenized = tokenize(&reader, text_line.begin, text_line.end, lines.number);
-        if (!tokenized.ok || !tokenized.line.token_count)
-            continue;
-        const Line line = tokenized.line;
-        Token key = line.tokens[0];
-        if (line.indent != 0) {
-            report(&reader, line.number, "unexpected indentation");
-        } else if (token_is(key, "supply") || token_is(key, "seed")) {
-            b32 is_supply = token_is(key, "supply");
-            b32* seen = is_supply ? &has_supply : &has_seed;
-            if (*seen) {
-                report(&reader, line.number, "'%s' is given twice", is_supply ? "supply" : "seed");
-                continue;
-            }
-            *seen = true;
-            f64 lowest = is_supply ? 1 : 0, highest = is_supply ? 100000 : 4294967295.0;
-            Number number = line.token_count == 2 ? parse_number(&reader, line.number, line.tokens[1], true) : (Number){0};
-            f64 value = number.value;
-            if (line.token_count != 2) {
-                report(&reader, line.number, "'%s' takes one integer", is_supply ? "supply" : "seed");
-            } else if (number.ok) {
-                if (value < lowest || value > highest)
-                    report(&reader, line.number, "'%s' must be %.0f to %.0f", is_supply ? "supply" : "seed", lowest, highest);
-                else if (is_supply)
-                    supply = value, supply_ok = true;
-                else
-                    seed = value;
-            }
-        } else if (token_is(key, "place")) {
-            read_place(&reader, &line, taken, place_lines);
-        } else {
-            report(&reader, line.number, "unknown key '%.*s'", shown(key), key.text);
-        }
+    for (LineText text_line = next_line(&lines); text_line.ok && !reader.stop; text_line = next_line(&lines)) {
+        Tokenized tokenized = tokenize(&reader.base, text_line.begin, text_line.end, lines.number);
+        if (tokenized.ok && tokenized.line.token_count)
+            read_project_line(&reader, &tokenized.line);
     }
-
-    if (!has_supply)
-        report(&reader, 0, "missing 'supply'");
-    if (defs->enemy_count == 0 && reader.errors == 0)
-        report(&reader, 0, "no 'place' lines");
-    if (supply_ok) {
-        // The first place that takes the total over the supply is the one reported.
-        u32 total = 0;
-        for (u32 i = 0; i < defs->enemy_count; ++i) {
-            total += defs->units[defs->enemy[i].def].cost;
-            if (total > supply) {
-                report(&reader, place_lines[i], "the total cost is over the supply (%.0f)", supply);
-                break;
-            }
-        }
+    while (reader.depth > 1)
+        close_block(&reader);
+    // What the whole file lacks, once the rest is right: the first of the missing parts, since they come in order.
+    if (reader.base.errors == 0) {
+        if (reader.last < TOP_VERSION)
+            report(&reader.base, 0, "the file must start with 'abproj_version <version>'");
+        else if (reader.last < TOP_RULES)
+            report(&reader.base, 0, "missing 'rules'");
+        else if (reader.last < TOP_UNIT)
+            report(&reader.base, 0, "no units");
+        else if (reader.last < TOP_STAGE)
+            report(&reader.base, 0, "missing 'stage'");
     }
-    defs->supply = (u32)supply;
-    defs->seed = (u32)seed;
-    return reader.errors == 0;
+    return reader.base.errors == 0;
 }
