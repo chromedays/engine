@@ -288,6 +288,10 @@ void nv_renderer_end_frame(NvRenderer* renderer);
 
 NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data);
 
+// Gives a mesh made by nv_renderer_add_mesh new vertices and indices (of any count), keeping its id, so data that is
+// rebuilt (a project loaded again) does not use up mesh slots. Not for skinned meshes: their joint bounds are not remade.
+void nv_renderer_replace_mesh(NvRenderer* renderer, NvMeshId id, const NvMeshData* data);
+
 // `rgba` is width * height * 4 bytes. Mipmaps are generated with `scratch`, which is left as it was.
 // `name` (NULL = "texture N") is shown by the texture viewer and given to WebGPU as the label.
 NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 width, u32 height, const u8* rgba,

@@ -16,10 +16,15 @@ internal b32 is_alive(const Unit* unit)
     return !(unit->flags & UNIT_DEAD);
 }
 
-// Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46).
-internal u32 seconds_to_ticks(f32 seconds)
+u32 battle_seconds_to_ticks(f32 seconds)
 {
-    return (u32)ceilf(seconds * BATTLE_TICK_RATE - 0.0001f);
+    u32 ticks = (u32)ceilf(seconds * BATTLE_TICK_RATE - 0.0001f);
+    return ticks ? ticks : 1;
+}
+
+u32 battle_enemy_first_row(const BattleRules* rules)
+{
+    return rules->grid_length - rules->zone_rows;
 }
 
 internal f32 distance_xz_squared(NvVec3 a, NvVec3 b)
@@ -38,9 +43,9 @@ internal void add_event(Battle* battle, BattleEventKind kind, const Unit* unit, 
     *event = (BattleEvent){.kind = kind, .team = unit->team, .def = unit->def, .position = position, .direction = direction, .size = size};
 }
 
-NvVec3 battle_cell_center(u32 cell_x, u32 cell_row)
+NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row)
 {
-    return nv_vec3(((f32)cell_x + 0.5f) * BATTLE_CELL_SIZE, 0.0f, ((f32)cell_row + 0.5f) * BATTLE_CELL_SIZE);
+    return nv_vec3(((f32)cell_x + 0.5f) * rules->cell_size, 0.0f, ((f32)cell_row + 0.5f) * rules->cell_size);
 }
 
 internal void make_unit(Battle* battle, u32 def_index, u32 team, u32 cell_x, u32 cell_row)
@@ -51,7 +56,7 @@ internal void make_unit(Battle* battle, u32 def_index, u32 team, u32 cell_x, u32
     *unit = (Unit){0};
     unit->team = (u8)team;
     unit->def = (u8)def_index;
-    unit->position = unit->previous_position = battle_cell_center(cell_x, cell_row);
+    unit->position = unit->previous_position = battle_cell_center(&battle->defs->rules, cell_x, cell_row);
     unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI; // the sides face each other
     unit->health = def->health;
     if (def->ability.kind == ABILITY_SHIELD)
@@ -68,8 +73,9 @@ internal void rebuild_units(Battle* battle)
     battle->events_dropped = 0;
     battle->tick = 0;
     battle->outcome = OUTCOME_NONE;
-    for (u32 row = 0; row < BATTLE_ZONE_ROWS; ++row)
-        for (u32 x = 0; x < BATTLE_GRID_WIDTH; ++x)
+    const BattleRules* rules = &battle->defs->rules;
+    for (u32 row = 0; row < rules->zone_rows; ++row)
+        for (u32 x = 0; x < rules->grid_width; ++x)
             if (battle->placed[row][x])
                 make_unit(battle, battle->placed[row][x] - 1u, TEAM_PLAYER, x, row);
     for (u32 i = 0; i < battle->defs->enemy_count; ++i) {
@@ -93,8 +99,9 @@ u32 battle_supply_left(const Battle* battle)
 
 b32 battle_can_place(const Battle* battle, u32 def, s32 cell_x, s32 cell_row)
 {
-    return battle->phase == BATTLE_DEPLOY && def < battle->defs->unit_count && cell_x >= 0 && cell_x < BATTLE_GRID_WIDTH
-        && cell_row >= 0 && cell_row < BATTLE_ZONE_ROWS && !battle->placed[cell_row][cell_x]
+    const BattleRules* rules = &battle->defs->rules;
+    return battle->phase == BATTLE_DEPLOY && def < battle->defs->unit_count && cell_x >= 0 && cell_x < (s32)rules->grid_width
+        && cell_row >= 0 && cell_row < (s32)rules->zone_rows && !battle->placed[cell_row][cell_x]
         && battle->defs->units[def].cost <= battle_supply_left(battle);
 }
 
@@ -110,7 +117,8 @@ b32 battle_place(Battle* battle, u32 def, s32 cell_x, s32 cell_row)
 
 b32 battle_remove(Battle* battle, s32 cell_x, s32 cell_row)
 {
-    if (battle->phase != BATTLE_DEPLOY || cell_x < 0 || cell_x >= BATTLE_GRID_WIDTH || cell_row < 0 || cell_row >= BATTLE_ZONE_ROWS
+    const BattleRules* rules = &battle->defs->rules;
+    if (battle->phase != BATTLE_DEPLOY || cell_x < 0 || cell_x >= (s32)rules->grid_width || cell_row < 0 || cell_row >= (s32)rules->zone_rows
         || !battle->placed[cell_row][cell_x])
         return false;
     battle->supply_used -= battle->defs->units[battle->placed[cell_row][cell_x] - 1].cost;
@@ -206,18 +214,19 @@ internal void pick_targets(Battle* battle)
         if (!is_alive(unit))
             continue;
         b32 has_target = unit->target.index && is_alive(&battle->units[unit->target.index]);
-        if (!has_target || battle->tick % BATTLE_RETARGET_TICKS == 0)
+        if (!has_target || battle->tick % battle->defs->rules.retarget_ticks == 0)
             unit->target.index = nearest_enemy(battle, unit);
     }
 }
 
-// Each unit steers straight at its target and stops once it is within BATTLE_STOP_FRACTION of its range; then overlapping
+// Each unit steers straight at its target and stops once it is within the rules' stop_fraction of its range; then overlapping
 // units push each other apart, each by half the overlap (the same weight), and the field's edge holds them in. Turning is
 // instant: a moving unit faces its velocity, a stopped one its target.
 internal void move_units(Battle* battle)
 {
-    const f32 field_width = BATTLE_GRID_WIDTH * BATTLE_CELL_SIZE;
-    const f32 field_length = BATTLE_GRID_LENGTH * BATTLE_CELL_SIZE;
+    const BattleRules* rules = &battle->defs->rules;
+    const f32 field_width = (f32)rules->grid_width * rules->cell_size;
+    const f32 field_length = (f32)rules->grid_length * rules->cell_size;
 
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         Unit* unit = &battle->units[i];
@@ -228,7 +237,7 @@ internal void move_units(Battle* battle)
         NvVec3 to_target = nv_vec3_sub(battle->units[unit->target.index].position, unit->position);
         to_target.y = 0.0f;
         f32 distance = sqrtf(nv_vec3_dot(to_target, to_target));
-        f32 stop_distance = def->weapon.range * BATTLE_STOP_FRACTION;
+        f32 stop_distance = def->weapon.range * rules->stop_fraction;
         if (distance > stop_distance) {
             f32 step = fminf(def->speed * BATTLE_TICK_SECONDS, distance - stop_distance); // no overshooting the stop
             unit->velocity = nv_vec3_scale(to_target, step / distance / BATTLE_TICK_SECONDS);
@@ -274,11 +283,11 @@ internal void move_units(Battle* battle)
 
 // How long a shell flies from `from` to land on the ground at `aim`, at `tan_angle`: it climbs d * tan(angle) over the
 // way and the muzzle's height sets how far it falls, so the time follows from the height alone.
-internal f32 flight_time(NvVec3 from, NvVec3 aim, f32 tan_angle)
+internal f32 flight_time(NvVec3 from, NvVec3 aim, f32 tan_angle, f32 gravity)
 {
     f32 distance = sqrtf(distance_xz_squared(from, aim));
     f32 rise = distance * tan_angle - (aim.y - from.y);
-    return rise > 0.0f ? sqrtf(2.0f * rise / BATTLE_GRAVITY) : 0.0f;
+    return rise > 0.0f ? sqrtf(2.0f * rise / gravity) : 0.0f;
 }
 
 internal void fire_shell(Battle* battle, u32 unit_index)
@@ -298,9 +307,10 @@ internal void fire_shell(Battle* battle, u32 unit_index)
     // Lead the target: where it will be when the shell lands, from its velocity now. The landing spot depends on the
     // flight time and the flight time on the landing spot, so they are solved in turn.
     f32 tan_angle = tanf(weapon->launch_angle);
+    f32 gravity = battle->defs->rules.gravity;
     NvVec3 aim = nv_vec3(target->position.x, 0.0f, target->position.z);
     for (u32 pass = 0; pass < 3; ++pass) {
-        f32 time = flight_time(muzzle, aim, tan_angle);
+        f32 time = flight_time(muzzle, aim, tan_angle, gravity);
         aim.x = target->position.x + target->velocity.x * time;
         aim.z = target->position.z + target->velocity.z * time;
     }
@@ -312,7 +322,7 @@ internal void fire_shell(Battle* battle, u32 unit_index)
     aim.z += spread_radius * sinf(spread_angle);
 
     // The launch velocity that lands on `aim` at the weapon's angle.
-    f32 time = flight_time(muzzle, aim, tan_angle);
+    f32 time = flight_time(muzzle, aim, tan_angle, gravity);
     NvVec3 velocity = nv_vec3(0.0f, 0.0f, 0.0f);
     if (time > 0.0f) {
         f32 distance = sqrtf(distance_xz_squared(muzzle, aim));
@@ -342,7 +352,7 @@ internal void fire_weapons(Battle* battle)
         if (distance_xz_squared(unit->position, target->position) > weapon->range * weapon->range)
             continue;
         fire_shell(battle, i);
-        u32 cooldown = seconds_to_ticks(weapon->cooldown);
+        u32 cooldown = battle_seconds_to_ticks(weapon->cooldown);
         unit->cooldown_ticks = cooldown ? cooldown : 1;
     }
 }
@@ -448,12 +458,13 @@ internal void remove_projectile(Battle* battle, u32 index)
 // the shield's boundary with the damage that is left, to whatever it touches next.
 internal void step_projectiles(Battle* battle)
 {
+    const BattleRules* rules = &battle->defs->rules;
     for (u32 i = 0; i < battle->projectile_count;) {
         Projectile* shell = &battle->projectiles[i];
         shell->previous_position = shell->position;
         shell->position = nv_vec3_add(shell->position, nv_vec3_scale(shell->velocity, BATTLE_TICK_SECONDS));
-        shell->position.y -= 0.5f * BATTLE_GRAVITY * BATTLE_TICK_SECONDS * BATTLE_TICK_SECONDS;
-        shell->velocity.y -= BATTLE_GRAVITY * BATTLE_TICK_SECONDS;
+        shell->position.y -= 0.5f * rules->gravity * BATTLE_TICK_SECONDS * BATTLE_TICK_SECONDS;
+        shell->velocity.y -= rules->gravity * BATTLE_TICK_SECONDS;
 
         NvVec3 start = shell->previous_position;
         b32 gone = false;
@@ -479,7 +490,7 @@ internal void step_projectiles(Battle* battle)
                 if (hit.kind == HIT_UNIT) {
                     Unit* unit = &battle->units[hit.unit];
                     f32 armor = battle->defs->units[unit->def].armor;
-                    f32 damage = fmaxf(shell->damage - armor, shell->damage * BATTLE_MIN_DAMAGE_FRACTION);
+                    f32 damage = fmaxf(shell->damage - armor, shell->damage * rules->min_damage_fraction);
                     unit->damage_taken += damage;
                     add_event(battle, BATTLE_EVENT_HIT, unit, point, nv_vec3_normalize(shell->velocity), damage);
                 }
@@ -521,7 +532,7 @@ internal void refill_shields(Battle* battle)
             continue;
         if (unit->ability.shield.since_hit_ticks < UINT32_MAX)
             ++unit->ability.shield.since_hit_ticks;
-        if (unit->ability.shield.since_hit_ticks >= seconds_to_ticks(ability->shield.regen_delay))
+        if (unit->ability.shield.since_hit_ticks >= battle_seconds_to_ticks(ability->shield.regen_delay))
             unit->ability.shield.energy = fminf(ability->shield.capacity,
                                                 unit->ability.shield.energy + ability->shield.regen * BATTLE_TICK_SECONDS);
     }
@@ -534,7 +545,7 @@ internal void check_end(Battle* battle)
     u32 player = battle_alive_count(battle, TEAM_PLAYER), enemy = battle_alive_count(battle, TEAM_ENEMY);
     if (!player || !enemy) {
         battle->outcome = !player && !enemy ? OUTCOME_DRAW : !player ? OUTCOME_ENEMY : OUTCOME_PLAYER;
-    } else if (battle->tick >= BATTLE_MAX_TICKS) {
+    } else if (battle->tick >= battle->defs->rules.round_ticks) {
         f32 player_value = battle_remaining_value(battle, TEAM_PLAYER), enemy_value = battle_remaining_value(battle, TEAM_ENEMY);
         battle->outcome = player_value > enemy_value ? OUTCOME_PLAYER : player_value < enemy_value ? OUTCOME_ENEMY : OUTCOME_DRAW;
     } else {

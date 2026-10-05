@@ -1,34 +1,45 @@
 #pragma once
 
-// The auto-battler's rules and the definition files they read (docs/specs/battle.md, "Stage A rules" and "Definition
-// files"). Nothing here draws or reads the frame's time: the view steps the battle with battle_tick at 30 Hz and copies
-// what it needs into nodes and effects, so tests can run whole rounds.
+// The auto-battler's rules and the project file they read (docs/specs/battle.md, "Stage A rules"; docs/specs/abproj.md,
+// "default.abproj"). Nothing here draws or reads the frame's time: the view steps the battle with battle_tick at 30 Hz and
+// copies what it needs into nodes and effects, so tests can run whole rounds.
 
 #include <engine/base.h>
 #include <engine/math.h>
 
 #include <stdbool.h>
 
+// The tick rate is the engine's decision, not data: every time in the project file becomes whole ticks by it.
 #define BATTLE_TICK_RATE      30
 #define BATTLE_TICK_SECONDS   (1.0f / BATTLE_TICK_RATE)
-#define BATTLE_MAX_TICKS      (60 * BATTLE_TICK_RATE)
-#define BATTLE_CELL_SIZE      2.0f
-#define BATTLE_GRID_WIDTH     32
-#define BATTLE_GRID_LENGTH    48
-#define BATTLE_ZONE_ROWS      14 // each side's deployment zone: the player's rows 0-13, the enemy's rows 34-47
-#define BATTLE_ENEMY_FIRST_ROW (BATTLE_GRID_LENGTH - BATTLE_ZONE_ROWS)
-#define BATTLE_MAX_PLACES     (BATTLE_ZONE_ROWS * BATTLE_GRID_WIDTH) // one unit per cell
-#define BATTLE_MAX_UNIT_DEFS  16
-#define BATTLE_NAME_SIZE      32 // a name is at most 31 bytes
-#define BATTLE_MAX_UNITS      (1 + 2 * BATTLE_MAX_PLACES) // slot 0 is "none"
-#define BATTLE_MAX_PROJECTILES 4096
-#define BATTLE_MAX_EVENTS     4096
-#define BATTLE_GRAVITY        9.8f
-#define BATTLE_RETARGET_TICKS 8     // 0.25 s
-#define BATTLE_STOP_FRACTION  0.9f  // a unit stops once its target is within this share of its weapon's range
-#define BATTLE_MIN_DAMAGE_FRACTION 0.25f // armor never takes more than this much off a hit
 
-// Definitions: what autobattler/data/units.txt and stage.txt say. Zero is empty.
+// Capacities. The sizes the project file's rules can ask for stop here (the ranges of `grid` and `zone_rows`).
+#define BATTLE_MAX_GRID_WIDTH  64
+#define BATTLE_MAX_GRID_LENGTH 128
+#define BATTLE_MAX_ZONE_ROWS   32
+#define BATTLE_MAX_PLACES      (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH) // one unit per cell of a zone
+#define BATTLE_MAX_UNIT_DEFS   16
+#define BATTLE_NAME_SIZE       32 // a name is at most 31 bytes
+#define BATTLE_MAX_UNITS       (1 + 2 * BATTLE_MAX_PLACES) // slot 0 is "none"
+#define BATTLE_MAX_PROJECTILES 4096
+#define BATTLE_MAX_EVENTS      4096
+
+// The newest format of the project file this build reads (docs/specs/abproj.md, "Versions").
+#define ABPROJ_VERSION 1
+
+// Definitions: what autobattler/data/default.abproj says. Zero is empty.
+
+// The rules of the `rules` block, times already in ticks.
+typedef struct BattleRules {
+    f32 cell_size;               // meters
+    u32 grid_width, grid_length; // cells across, rows long
+    u32 zone_rows;               // each side's deployment rows: the player's are 0 to zone_rows - 1, the enemy's the last zone_rows
+    u32 round_ticks;             // the time limit
+    u32 retarget_ticks;          // how often units pick targets again
+    f32 gravity;                 // m/s²
+    f32 stop_fraction;           // a unit stops once its target is within this share of its weapon's range
+    f32 min_damage_fraction;     // armor never takes more than 1 minus this off a hit
+} BattleRules;
 
 typedef struct WeaponDef {
     char name[BATTLE_NAME_SIZE];
@@ -62,6 +73,7 @@ typedef struct StagePlace {
 } StagePlace;
 
 typedef struct BattleDefs {
+    BattleRules rules;
     UnitDef units[BATTLE_MAX_UNIT_DEFS];
     u32 unit_count;
     u32 supply; // each side's
@@ -69,15 +81,19 @@ typedef struct BattleDefs {
     StagePlace enemy[BATTLE_MAX_PLACES];
     u32 enemy_count;
     u32 error_count;        // errors found by the reads, all of them (only the first 20 are logged)
-    char first_error[160];  // "units.txt:12: unknown key 'healt'", for the panel
+    char first_error[160];  // "default.abproj:12: unknown key 'healt'", for the panel
 } BattleDefs;
 
-// Read the text of a definition file (`text` need not end in a NUL). Both return false when anything in it is wrong:
-// each error is logged with its file name and line (nv_log, source "battle"), counted in `defs->error_count`, and the
-// first is kept in `defs->first_error`. Reading goes on to the end of the text to report every error. `defs` starts
-// zeroed; defs_read_stage needs the units already read (it looks unit names up).
-b32 defs_read_units(BattleDefs* defs, const char* file_name, const char* text, umm size);
-b32 defs_read_stage(BattleDefs* defs, const char* file_name, const char* text, umm size);
+// Reads the text of a project file (`text` need not end in a NUL). Returns false when anything in it is wrong: each error
+// is logged with its file name and line (nv_log, source "battle"), counted in `defs->error_count`, and the first is kept
+// in `defs->first_error`. Reading goes on to the end of the text to report every error. `defs` starts zeroed.
+b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size);
+
+// Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46); at least 1.
+u32 battle_seconds_to_ticks(f32 seconds);
+
+// The first row of the enemy's zone.
+u32 battle_enemy_first_row(const BattleRules* rules);
 
 // The simulation.
 
@@ -133,7 +149,7 @@ typedef struct Battle {
     BattleOutcome outcome;
     u32 tick;
     NvRandom rng; // seeded at Start from the stage's seed
-    u8 placed[BATTLE_ZONE_ROWS][BATTLE_GRID_WIDTH]; // the player's deployment: unit def + 1, 0 = empty
+    u8 placed[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // the player's deployment: unit def + 1, 0 = empty
     u32 supply_used;
     Unit units[BATTLE_MAX_UNITS]; // [0] is unused; slots 1 to unit_count are the units, the player's first
     u32 unit_count;
@@ -150,7 +166,7 @@ typedef struct Battle {
 void battle_init(Battle* battle, const BattleDefs* defs);
 
 // The center of a cell on the ground. The player's side is -Z, the enemy's +Z.
-NvVec3 battle_cell_center(u32 cell_x, u32 cell_row);
+NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row);
 
 // Deployment (only in the BATTLE_DEPLOY phase; the others return false). A unit def can be placed on an empty cell of the
 // player's zone while the supply lasts. Each change rebuilds `units`.

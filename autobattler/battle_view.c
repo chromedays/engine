@@ -128,7 +128,7 @@ internal NvMaterialId add_color(Game* game, f32 r, f32 g, f32 b)
 
 // A unit's mesh: a capsule body, and a cone in front for its facing (+Z in the unit's space). The body is as wide as the unit
 // but no wider than it is tall, so a squat unit is a rounded blob.
-internal NvMeshId make_unit_mesh(Game* game, const UnitDef* def)
+internal void set_unit_mesh(Game* game, u32 index, const UnitDef* def)
 {
     NvVertex vertices[NV_MESH_CAPSULE_VERTICES(16, 6) + NV_MESH_CONE_VERTICES(12)];
     u32 indices[NV_MESH_CAPSULE_INDICES(16, 6) + NV_MESH_CONE_INDICES(12)];
@@ -154,10 +154,17 @@ internal NvMeshId make_unit_mesh(Game* game, const UnitDef* def)
         v->normal[2] = ny;
     }
     NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(&game->renderer, &data);
+    // A project loaded again remakes the meshes in the slots it has (nv_renderer_replace_mesh), so loads use up none.
+    if (index < game->unit_meshes_made) {
+        nv_renderer_replace_mesh(&game->renderer, game->unit_meshes[index], &data);
+    } else {
+        game->unit_meshes[index] = nv_renderer_add_mesh(&game->renderer, &data);
+        game->unit_meshes_made = index + 1;
+    }
 }
 
-internal NvMeshId make_plane(Game* game, f32 half_x, f32 half_z)
+// The plane `field` (FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE) at its size and place, its mesh remade in its slot.
+internal void set_plane(Game* game, u32 field, f32 half_x, f32 half_z, NvVec3 position)
 {
     NvVertex vertices[NV_MESH_PLANE_VERTICES];
     u32 indices[NV_MESH_PLANE_INDICES];
@@ -165,17 +172,50 @@ internal NvMeshId make_plane(Game* game, f32 half_x, f32 half_z)
                           .index_capacity = NV_ARRAY_COUNT(indices)};
     nv_mesh_append_plane(&mesh, half_x, half_z);
     NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(&game->renderer, &data);
+    NvNode* node = nv_scene_get(game->scene, game->field_nodes[field]);
+    if (node->mesh.index)
+        nv_renderer_replace_mesh(&game->renderer, node->mesh, &data);
+    else
+        node->mesh = nv_renderer_add_mesh(&game->renderer, &data);
+    node->position = position;
 }
 
-internal NvNodeId add_plane(Game* game, const char* name, f32 half_x, f32 half_z, NvVec3 position, NvMaterialId material)
+internal void add_plane_node(Game* game, u32 field, const char* name, NvMaterialId material)
 {
-    NvNodeId id = nv_scene_add_node(game->scene, (NvNodeId){0}, name);
-    NvNode* node = nv_scene_get(game->scene, id);
-    node->mesh = make_plane(game, half_x, half_z);
-    node->material = material;
-    node->position = position;
-    return id;
+    game->field_nodes[field] = nv_scene_add_node(game->scene, (NvNodeId){0}, name);
+    nv_scene_get(game->scene, game->field_nodes[field])->material = material;
+}
+
+void view_apply_project(Game* game)
+{
+    // The field, in meters, from the rules (the project file's `grid` and `cell_size`).
+    const BattleRules* rules = &game->defs.rules;
+    game->field_width = (f32)rules->grid_width * rules->cell_size;
+    game->field_length = (f32)rules->grid_length * rules->cell_size;
+    f32 field_width = game->field_width, field_length = game->field_length;
+    // Above and behind the player's side (-Z), looking at the middle of the field, far enough to see all of it: the distance
+    // is that of the camera's default for a field 96 m long, in proportion to the field's length.
+    f32 start_distance = field_length * (CAMERA_START_DISTANCE / CAMERA_REFERENCE_LENGTH);
+    f32 max_distance = fmaxf(CAMERA_MAX_DISTANCE, start_distance * 1.35f);
+    game->orbit = (NvOrbitCamera){
+        .target = {field_width * 0.5f, 0.0f, field_length * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
+        .distance = start_distance, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
+        .min_distance = CAMERA_MIN_DISTANCE, .max_distance = max_distance};
+    nv_scene_get(game->scene, game->camera)->camera.far_z = fmaxf(CAMERA_FAR_Z, 2.0f * max_distance);
+
+    // The ground, and a tint on each side's deployment zone (a little above it, so the two do not fight over depth).
+    f32 zone_half = (f32)rules->zone_rows * rules->cell_size * 0.5f;
+    set_plane(game, FIELD_GROUND, field_width * 0.5f, field_length * 0.5f, nv_vec3(field_width * 0.5f, 0.0f, field_length * 0.5f));
+    set_plane(game, FIELD_PLAYER_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, zone_half));
+    set_plane(game, FIELD_ENEMY_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, field_length - zone_half));
+
+    for (u32 i = 0; i < game->defs.unit_count; ++i)
+        set_unit_mesh(game, i, &game->defs.units[i]);
+    if (game->selected_def >= game->defs.unit_count)
+        game->selected_def = 0;
+    game->hover_cell_x = game->hover_cell_row = -1;
+    nv_vfx_clear(&game->vfx);
+    game->accumulator = 0.0f;
 }
 
 void view_build(Game* game)
@@ -187,25 +227,16 @@ void view_build(Game* game)
     nv_scene_get(scene, game->camera)->camera = (NvCamera){
         .projection = NV_PROJECTION_PERSPECTIVE, .fov_y = 45.0f * NV_PI / 180.0f, .near_z = 0.5f, .far_z = 400.0f};
     scene->active_camera = game->camera;
-    // Above and behind the player's side (-Z), looking at the middle of the field, far enough to see all of it.
-    game->orbit = (NvOrbitCamera){
-        .target = {FIELD_WIDTH * 0.5f, 0.0f, FIELD_LENGTH * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
-        .distance = 104.0f, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
-        .min_distance = CAMERA_MIN_DISTANCE, .max_distance = CAMERA_MAX_DISTANCE};
 
     NvNodeId sun = nv_scene_add_node(scene, none, "sun");
     NvNode* sun_node = nv_scene_get(scene, sun);
     sun_node->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.5f), nv_quat_axis_angle(nv_vec3(1, 0, 0), -0.9f));
     sun_node->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.3f};
 
-    // The ground, and a tint on each side's deployment zone (a little above it, so the two do not fight over depth).
-    f32 zone_half = BATTLE_ZONE_ROWS * BATTLE_CELL_SIZE * 0.5f;
-    add_plane(game, "ground", FIELD_WIDTH * 0.5f, FIELD_LENGTH * 0.5f, nv_vec3(FIELD_WIDTH * 0.5f, 0.0f, FIELD_LENGTH * 0.5f),
-              add_color(game, 0.07f, 0.08f, 0.09f));
-    add_plane(game, "player zone", FIELD_WIDTH * 0.5f, zone_half, nv_vec3(FIELD_WIDTH * 0.5f, 0.01f, zone_half),
-              add_color(game, 0.04f, 0.09f, 0.2f));
-    add_plane(game, "enemy zone", FIELD_WIDTH * 0.5f, zone_half, nv_vec3(FIELD_WIDTH * 0.5f, 0.01f, FIELD_LENGTH - zone_half),
-              add_color(game, 0.2f, 0.06f, 0.05f));
+    // The field's planes; their size comes with the project (view_apply_project).
+    add_plane_node(game, FIELD_GROUND, "ground", add_color(game, 0.07f, 0.08f, 0.09f));
+    add_plane_node(game, FIELD_PLAYER_ZONE, "player zone", add_color(game, 0.04f, 0.09f, 0.2f));
+    add_plane_node(game, FIELD_ENEMY_ZONE, "enemy zone", add_color(game, 0.2f, 0.06f, 0.05f));
 
     game->team_materials[TEAM_PLAYER] = add_color(game, 0.1f, 0.35f, 1.0f);
     game->team_materials[TEAM_ENEMY] = add_color(game, 1.0f, 0.18f, 0.12f);
@@ -217,8 +248,6 @@ void view_build(Game* game)
     nv_mesh_append_sphere(&mesh, nv_vec3(0.0f, 0.0f, 0.0f), 0.15f, 8, 6);
     NvMeshData data = nv_mesh_builder_data(&mesh);
     game->shell_mesh = nv_renderer_add_mesh(&game->renderer, &data);
-    for (u32 i = 0; i < game->defs.unit_count; ++i)
-        game->unit_meshes[i] = make_unit_mesh(game, &game->defs.units[i]);
 
     make_effects(game);
     game->hover_cell_x = game->hover_cell_row = -1;
@@ -242,8 +271,9 @@ internal PlayerCell player_cell_at(Game* game, f32 x, f32 y)
     f32 ground_x = ray.origin.x + ray.direction.x * distance, ground_z = ray.origin.z + ray.direction.z * distance;
     if (ground_x < 0.0f || ground_z < 0.0f)
         return (PlayerCell){0};
-    s32 cell_x = (s32)(ground_x / BATTLE_CELL_SIZE), cell_row = (s32)(ground_z / BATTLE_CELL_SIZE);
-    if (cell_x >= BATTLE_GRID_WIDTH || cell_row >= BATTLE_ZONE_ROWS)
+    const BattleRules* rules = &game->defs.rules;
+    s32 cell_x = (s32)(ground_x / rules->cell_size), cell_row = (s32)(ground_z / rules->cell_size);
+    if (cell_x >= (s32)rules->grid_width || cell_row >= (s32)rules->zone_rows)
         return (PlayerCell){0};
     return (PlayerCell){.ok = true, .x = cell_x, .row = cell_row};
 }
@@ -264,8 +294,8 @@ void view_input(Game* game)
         NvVec3 move = nv_orbit_camera_pan_ground(orbit, nv_scene_get(game->scene, game->camera), image_height_css, in->orbit_x, in->orbit_y);
         orbit->target = nv_vec3_add(orbit->target, move);
     }
-    orbit->target.x = nv_clamp_f32(orbit->target.x, 0.0f, FIELD_WIDTH);
-    orbit->target.z = nv_clamp_f32(orbit->target.z, 0.0f, FIELD_LENGTH);
+    orbit->target.x = nv_clamp_f32(orbit->target.x, 0.0f, game->field_width);
+    orbit->target.z = nv_clamp_f32(orbit->target.z, 0.0f, game->field_length);
     orbit->target.y = 0.0f;
 
     // The cell under the mouse pointer (a touch screen has none).
@@ -292,18 +322,18 @@ void view_input(Game* game)
 
 // Updating the nodes and lines
 
-internal NvVec3 cell_corner(u32 x, u32 row, f32 y)
+internal NvVec3 cell_corner(const BattleRules* rules, u32 x, u32 row, f32 y)
 {
-    return nv_vec3((f32)x * BATTLE_CELL_SIZE, y, (f32)row * BATTLE_CELL_SIZE);
+    return nv_vec3((f32)x * rules->cell_size, y, (f32)row * rules->cell_size);
 }
 
-// The lines of a zone's cells: rows `first` to `first + BATTLE_ZONE_ROWS`.
-internal void draw_zone_grid(NvRenderer* renderer, u32 first_row, NvVec3 color)
+// The lines of a zone's cells: rows `first` to `first + zone_rows`.
+internal void draw_zone_grid(NvRenderer* renderer, const BattleRules* rules, u32 first_row, NvVec3 color)
 {
-    for (u32 r = 0; r <= BATTLE_ZONE_ROWS; ++r)
-        nv_renderer_debug_line(renderer, cell_corner(0, first_row + r, 0.03f), cell_corner(BATTLE_GRID_WIDTH, first_row + r, 0.03f), color);
-    for (u32 x = 0; x <= BATTLE_GRID_WIDTH; ++x)
-        nv_renderer_debug_line(renderer, cell_corner(x, first_row, 0.03f), cell_corner(x, first_row + BATTLE_ZONE_ROWS, 0.03f), color);
+    for (u32 r = 0; r <= rules->zone_rows; ++r)
+        nv_renderer_debug_line(renderer, cell_corner(rules, 0, first_row + r, 0.03f), cell_corner(rules, rules->grid_width, first_row + r, 0.03f), color);
+    for (u32 x = 0; x <= rules->grid_width; ++x)
+        nv_renderer_debug_line(renderer, cell_corner(rules, x, first_row, 0.03f), cell_corner(rules, x, first_row + rules->zone_rows, 0.03f), color);
 }
 
 internal void draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color)
@@ -416,8 +446,9 @@ void view_update(Game* game, f32 game_dt)
         nv_scene_get(game->scene, game->shell_nodes[i])->mesh = (NvMeshId){0};
 
     if (battle->phase == BATTLE_DEPLOY && game->defs_ok) {
-        draw_zone_grid(renderer, 0, nv_vec3(0.25f, 0.42f, 0.75f));
-        draw_zone_grid(renderer, BATTLE_ENEMY_FIRST_ROW, nv_vec3(0.6f, 0.25f, 0.2f));
+        const BattleRules* rules = &battle->defs->rules;
+        draw_zone_grid(renderer, rules, 0, nv_vec3(0.25f, 0.42f, 0.75f));
+        draw_zone_grid(renderer, rules, battle_enemy_first_row(rules), nv_vec3(0.6f, 0.25f, 0.2f));
         if (game->hover_cell_x >= 0) {
             b32 ok = battle_can_place(battle, game->selected_def, game->hover_cell_x, game->hover_cell_row) ||
                      battle->placed[game->hover_cell_row][game->hover_cell_x]; // a placed unit can be taken away
@@ -425,10 +456,10 @@ void view_update(Game* game, f32 game_dt)
             u32 x = (u32)game->hover_cell_x, row = (u32)game->hover_cell_row;
             for (u32 inset = 0; inset < 2; ++inset) {
                 f32 pad = 0.05f + 0.08f * (f32)inset;
-                NvVec3 a = nv_vec3_add(cell_corner(x, row, 0.05f), nv_vec3(pad, 0.0f, pad));
-                NvVec3 b = nv_vec3_add(cell_corner(x + 1, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
-                NvVec3 c = nv_vec3_add(cell_corner(x + 1, row + 1, 0.05f), nv_vec3(-pad, 0.0f, -pad));
-                NvVec3 d = nv_vec3_add(cell_corner(x, row + 1, 0.05f), nv_vec3(pad, 0.0f, -pad));
+                NvVec3 a = nv_vec3_add(cell_corner(rules, x, row, 0.05f), nv_vec3(pad, 0.0f, pad));
+                NvVec3 b = nv_vec3_add(cell_corner(rules, x + 1, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
+                NvVec3 c = nv_vec3_add(cell_corner(rules, x + 1, row + 1, 0.05f), nv_vec3(-pad, 0.0f, -pad));
+                NvVec3 d = nv_vec3_add(cell_corner(rules, x, row + 1, 0.05f), nv_vec3(pad, 0.0f, -pad));
                 nv_renderer_debug_line(renderer, a, b, color);
                 nv_renderer_debug_line(renderer, b, c, color);
                 nv_renderer_debug_line(renderer, c, d, color);
@@ -486,6 +517,27 @@ void view_panel(Game* game)
         igSetNextItemWidth(igGetFontSize() * 8.0f);
         if (igCombo_Str_arr(TL("Language"), &language, languages, NV_LANGUAGE_COUNT, -1))
             nv_strings_set_language((NvLanguage)language);
+
+        // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
+        // (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
+        igSeparator();
+        igTextWrapped(T("Project: %s"), game->project_name);
+        const char* labels[4] = {TL("Open..."), TL("Reload"), TL("Save"), TL("Save as...")};
+        for (u32 i = 0; i < NV_ARRAY_COUNT(labels); ++i) {
+            if (i)
+                igSameLine(0.0f, -1.0f);
+            igBeginDisabled(!game_project_action_allowed(game, (ProjectAction)i));
+            if (igButton(labels[i], (ImVec2_c){0, 0}))
+                game_project_action(game, (ProjectAction)i);
+            igEndDisabled();
+        }
+        if (game->project_message[0]) {
+            if (game->project_message_bad)
+                igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
+            igTextWrapped("%s", game->project_message);
+            if (game->project_message_bad)
+                igPopStyleColor(1);
+        }
 
         if (!game->defs_ok) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
@@ -579,8 +631,9 @@ void view_panel(Game* game)
         igText(T("Player: %u alive"), battle_alive_count(battle, TEAM_PLAYER));
         igText(T("Enemy: %u alive"), battle_alive_count(battle, TEAM_ENEMY));
         // The rules count ticks; the seconds are that count over the tick rate, so they slow down with the game on a slow device.
+        u32 round_ticks = battle->defs->rules.round_ticks;
         igText(T("Time: %.1f / %.0f s (%u / %u ticks)"), (f32)battle->tick * BATTLE_TICK_SECONDS,
-               (f32)BATTLE_MAX_TICKS * BATTLE_TICK_SECONDS, battle->tick, (u32)BATTLE_MAX_TICKS);
+               (f32)round_ticks * BATTLE_TICK_SECONDS, battle->tick, round_ticks);
 
         if (battle->phase == BATTLE_RESULT) {
             const char* outcomes[4] = {"", T("Victory"), T("Defeat"), T("Draw")};
