@@ -78,7 +78,7 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 
 ### 정의 파일
 
-예정 (2026-10-05): 두 파일과 규칙 상수를 프로젝트 파일 하나(`game.abprj`)로 합친다. `docs/specs/abprj.md`(초안)를 본다.
+예정 (2026-10-05): 두 파일과 규칙 상수를 프로젝트 파일 하나(`default.abproj`)로 합친다. `docs/specs/abproj.md`(초안)를 본다.
 
 결정(2026-10-03): 유닛 정의와 스테이지는 코드가 아니라 텍스트 파일에 둔다. 형식은 아래에 정의한 줄 단위 텍스트이고, 읽는
 코드도 직접 쓴다(새 서드파티 없음, "서드파티 후보" 참고). 파일은 패키지에 들어가 시작할 때 한 번 읽힌다. 값을 바꾸면 다시
@@ -711,8 +711,8 @@ Details settled in the build (phase 1):
 
 ### Definition files
 
-Planned (2026-10-05): the two files and the rule constants merge into one project file (`game.abprj`). See
-`docs/specs/abprj.md` (draft).
+Planned (2026-10-05): the two files and the rule constants merge into one project file (`default.abproj`). See
+`docs/specs/abproj.md` (draft).
 
 Decided (2026-10-03): unit definitions and the stage live in text files, not in code. The format is the line-based text defined
 below, and we write the code that reads it (no new third-party code; see "Third-party candidates"). The files go into the
