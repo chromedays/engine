@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <stdio.h>
 
@@ -58,13 +58,13 @@ internal void dock_sizes(const Docks* docks, f32 width, f32 height, f32* left, f
     *bottom = b;
 }
 
-void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
+void desktop_layout(Sandbox* sandbox, f32 width, f32 height, f32 ratio)
 {
-    Docks* docks = &app->docks;
+    Docks* docks = &sandbox->docks;
     // A message for a tab that lives in the bottom dock shows the dock.
-    if (app->open_textures)
+    if (sandbox->open_textures)
         docks->show_right = 1; // the Textures tab lives in the right dock
-    if (app->open_console || app->open_stress) {
+    if (sandbox->open_console || sandbox->open_stress) {
         docks->show_bottom = 1;
         docks->bottom_open = 1;
     }
@@ -72,7 +72,7 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
     dock_sizes(docks, width, height, &left, &right, &bottom);
     f32 top = DESKTOP_TOP_BAR;
     f32 middle = height - bottom;
-    app->layout = (Layout){
+    sandbox->layout = (Layout){
         .top_bar = nv_window_framebuffer_rect_from_css(0.0f, 0.0f, width, top, ratio),
         .left = nv_window_framebuffer_rect_from_css(0.0f, top, left, middle, ratio),
         .right = nv_window_framebuffer_rect_from_css(width - right, top, width, middle, ratio),
@@ -85,20 +85,20 @@ void desktop_layout(App* app, f32 width, f32 height, f32 ratio)
 // Top bar
 //
 
-internal void file_menu(App* app, b32* open_reset)
+internal void file_menu(Sandbox* sandbox, b32* open_reset)
 {
     if (!igBeginMenu(TL("File"), true))
         return;
-    b32 storage = app->storage.available;
+    b32 storage = sandbox->storage.available;
     if (igMenuItem_Bool(TL("Save now"), shortcut_label(SC_SAVE), false, storage))
-        save_now(app, 1);
-    if (igMenuItem_Bool(TL("Show save"), NULL, app->show_save, storage)) {
-        if (app->show_save) {
-            app->show_save = false;
+        save_now(sandbox, 1);
+    if (igMenuItem_Bool(TL("Show save"), NULL, sandbox->show_save, storage)) {
+        if (sandbox->show_save) {
+            sandbox->show_save = false;
         } else {
-            save_show_viewer(app);
-            app->docks.show_right = 1;
-            app->open_view = 1; // the viewer is in the View tab
+            save_show_viewer(sandbox);
+            sandbox->docks.show_right = 1;
+            sandbox->open_view = 1; // the viewer is in the View tab
         }
     }
     igSeparator();
@@ -107,55 +107,55 @@ internal void file_menu(App* app, b32* open_reset)
     igEndMenu();
 }
 
-internal void view_menu(App* app)
+internal void view_menu(Sandbox* sandbox)
 {
     if (!igBeginMenu(TL("View"), true))
         return;
-    Docks* docks = &app->docks;
+    Docks* docks = &sandbox->docks;
     igMenuItem_BoolPtr(TL("Scene dock"), shortcut_label(SC_DOCK_LEFT), (bool*)&docks->show_left, true);
     igMenuItem_BoolPtr(TL("Inspector dock"), shortcut_label(SC_DOCK_RIGHT), (bool*)&docks->show_right, true);
     igMenuItem_BoolPtr(TL("Console dock"), shortcut_label(SC_DOCK_BOTTOM), (bool*)&docks->show_bottom, true);
     igSeparator();
     const char* scenes[SCENE_COUNT] = {T("Showcase scene"), T("Stress scene")};
     for (u32 scene = 0; scene < SCENE_COUNT; ++scene) {
-        if (igMenuItem_Bool(scenes[scene], NULL, app->shown == (SceneKind)scene, true))
-            app_show_scene(app, (SceneKind)scene);
+        if (igMenuItem_Bool(scenes[scene], NULL, sandbox->shown == (SceneKind)scene, true))
+            sandbox_show_scene(sandbox, (SceneKind)scene);
     }
     igEndMenu();
 }
 
-internal void top_bar(App* app)
+internal void top_bar(Sandbox* sandbox)
 {
-    b32 tint = ui_push_play_tint(app);
+    b32 tint = ui_push_play_tint(sandbox);
     // The menu bar is as high as a frame, so the frame padding makes it the top bar's height.
     igPushStyleVar_Vec2(ImGuiStyleVar_FramePadding, (ImVec2_c){8.0f, (DESKTOP_TOP_BAR - igGetFontSize()) * 0.5f});
     ImGuiWindowFlags flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    bool open = nv_imgui_begin_panel_ex(&app->imgui, "Top bar", app->layout.top_bar, flags);
+    bool open = nv_imgui_begin_panel_ex(&sandbox->imgui, "Top bar", sandbox->layout.top_bar, flags);
     ui_pop_play_tint(tint);
     b32 open_reset = 0;
     if (open && igBeginMenuBar()) {
-        file_menu(app, &open_reset);
+        file_menu(sandbox, &open_reset);
         if (igBeginMenu(TL("Edit"), true)) {
-            undo_menu_items(app);
+            undo_menu_items(sandbox);
             igSeparator();
             if (igMenuItem_Bool(TL("Command palette"), shortcut_label(SC_PALETTE), false, true))
-                search_open_palette(app);
+                search_open_palette(sandbox);
             igEndMenu();
         }
-        view_menu(app);
+        view_menu(sandbox);
         if (igBeginMenu(TL("Help"), true)) {
             if (igMenuItem_Bool(TL("Keyboard shortcuts"), shortcut_label(SC_HELP), false, true))
-                app->show_shortcuts = 1;
+                sandbox->show_shortcuts = 1;
             igEndMenu();
         }
 
         // The Play button's center is the screen's center.
         f32 width = igGetWindowWidth();
         igSetCursorPosX((width - DESKTOP_PLAY_WIDTH) * 0.5f);
-        ui_play_button(app, (ImVec2_c){DESKTOP_PLAY_WIDTH, 0.0f});
-        if (app->play_box[2] > app->play_box[0]) {
-            igSetItemTooltip("%s (%s)", app->playing ? T("Stop and restore the scene") : T("Run the scene"), shortcut_label(SC_PLAY));
-            if (app->playing) {
+        ui_play_button(sandbox, (ImVec2_c){DESKTOP_PLAY_WIDTH, 0.0f});
+        if (sandbox->play_box[2] > sandbox->play_box[0]) {
+            igSetItemTooltip("%s (%s)", sandbox->playing ? T("Stop and restore the scene") : T("Run the scene"), shortcut_label(SC_PLAY));
+            if (sandbox->playing) {
                 igSameLine(0.0f, -1.0f);
                 igTextColored((ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f}, T("Playing: edits are lost on Stop."));
             }
@@ -163,7 +163,7 @@ internal void top_bar(App* app)
 
         char status[64];
         snprintf(status, sizeof(status), "%.1f ms  %s", 1000.0f / igGetIO_Nil()->Framerate,
-                 app->shown == SCENE_SHOWCASE ? T("Showcase") : T("Stress"));
+                 sandbox->shown == SCENE_SHOWCASE ? T("Showcase") : T("Stress"));
         igSetCursorPosX(width - igCalcTextSize(status, NULL, false, -1.0f).x - 12.0f);
         igTextDisabled("%s", status);
         igEndMenuBar();
@@ -171,11 +171,11 @@ internal void top_bar(App* app)
     igPopStyleVar(1);
     // NOTE: A popup opened from inside a menu would live in the menu's ID scope; this one is opened
     // and drawn at the window's top level, where save_reset_popup looks for it.
-    if (open_reset || app->request_reset)
+    if (open_reset || sandbox->request_reset)
         igOpenPopup_Str(TL("Reset everything?"), 0);
-    app->request_reset = 0;
+    sandbox->request_reset = 0;
     if (open)
-        save_reset_popup(app);
+        save_reset_popup(sandbox);
     igEnd();
 }
 
@@ -183,16 +183,16 @@ internal void top_bar(App* app)
 // Docks
 //
 
-internal void left_dock(App* app)
+internal void left_dock(Sandbox* sandbox)
 {
-    if (!app->docks.show_left)
+    if (!sandbox->docks.show_left)
         return;
-    b32 tint = ui_push_play_tint(app);
-    bool open = nv_imgui_begin_panel(&app->imgui, "Scene dock", app->layout.left);
+    b32 tint = ui_push_play_tint(sandbox);
+    bool open = nv_imgui_begin_panel(&sandbox->imgui, "Scene dock", sandbox->layout.left);
     ui_pop_play_tint(tint);
     if (open && igBeginTabBar("left tabs", 0)) {
         if (igBeginTabItem(TL("Scene"), NULL, 0)) {
-            ui_scene_tab(app);
+            ui_scene_tab(sandbox);
             igEndTabItem();
         }
         igEndTabBar();
@@ -200,29 +200,29 @@ internal void left_dock(App* app)
     igEnd();
 }
 
-internal void right_dock(App* app)
+internal void right_dock(Sandbox* sandbox)
 {
-    if (!app->docks.show_right)
+    if (!sandbox->docks.show_right)
         return;
-    b32 tint = ui_push_play_tint(app);
-    bool open = nv_imgui_begin_panel(&app->imgui, "Inspector dock", app->layout.right);
+    b32 tint = ui_push_play_tint(sandbox);
+    bool open = nv_imgui_begin_panel(&sandbox->imgui, "Inspector dock", sandbox->layout.right);
     ui_pop_play_tint(tint);
     if (open && igBeginTabBar("right tabs", 0)) {
         // NOTE: Picking a node jumps to the Inspector, since that is where it is edited.
-        ImGuiTabItemFlags inspector_flags = app->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
-        app->open_inspector = 0;
+        ImGuiTabItemFlags inspector_flags = sandbox->open_inspector ? ImGuiTabItemFlags_SetSelected : 0;
+        sandbox->open_inspector = 0;
         if (igBeginTabItem(TL("Inspector"), NULL, inspector_flags)) {
-            ui_inspector_tab(app);
+            ui_inspector_tab(sandbox);
             igEndTabItem();
         }
-        ImGuiTabItemFlags view_flags = app->open_view ? ImGuiTabItemFlags_SetSelected : 0;
-        app->open_view = 0;
+        ImGuiTabItemFlags view_flags = sandbox->open_view ? ImGuiTabItemFlags_SetSelected : 0;
+        sandbox->open_view = 0;
         if (igBeginTabItem(TL("View"), NULL, view_flags)) {
-            ui_view_tab(app);
+            ui_view_tab(sandbox);
             igEndTabItem();
         }
-        if (ui_begin_textures_tab(app)) {
-            textures_tab(app);
+        if (ui_begin_textures_tab(sandbox)) {
+            textures_tab(sandbox);
             igEndTabItem();
         }
         igEndTabBar();
@@ -230,16 +230,16 @@ internal void right_dock(App* app)
     igEnd();
 }
 
-internal void bottom_dock(App* app)
+internal void bottom_dock(Sandbox* sandbox)
 {
-    Docks* docks = &app->docks;
+    Docks* docks = &sandbox->docks;
     if (!docks->show_bottom)
         return;
-    b32 tint = ui_push_play_tint(app);
+    b32 tint = ui_push_play_tint(sandbox);
     // The collapsed strip has room for one row of buttons only.
     if (!docks->bottom_open)
         igPushStyleVar_Vec2(ImGuiStyleVar_WindowPadding, (ImVec2_c){8.0f, 4.0f});
-    bool open = nv_imgui_begin_panel(&app->imgui, "Console dock", app->layout.bottom);
+    bool open = nv_imgui_begin_panel(&sandbox->imgui, "Console dock", sandbox->layout.bottom);
     if (!docks->bottom_open)
         igPopStyleVar(1);
     ui_pop_play_tint(tint);
@@ -247,7 +247,7 @@ internal void bottom_dock(App* app)
         if (igButton(TL("Show Console###bottom"), (ImVec2_c){0.0f, 0.0f}))
             docks->bottom_open = 1;
         NvLogLevel worst;
-        u32 unseen = console_unseen(app, &worst);
+        u32 unseen = console_unseen(sandbox, &worst);
         if (unseen) {
             igSameLine(0.0f, -1.0f);
             igTextColored(igColorConvertU32ToFloat4(console_level_color(worst)), T("%u new"), unseen);
@@ -263,15 +263,15 @@ internal void bottom_dock(App* app)
         igSetItemTooltip("%s", T("Collapse the dock to its strip"));
         igSetCursorPos(start);
         if (igBeginTabBar("bottom tabs", 0)) {
-            if (ui_begin_console_tab(app)) {
-                console_tab(app);
+            if (ui_begin_console_tab(sandbox)) {
+                console_tab(sandbox);
                 igEndTabItem();
             }
-            if (app->shown == SCENE_STRESS) {
-                ImGuiTabItemFlags stress_flags = app->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
-                app->open_stress = 0;
+            if (sandbox->shown == SCENE_STRESS) {
+                ImGuiTabItemFlags stress_flags = sandbox->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
+                sandbox->open_stress = 0;
                 if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {
-                    stress_ui(app);
+                    stress_ui(sandbox);
                     igEndTabItem();
                 }
             }
@@ -286,9 +286,9 @@ internal void bottom_dock(App* app)
 // dock's edge strip, inside the dock, so a press on it never belongs to the viewport.
 //
 
-internal void splitter(App* app, const char* name, NvRect rect, DockSplitter which)
+internal void splitter(Sandbox* sandbox, const char* name, NvRect rect, DockSplitter which)
 {
-    Docks* docks = &app->docks;
+    Docks* docks = &sandbox->docks;
     // NOTE: Not nv_imgui_begin_panel: its NoBringToFrontOnFocus puts a new window behind the ones
     // before it, and the splitter has to be above the dock whose edge it covers.
     f32 scale = igGetIO_Nil()->DisplayFramebufferScale.x;
@@ -314,9 +314,9 @@ internal void splitter(App* app, const char* name, NvRect rect, DockSplitter whi
             docks->dragging = which;
             docks->drag_start_mouse = along;
             // From the size shown, which the window's size may have cut below the wanted one.
-            docks->drag_start_size = which == SPLITTER_LEFT ? (f32)app->layout.left.width / scale
-                                     : which == SPLITTER_RIGHT ? (f32)app->layout.right.width / scale
-                                                               : (f32)app->layout.bottom.height / scale;
+            docks->drag_start_size = which == SPLITTER_LEFT ? (f32)sandbox->layout.left.width / scale
+                                     : which == SPLITTER_RIGHT ? (f32)sandbox->layout.right.width / scale
+                                                               : (f32)sandbox->layout.bottom.height / scale;
         }
         if (igIsItemActive() && docks->dragging == (s32)which) {
             f32 moved = along - docks->drag_start_mouse;
@@ -334,38 +334,38 @@ internal void splitter(App* app, const char* name, NvRect rect, DockSplitter whi
     igEnd();
 }
 
-internal void splitters(App* app)
+internal void splitters(Sandbox* sandbox)
 {
-    Docks* docks = &app->docks;
-    const Layout* layout = &app->layout;
+    Docks* docks = &sandbox->docks;
+    const Layout* layout = &sandbox->layout;
     f32 ratio = igGetIO_Nil()->DisplayFramebufferScale.x;
     u32 thickness = (u32)(DESKTOP_SPLITTER * ratio + 0.5f);
     if (docks->show_left && layout->left.width > thickness) {
         NvRect r = layout->left;
         r.x += r.width - thickness;
         r.width = thickness;
-        splitter(app, "Left splitter", r, SPLITTER_LEFT);
+        splitter(sandbox, "Left splitter", r, SPLITTER_LEFT);
     }
     if (docks->show_right && layout->right.width > thickness) {
         NvRect r = layout->right;
         r.width = thickness;
-        splitter(app, "Right splitter", r, SPLITTER_RIGHT);
+        splitter(sandbox, "Right splitter", r, SPLITTER_RIGHT);
     }
     if (docks->show_bottom && docks->bottom_open && layout->bottom.height > thickness) {
         NvRect r = layout->bottom;
         r.height = thickness;
-        splitter(app, "Bottom splitter", r, SPLITTER_BOTTOM);
+        splitter(sandbox, "Bottom splitter", r, SPLITTER_BOTTOM);
     }
 }
 
-void desktop_build_ui(App* app)
+void desktop_build_ui(Sandbox* sandbox)
 {
-    top_bar(app);
-    left_dock(app);
-    right_dock(app);
-    bottom_dock(app);
-    splitters(app);
-    shortcuts_update(app);
-    shortcuts_help(app);
-    search_palette(app);
+    top_bar(sandbox);
+    left_dock(sandbox);
+    right_dock(sandbox);
+    bottom_dock(sandbox);
+    splitters(sandbox);
+    shortcuts_update(sandbox);
+    shortcuts_help(sandbox);
+    search_palette(sandbox);
 }

@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -51,9 +51,9 @@ b32 console_is_compact(void)
     return igGetContentRegionAvail().x < (f32)ROW_COMPACT_CHARS * igCalcTextSize("0", NULL, false, -1.0f).x;
 }
 
-u32 console_unseen(App* app, NvLogLevel* worst)
+u32 console_unseen(Sandbox* sandbox, NvLogLevel* worst)
 {
-    Console* console = &app->console;
+    Console* console = &sandbox->console;
     u32 warnings = 0;
     u32 errors = 0;
     if (!console->shown_last) {
@@ -77,9 +77,9 @@ internal umm format_line(char* out, umm capacity, const NvLogMessage* message)
     return length > 0 ? (umm)length : 0;
 }
 
-internal void copy_shown(App* app, const u32* rows, u32 row_count)
+internal void copy_shown(Sandbox* sandbox, const u32* rows, u32 row_count)
 {
-    NvArena* scratch = &app->scratch;
+    NvArena* scratch = &sandbox->scratch;
     umm mark = scratch->used;
     umm size = 1;
     for (u32 r = 0; r < row_count; ++r)
@@ -160,10 +160,10 @@ internal f32 checkbox_fits(const char* label)
 // The level checkboxes, Clear, Copy and Auto-scroll on one wrapping line, and the filter.
 // Returns whether Clear was pressed. The log is cleared later, since the rows this frame lists are
 // indices into it.
-internal b32 toolbar(App* app, const u32* rows, u32 row_count, b32 compact)
+internal b32 toolbar(Sandbox* sandbox, const u32* rows, u32 row_count, b32 compact)
 {
     b32 clear = 0;
-    Console* console = &app->console;
+    Console* console = &sandbox->console;
     NvLog* log = &nv_log_ring;
     // A narrow panel (a phone) gets shorter labels and no counts, to keep the toolbar to two lines.
     const char* names[NV_LOG_LEVEL_COUNT] = {T("Info"), T("Warning"), T("Error")};
@@ -189,7 +189,7 @@ internal b32 toolbar(App* app, const u32* rows, u32 row_count, b32 compact)
     console_record(console, CONSOLE_RECT_CLEAR);
     ui_same_line_if_fits(igCalcTextSize(T("Copy"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f);
     if (igButton(TL("Copy"), (ImVec2_c){0.0f, 0.0f}))
-        copy_shown(app, rows, row_count);
+        copy_shown(sandbox, rows, row_count);
     console_record(console, CONSOLE_RECT_COPY);
     char auto_label[64];
     snprintf(auto_label, sizeof(auto_label), "%s###auto", T(compact ? "Auto" : "Auto-scroll"));
@@ -205,9 +205,9 @@ internal b32 toolbar(App* app, const u32* rows, u32 row_count, b32 compact)
     return clear;
 }
 
-void console_tab(App* app)
+void console_tab(Sandbox* sandbox)
 {
-    Console* console = &app->console;
+    Console* console = &sandbox->console;
     NvLog* log = &nv_log_ring;
     console->shown_now = 1;
     f32 char_width = igCalcTextSize("0", NULL, false, -1.0f).x;
@@ -218,7 +218,7 @@ void console_tab(App* app)
         console->selected = 0;
 
     // The messages the level checkboxes and the filter let through.
-    NvArena* scratch = &app->scratch;
+    NvArena* scratch = &sandbox->scratch;
     umm mark = scratch->used;
     u32* rows = NV_PUSH_ARRAY(scratch, log->count, u32);
     char* filter_text = NV_PUSH_ARRAY(scratch, NV_LOG_MAX_MESSAGE_SIZE + NV_LOG_SOURCE_SIZE + 2, char);
@@ -230,7 +230,7 @@ void console_tab(App* app)
     }
     console->rows = row_count;
 
-    b32 clear = toolbar(app, rows, row_count, compact);
+    b32 clear = toolbar(sandbox, rows, row_count, compact);
 
     // What is left of the tab goes to the list, except for the detail box when a message is picked.
     f32 line = igGetTextLineHeightWithSpacing();
@@ -242,7 +242,7 @@ void console_tab(App* app)
     if (list_height < list_minimum)
         list_height = list_minimum;
     igBeginChild_Str("##log", (ImVec2_c){0.0f, list_height}, ImGuiChildFlags_Borders, 0);
-    nv_imgui_touch_scroll(&app->imgui);
+    nv_imgui_touch_scroll(&sandbox->imgui);
     ImVec2_c list_min = igGetWindowPos();
     ImVec2_c list_size = igGetWindowSize();
     record_rect(console, CONSOLE_RECT_LIST, list_min, (ImVec2_c){list_min.x + list_size.x, list_min.y + list_size.y});
@@ -250,7 +250,7 @@ void console_tab(App* app)
     // (ImGui's scroll range is last frame's, which is what this frame's scroll position is against.)
     // A finger that scrolled the list this frame has not moved it yet (ImGui applies the scroll at
     // the next Begin), so it may not be followed to the bottom.
-    b32 at_bottom = igGetScrollY() >= igGetScrollMaxY() - 1.0f && app->imgui.touch_scroll == 0.0f;
+    b32 at_bottom = igGetScrollY() >= igGetScrollMaxY() - 1.0f && sandbox->imgui.touch_scroll == 0.0f;
     ImGuiListClipper clipper = {0};
     ImGuiListClipper_Begin(&clipper, (int)row_count, -1.0f);
     b32 first_row = 1;

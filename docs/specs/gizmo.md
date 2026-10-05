@@ -44,11 +44,11 @@
 ### 엔진 변경
 
 - **입력 라우팅 (`engine/imgui.h`).** 지금은 `view_rect`에서 시작하는 모든 누름이 `NvImgui.view`로 가므로 ImGui는
-  그것을 보지 못한다. 새 훅 `NvImgui.view_grab`은 앱이 설정하는 함수다.
+  그것을 보지 못한다. 새 훅 `NvImgui.view_grab`은 샌드박스가 설정하는 함수다.
   - 뷰포트에서 왼쪽 누름이나 한 손가락 터치는 ImGui의 마우스를 그리로 옮기고 두 프레임 기다린다. 터치에는
     hover가 없으므로, ImGuizmo는 마우스가 거기 있는 채로 한 프레임이 돈 뒤에야 손가락 아래에 무엇이 있는지
     안다. 그동안 뷰는 누름의 입력을 적용하지 않고 모은다.
-  - 그다음 훅이 결정한다 (앱이 ImGuizmo의 `IsOver`를 부른다). 예: 누름은 눌린 곳에서부터 ImGui 왼쪽 버튼이
+  - 그다음 훅이 결정한다 (샌드박스가 ImGuizmo의 `IsOver`를 부른다). 예: 누름은 눌린 곳에서부터 ImGui 왼쪽 버튼이
     되고, 뷰가 모은 것은 버린다. 아니요: 뷰가 그것을 적용한다, 기다리는 동안 놓인 탭도 포함해서.
   - 두 번째 손가락은 항상 누름을 뷰에 둔다 (핀치와 팬).
 - **렌더러 (`engine/renderer.h`).** `nv_renderer_camera_matrices`는 `nv_renderer_draw`가 쓰는 대로 활성 카메라의
@@ -59,10 +59,10 @@
 - **빌드.** cimguizmo는 cimgui처럼 가져와 `cimgui` 라이브러리 안에 빌드하므로, 그 라이브러리의 ImGui
   컨텍스트를 공유한다.
 
-### 앱 변경
+### 샌드박스 변경
 
-- `update_camera` 뒤에 앱은 카메라의 뷰와 투영 행렬과 뷰포트 사각형 (ImGui 좌표)을 ImGuizmo에 넘기고, 선택된
-  노드의 월드 행렬로 `Manipulate`를 부른다. 기즈모가 변경을 알리면 앱이 그것을 `local`에 되쓴다.
+- `update_camera` 뒤에 샌드박스는 카메라의 뷰와 투영 행렬과 뷰포트 사각형 (ImGui 좌표)을 ImGuizmo에 넘기고, 선택된
+  노드의 월드 행렬로 `Manipulate`를 부른다. 기즈모가 변경을 알리면 샌드박스가 그것을 `local`에 되쓴다.
 - 기즈모가 가져간 누름은 `NvImgui.view`에 닿지 않으므로, 공전도 picking도 하지 않는다.
 - `ImGuizmo_BeginFrame`은 패널을 만들기 전에 돌므로, ImGuizmo의 전체 화면 창이 먼저 만들어져 패널 뒤에 남는다.
 - 우리 투영은 깊이를 OpenGL의 -1..1이 아닌 0..1 (WebGPU)로 매핑한다. ImGuizmo는 깊이 0과 1에서 unproject하고
@@ -120,11 +120,11 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 
 - **Input routing (`engine/imgui.h`).** Today every press that starts in `view_rect` goes to
   `NvImgui.view`, so ImGui never sees it. A new hook, `NvImgui.view_grab`, is a function that the
-  app sets.
+  sandbox sets.
   - A left press or a one-finger touch in the viewport moves ImGui's mouse there and waits two
     frames. Touch has no hover, so ImGuizmo only knows what is under the finger after a frame has
     run with the mouse there. Meanwhile the view gathers the press's input without applying it.
-  - Then the hook decides (the app calls ImGuizmo's `IsOver`). Yes: the press becomes an ImGui
+  - Then the hook decides (the sandbox calls ImGuizmo's `IsOver`). Yes: the press becomes an ImGui
     left button from where it went down, and what the view gathered is dropped. No: the view
     applies it, including a tap that was released while waiting.
   - A second finger always keeps the press in the view (pinch and pan).
@@ -136,11 +136,11 @@ version, we fall back to writing it ourselves rather than adding a second C++ fi
 - **Build.** cimguizmo is fetched like cimgui and built into the `cimgui` library, so it shares
   that library's ImGui context.
 
-### App changes
+### Sandbox changes
 
-- After `update_camera`, the app passes the camera's view and projection matrices and the
+- After `update_camera`, the sandbox passes the camera's view and projection matrices and the
   viewport rect (in ImGui coordinates) to ImGuizmo, then calls `Manipulate` on the selected node's
-  world matrix. When the gizmo reports a change, the app writes it back to `local`.
+  world matrix. When the gizmo reports a change, the sandbox writes it back to `local`.
 - A press the gizmo takes never reaches `NvImgui.view`, so it neither orbits nor picks.
 - `ImGuizmo_BeginFrame` runs before the panel is built, so ImGuizmo's full-screen window is
   created first and stays behind the panel.

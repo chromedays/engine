@@ -11,17 +11,17 @@
 
 예제 세 개를 씬 하나를 보여 주는 앱 하나로 바꾼다: scene 예제의 행성과 달, character 예제의 애니메이션되는
 캐릭터, 검, 타깃을 나란히 둔다. 에디터 패널은 노드 트리와 선택된 노드의 컴포넌트를 보여 준다. 애니메이션이
-씬의 일부가 되므로, 앱은 더 이상 애니메이션을 따라가려고 노드를 손으로 움직이지 않는다.
+씬의 일부가 되므로, 샌드박스는 더 이상 애니메이션을 따라가려고 노드를 손으로 움직이지 않는다.
 
 ### 결정
 
 | 주제 | 결정 |
 |---|---|
 | 예제 | `triangle`은 삭제. `scene`과 `character`는 앱 하나로 합친다 |
-| 위치 | `app/main.c` (씬 구성, 프레임)와 `app/ui.c` (에디터 패널). CMake 타깃은 `app`. `examples/`는 제거 |
+| 위치 | `sandbox/main.c` (씬 구성, 프레임)와 `sandbox/ui.c` (에디터 패널). CMake 타깃은 `sandbox`. `examples/`는 제거 |
 | 주소 | Pages 루트, `https://chromedays.github.io/engine/`. `web/landing.html`은 제거. 나중에 옮김: Release는 `/engine/release/`, Debug는 `/engine/debug/` |
 | 옛 주소 | `/engine/character/`, `/engine/scene/`, `/engine/triangle/`은 리다이렉트 없이 없앤다 |
-| 에셋 | `assets/` (`quaternius/` 1.3 MB, `fonts/` 0.4 MB)를 담은 미리 불러오는 `app.data` 하나 |
+| 에셋 | `assets/` (`quaternius/` 1.3 MB, `fonts/` 0.4 MB)를 담은 미리 불러오는 `sandbox.data` 하나 |
 | 씬 안의 애니메이션 | 새 `attach` 노드 컴포넌트, 애니메이터 `owner`, look-at `target_node`, `nv_anim_update_scene` (아래) |
 | glTF 로딩 | 파일에 스킨이 있으면 로더가 스켈레톤과 애니메이터를 만든다 |
 | `scene.c` | 여전히 anim이나 렌더러를 전혀 모른다. anim이 쓴 행렬을 곱할 뿐이다 |
@@ -70,11 +70,11 @@
 
 ```diff
  Frame
- 1  app: play / blend / demo motion ─► NvAnimator
--2  app: nv_anim_update(animator)
--3  app: apply_root_motion ─► root node
--4  app: update_sword ─► sword node
--5  app: update_look_at ─► look_at.target
+ 1  sandbox: play / blend / demo motion ─► NvAnimator
+-2  sandbox: nv_anim_update(animator)
+-3  sandbox: apply_root_motion ─► root node
+-4  sandbox: update_sword ─► sword node
+-5  sandbox: update_look_at ─► look_at.target
 +2  nv_anim_update_scene(scene, dt)
 +     ├─ look_at.target_node ─► look_at.target
 +     ├─ every animator ─► joint_model[]
@@ -91,7 +91,7 @@
 -├─ ground              ├─ ground
 -└─ planet              ├─ character
 -   └─ moon             │  ├─ mesh ×3  animator=#1
--                       │  └─ sword    (app moves it)
+-                       │  └─ sword    (sandbox moves it)
 -                       └─ target
 +one scene
 +├─ camera
@@ -121,19 +121,19 @@
     - owner를 `root_motion`만큼 (owner의 회전으로 돌려서) 움직이고, 그것을 비운다.
   - 그다음 모든 노드의 `attach`에 `joint_model[joint]`를 복사한다.
   - `nv_anim_update`는 씬을 쓰지 않는 호출자를 위해 남는다.
-  - `nv_anim_clip_skeleton(NvClipId)`과 `nv_anim_clip_count()`: 앱이 자체 테이블을 두지 않고도 UI가
+  - `nv_anim_clip_skeleton(NvClipId)`과 `nv_anim_clip_count()`: 샌드박스가 자체 테이블을 두지 않고도 UI가
     스켈레톤의 클립을 나열할 수 있게.
 - **`engine/gltf.h`**
   - `NvGltfModel.skeleton`과 `NvGltfModel.animator`. 파일에 스킨이 있으면 로더가 둘 다 만들고, `owner`를
     모델 루트로 정하고, 모든 skinned 메시 노드에 `animator`를 설정한다.
 
-### 앱
+### 샌드박스
 
 - **씬 배치:**
   - 캐릭터는 원점에 서고, 행성과 달은 한쪽으로 약 3 m 떨어져 있다.
   - 카메라는 초점 노드를 공전한다: 선택된 노드, 아무것도 선택되지 않았으면 캐릭터. 캐릭터의 루트 모션을
     계속 따라간다.
-- **앱에 남는 동작:**
+- **샌드박스에 남는 동작:**
   - 점프 연결 (Jump_Start → Jump_Loop → Jump_Land).
   - 블렌드 도우미.
   - 루트 모션 클립과 제자리 클립 중 고르기.
@@ -152,8 +152,8 @@
 
 ### 빌드와 배포
 
-- `app/CMakeLists.txt`: `add_executable(app main.c ui.c)`와
-  `nv_setup_executable(app ASSETS assets/quaternius)`.
+- `sandbox/CMakeLists.txt`: `add_executable(sandbox main.c ui.c)`와
+  `nv_setup_executable(sandbox ASSETS assets/quaternius)`.
 - `nv_setup_executable`에 하위 폴더 대신 패키지 루트에 설치하는 옵션이 생긴다.
 - CI는 같은 단계를 유지하고 설치 배치만 바뀐다. `cp web/landing.html` 단계는 없앤다.
 
@@ -161,8 +161,8 @@
 
 1. **엔진:** `attach`, `owner`, `target_node`, `nv_anim_update_scene`, 클립 질의, 애니메이터를 만드는 로더.
    엔진 변경만 따로 확인하려고 character 예제를 동작 변화 없이 이것들로 옮긴다.
-2. **앱:**
-   - 합친 씬과 Scene / Inspector / View 패널로 `app/`을 만든다.
+2. **샌드박스:**
+   - 합친 씬과 Scene / Inspector / View 패널로 `sandbox/`을 만든다.
    - `examples/`를 삭제한다.
 3. **배포와 문서:**
    - 루트에 설치하고 CI를 고친다.
@@ -184,17 +184,17 @@ Status: implemented (2026-09-27). Changes to this spec are agreed first.
 Replace the three examples with one app that shows one scene: the scene example's planet and
 moon and the character example's animated character, sword and target, side by side. The editor
 panel shows the node tree and the selected node's components. Animation becomes part of the
-scene, so the app no longer moves nodes by hand to follow the animation.
+scene, so the sandbox no longer moves nodes by hand to follow the animation.
 
 ### Decisions
 
 | Topic | Decision |
 |---|---|
 | Examples | `triangle` is deleted. `scene` and `character` merge into one app |
-| Location | `app/main.c` (scene setup, frame) and `app/ui.c` (editor panel); the CMake target is `app`; `examples/` is removed |
+| Location | `sandbox/main.c` (scene setup, frame) and `sandbox/ui.c` (editor panel); the CMake target is `sandbox`; `examples/` is removed |
 | Address | Pages root, `https://chromedays.github.io/engine/`; `web/landing.html` is removed. Later moved: Release to `/engine/release/`, Debug to `/engine/debug/` |
 | Old addresses | `/engine/character/`, `/engine/scene/` and `/engine/triangle/` are dropped, with no redirects |
-| Assets | One preloaded `app.data` with `assets/` (`quaternius/` 1.3 MB, `fonts/` 0.4 MB) |
+| Assets | One preloaded `sandbox.data` with `assets/` (`quaternius/` 1.3 MB, `fonts/` 0.4 MB) |
 | Animation in the scene | New `attach` node component, animator `owner`, look-at `target_node`, and `nv_anim_update_scene` (below) |
 | glTF loading | The loader creates the skeleton and animator when the file has a skin |
 | `scene.c` | Still knows nothing about anim or the renderer; it only multiplies by a matrix anim writes |
@@ -243,11 +243,11 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 
 ```diff
  Frame
- 1  app: play / blend / demo motion ─► NvAnimator
--2  app: nv_anim_update(animator)
--3  app: apply_root_motion ─► root node
--4  app: update_sword ─► sword node
--5  app: update_look_at ─► look_at.target
+ 1  sandbox: play / blend / demo motion ─► NvAnimator
+-2  sandbox: nv_anim_update(animator)
+-3  sandbox: apply_root_motion ─► root node
+-4  sandbox: update_sword ─► sword node
+-5  sandbox: update_look_at ─► look_at.target
 +2  nv_anim_update_scene(scene, dt)
 +     ├─ look_at.target_node ─► look_at.target
 +     ├─ every animator ─► joint_model[]
@@ -264,7 +264,7 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 -├─ ground              ├─ ground
 -└─ planet              ├─ character
 -   └─ moon             │  ├─ mesh ×3  animator=#1
--                       │  └─ sword    (app moves it)
+-                       │  └─ sword    (sandbox moves it)
 -                       └─ target
 +one scene
 +├─ camera
@@ -296,19 +296,19 @@ scene, so the app no longer moves nodes by hand to follow the animation.
   - After that, it copies `joint_model[joint]` into every node's `attach`.
   - `nv_anim_update` stays for callers that do not use a scene.
   - `nv_anim_clip_skeleton(NvClipId)` and `nv_anim_clip_count()`, so UI can list a skeleton's
-    clips without the app keeping its own table.
+    clips without the sandbox keeping its own table.
 - **`engine/gltf.h`**
   - `NvGltfModel.skeleton` and `NvGltfModel.animator`. When the file has a skin, the loader
     creates both, with `owner` set to the model root, and sets `animator` on every skinned mesh
     node.
 
-### App
+### Sandbox
 
 - **Scene layout:**
   - The character stands at the origin, and the planet and moon sit about 3 m to one side.
   - The camera orbits a focus node: the selected node, or the character when nothing is selected.
     It keeps following the character's root motion.
-- **Behavior that stays in the app:**
+- **Behavior that stays in the sandbox:**
   - The jump chain (Jump_Start → Jump_Loop → Jump_Land).
   - The blend helper.
   - Choosing root-motion or in-place clips.
@@ -328,8 +328,8 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 
 ### Build and deploy
 
-- `app/CMakeLists.txt`: `add_executable(app main.c ui.c)` and
-  `nv_setup_executable(app ASSETS assets/quaternius)`.
+- `sandbox/CMakeLists.txt`: `add_executable(sandbox main.c ui.c)` and
+  `nv_setup_executable(sandbox ASSETS assets/quaternius)`.
 - `nv_setup_executable` gains an option to install at the package root instead of a subfolder.
 - CI keeps the same steps; only the install layout changes. The `cp web/landing.html` step goes.
 
@@ -338,8 +338,8 @@ scene, so the app no longer moves nodes by hand to follow the animation.
 1. **Engine:** `attach`, `owner`, `target_node`, `nv_anim_update_scene`, clip queries, and the
    loader creating animators. Port the character example to them, with its behavior unchanged,
    to check the engine change on its own.
-2. **App:**
-   - Create `app/` with the merged scene and the Scene / Inspector / View panel.
+2. **Sandbox:**
+   - Create `sandbox/` with the merged scene and the Scene / Inspector / View panel.
    - Delete `examples/`.
 3. **Deploy and docs:**
    - Install at the root and update CI.

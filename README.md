@@ -25,7 +25,7 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 engine/              모듈마다 헤더와 소스가 나란히: base.h, math.h, scene.h, window.h, gpu.h, imgui.h,
                      renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h와 그 .c
                      (anim.cpp는 ozz-animation을 감싼다; 나머지는 모두 C). `#include <engine/scene.h>`
-app/                 앱: 쇼케이스 씬 (행성과 달, 검을 든 애니메이션 캐릭터), 벤치마크가 있는 스트레스 씬
+sandbox/             샌드박스: 쇼케이스 씬 (행성과 달, 검을 든 애니메이션 캐릭터), 벤치마크가 있는 스트레스 씬
                      (View 탭에서 고름), 그리고 에디터 (노드 트리, 인스펙터, 뷰 설정, 스트레스 워크로드),
                      데스크톱 UI (뷰포트 둘레의 도크)와 폰 UI (탭 패널 하나), 둘 다 위쪽 가운데에 Play / Stop.
                      쇼케이스를 브라우저 (IndexedDB)에 자동 저장하고, undo와 redo, Edit와 Play 모드
@@ -55,7 +55,7 @@ docs/                코딩 표준과 기능 스펙
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/app 8000   # open http://localhost:8000/
+python3 -m http.server -d build/sandbox 8000   # open http://localhost:8000/
 ctest --test-dir build --output-on-failure # tests/, run under Node
 ```
 
@@ -99,7 +99,7 @@ Live:
 engine/              each module's header and source side by side: base.h, math.h, scene.h, window.h,
                      gpu.h, imgui.h, renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h and
                      their .c (anim.cpp wraps ozz-animation; everything else is C). `#include <engine/scene.h>`
-app/                 the app: a showcase scene (a planet and moon, an animated character with a
+sandbox/             the sandbox: a showcase scene (a planet and moon, an animated character with a
                      sword), a stress scene with a benchmark (picked in the View tab), and an
                      editor (node tree, inspector, view settings, stress workloads), with a
                      desktop UI (docks around the viewport) and a phone UI (one tabbed panel),
@@ -135,7 +135,7 @@ Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloa
 ```sh
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-python3 -m http.server -d build/app 8000   # open http://localhost:8000/
+python3 -m http.server -d build/sandbox 8000   # open http://localhost:8000/
 ctest --test-dir build --output-on-failure # tests/, run under Node
 ```
 

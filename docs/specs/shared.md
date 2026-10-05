@@ -10,8 +10,8 @@
 
 ### 목표
 
-`docs/specs/battle.md`의 게임(`autobattler/`, 엔진만 링크하는 두 번째 실행 파일)을 만들기 전에, `app/`에 있는 코드 중 그 게임도
-쓸 것을 엔진으로 옮긴다. 리팩터링일 뿐이다: 에디터 앱의 동작, 화면, 저장 형식은 바뀌지 않는다.
+`docs/specs/battle.md`의 게임(`autobattler/`, 엔진만 링크하는 두 번째 실행 파일)을 만들기 전에, `sandbox/`에 있는 코드 중 그 게임도
+쓸 것을 엔진으로 옮긴다. 리팩터링일 뿐이다: 샌드박스의 동작, 화면, 저장 형식은 바뀌지 않는다.
 
 ### 원칙
 
@@ -20,7 +20,7 @@
 - **동작을 바꾸지 않는다.** 저장 태그와 그 값, `SAVE_VERSION`, 디버그 내보내기, 화면의 픽셀이 그대로다(예외 하나: 해결된
   질문 4). 열거형의 값 순서를
   지켜서, 저장된 값이 같은 뜻으로 읽히게 한다.
-- **엔진은 `App`을 모른다.** 옮긴 코드는 `App`, `SceneView`, 검색, 저장을 참조하지 않는다. 앱에 남는 쪽이 엔진 함수를 부른다.
+- **엔진은 `Sandbox`을 모른다.** 옮긴 코드는 `Sandbox`, `SceneView`, 검색, 저장을 참조하지 않는다. 샌드박스에 남는 쪽이 엔진 함수를 부른다.
 - **새 서드파티는 없다.**
 - **파일 배치는 평평한 엔진을 따른다.** 새 모듈은 `engine/<이름>.h`와 `engine/<이름>.c`가 나란히 있고
   `#include <engine/<이름>.h>`로 포함한다. 소스는 `engine/CMakeLists.txt`의 목록에 더한다. 테스트는 소스를
@@ -31,22 +31,22 @@
 
 | 파일 | 내용 | 판단 |
 |---|---|---|
-| `app/strings.c`, `strings.h` | `T()`, `TL()`, 언어, 한국어 표 | **옮김** (조회와 언어). 표는 실행 파일마다 남는다 |
-| `app/main.c`: `append_box`, `app_box_mesh`, `create_ground_mesh` | 상자와 바닥 메시 | **옮김**: 게임의 유닛, 지형지물, 전장 |
-| `app/main.c`: `read_asset`, `load_font` | UI 글꼴 읽기 | **옮김**: 같은 글꼴을 쓴다 |
-| `app/main.c`: `js_download_bytes`, `read_download_size` | 내려받은 크기 글 | **옮김**: 파일 이름을 실행 파일 이름에서 얻도록 |
-| `app/main.c`: `apply_view_input`, `update_camera` | 궤도 카메라(회전, 줌, 팬, 배치) | **일부 옮김**: 수학은 엔진, 선택 따라가기와 홈은 앱 |
-| `app/main.c`: `pick` | 탭이 이미지 안인지, CSS 픽셀에서 광선 | **일부 옮김**: 탭에서 광선까지. 배지와 선택은 앱 |
-| `app/ui.c`: `scene_output`, `Resolution`, `ui_rect` | 씬 해상도와 이미지 사각형 | **옮김**: 게임도 폰에서 해상도를 낮춘다 |
-| `app/ui.c`: `fit_text` | 폭에 맞춰 자르고 "..." | **옮김**: 빌드 표시 |
-| `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | 커밋 해시와 제목 헤더 | **옮김** (CMake 함수): 게임 페이지도 어느 커밋인지 보여 준다 |
+| `sandbox/strings.c`, `strings.h` | `T()`, `TL()`, 언어, 한국어 표 | **옮김** (조회와 언어). 표는 실행 파일마다 남는다 |
+| `sandbox/main.c`: `append_box`, `sandbox_box_mesh`, `create_ground_mesh` | 상자와 바닥 메시 | **옮김**: 게임의 유닛, 지형지물, 전장 |
+| `sandbox/main.c`: `read_asset`, `load_font` | UI 글꼴 읽기 | **옮김**: 같은 글꼴을 쓴다 |
+| `sandbox/main.c`: `js_download_bytes`, `read_download_size` | 내려받은 크기 글 | **옮김**: 파일 이름을 실행 파일 이름에서 얻도록 |
+| `sandbox/main.c`: `apply_view_input`, `update_camera` | 궤도 카메라(회전, 줌, 팬, 배치) | **일부 옮김**: 수학은 엔진, 선택 따라가기와 홈은 샌드박스 |
+| `sandbox/main.c`: `pick` | 탭이 이미지 안인지, CSS 픽셀에서 광선 | **일부 옮김**: 탭에서 광선까지. 배지와 선택은 샌드박스 |
+| `sandbox/ui.c`: `scene_output`, `Resolution`, `ui_rect` | 씬 해상도와 이미지 사각형 | **옮김**: 게임도 폰에서 해상도를 낮춘다 |
+| `sandbox/ui.c`: `fit_text` | 폭에 맞춰 자르고 "..." | **옮김**: 빌드 표시 |
+| `sandbox/CMakeLists.txt`: `sandbox_version`, `NV_BUILD_NAME` | 커밋 해시와 제목 헤더 | **옮김** (CMake 함수): 게임 페이지도 어느 커밋인지 보여 준다 |
 | 중복된 작은 도우미 | `clampf`(ui_desktop.c), `clamp`(save.c), `clamp_u32`(ui.c), FNV-1a 세 곳(strings.c, save.c, ui.c), xorshift(effects.c), `pixel_ratio > 0 ? … : 1` 일곱 곳 | **옮김**: 게임은 FNV-1a 해시와 시드 난수가 필요하다 |
-| `app/ui.c`: `ui_build_label` | 빌드 표시와 콘솔 배지 | **일부 옮김** (구현 뒤, `ecfaf54`): 표시는 엔진의 `nv_imgui_draw_build_label`이 그리고, 배지는 콘솔 탭과 묶여 있어 앱(`ui_draw_build_label`)에 남는다 |
-| `app/effects.c` | 폭발, 불꽃, 연기, 미사일 궤적의 정의 | 남김: 내용(content)이다. 게임은 무기마다 제 이펙트를 정의한다 (해결된 질문 1) |
-| `app/console.c` | Console 탭 | 남김: 게임 스펙에 없다. 로그 링은 이미 엔진에 있다 (해결된 질문 2) |
-| `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | 저장, undo, 선택, 검색과 팔레트, 단축키, 도크, 폰 패널, Textures 탭, 스트레스 씬 | 남김: 에디터만의 것 |
-| `app/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | 렌더러 설정 위젯 | 남김: `search_row`에 묶여 있고 게임 스펙에 없다 |
-| `app/main.c`: `frame`, `main`의 초기화, `FrameTimes` | 프레임 순서, 아레나, 기본값, 시간 재기 | 남김: 실행 파일마다 짧고 다르다. 프레임워크로 만들지 않는다 (해결된 질문 3) |
+| `sandbox/ui.c`: `ui_build_label` | 빌드 표시와 콘솔 배지 | **일부 옮김** (구현 뒤, `ecfaf54`): 표시는 엔진의 `nv_imgui_draw_build_label`이 그리고, 배지는 콘솔 탭과 묶여 있어 샌드박스(`ui_draw_build_label`)에 남는다 |
+| `sandbox/effects.c` | 폭발, 불꽃, 연기, 미사일 궤적의 정의 | 남김: 내용(content)이다. 게임은 무기마다 제 이펙트를 정의한다 (해결된 질문 1) |
+| `sandbox/console.c` | Console 탭 | 남김: 게임 스펙에 없다. 로그 링은 이미 엔진에 있다 (해결된 질문 2) |
+| `sandbox/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | 저장, undo, 선택, 검색과 팔레트, 단축키, 도크, 폰 패널, Textures 탭, 스트레스 씬 | 남김: 에디터만의 것 |
+| `sandbox/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | 렌더러 설정 위젯 | 남김: `search_row`에 묶여 있고 게임 스펙에 없다 |
+| `sandbox/main.c`: `frame`, `main`의 초기화, `FrameTimes` | 프레임 순서, 아레나, 기본값, 시간 재기 | 남김: 실행 파일마다 짧고 다르다. 프레임워크로 만들지 않는다 (해결된 질문 3) |
 
 ### 옮기는 것
 
@@ -73,12 +73,12 @@ const char* nv_strings_label(const char* english);
 #define TL(english) nv_strings_label(english)
 ```
 
-- `engine/strings.c`: 지금 `app/strings.c`의 해시 표, `T`, `TL`, 언어. 상태는 파일 전역이다.
-- `app/strings.c`는 표(`NvStringPair` 배열)만 남기고, `main`이 `nv_strings_set_table`을 부른다. `app/strings.h`는 없어지고
-  `app/app.h`가 `#include <engine/strings.h>`를 한다. 엔진 헤더는 언제나 폴더와 함께 포함하므로, 앱의 `strings.c`나 POSIX의
+- `engine/strings.c`: 지금 `sandbox/strings.c`의 해시 표, `T`, `TL`, 언어. 상태는 파일 전역이다.
+- `sandbox/strings.c`는 표(`NvStringPair` 배열)만 남기고, `main`이 `nv_strings_set_table`을 부른다. `sandbox/strings.h`는 없어지고
+  `sandbox/sandbox.h`가 `#include <engine/strings.h>`를 한다. 엔진 헤더는 언제나 폴더와 함께 포함하므로, 샌드박스의 `strings.c`나 POSIX의
   `<strings.h>`와 섞이지 않는다.
 - 저장 태그 `LANG`의 값(0 영어, 1 한국어)은 `NV_LANGUAGE_*`의 값과 같다.
-- `tests/strings_test.mjs`는 폴더 목록을 받아 폴더마다 자기 `strings.c`에 대해 검사한다. 지금은 `app/` 하나이고, 게임이
+- `tests/strings_test.mjs`는 폴더 목록을 받아 폴더마다 자기 `strings.c`에 대해 검사한다. 지금은 `sandbox/` 하나이고, 게임이
   `autobattler/`를 더한다. (`tools/subset_hangul.sh`도 표 목록을 받았지만, 2026-10-03에 글꼴이 Pretendard 하나로 바뀌며 없어졌다.)
 
 #### 2. 메시 기본형 (`engine/mesh.h`)
@@ -100,7 +100,7 @@ void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0
 - `engine/mesh.h`가 `NvVertex`, `NvSkinnedVertex`, `NvMeshData`를 `engine/renderer.h`에서 넘겨받고, `renderer.h`는
   `mesh.h`를 포함한다. 그래서 `mesh.h`와 `engine/mesh.c`는 GPU가 없고, ctest가 포트 없이 검사한다. 함수는 `NvMeshData`의
   count를 늘린다.
-- 앱: `app_box_mesh`, `create_sword_mesh`, `create_ground_mesh`가 이것을 쓴다. 꼭짓점 순서와 값이 같으므로 화면이 같다.
+- 샌드박스: `sandbox_box_mesh`, `create_sword_mesh`, `create_ground_mesh`가 이것을 쓴다. 꼭짓점 순서와 값이 같으므로 화면이 같다.
 - 게임: 유닛 큐브, 지형지물 상자, 64 × 96 m 전장.
 
 #### 3. UI 글꼴 (`engine/imgui.h`)
@@ -114,7 +114,7 @@ b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 ```
 
-- 경로와 크기(14 px)는 `fonts.md`가 정한 UI 글꼴이므로 엔진에 둔다. 앱의 `read_asset`, `load_font`, `fit_text`는 없어진다.
+- 경로와 크기(14 px)는 `fonts.md`가 정한 UI 글꼴이므로 엔진에 둔다. 샌드박스의 `read_asset`, `load_font`, `fit_text`는 없어진다.
 - 로그 출처는 `"imgui"`가 된다(지금은 `"app"`). 테스트가 출처로 찾는 것은 없다.
 
 #### 4. 씬 해상도 (`engine/renderer.h`)
@@ -148,8 +148,8 @@ NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
   선언은 `engine/renderer.h`에 남으므로 따로 헤더가 없다. `renderer.h`는 `engine/gpu.h`(WebGPU 헤더)를 포함하므로, 테스트는
   `gpu_format_test`처럼 `--use-port=emdawnwebgpu`로 헤더만 받고 아무것도 링크하지 않는다.
 - 열거형의 값 순서가 지금과 같으므로 저장 태그 `RSMD`, `RSFT`의 값이 같은 뜻이다.
-- 앱: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX`, `scene_output`이 없어진다. `pick`은
-  `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 처음엔 앱에 남았다가(도크 배치) 뒤에 엔진의 `nv_window_framebuffer_rect_from_css`로 바뀌었다(`ecfaf54`).
+- 샌드박스: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX`, `scene_output`이 없어진다. `pick`은
+  `nv_renderer_tap_ray`로 시작한다. `ui_rect`는 처음엔 샌드박스에 남았다가(도크 배치) 뒤에 엔진의 `nv_window_framebuffer_rect_from_css`로 바뀌었다(`ecfaf54`).
 - 게임: 폰에서 divisor 2, 배치 입력의 탭.
 
 #### 5. 궤도 카메라 (`engine/camera.h`)
@@ -171,10 +171,10 @@ void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
 - `engine/camera.h`는 `engine/scene.h`만 포함한다. 입력(`NvViewInput`, `engine/imgui.h`)과 해상도(`NvSceneOutput`,
-  `engine/renderer.h`)는 호출하는 쪽이 숫자로 바꿔 넘긴다: 앱은 `orbit_x * ORBIT_RADIANS_PER_PIXEL`, 이미지 높이는
+  `engine/renderer.h`)는 호출하는 쪽이 숫자로 바꿔 넘긴다: 샌드박스는 `orbit_x * ORBIT_RADIANS_PER_PIXEL`, 이미지 높이는
   `scene_output.height * pixel_height / pixel_ratio`. 그래서 `engine/camera.c`는 GPU가 없고 ctest가 포트 없이 검사한다.
-- 앱: `SceneView`의 `camera_yaw`, `camera_pitch`, `camera_distance`, `orbit_point`가 `NvOrbitCamera orbit` 하나가 된다.
-  선택 따라가기, `pan`, 홈, 초점, 기즈모 중 멈춤은 앱에 남는다. `CAMERA_*` 한계는 `orbit`의 필드가 된다.
+- 샌드박스: `SceneView`의 `camera_yaw`, `camera_pitch`, `camera_distance`, `orbit_point`가 `NvOrbitCamera orbit` 하나가 된다.
+  선택 따라가기, `pan`, 홈, 초점, 기즈모 중 멈춤은 샌드박스에 남는다. `CAMERA_*` 한계는 `orbit`의 필드가 된다.
 - 저장: 태그는 그대로이고, 쓰고 읽는 필드 경로만 바뀐다(`view->orbit.yaw`).
 - 게임: 피치와 요를 고정하고, 팬 결과를 지면에 투영(y를 0으로)해 전장 안으로 제한한다.
 
@@ -191,7 +191,7 @@ void nv_window_download_text(char* out, umm capacity);
 #### 7. 빌드 버전 (CMake)
 
 - 루트 `CMakeLists.txt`에 `nv_add_version(<target>)`: `<target>_version` 타깃, 그 타깃 폴더의 `nv_version.h`, include 경로,
-  `NV_BUILD_NAME`. `app/CMakeLists.txt`의 같은 코드가 이 한 줄이 된다. `cmake/version.cmake`는 그대로다.
+  `NV_BUILD_NAME`. `sandbox/CMakeLists.txt`의 같은 코드가 이 한 줄이 된다. `cmake/version.cmake`는 그대로다.
 
 #### 8. 작은 도우미 (`engine/base.h`, `engine/math.h`, `engine/window.h`)
 
@@ -216,7 +216,7 @@ static inline f32 nv_random_f32(NvRandom* random); // [0, 1)
 static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
-- 앱의 `clampf`, `clamp`, `clamp_u32`, 세 FNV-1a 루프, 일곱 `pixel_ratio` 식이 이것을 쓴다. `save.c`의 장면 배치 해시는
+- 샌드박스의 `clampf`, `clamp`, `clamp_u32`, 세 FNV-1a 루프, 일곱 `pixel_ratio` 식이 이것을 쓴다. `save.c`의 장면 배치 해시는
   같은 값을 내야 한다(저장의 노드가 그 해시로 맞춰지므로): 테스트가 지금 값과 비교한다.
 - `effects.c`의 xorshift는 `NvRandom`이 된다. 스트레스 씬 이펙트의 무작위 순서가 바뀌지만 저장되지도, 값으로 검사되지도
   않는다 (해결된 질문 4).
@@ -226,7 +226,7 @@ static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ### 바뀌지 않는 것
 
 - 저장 형식: 모든 태그, 그 값, `SAVE_VERSION`. 이 리팩터링 전에 쓴 저장이 그대로 읽힌다.
-- 디버그 내보내기(`Module._app_debug_*`)의 이름과 결과.
+- 디버그 내보내기(`Module._sandbox_debug_*`)의 이름과 결과.
 - 화면: Edit 모드 쇼케이스의 스크린샷이 픽셀 단위로 같다(SwiftShader는 결정적이다).
 - 로그 메시지 글. 출처만 `"app"`에서 `"imgui"`로 바뀌는 것이 있다(글꼴).
 
@@ -243,15 +243,15 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 
 브라우저(헤드리스 Chromium, Release와 Debug, 데스크톱과 폰 크기). 리팩터링 전 빌드와 후 빌드를 같은 절차로 돌려 비교한다:
 
-- 첫 방문의 `_app_debug_save_crc()`가 같다. 전 빌드가 쓴 저장을 후 빌드가 읽고, 다시 쓰면 같은 바이트다.
+- 첫 방문의 `_sandbox_debug_save_crc()`가 같다. 전 빌드가 쓴 저장을 후 빌드가 읽고, 다시 쓰면 같은 바이트다.
 - Edit 모드 쇼케이스의 스크린샷이 같다. 한국어로 바꾼 패널도 같다.
-- `_app_debug_scene`, `_app_debug_project`, `_app_debug_view`, `_app_debug_language`가 같다. 검은 띠를 탭하면 선택이
+- `_sandbox_debug_scene`, `_sandbox_debug_project`, `_sandbox_debug_view`, `_sandbox_debug_language`가 같다. 검은 띠를 탭하면 선택이
   바뀌지 않는다.
 - 내려받은 크기 글이 보인다. 콘솔에 글꼴 경고가 없다.
 
 ### 단계
 
-각 단계 끝마다 앱이 전과 같은지 위 검사로 확인했다. 2–6단계는 서로 같은 파일을 바꿔서 커밋 하나에 담았다.
+각 단계 끝마다 샌드박스가 전과 같은지 위 검사로 확인했다. 2–6단계는 서로 같은 파일을 바꿔서 커밋 하나에 담았다.
 
 1. **도우미:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
 2. **메시:** `engine/mesh.h`, `mesh_test.c`.
@@ -276,7 +276,7 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
   부르기 때문이다. `nv_renderer_camera_matrices`와 `nv_renderer_view_ray`도 같이 옮겼다.
 - **카메라:** `SceneView.home`은 `NvOrbitCamera` 통째의 복사다. 제한은 필드이고 0이 아니어야 하므로, 시야를 만드는 두 곳이
   `ORBIT_LIMITS`를 넣는다.
-- **문자열:** 앱은 `app_strings_init()`으로 표를 넘긴다. 해시 표는 표를 정할 때 바로 만든다(전에는 처음 쓸 때). 해시 표 크기는
+- **문자열:** 샌드박스는 `sandbox_strings_init()`으로 표를 넘긴다. 해시 표는 표를 정할 때 바로 만든다(전에는 처음 쓸 때). 해시 표 크기는
   8192칸(`u16`, 16 KB)이다.
 - **브라우저 확인:** 리팩터링 전 빌드(`3f6f8c7`)와 단계마다의 빌드를 같은 Playwright 절차로 돌려 비교했다. 절차: 첫 방문, 클릭으로
   고르기(땅, 큐브, 캐릭터), 궤도, 줌, 팬, 고정 해상도와 그 띠 탭, Scale 2, 한국어, 폰 UI, 저장 파일 읽기, 전 빌드가 쓴 저장 불러오기.
@@ -288,7 +288,7 @@ ctest(Node), 새 파일. `tests/CMakeLists.txt`가 각 테스트를 `${PROJECT_S
 
 모두 2026-10-02에 추천대로 정했다.
 
-1. **이펙트 정의:** `app/effects.c`의 폭발, 불꽃, 연기, 미사일 궤적은 앱에 남는다. 내용이므로 게임은 무기마다 제 이펙트를
+1. **이펙트 정의:** `sandbox/effects.c`의 폭발, 불꽃, 연기, 미사일 궤적은 샌드박스에 남는다. 내용이므로 게임은 무기마다 제 이펙트를
    정의한다.
 2. **Console 탭:** 지금은 옮기지 않는다. 게임이 원할 때 옮긴다. 로그 링은 이미 엔진에 있다.
 3. **프레임과 초기화:** 실행 파일마다 `main`과 `frame`을 직접 쓴다. 공통 시작 코드를 엔진 함수로 묶지 않는다.
@@ -304,7 +304,7 @@ engine (`engine/include/nv/` and `engine/src/` into one `engine/`), is done (`c3
 ### Goal
 
 Before building the game of `docs/specs/battle.md` (`autobattler/`, a second executable that links only the engine), move
-the code in `app/` that the game will also use into the engine. It is a refactoring only: the editor app's behavior, screen
+the code in `sandbox/` that the game will also use into the engine. It is a refactoring only: the sandbox's behavior, screen
 and save format do not change.
 
 ### Principles
@@ -314,8 +314,8 @@ and save format do not change.
   day stays.
 - **Behavior does not change.** Save tags and their values, `SAVE_VERSION`, debug exports and the pixels on screen stay the
   same (one exception: resolved question 4). Enum value order is kept, so saved values read with the same meaning.
-- **The engine does not know `App`.** Moved code refers to no `App`, `SceneView`, search or save. The side that stays in the
-  app calls the engine functions.
+- **The engine does not know `Sandbox`.** Moved code refers to no `Sandbox`, `SceneView`, search or save. The side that stays in the
+  sandbox calls the engine functions.
 - **No new third-party code.**
 - **Files follow the flat engine.** A new module is `engine/<name>.h` and `engine/<name>.c` side by side, included as
   `#include <engine/<name>.h>`; its source joins the list in `engine/CMakeLists.txt`. Tests build sources as
@@ -326,22 +326,22 @@ and save format do not change.
 
 | File | Contents | Verdict |
 |---|---|---|
-| `app/strings.c`, `strings.h` | `T()`, `TL()`, the language, the Korean table | **Moves** (lookup and language). Each executable keeps its own table |
-| `app/main.c`: `append_box`, `app_box_mesh`, `create_ground_mesh` | Box and ground meshes | **Moves**: the game's units, props and field |
-| `app/main.c`: `read_asset`, `load_font` | Reading the UI font | **Moves**: the game uses the same font |
-| `app/main.c`: `js_download_bytes`, `read_download_size` | The downloaded-size text | **Moves**, with file names taken from the executable's name |
-| `app/main.c`: `apply_view_input`, `update_camera` | The orbit camera (turn, zoom, pan, placement) | **Partly moves**: the math goes to the engine; following the selection and home stay in the app |
-| `app/main.c`: `pick` | Whether a tap is inside the image, a ray from CSS pixels | **Partly moves**: from the tap to the ray. The badge and the selection stay |
-| `app/ui.c`: `scene_output`, `Resolution`, `ui_rect` | The scene resolution and the image rectangle | **Moves**: the game also lowers the resolution on phones |
-| `app/ui.c`: `fit_text` | Cut to a width with "..." | **Moves**: for a build label |
-| `app/CMakeLists.txt`: `app_version`, `NV_BUILD_NAME` | The commit hash and subject header | **Moves** (a CMake function): the game's page also shows its commit |
+| `sandbox/strings.c`, `strings.h` | `T()`, `TL()`, the language, the Korean table | **Moves** (lookup and language). Each executable keeps its own table |
+| `sandbox/main.c`: `append_box`, `sandbox_box_mesh`, `create_ground_mesh` | Box and ground meshes | **Moves**: the game's units, props and field |
+| `sandbox/main.c`: `read_asset`, `load_font` | Reading the UI font | **Moves**: the game uses the same font |
+| `sandbox/main.c`: `js_download_bytes`, `read_download_size` | The downloaded-size text | **Moves**, with file names taken from the executable's name |
+| `sandbox/main.c`: `apply_view_input`, `update_camera` | The orbit camera (turn, zoom, pan, placement) | **Partly moves**: the math goes to the engine; following the selection and home stay in the sandbox |
+| `sandbox/main.c`: `pick` | Whether a tap is inside the image, a ray from CSS pixels | **Partly moves**: from the tap to the ray. The badge and the selection stay |
+| `sandbox/ui.c`: `scene_output`, `Resolution`, `ui_rect` | The scene resolution and the image rectangle | **Moves**: the game also lowers the resolution on phones |
+| `sandbox/ui.c`: `fit_text` | Cut to a width with "..." | **Moves**: for a build label |
+| `sandbox/CMakeLists.txt`: `sandbox_version`, `NV_BUILD_NAME` | The commit hash and subject header | **Moves** (a CMake function): the game's page also shows its commit |
 | Repeated small helpers | `clampf` (ui_desktop.c), `clamp` (save.c), `clamp_u32` (ui.c), FNV-1a in three places (strings.c, save.c, ui.c), xorshift (effects.c), `pixel_ratio > 0 ? … : 1` in seven places | **Move**: the game needs an FNV-1a hash and seeded random numbers |
-| `app/ui.c`: `ui_build_label` | The build label and the Console badge | **Partly moves** (after the build, `ecfaf54`): the engine's `nv_imgui_draw_build_label` draws the label; the badge is tied to the Console tab and stays in the app (`ui_draw_build_label`) |
-| `app/effects.c` | What an explosion, sparks, smoke and a missile trail are made of | Stays: it is content. The game defines its own effects per weapon (resolved question 1) |
-| `app/console.c` | The Console tab | Stays: not in the game's spec. The log ring is already in the engine (resolved question 2) |
-| `app/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | Saving, undo, selection, search and palette, shortcuts, docks, the phone panel, the Textures tab, the stress scene | Stay: editor only |
-| `app/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | Renderer setting widgets | Stay: tied to `search_row`, and not in the game's spec |
-| `app/main.c`: `frame`, the setup in `main`, `FrameTimes` | Frame order, arenas, defaults, timing | Stay: short and different in each executable. No framework (resolved question 3) |
+| `sandbox/ui.c`: `ui_build_label` | The build label and the Console badge | **Partly moves** (after the build, `ecfaf54`): the engine's `nv_imgui_draw_build_label` draws the label; the badge is tied to the Console tab and stays in the sandbox (`ui_draw_build_label`) |
+| `sandbox/effects.c` | What an explosion, sparks, smoke and a missile trail are made of | Stays: it is content. The game defines its own effects per weapon (resolved question 1) |
+| `sandbox/console.c` | The Console tab | Stays: not in the game's spec. The log ring is already in the engine (resolved question 2) |
+| `sandbox/save.c`, `undo.c`, `selection.c`, `search.c`, `shortcuts.c`, `ui_desktop.c`, `ui_phone.c`, `textures.c`, `stress.c` | Saving, undo, selection, search and palette, shortcuts, docks, the phone panel, the Textures tab, the stress scene | Stay: editor only |
+| `sandbox/ui.c`: `msaa_ui`, `post_ui`, `shadow_ui`, `resolution_ui` | Renderer setting widgets | Stay: tied to `search_row`, and not in the game's spec |
+| `sandbox/main.c`: `frame`, the setup in `main`, `FrameTimes` | Frame order, arenas, defaults, timing | Stay: short and different in each executable. No framework (resolved question 3) |
 
 ### What moves
 
@@ -368,12 +368,12 @@ const char* nv_strings_label(const char* english);
 #define TL(english) nv_strings_label(english)
 ```
 
-- `engine/strings.c`: the hash table, `T`, `TL` and the language now in `app/strings.c`. Its state is file-global.
-- `app/strings.c` keeps only its table (an `NvStringPair` array), and `main` calls `nv_strings_set_table`. `app/strings.h`
-  goes, and `app/app.h` does `#include <engine/strings.h>`. Engine headers are always included with their folder, so it is
-  never confused with the app's `strings.c` or POSIX's `<strings.h>`.
+- `engine/strings.c`: the hash table, `T`, `TL` and the language now in `sandbox/strings.c`. Its state is file-global.
+- `sandbox/strings.c` keeps only its table (an `NvStringPair` array), and `main` calls `nv_strings_set_table`. `sandbox/strings.h`
+  goes, and `sandbox/sandbox.h` does `#include <engine/strings.h>`. Engine headers are always included with their folder, so it is
+  never confused with the sandbox's `strings.c` or POSIX's `<strings.h>`.
 - The `LANG` save tag's values (0 English, 1 Korean) equal those of `NV_LANGUAGE_*`.
-- `tests/strings_test.mjs` takes a list of folders and checks each against its own `strings.c`. For now that is `app/`;
+- `tests/strings_test.mjs` takes a list of folders and checks each against its own `strings.c`. For now that is `sandbox/`;
   the game adds `autobattler/`. (`tools/subset_hangul.sh` took a list of tables too, until the font became Pretendard alone on 2026-10-03 and it went.)
 
 #### 2. Mesh primitives (`engine/mesh.h`)
@@ -395,7 +395,7 @@ void nv_mesh_append_plane(NvMeshBuilder* mesh, f32 half_x, f32 half_z); // y = 0
 - `engine/mesh.h` takes `NvVertex`, `NvSkinnedVertex` and `NvMeshData` over from `engine/renderer.h`, which includes
   `mesh.h`. So `mesh.h` and `engine/mesh.c` have no GPU, and ctest checks them without the port. The functions grow the
   counts in `NvMeshData`.
-- App: `app_box_mesh`, `create_sword_mesh` and `create_ground_mesh` use it. Vertex order and values are the same, so the
+- Sandbox: `sandbox_box_mesh`, `create_sword_mesh` and `create_ground_mesh` use it. Vertex order and values are the same, so the
   screen is too.
 - Game: unit cubes, prop boxes, the 64 × 96 m field.
 
@@ -410,7 +410,7 @@ b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 ```
 
-- The paths and size (14 px) are the UI font `fonts.md` decided, so they live in the engine. The app's `read_asset`,
+- The paths and size (14 px) are the UI font `fonts.md` decided, so they live in the engine. The sandbox's `read_asset`,
   `load_font` and `fit_text` go.
 - The log source becomes `"imgui"` (now `"app"`). No test looks messages up by source.
 
@@ -445,8 +445,8 @@ NvMat4 nv_renderer_camera_view_proj(NvNode* camera_node, f32 aspect);
   The declarations stay in `engine/renderer.h`, so it has no header of its own. `renderer.h` includes `engine/gpu.h` (the
   WebGPU header), so the test, like `gpu_format_test`, takes the headers with `--use-port=emdawnwebgpu` and links nothing.
 - The enum value order is unchanged, so the `RSMD` and `RSFT` save tags keep their meaning.
-- App: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX` and `scene_output` go. `pick` starts with
-  `nv_renderer_tap_ray`. `ui_rect` first stayed in the app (dock layout), then became the engine's `nv_window_framebuffer_rect_from_css` (`ecfaf54`).
+- Sandbox: `Resolution`, `ResolutionMode`, `FixedFit`, `RESOLUTION_MIN/MAX` and `scene_output` go. `pick` starts with
+  `nv_renderer_tap_ray`. `ui_rect` first stayed in the sandbox (dock layout), then became the engine's `nv_window_framebuffer_rect_from_css` (`ecfaf54`).
 - Game: divisor 2 on phones, taps for deployment.
 
 #### 5. Orbit camera (`engine/camera.h`)
@@ -468,11 +468,11 @@ void nv_orbit_camera_place(const NvOrbitCamera* camera, NvNode* camera_node);
 ```
 
 - `engine/camera.h` includes only `engine/scene.h`. The caller turns input (`NvViewInput`, `engine/imgui.h`) and the
-  resolution (`NvSceneOutput`, `engine/renderer.h`) into numbers: the app passes `orbit_x * ORBIT_RADIANS_PER_PIXEL`, and
+  resolution (`NvSceneOutput`, `engine/renderer.h`) into numbers: the sandbox passes `orbit_x * ORBIT_RADIANS_PER_PIXEL`, and
   the image height as `scene_output.height * pixel_height / pixel_ratio`. So `engine/camera.c` has no GPU, and ctest checks
   it without the port.
-- App: `SceneView`'s `camera_yaw`, `camera_pitch`, `camera_distance` and `orbit_point` become one `NvOrbitCamera orbit`.
-  Following the selection, `pan`, home, focus and holding still during a gizmo drag stay in the app. The `CAMERA_*` limits
+- Sandbox: `SceneView`'s `camera_yaw`, `camera_pitch`, `camera_distance` and `orbit_point` become one `NvOrbitCamera orbit`.
+  Following the selection, `pan`, home, focus and holding still during a gizmo drag stay in the sandbox. The `CAMERA_*` limits
   become fields of `orbit`.
 - Save: the tags stay; only the field paths written and read change (`view->orbit.yaw`).
 - Game: pitch and yaw fixed, the pan projected onto the ground (y set to 0) and kept over the field.
@@ -490,7 +490,7 @@ void nv_window_download_text(char* out, umm capacity);
 #### 7. Build version (CMake)
 
 - `nv_add_version(<target>)` in the root `CMakeLists.txt`: a `<target>_version` target, `nv_version.h` in the target's
-  folder, the include path and `NV_BUILD_NAME`. The same code in `app/CMakeLists.txt` becomes this one line.
+  folder, the include path and `NV_BUILD_NAME`. The same code in `sandbox/CMakeLists.txt` becomes this one line.
   `cmake/version.cmake` stays as it is.
 
 #### 8. Small helpers (`engine/base.h`, `engine/math.h`, `engine/window.h`)
@@ -516,7 +516,7 @@ static inline f32 nv_random_f32(NvRandom* random); // [0, 1)
 static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ```
 
-- The app's `clampf`, `clamp`, `clamp_u32`, the three FNV-1a loops and the seven `pixel_ratio` expressions use these. The
+- The sandbox's `clampf`, `clamp`, `clamp_u32`, the three FNV-1a loops and the seven `pixel_ratio` expressions use these. The
   scene layout hash in `save.c` must give the same value (saved nodes are matched by it): a test compares it with today's.
 - `effects.c`'s xorshift becomes `NvRandom`. The random order of the stress scene's effects changes, but it is neither saved
   nor checked by value (resolved question 4).
@@ -526,7 +526,7 @@ static inline f32 nv_window_pixel_ratio(const NvWindow* window);
 ### What does not change
 
 - The save format: every tag, its values, `SAVE_VERSION`. Saves written before this refactoring load as they are.
-- Debug exports (`Module._app_debug_*`): names and results.
+- Debug exports (`Module._sandbox_debug_*`): names and results.
 - The screen: a screenshot of the showcase in Edit mode is the same, pixel for pixel (SwiftShader is deterministic).
 - Log message texts. Only one source changes, from `"app"` to `"imgui"` (the font).
 
@@ -545,16 +545,16 @@ ctest (Node), new files. `tests/CMakeLists.txt` builds each test with `${PROJECT
 Browser (headless Chromium, Release and Debug, desktop and phone sizes). The build before the refactoring and the one after
 run the same steps and are compared:
 
-- `_app_debug_save_crc()` on a first visit is the same. A save written by the old build loads in the new one, and writing it
+- `_sandbox_debug_save_crc()` on a first visit is the same. A save written by the old build loads in the new one, and writing it
   again gives the same bytes.
 - Screenshots of the showcase in Edit mode are the same, and so is the panel switched to Korean.
-- `_app_debug_scene`, `_app_debug_project`, `_app_debug_view` and `_app_debug_language` are the same. A tap on a black bar
+- `_sandbox_debug_scene`, `_sandbox_debug_project`, `_sandbox_debug_view` and `_sandbox_debug_language` are the same. A tap on a black bar
   does not change the selection.
 - The downloaded-size text shows, and the Console has no font warning.
 
 ### Phases
 
-Each phase ended by checking with the steps above that the app is as before. Phases 2 to 6 change the same files, so they share one commit.
+Each phase ended by checking with the steps above that the sandbox is as before. Phases 2 to 6 change the same files, so they share one commit.
 
 1. **Helpers:** `nv_fnv1a`, `nv_clamp_*`, `NvRandom`, `nv_window_pixel_ratio`, `base_test.c`.
 2. **Meshes:** `engine/mesh.h`, `mesh_test.c`.
@@ -583,7 +583,7 @@ Where the build differs from the spec:
   too, since `renderer.c` calls it. `nv_renderer_camera_matrices` and `nv_renderer_view_ray` moved with it.
 - **Camera:** `SceneView.home` is a copy of a whole `NvOrbitCamera`. The limits are fields and must not be zero, so the two
   places that make a view put in `ORBIT_LIMITS`.
-- **Strings:** the app hands its table over with `app_strings_init()`. The hash table is built when the table is set (it was on
+- **Strings:** the sandbox hands its table over with `sandbox_strings_init()`. The hash table is built when the table is set (it was on
   first use), and has 8192 slots (`u16`, 16 KB).
 - **Browser checks:** the build from before the refactoring (`3f6f8c7`) and the build of each phase ran the same Playwright steps
   and were compared. The steps: a first visit, picking by click (the ground, a cube, the character), orbit, zoom, pan, a fixed
@@ -596,7 +596,7 @@ Where the build differs from the spec:
 
 All settled as recommended on 2026-10-02.
 
-1. **Effect definitions:** `app/effects.c`'s explosion, sparks, smoke and missile trail stay in the app. They are content, so
+1. **Effect definitions:** `sandbox/effects.c`'s explosion, sparks, smoke and missile trail stay in the sandbox. They are content, so
    the game defines its own effects per weapon.
 2. **Console tab:** not moved now; it moves when the game wants it. The log ring is already in the engine.
 3. **Frame and setup:** each executable writes its own `main` and `frame`. The common start is not bundled into an engine

@@ -9,7 +9,7 @@
 
 ### 목표
 
-엔진에 많은 객체로 부하를 거는 앱 안의 두 번째 씬. 수가 늘 때 프레임 시간이 어디로 가는지 재서, 다음에 무엇을 최적화할지
+엔진에 많은 객체로 부하를 거는 샌드박스 안의 두 번째 씬. 수가 늘 때 프레임 시간이 어디로 가는지 재서, 다음에 무엇을 최적화할지
 (컬링, 인스턴싱, 그리기 정렬) 알고 장치와 커밋을 비교할 수 있게 한다.
 
 지금은 노드마다 draw call 하나이고, 아무것도 컬링하거나 인스턴싱하지 않으며, 매 프레임 객체 버퍼 전체를 올린다. 그중
@@ -19,10 +19,10 @@
 
 | 주제 | 결정 |
 |---|---|
-| 어디 | 같은 앱 안의 두 번째 씬. View 탭이 Showcase와 Stress 사이를 바꾼다. (URL의 `#stress`가 자동 저장 스펙이 그것을 없앨 때까지 그것을 바로 열었다; 앱은 이제 항상 쇼케이스에서 시작한다) |
+| 어디 | 같은 샌드박스 안의 두 번째 씬. View 탭이 Showcase와 Stress 사이를 바꾼다. (URL의 `#stress`가 자동 저장 스펙이 그것을 없앨 때까지 그것을 바로 열었다; 샌드박스는 이제 항상 쇼케이스에서 시작한다) |
 | 한도 | 모든 단계가 여전히 60 fps로 돈 첫 폰 결과 뒤에 올림: `NV_MAX_NODES` 16384 (전에 4096), `NV_MAX_ANIMATORS` 256 (전에 64), `NV_MAX_DEBUG_LINES` 16384 (전에 8192); `NV_MAX_MATERIALS`는 256으로 유지 |
 | 벤치마크 | 버튼이 고정된 단계를 실행하고 복사할 수 있는 표를 보여 준다 |
-| 시간 | 앱에서 `emscripten_get_now`로 잰다; GPU 시간은 브라우저가 `timestamp-query`를 제공하는 곳에서만 |
+| 시간 | 샌드박스에서 `emscripten_get_now`로 잰다; GPU 시간은 브라우저가 `timestamp-query`를 제공하는 곳에서만 |
 | 서드파티 | 없음. Tracy (C++, BSD)를 프로파일러로 고려했지만 wasm 지원이 약하다 |
 
 ### 워크로드
@@ -59,10 +59,10 @@
   - `NvRenderer.stats` (`NvRenderStats`: 그리기, 삼각형, skinned 그리기, 파이프라인과 bind group 전환)는 매 프레임
     `nv_renderer_draw`가 채운다.
 
-### 앱
+### 샌드박스
 
 - **씬:**
-  - `App`이 쇼케이스와 스트레스 씬과 보이는 씬을 담는다.
+  - `Sandbox`이 쇼케이스와 스트레스 씬과 보이는 씬을 담는다.
   - Scene, Inspector, View 탭은 보이는 씬에서 동작한다. 각 씬은 자체 선택과 카메라를 유지한다.
   - 스트레스 씬은 처음 보일 때 만든다.
 - **전환:**
@@ -103,7 +103,7 @@ Status: implemented (2026-09-27). Changes to this spec are agreed first.
 
 ### Goal
 
-A second scene in the app that loads the engine with many objects. It measures where the frame
+A second scene in the sandbox that loads the engine with many objects. It measures where the frame
 time goes as counts grow, so we know what to optimize next (culling, instancing, draw sorting)
 and can compare devices and commits.
 
@@ -114,10 +114,10 @@ uploaded every frame. None of that has been measured yet.
 
 | Topic | Decision |
 |---|---|
-| Where | A second scene in the same app. The View tab switches between Showcase and Stress. (`#stress` in the URL opened it directly until the autosave spec removed it; the app now always starts on the showcase) |
+| Where | A second scene in the same sandbox. The View tab switches between Showcase and Stress. (`#stress` in the URL opened it directly until the autosave spec removed it; the sandbox now always starts on the showcase) |
 | Limits | Raised after the first phone results, where every step still ran at 60 fps: `NV_MAX_NODES` 16384 (was 4096), `NV_MAX_ANIMATORS` 256 (was 64), `NV_MAX_DEBUG_LINES` 16384 (was 8192); `NV_MAX_MATERIALS` stays 256 |
 | Benchmark | A button runs fixed steps and shows a table that can be copied |
-| Timing | Measured in the app with `emscripten_get_now`; GPU time only where the browser offers `timestamp-query` |
+| Timing | Measured in the sandbox with `emscripten_get_now`; GPU time only where the browser offers `timestamp-query` |
 | Third-party | None. Tracy (C++, BSD) was considered as a profiler, but its wasm support is weak |
 
 ### Workloads
@@ -155,10 +155,10 @@ match inside them anyway (at most 500 rows; `search.md`).
   - `NvRenderer.stats` (`NvRenderStats`: draws, triangles, skinned draws, pipeline and bind group
     changes) is filled by `nv_renderer_draw` every frame.
 
-### App
+### Sandbox
 
 - **Scenes:**
-  - `App` holds the showcase and stress scenes and the one that is shown.
+  - `Sandbox` holds the showcase and stress scenes and the one that is shown.
   - The Scene, Inspector and View tabs work on the shown scene. Each scene keeps its own
     selection and camera.
   - The stress scene is built the first time it is shown.
