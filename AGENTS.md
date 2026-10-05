@@ -48,7 +48,8 @@ assets/                    binary assets (Git LFS); assets/quaternius/ is built 
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
-                           starts it), manifest.cmake (file sizes for that progress bar)
+                           starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
+                           build's version and file sizes for that page)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
 .github/workflows/build.yml  CI: Release and Debug web builds, staged for Pages in the gh-pages branch
@@ -277,13 +278,14 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   stage are one text file, `autobattler/data/default.abproj` (`docs/specs/abproj.md`), read by `defs_read_project` in `defs.c` (a bad
   file blocks Start and is reported with its line). The panel opens, reloads and saves a local `.abproj` (`engine/local_file.h`;
   abproj.md, "Loading and saving"): a good file is put in place by `game_load_project`, a bad one leaves the project in use, and Save
-  writes the kept text as it was read. A new key goes in `defs.c`'s field tables and the spec's tables and raises
+  writes the kept text as it was read. The panel's Rules section edits that text in place, before a round only (`defs_rule_set`,
+  `game_set_rule`; abproj.md, "Editing the rules"): a change rewrites only that rule's values and is read whole, a bad one is refused. A new key goes in `defs.c`'s field tables and the spec's tables and raises
   `ABPROJ_VERSION`; a rule is read from `defs->rules`, never from a macro, and tests try the format only with text of their own, never
   with the file's values. Its
   viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
   `autobattler/strings.c`, like the sandbox's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
   `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
-  `_battle_debug_project_action` and `_battle_debug_project_message` for tests. Speed controls change only
+  `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule` and `_battle_debug_project_text` for tests. Speed controls change only
   how many ticks a frame runs (the game clock), never the tick, and the effects take the same game clock's dt. Stepping back is `battle_seek` (a replay from the start, which
   the deterministic rules make exact). A touch on a panel widget takes a few frames to
   count as a tap: tests that touch buttons wait about two seconds.

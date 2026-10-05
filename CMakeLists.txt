@@ -55,7 +55,7 @@ function(nv_setup_executable target)
             "-sSEPARATE_DWARF_URL=${target}.debug.wasm")
         list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm")
     endif()
-    # The page reads file sizes from the manifest to show download progress.
+    # The page reads the build's version and the file sizes from the manifest (docs/specs/page_loading.md).
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
                 -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"

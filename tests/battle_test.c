@@ -304,6 +304,85 @@ internal void test_project_file(void)
     CHECK(defs.enemy[9].cell_x == 15 && defs.enemy[9].cell_row == 42);
 }
 
+// Editing the rules in a project's text (defs_rule_get, defs_rule_set): the values as the file writes them, a change that
+// touches only its values (the comment keeps its column) and reads back, and what is refused.
+internal void test_rule_editing(void)
+{
+    static char edited[sizeof(full_project) + 64];
+    umm size = sizeof(full_project) - 1;
+    f64 values[BATTLE_RULE_MAX_VALUES] = {0};
+    CHECK(defs_rule_get(full_project, size, "grid", values) == 2 && values[0] == 32.0 && values[1] == 48.0);
+    CHECK(defs_rule_get(full_project, size, "round_time", values) == 1 && values[0] == 60.0); // seconds, not ticks
+    CHECK(defs_rule_get(full_project, size, "retarget_interval", values) == 1 && values[0] == 0.25);
+    CHECK(defs_rule_get(full_project, size, "gravity", values) == 1 && values[0] == 9.8);
+    CHECK(defs_rule_get(full_project, size, "supply", values) == 0); // the stage's, not a rule
+    CHECK(defs_rule_get(full_project, size, "radius", values) == 0);
+    CHECK(defs_rule_get(full_project, size, "rules", values) == 0);
+
+    // Writing every rule's own values back gives the same text, byte for byte.
+    const char* keys[] = {"cell_size", "grid", "zone_rows", "round_time", "gravity", "retarget_interval", "stop_fraction",
+                          "min_damage_fraction"};
+    for (u32 i = 0; i < NV_ARRAY_COUNT(keys); ++i) {
+        u32 count = defs_rule_get(full_project, size, keys[i], values);
+        CHECK(count > 0);
+        umm written = defs_rule_set(full_project, size, keys[i], values, count, edited, sizeof(edited));
+        CHECK(written == size && memcmp(edited, full_project, size) == 0);
+    }
+
+    // A longer value takes spaces from before the comment, a shorter one gives them back; other lines stay.
+    f64 gravity = 12.3456789;
+    umm written = defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written == size && strstr(edited, "\n    gravity 12.3457          # m/s²\n"));
+    gravity = 3.0;
+    written = defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written == size && strstr(edited, "\n    gravity 3                # m/s²\n"));
+    CHECK(memcmp(edited, full_project, (umm)(strstr(full_project, "    gravity") - full_project)) == 0);
+    CHECK(read_project(edited) && defs.rules.gravity == 3.0f && defs.rules.cell_size == 2.0f);
+    f64 longer = 0.123; // past the comment's column: one space is kept
+    written = defs_rule_set(full_project, size, "min_damage_fraction", &longer, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n    min_damage_fraction 0.123 # armor"));
+    f64 negative_zero = -0.00001;
+    written = defs_rule_set(full_project, size, "min_damage_fraction", &negative_zero, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n    min_damage_fraction 0    # armor"));
+
+    // Integers are rounded; the grid takes two values; seconds stay seconds and become ticks when read.
+    f64 grid[2] = {40.4, 47.6}; // the length stays 48: the stage's places are in the last 14 rows
+    written = defs_rule_set(full_project, size, "grid", grid, 2, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n    grid 40 48               # cells across"));
+    CHECK(read_project(edited) && defs.rules.grid_width == 40 && defs.rules.grid_length == 48);
+    f64 round_time = 90.5;
+    written = defs_rule_set(full_project, size, "round_time", &round_time, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(read_project(edited) && defs.rules.round_ticks == 2715);
+    CHECK(defs_rule_get(edited, written, "round_time", values) == 1 && values[0] == 90.5);
+
+    // A line without a comment, and CRLF line ends, keep what follows the values.
+    const char* plain = "abproj_version 1\r\nrules\r\n    zone_rows 14\r\n";
+    f64 rows = 9.0;
+    written = defs_rule_set(plain, strlen(plain), "zone_rows", &rows, 1, edited, sizeof(edited));
+    CHECK(written == strlen(plain) - 1 && memcmp(edited, "abproj_version 1\r\nrules\r\n    zone_rows 9\r\n", written) == 0);
+
+    // A value the rules refuse is still written: the reader judges it.
+    f64 rows_too_many = 30.0; // over half the grid's 48 rows
+    written = defs_rule_set(full_project, size, "zone_rows", &rows_too_many, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written > 0 && !read_project(edited));
+
+    // Refused: not a rule, the wrong number of values, no room.
+    f64 one = 1.0;
+    CHECK(defs_rule_set(full_project, size, "supply", &one, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_rule_set(full_project, size, "grid", &one, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_rule_set(full_project, size, "gravity", grid, 2, edited, sizeof(edited)) == 0);
+    gravity = 9.8;
+    CHECK(defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, size - 1) == 0);
+    CHECK(defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, size) == size);
+}
+
 // The repository's own file: it reads without errors, whatever values a designer has put in it, and the round it plays ends
 // within its time limit. (Its values are not checked; test_project_file does that on a copy.)
 internal void test_repository_file(void)
@@ -1431,6 +1510,7 @@ internal void test_seek(void)
 int main(void)
 {
     test_project_file();
+    test_rule_editing();
     test_repository_file();
     test_definition_syntax();
     test_project_structure();

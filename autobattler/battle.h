@@ -89,6 +89,18 @@ typedef struct BattleDefs {
 // in `defs->first_error`. Reading goes on to the end of the text to report every error. `defs` starts zeroed.
 b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size);
 
+// Editing the rules in a project's text (docs/specs/abproj.md, "Editing the rules"): the text must have been read without
+// errors. A rule's values are those of its key in the `rules` block, as the file writes them (seconds, not ticks); `grid`
+// has two, every other rule one.
+#define BATTLE_RULE_MAX_VALUES 2
+// Reads rule `key`'s values; returns how many, 0 when `key` is not a rule.
+u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE_RULE_MAX_VALUES]);
+// Writes the text with rule `key`'s values changed to `values` (`count` of them) into `out`, which may not overlap `text`; the
+// rest of the line (its indentation, its comment, which keeps its column where it can) and every other line stay as they
+// were. Returns the new text's size, 0 when `key` is not a rule, `count` is not its number of values or the text does not fit
+// in `capacity` bytes. The values are not checked against the rules' ranges: read the result with defs_read_project.
+umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity);
+
 // Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46); at least 1.
 u32 battle_seconds_to_ticks(f32 seconds);
 

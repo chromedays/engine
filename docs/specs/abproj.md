@@ -241,9 +241,8 @@ stage
   (`nv_renderer_replace_mesh`), 그래서 여러 번 불러도 메시 슬롯이 늘지 않는다. 오류가 있으면 지금 프로젝트를 그대로 두고
   "x has N error(s), so the project in use stays. The first: ..."를 보인다. 좋은 프로젝트가 아직 없을 때(시작 때 실패)만 그 오류가
   패널의 오류 표시가 된다.
-- **저장은 읽은 글 그대로다.** 프로젝트의 글(`Game.project_text`, 256 KB까지)을 바꾸지 않고 둔다가 쓰므로 주석과 순서가 그대로다. 지금은
-  앱 안에서 값을 고칠 수 없으므로 저장은 복사(다른 이름으로 저장)와, 에디터가 생겼을 때 쓸 제자리 저장의 자리다. 값을 고치는
-  에디터는 이 글을 제자리에서 고친다("나중에").
+- **저장은 읽은 글에 패널의 고침만 더한 것이다.** 프로젝트의 글(`Game.project_text`, 256 KB까지)을 그대로 두었다가 쓰므로 주석과
+  순서가 그대로다. 패널의 Rules 절은 이 글에서 바뀐 값만 제자리에서 바꾼다("규칙 고치기").
 - **제자리 저장은 이 프로젝트의 파일에만:** 오류 있는 파일을 열면 브라우저가 그 파일을 붙잡으므로, 지금 프로젝트의 글을 거기에 쓰지
   않도록 Save를 끈다(`kept_is_project`). Reload는 된다(그 파일을 고치고 다시 읽는다). 바깥에서 고친 파일에는 쓰지 않는다
   (`local_files.md`의 바깥 수정 보호).
@@ -251,12 +250,40 @@ stage
 - Debug 빌드는 `Module._battle_debug_load(name, text)`, `_battle_debug_project_action(action)`, `_battle_debug_project_message()`와
   `_battle_debug(14)`(놓인 프로젝트 수), `(15)`(Save가 제자리에 쓸 수 있는지), `(16)`(격자 너비), `(17)`(로컬 파일 상태)를 내보낸다.
 
+### 규칙 고치기
+
+추가(2026-10-05). Battle 패널에서 규칙(`rules` 블록의 여덟 키)을 고친다. 텍스트 편집기 없이 값을 바꿔 바로 해 보고, Save로 파일에 쓴다.
+
+- **패널:** 프로젝트 줄 아래 접힌 **Rules** 머리. 펼치면 키마다 위젯 하나: Cell size (m), Grid (across, long)(정수 둘), Zone rows,
+  Round time (s), Gravity (m/s²), Retarget interval (s), Stop fraction, Min. damage fraction. 끌거나, 두 번 눌러(또는 Ctrl+클릭)
+  값을 친다. 위젯의 범위는 끌기를 돕는 것뿐이고, 판단은 읽기가 한다.
+- **글이 원본이다.** 위젯은 프로젝트 글에 적힌 값을 보인다(`defs_rule_get`: 시간은 틱이 아니라 파일의 초). 바꾸면 그 키의 줄에서 값만
+  새 값으로 바꾼 글을 만들고(`defs_rule_set`), 그 글 전체를 `defs_read_project`로 읽는다. 다른 줄과 그 줄의 들여쓰기, 주석은 그대로다.
+  값이 길어지거나 짧아지면 주석 앞의 공백이 줄거나 늘어 주석이 제 열에 남는다(적어도 한 칸). 값은 정수거나 소수점 아래 넷째 자리까지
+  쓰고 끝의 0은 뺀다("9.8", "60"). 지수 표기는 쓰지 않는다(형식에 없다).
+- **좋으면 바로 놓인다(`game_set_rule`):** 새 defs와 글이 자리에 들어가고, 플레이어의 배치는 새 규칙에서도 되는 칸에 그대로 남는다
+  (구역 밖이나 공급을 넘는 유닛은 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
+  유닛 메시는 그대로다. 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
+- **나쁘면 아무것도 바꾸지 않는다:** "Not changed: <첫 오류>"를 빨강으로 보인다. 예: `zone_rows`가 격자 길이의 반을 넘음, 격자를 줄여
+  스테이지의 `place`가 적 구역 밖으로 나감. 다음에 받아들여진 고침이 이 알림을 지운다.
+- **배치 단계에서만:** 라운드가 시작되면 위젯이 꺼진다("Rules change only in deployment"). 되감기(`battle_seek`)는 라운드를 처음부터 다시
+  돌리므로, 규칙이 라운드 중에 바뀌면 그 라운드를 재현할 수 없다. 로컬 파일을 읽거나 쓰는 중에도 꺼진다(저장이 보낸 글과 "저장됨"
+  표시가 맞도록).
+- **바뀜 표시:** 고친 뒤에는 "Project: x (changed)". Save나 Save as가 끝나면(대체 경로의 내려받기 포함) 지운다. Open과 Reload는 고침을
+  버린다(묻지 않는다).
+- 실행 취소는 없다(값을 다시 바꾸거나 Reload한다).
+- Debug 빌드는 `Module._battle_debug_set_rule(key, a, b)`(`b`는 `grid`의 길이), `_battle_debug_project_text()`와
+  `_battle_debug(18)`(저장하지 않은 고침이 있는지), `(19)`(라운드 길이, 틱)를 내보낸다.
+
 ### 테스트
 
 `tests/battle_test.c`:
 - **형식 검사는 테스트 안의 텍스트로만** 한다. 저장소 파일의 값을 확인하지 않는다(디자이너가 값을 바꿔도 테스트가 깨지지 않게).
   `full_project`는 `default.abproj`의 한 때의 사본이고, 값 확인과 라운드는 이것으로 한다.
 - 저장소의 `default.abproj`는 오류 없이 읽히고, 플레이어 구역을 채운 한 라운드가 `round_ticks` 안에 끝나는지만 본다.
+- 규칙 고치기: 파일의 값 읽기(초 그대로, 규칙이 아닌 키는 0), 모든 규칙을 자기 값으로 다시 쓰면 바이트가 같다, 길고 짧은 값과 주석 열,
+  공백 한 칸 남기기, 주석 없는 줄과 CRLF, 정수 반올림, `grid` 두 값, -0, 범위 밖 값도 쓰고 읽기가 거절한다, 규칙이 아닌 키·값 개수·
+  자리 모자람은 거절.
 - 규칙 키마다 빠짐과 범위(범위 밖, 값 개수, 정수 아님), 구역 겹침, 버전 줄(없음, 첫 문장이 아님, 0, 정수 아님, 더 높음), 최상위 순서(자리가
   아닌 `unit`, `stage`, `rules`, 두 번째 `stage`), 파일 전체의 모자람, 시간의 틱 변환(0.25 → 8, 60 → 1800, 0.01 → 1).
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
@@ -272,8 +299,8 @@ stage
 
 ### 나중에 (이 스펙 밖)
 
-- **에디터:** 이 파일을 열고 저장하는 Edit 모드. 저장할 때 주석과 순서를 지키는 방법(바뀐 값만 제자리에서 바꾸기)은 그 스펙에서
-  정한다. 최상위 순서가 정해져 있어 새로 쓰는 위치는 분명하다.
+- **에디터:** 유닛과 스테이지(배치 포함)도 패널에서 고친다. 규칙처럼 바뀐 값만 제자리에서 바꾼다("규칙 고치기"). 새 문장을 더하는
+  곳은 최상위 순서가 정해져 있어 분명하다. 실행 취소도 그때 정한다.
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
   옮긴다. 버전을 올린다.
@@ -533,9 +560,9 @@ Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` fil
   The meshes are remade in their own slots (`nv_renderer_replace_mesh`), so loading again and again uses up no mesh slots. With an
   error, the project in use stays and the panel says "x has N error(s), so the project in use stays. The first: ...". Only while no
   good project is in place yet (a failure at start) do its errors become the panel's error display.
-- **Saving writes the text as it was read.** The project's text (`Game.project_text`, up to 256 KB) is kept unchanged and written,
-  so comments and order stay. Nothing in the app edits values yet, so saving is a copy (Save as) and the place for saving in place
-  once the editor comes. That editor edits this text in place ("Later").
+- **Saving writes the text as it was read, with only the panel's edits.** The project's text (`Game.project_text`, up to 256 KB) is
+  kept and written, so comments and order stay. The panel's Rules section changes only the edited values in it, in place ("Editing
+  the rules").
 - **In place only to this project's file:** after a file with errors is opened, the browser keeps that file, so Save is disabled
   rather than writing the project in use into it (`kept_is_project`). Reload works (fix that file and read it again). A file changed
   outside is not written (`local_files.md`, the outside-edit guard).
@@ -544,6 +571,34 @@ Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` fil
   and `_battle_debug(14)` (projects put in place), `(15)` (whether Save can write in place), `(16)` (the grid's width), `(17)` (the
   local file's status).
 
+### Editing the rules
+
+Added (2026-10-05). The rules (the eight keys of the `rules` block) are edited in the Battle panel: a value is changed and tried at
+once, without a text editor, and Save writes it to the file.
+
+- **The panel:** a closed **Rules** header under the project's row. Opened, it has a widget per key: Cell size (m), Grid (across,
+  long) (two integers), Zone rows, Round time (s), Gravity (m/s²), Retarget interval (s), Stop fraction, Min. damage fraction. Drag,
+  or double-click (or Ctrl+click) and type. The widgets' ranges only guide a drag; the reader judges.
+- **The text is the source.** A widget shows the value the project's text gives (`defs_rule_get`: times in the file's seconds, not
+  ticks). A change makes the text with only the values on that key's line replaced (`defs_rule_set`) and reads all of it with
+  `defs_read_project`. Every other line, and the line's indentation and comment, stay. When a value gets longer or shorter, the
+  spaces before the comment shrink or grow, so the comment keeps its column (one space at the least). A value is written as an
+  integer or with at most four decimals, without trailing zeros ("9.8", "60"); never with an exponent, which the format does not have.
+- **A good change is put in place at once (`game_set_rule`):** the new defs and text take over, and the player's deployment stays on
+  the cells the new rules still allow (units outside the zone or over the supply drop out). The field's planes are fitted again, and
+  the camera starts over only when the field's size changed (`view_apply_rules`). The unit meshes stay. It does not count as a
+  project put in place (`project_loads`).
+- **A bad change changes nothing:** the panel says "Not changed: <the first error>" in red; for example, `zone_rows` over half the
+  grid's length, or a smaller grid that leaves a stage `place` outside the enemy zone. The next change made clears that message.
+- **Only in deployment:** once a round starts the widgets are disabled ("Rules change only in deployment"). Stepping back
+  (`battle_seek`) plays the round again from its start, so a rule changed during a round would make that round impossible to
+  replay. They are also disabled while a local file is read or written (so the text a save sends matches what it marks as saved).
+- **The changed mark:** after an edit, "Project: x (changed)". A finished Save or Save as (the fallback's download too) clears it.
+  Open and Reload drop the edits (without asking).
+- There is no undo (change the value back, or Reload).
+- Debug builds export `Module._battle_debug_set_rule(key, a, b)` (`b` is the `grid`'s length), `_battle_debug_project_text()` and
+  `_battle_debug(18)` (whether there are edits not yet saved) and `(19)` (the round's length in ticks).
+
 ### Tests
 
 `tests/battle_test.c`:
@@ -551,6 +606,10 @@ Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` fil
   value breaks no test). `full_project` is a copy of `default.abproj` from one time, and the value checks and rounds run on it.
 - The repository's `default.abproj` is only checked to read without errors and to play a round, with the player's zone filled, that
   ends within `round_ticks`.
+- Editing the rules: reading the file's values (seconds as they are; 0 for a key that is not a rule), writing every rule's own
+  values back gives the same bytes, longer and shorter values and the comment's column, keeping one space, a line without a comment
+  and CRLF, integers rounded, `grid`'s two values, -0, a value out of range is written and the reader refuses it, and refusing a key
+  that is not a rule, the wrong number of values and too little room.
 - Each `rules` key missing and out of range (out of range, value count, not an integer), zones that overlap, the version line (missing,
   not first, 0, not an integer, newer), the top-level order (a `unit`, `stage` or `rules` out of place, a second `stage`), what the
   whole file lacks, and times as ticks (0.25 → 8, 60 → 1800, 0.01 → 1).
@@ -569,8 +628,8 @@ Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` fil
 
 ### Later (outside this spec)
 
-- **Editor:** an Edit mode that opens and saves this file. How a save keeps comments and order (changing only the edited values in
-  place) is for that spec. The fixed top-level order makes it clear where new statements go.
+- **Editor:** units and the stage (its places too) are edited in the panel as well, changing only the edited values in place as the
+  rules do ("Editing the rules"). The fixed top-level order makes it clear where new statements go. Undo is decided then too.
 - **A repository of its own:** `default.abproj` moves to a data repository, pinned by the engine repository as a submodule. The
   version line checks that the two fit.
 - **Several stages:** `stage` gets a name (`stage <name>`) and there can be several. If stages come to have fields of different

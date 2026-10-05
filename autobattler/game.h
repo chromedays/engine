@@ -74,9 +74,11 @@ typedef struct Game {
     b32 defs_ok;
     f32 field_width, field_length; // meters, from the rules
 
-    // The project the defs were read from. Its text is kept as it was, so Save writes it back with its comments.
-    char* project_text; // PROJECT_MAX_SIZE bytes of permanent memory
+    // The project the defs were read from. Its text is kept, so Save writes it back with its comments; the Rules section
+    // changes only the values it edits in it.
+    char* project_text; // PROJECT_MAX_SIZE bytes of permanent memory and a NUL after the text
     umm project_size;   // 0 while no good project is in place
+    b32 project_edited; // the panel's Rules section changed the text since it was read or saved
     char project_name[128];
     b32 kept_is_project; // the local file the browser keeps (NvLocalFile.kept) is this project's, so Save may write it
     NvLocalFile local_file;
@@ -112,6 +114,11 @@ void game_layout(Game* game);
 // Reads `text` as a project. A good one is put in place (the battle back in deployment, the view remade for it) and its text
 // kept; a bad one is reported in the panel and changes nothing, unless no good project is in place yet. True when it was good.
 b32 game_load_project(Game* game, const char* name, const char* text, umm size);
+// The panel's Rules section (docs/specs/abproj.md, "Editing the rules"): whether the rules can be changed now, and changing
+// rule `key` to `values` in the project's text. A good result is put in place at once, keeping the player's deployment where
+// it still fits; a bad one changes nothing and says why in the panel. True when the change was made.
+b32 game_rules_editable(const Game* game);
+b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count);
 // Whether a project button can be pressed now, and pressing it (it starts a dialog, read or write; false when it cannot).
 b32 game_project_action_allowed(const Game* game, ProjectAction action);
 b32 game_project_action(Game* game, ProjectAction action);
@@ -119,6 +126,7 @@ b32 game_project_action(Game* game, ProjectAction action);
 // battle_view.c
 void view_build(Game* game); // materials, the shell mesh, the field's nodes, the camera and the effects, once
 void view_apply_project(Game* game); // the field, the unit meshes and the camera for the project in place
+void view_apply_rules(Game* game);   // the field after a rule changed; the camera starts over only if the field's size did
 void view_input(Game* game); // the camera from drags and the wheel; taps place and remove units
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock
