@@ -117,10 +117,13 @@
     };
 
     // The page downloads the engine and its assets itself, so it can show one progress bar for
-    // both, then hands them to the Emscripten loader. The manifest has the uncompressed sizes,
-    // which the browser cannot see when the server compresses the files.
-    async function download(name, onBytes) {
-      const response = await fetch(name);
+    // both, then hands them to the Emscripten loader (docs/specs/page_loading.md). The manifest has
+    // the uncompressed sizes, which the browser cannot see when the server compresses the files, and
+    // the build's version. Every file is asked for under that version, and its size is checked: a
+    // cache (the browser's or the server's) can hold files of an older build, and a .js of one build
+    // with a .wasm of another fails to start.
+    async function download(name, cache, onBytes) {
+      const response = await fetch(name, { cache });
       if (!response.ok) throw new Error(response.status + " " + name);
       const reader = response.body.getReader();
       const chunks = [];
@@ -138,12 +141,11 @@
       return bytes;
     }
 
-    async function start() {
-      const manifest = await (await fetch(target + ".manifest.json")).json();
-      const names = Object.keys(manifest);
-      const total = names.reduce((sum, name) => sum + manifest[name], 0);
+    // Downloads every file of the manifest with `?v=<token>`; returns them by name.
+    async function downloadAll(sizes, token, cache) {
+      const names = Object.keys(sizes);
+      const total = names.reduce((sum, name) => sum + sizes[name], 0);
       let loaded = 0;
-      message.textContent = "Downloading";
       const progress = (bytes) => {
         loaded += bytes;
         const ratio = Math.min(loaded / total, 1);
@@ -152,7 +154,23 @@
       };
       progress(0);
       const files = {};
-      await Promise.all(names.map(async (name) => { files[name] = await download(name, progress); }));
+      const query = "?v=" + encodeURIComponent(token);
+      await Promise.all(names.map(async (name) => { files[name] = await download(name + query, cache, progress); }));
+      return files;
+    }
+
+    async function start() {
+      // Asked of the server each time (no-cache revalidates it), so it names the build there now.
+      const manifest = await (await fetch(target + ".manifest.json", { cache: "no-cache" })).json();
+      message.textContent = "Downloading";
+      let files = await downloadAll(manifest.files, manifest.version, "default");
+      const wrong = Object.keys(manifest.files).filter((name) => files[name].length !== manifest.files[name]);
+      if (wrong.length) {
+        // A cache gave another build's file. Once more, from the server itself and under a name no cache has seen: those
+        // files are all of the build the server has now, even if the manifest it gave was an older one.
+        Module.nvLog(1, "page", "files of another build (" + wrong.join(", ") + "); downloading again from the server");
+        files = await downloadAll(manifest.files, manifest.version + "-" + Date.now(), "reload");
+      }
 
       message.textContent = "Starting";
       detail.textContent = "";
@@ -166,9 +184,9 @@
       };
       Module.getPreloadedPackage = (name) => files[target + ".data"].buffer;
 
+      // The .js downloaded with the others runs as it is, so it is of the same build as the .wasm.
       const script = document.createElement("script");
-      script.src = target + ".js";
-      script.onerror = () => fail("Could not load " + script.src);
+      script.text = new TextDecoder().decode(files[target + ".js"]) + "\n//# sourceURL=" + target + ".js";
       document.body.appendChild(script);
     }
 

@@ -48,7 +48,8 @@ assets/                    binary assets (Git LFS); assets/quaternius/ is built 
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node and run with ctest
 web/                       index.html.in (the page: downloads the app with a progress bar, then
-                           starts it), manifest.cmake (file sizes for that progress bar)
+                           starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
+                           build's version and file sizes for that page)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
 .github/workflows/build.yml  CI: Release and Debug web builds, staged for Pages in the gh-pages branch
