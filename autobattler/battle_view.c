@@ -186,36 +186,50 @@ internal void add_plane_node(Game* game, u32 field, const char* name, NvMaterial
     nv_scene_get(game->scene, game->field_nodes[field])->material = material;
 }
 
-void view_apply_project(Game* game)
+// The field's size and planes from the rules (the project file's `grid`, `cell_size` and `zone_rows`); the camera starts over
+// (above and behind the player's side, -Z, looking at the middle) when `restart_camera` or the field's size changed.
+internal void apply_field(Game* game, b32 restart_camera)
 {
-    // The field, in meters, from the rules (the project file's `grid` and `cell_size`).
     const BattleRules* rules = &game->defs.rules;
-    game->field_width = (f32)rules->grid_width * rules->cell_size;
-    game->field_length = (f32)rules->grid_length * rules->cell_size;
-    f32 field_width = game->field_width, field_length = game->field_length;
-    // Above and behind the player's side (-Z), looking at the middle of the field, far enough to see all of it: the distance
-    // is that of the camera's default for a field 96 m long, in proportion to the field's length.
-    f32 start_distance = field_length * (CAMERA_START_DISTANCE / CAMERA_REFERENCE_LENGTH);
-    f32 max_distance = fmaxf(CAMERA_MAX_DISTANCE, start_distance * 1.35f);
-    game->orbit = (NvOrbitCamera){
-        .target = {field_width * 0.5f, 0.0f, field_length * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
-        .distance = start_distance, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
-        .min_distance = CAMERA_MIN_DISTANCE, .max_distance = max_distance};
-    nv_scene_get(game->scene, game->camera)->camera.far_z = fmaxf(CAMERA_FAR_Z, 2.0f * max_distance);
+    f32 field_width = (f32)rules->grid_width * rules->cell_size;
+    f32 field_length = (f32)rules->grid_length * rules->cell_size;
+    restart_camera = restart_camera || field_width != game->field_width || field_length != game->field_length;
+    game->field_width = field_width;
+    game->field_length = field_length;
+    if (restart_camera) {
+        // Far enough to see all of it: the distance is that of the camera's default for a field 96 m long, in proportion to
+        // the field's length.
+        f32 start_distance = field_length * (CAMERA_START_DISTANCE / CAMERA_REFERENCE_LENGTH);
+        f32 max_distance = fmaxf(CAMERA_MAX_DISTANCE, start_distance * 1.35f);
+        game->orbit = (NvOrbitCamera){
+            .target = {field_width * 0.5f, 0.0f, field_length * 0.4f}, .yaw = NV_PI, .pitch = 62.0f * NV_PI / 180.0f,
+            .distance = start_distance, .min_pitch = CAMERA_MIN_PITCH, .max_pitch = CAMERA_MAX_PITCH,
+            .min_distance = CAMERA_MIN_DISTANCE, .max_distance = max_distance};
+        nv_scene_get(game->scene, game->camera)->camera.far_z = fmaxf(CAMERA_FAR_Z, 2.0f * max_distance);
+    }
 
     // The ground, and a tint on each side's deployment zone (a little above it, so the two do not fight over depth).
     f32 zone_half = (f32)rules->zone_rows * rules->cell_size * 0.5f;
     set_plane(game, FIELD_GROUND, field_width * 0.5f, field_length * 0.5f, nv_vec3(field_width * 0.5f, 0.0f, field_length * 0.5f));
     set_plane(game, FIELD_PLAYER_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, zone_half));
     set_plane(game, FIELD_ENEMY_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, field_length - zone_half));
+    game->hover_cell_x = game->hover_cell_row = -1;
+    nv_vfx_clear(&game->vfx);
+    game->accumulator = 0.0f;
+}
 
+void view_apply_project(Game* game)
+{
+    apply_field(game, true);
     for (u32 i = 0; i < game->defs.unit_count; ++i)
         set_unit_mesh(game, i, &game->defs.units[i]);
     if (game->selected_def >= game->defs.unit_count)
         game->selected_def = 0;
-    game->hover_cell_x = game->hover_cell_row = -1;
-    nv_vfx_clear(&game->vfx);
-    game->accumulator = 0.0f;
+}
+
+void view_apply_rules(Game* game)
+{
+    apply_field(game, false);
 }
 
 void view_build(Game* game)
@@ -497,6 +511,58 @@ internal b32 step_button(const char* label)
     return clicked || held;
 }
 
+// A rule's widget in the Rules section (docs/specs/abproj.md, "Editing the rules"): it shows the value the project's text
+// gives and writes a change back there (game_set_rule). The widget's range only guides the drag; the project's reader judges.
+internal void rule_number(Game* game, const char* key, const char* label, f32 speed, f32 min, f32 max, const char* format)
+{
+    f64 values[BATTLE_RULE_MAX_VALUES];
+    if (defs_rule_get(game->project_text, game->project_size, key, values) != 1)
+        return;
+    f32 value = (f32)values[0];
+    if (igDragFloat(label, &value, speed, min, max, format, ImGuiSliderFlags_AlwaysClamp)) {
+        f64 changed = value;
+        game_set_rule(game, key, &changed, 1);
+    }
+}
+
+internal void rule_integers(Game* game, const char* key, const char* label, u32 count, f32 speed, s32 min, s32 max)
+{
+    f64 values[BATTLE_RULE_MAX_VALUES];
+    if (defs_rule_get(game->project_text, game->project_size, key, values) != count)
+        return;
+    s32 value[BATTLE_RULE_MAX_VALUES] = {(s32)values[0], count > 1 ? (s32)values[1] : 0};
+    b32 changed = count > 1 ? igDragInt2(label, value, speed, min, max, "%d", ImGuiSliderFlags_AlwaysClamp)
+                            : igDragInt(label, value, speed, min, max, "%d", ImGuiSliderFlags_AlwaysClamp);
+    if (changed) {
+        f64 next[BATTLE_RULE_MAX_VALUES] = {value[0], value[1]};
+        game_set_rule(game, key, next, count);
+    }
+}
+
+// The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
+internal void rules_section(Game* game)
+{
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), 0))
+        return;
+    igBeginDisabled(!game_rules_editable(game));
+    igPushItemWidth(igGetFontSize() * 8.0f);
+    rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
+    rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
+    rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
+    rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    rule_number(game, "gravity", TL("Gravity (m/s²)"), 0.05f, 0.1f, 100.0f, "%.2f");
+    rule_number(game, "retarget_interval", TL("Retarget interval (s)"), 0.01f, 0.01f, 10.0f, "%.2f");
+    rule_number(game, "stop_fraction", TL("Stop fraction"), 0.005f, 0.01f, 1.0f, "%.3f");
+    rule_number(game, "min_damage_fraction", TL("Min. damage fraction"), 0.005f, 0.0f, 1.0f, "%.3f");
+    igPopItemWidth();
+    igEndDisabled();
+    if (game->battle.phase != BATTLE_DEPLOY) {
+        igPushStyleColor_Vec4(ImGuiCol_Text, igGetStyle()->Colors[ImGuiCol_TextDisabled]);
+        igTextWrapped("%s", T("Rules change only in deployment (Retry goes back to it)."));
+        igPopStyleColor(1);
+    }
+}
+
 internal void start_over(Game* game)
 {
     nv_vfx_clear(&game->vfx);
@@ -521,7 +587,10 @@ void view_panel(Game* game)
         // The project: where the rules, units and stage came from, and opening and saving it as a file on this computer
         // (docs/specs/abproj.md, "Loading and saving"). Save writes the text it was read from, comments and all.
         igSeparator();
-        igTextWrapped(T("Project: %s"), game->project_name);
+        if (game->project_edited)
+            igTextWrapped(T("Project: %s (changed)"), game->project_name);
+        else
+            igTextWrapped(T("Project: %s"), game->project_name);
         const char* labels[4] = {TL("Open..."), TL("Reload"), TL("Save"), TL("Save as...")};
         for (u32 i = 0; i < NV_ARRAY_COUNT(labels); ++i) {
             if (i)
@@ -538,6 +607,7 @@ void view_panel(Game* game)
             if (game->project_message_bad)
                 igPopStyleColor(1);
         }
+        rules_section(game);
 
         if (!game->defs_ok) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});

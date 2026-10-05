@@ -6,6 +6,7 @@
 
 #include <engine/log.h>
 
+#include <math.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -34,8 +35,11 @@ typedef struct Reader {
     u32 errors; // found by this read
 } Reader;
 
+// `reader` is NULL in a scan of text already read without errors (the rules editor's), which reports nothing.
 __attribute__((format(printf, 3, 4))) internal void report(Reader* reader, u32 line, const char* format, ...)
 {
+    if (!reader)
+        return;
     char message[128];
     va_list arguments;
     va_start(arguments, format);
@@ -256,6 +260,11 @@ global const Field stage_fields[] = {
 
 #define FIELD_COUNT(fields) ((u32)NV_ARRAY_COUNT(fields))
 
+internal u32 field_values(const Field* field)
+{
+    return field->kind == FIELD_VECTOR ? 3 : field->kind == FIELD_GRID ? 2 : 1;
+}
+
 internal const Field* find_field(const Field* fields, u32 count, Token key)
 {
     for (u32 i = 0; i < count; ++i)
@@ -290,7 +299,7 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
         return;
     }
     *seen |= 1u << index; // a bad value is not "missing" on top of that
-    u32 values = field->kind == FIELD_VECTOR ? 3 : field->kind == FIELD_GRID ? 2 : 1;
+    u32 values = field_values(field);
     if (line->token_count != 1 + values) {
         report(reader, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
         return;
@@ -773,4 +782,115 @@ b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text,
             report(&reader.base, 0, "missing 'stage'");
     }
     return reader.base.errors == 0;
+}
+
+// Editing the rules (docs/specs/abproj.md, "Editing the rules"). These work on the text of a project that was read without
+// errors, so every rule has its one line in the `rules` block.
+
+// Rule `key`'s line, its tokens pointing into the text. Fails (zeroed) when `key` is not a rule or its line is not there.
+typedef struct RuleLine {
+    b32 ok;
+    const Field* field;
+    Line line;
+    const char* end; // where the line's text ends (its '\n', or the text's end)
+} RuleLine;
+
+internal RuleLine find_rule(const char* text, umm size, const char* key)
+{
+    const Field* field = NULL;
+    for (u32 i = 0; i < FIELD_COUNT(rules_fields); ++i)
+        if (strcmp(rules_fields[i].key, key) == 0)
+            field = &rules_fields[i];
+    if (!field)
+        return (RuleLine){0};
+    Lines lines = {text, size, 0, 0};
+    b32 in_rules = false;
+    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
+        Tokenized tokenized = tokenize(NULL, text_line.begin, text_line.end, lines.number);
+        const Line* line = &tokenized.line;
+        if (!tokenized.ok || !line->token_count)
+            continue;
+        if (line->indent == 0) // a top-level statement: the rules block starts or ends
+            in_rules = token_is(line->tokens[0], "rules");
+        else if (in_rules && token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field))
+            return (RuleLine){.ok = true, .field = field, .line = *line, .end = text_line.end};
+    }
+    return (RuleLine){0};
+}
+
+u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE_RULE_MAX_VALUES])
+{
+    RuleLine rule = find_rule(text, size, key);
+    if (!rule.ok)
+        return 0;
+    u32 count = field_values(rule.field);
+    NV_ASSERT(count <= BATTLE_RULE_MAX_VALUES);
+    for (u32 i = 0; i < count; ++i) {
+        Number number = parse_number(NULL, 0, rule.line.tokens[1 + i], false);
+        if (!number.ok)
+            return 0;
+        values[i] = number.value;
+    }
+    return count;
+}
+
+// A value as the file writes it: an integer, or a number with at most four decimals and no trailing zeros ("9.8", "60").
+// Never an exponent, which the format has not. Returns the length, 0 when it does not fit.
+internal u32 format_value(char* out, umm capacity, f64 value, b32 integer)
+{
+    value = integer ? round(value) : round(value * 1e4) / 1e4;
+    value += 0.0; // -0 becomes 0
+    int length = snprintf(out, capacity, integer ? "%.0f" : "%.4f", value);
+    if (length <= 0 || (umm)length >= capacity)
+        return 0;
+    if (!integer) {
+        while (out[length - 1] == '0')
+            --length;
+        if (out[length - 1] == '.')
+            --length;
+        out[length] = 0;
+    }
+    return (u32)length;
+}
+
+umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity)
+{
+    RuleLine rule = find_rule(text, size, key);
+    if (!rule.ok || count != field_values(rule.field))
+        return 0;
+    b32 integer = rule.field->kind == FIELD_INTEGER || rule.field->kind == FIELD_GRID;
+    char written[96];
+    u32 used = 0;
+    for (u32 i = 0; i < count; ++i) {
+        if (i)
+            written[used++] = ' ';
+        u32 length = format_value(written + used, sizeof(written) - used, values[i], integer);
+        if (!length)
+            return 0;
+        used += length;
+    }
+
+    // The values' old text, from the first value to the end of the last, is replaced. The spaces after it shrink or grow
+    // with the change so that a comment keeps its column (one space at the least).
+    const char* first = rule.line.tokens[1].text;
+    const Token* last = &rule.line.tokens[count];
+    const char* after = last->text + last->length;
+    const char* rest = after;
+    while (rest < rule.end && *rest == ' ')
+        ++rest;
+    s64 gap = rest - after;
+    if (rest < rule.end && *rest == '#') {
+        gap += (s64)(after - first) - (s64)used;
+        if (gap < 1)
+            gap = 1;
+    }
+    umm head = (umm)(first - text), tail = (umm)(text + size - rest);
+    umm total = head + used + (umm)gap + tail;
+    if (total > capacity)
+        return 0;
+    memmove(out, text, head);
+    memcpy(out + head, written, used);
+    memset(out + head + used, ' ', (umm)gap);
+    memmove(out + head + used + (umm)gap, rest, tail);
+    return total;
 }

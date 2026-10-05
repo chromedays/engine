@@ -73,7 +73,9 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
         game->defs = *next;
         game->defs_ok = true;
         memcpy(game->project_text, text, size);
+        game->project_text[size] = 0;
         game->project_size = size;
+        game->project_edited = false;
         snprintf(game->project_name, sizeof(game->project_name), "%s", name);
         nv_utf8_trim(game->project_name);
         ++game->project_loads;
@@ -90,6 +92,47 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
     } else {
         set_message(game, true, T("%s has %u error(s), so the project in use stays. The first: %s"), name, next->error_count,
                     next->first_error);
+    }
+    game->scratch.used = mark;
+    return ok;
+}
+
+b32 game_rules_editable(const Game* game)
+{
+    // Only before a round: a round's seek replays it with the rules in place, which must be those it was played with. Not
+    // while a file is read or written, so the text a save sends is the one it marks as saved.
+    return game->project_size && game->battle.phase == BATTLE_DEPLOY && game->local_file.status != NV_LOCAL_FILE_BUSY;
+}
+
+b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
+{
+    if (!game_rules_editable(game))
+        return false;
+    umm mark = game->scratch.used;
+    char* text = NV_PUSH_ARRAY(&game->scratch, PROJECT_MAX_SIZE, char);
+    BattleDefs* next = NV_PUSH_STRUCT(&game->scratch, BattleDefs);
+    umm size = defs_rule_set(game->project_text, game->project_size, key, values, count, text, PROJECT_MAX_SIZE);
+    b32 ok = size && defs_read_project(next, game->project_name, text, size);
+    if (ok) {
+        // The player's units stay where the new rules still allow them (in the zone, within the supply), row by row.
+        Battle* battle = &game->battle;
+        u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
+        memcpy(placed, battle->placed, sizeof(battle->placed));
+        game->defs = *next;
+        memcpy(game->project_text, text, size);
+        game->project_text[size] = 0;
+        game->project_size = size;
+        game->project_edited = true;
+        battle_init(battle, &game->defs);
+        for (u32 row = 0; row < BATTLE_MAX_ZONE_ROWS; ++row)
+            for (u32 x = 0; x < BATTLE_MAX_GRID_WIDTH; ++x)
+                if (placed[row * BATTLE_MAX_GRID_WIDTH + x])
+                    battle_place(battle, placed[row * BATTLE_MAX_GRID_WIDTH + x] - 1u, (s32)x, (s32)row);
+        view_apply_rules(game);
+        if (game->project_message_bad)
+            game->project_message[0] = 0; // a refused change's message is out of date
+    } else {
+        set_message(game, true, T("Not changed: %s"), size ? next->first_error : T("the project's text is too large"));
     }
     game->scratch.used = mark;
     return ok;
@@ -169,6 +212,7 @@ internal void poll_local_file(Game* game)
             nv_utf8_trim(game->project_name);
             game->kept_is_project = true;
         }
+        game->project_edited = false; // rules are not edited while a save runs (game_rules_editable)
         set_message(game, false, T("Saved %s"), file->name);
         break;
     case NV_LOCAL_FILE_FAILED:
@@ -253,7 +297,8 @@ internal void frame(void* userdata)
 // 5 the state's hash, 6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the game clock's speed
 // in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
-// local file's status (NvLocalFileStatus, as last polled).
+// local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
+// length in ticks.
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -276,6 +321,8 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 15: return game->kept_is_project && game->local_file.kept;
     case 16: return (int)game->defs.rules.grid_width;
     case 17: return (int)game->local_file.status;
+    case 18: return game->project_edited;
+    case 19: return (int)game->defs.rules.round_ticks;
     default: return (int)game->selected_def;
     }
 }
@@ -312,6 +359,19 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
 EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_message(void)
 {
     return game_state.project_message;
+}
+
+// Changes rule `key` to `a` (and `b`, the grid's length) as the panel's Rules section does; 1 when the change was made.
+EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double b)
+{
+    f64 values[BATTLE_RULE_MAX_VALUES] = {a, b};
+    return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
+}
+
+// The project's text as Save would write it, for tests.
+EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_text(void)
+{
+    return game_state.project_text;
 }
 
 // Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
@@ -396,7 +456,7 @@ int main(void)
     game->speed = 1.0f;
     game->resolution = (NvResolution){.mode = NV_RESOLUTION_SCALE, .divisor = touch ? 2 : 1};
 
-    game->project_text = NV_PUSH_ARRAY(&game->permanent, PROJECT_MAX_SIZE, char);
+    game->project_text = NV_PUSH_ARRAY(&game->permanent, PROJECT_MAX_SIZE + 1, char);
     view_build(game);
     load_built_in_project(game);
     game->last_time = nv_time_seconds();
