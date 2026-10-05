@@ -33,8 +33,8 @@
 도, 거리는 m, 시간은 초. 바뀌는 점:
 
 - 블록을 여는 문장에 `rules`와 `stage`가 더해진다(값 없음).
-- **최상위 문장의 순서가 정해져 있다.** 최상위 문장은 들여쓰지 않은 문장(`abproj`, `rules`, `unit`, `stage`)이고, 이 순서로 온다:
-  `abproj` → `rules` → `unit` 하나 이상 → `stage`. 순서가 틀리면 오류다
+- **최상위 문장의 순서가 정해져 있다.** 최상위 문장은 들여쓰지 않은 문장(`abproj_version`, `rules`, `unit`, `stage`)이고,
+  이 순서로 온다: `abproj_version` → `rules` → `unit` 하나 이상 → `stage`. 순서가 틀리면 오류다
   (`default.abproj:30: 'rules' must come before the first 'unit'`). 순서가 정해져 있으면 한 번 훑어 읽을 수 있고(유닛을 읽을 때
   규칙이, 스테이지를 읽을 때 유닛이 이미 있다), 에디터가 쓰는 파일도 모양이 하나로 정해진다.
 
@@ -42,7 +42,7 @@
 
 | 최상위 문장 | 개수 | 내용 |
 |---|---|---|
-| `abproj <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `1` |
+| `abproj_version <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `1` |
 | `rules` | 블록, 정확히 하나 | 규칙 상수 |
 | `unit <이름>` | 블록, 하나 이상, 최대 16 | 유닛 정의. `battle.md`의 `units.txt` 표와 같다 |
 | `stage` | 블록, 정확히 하나 | 공급, 시드, 적 배치 |
@@ -98,7 +98,7 @@
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj 1
+abproj_version 1
 
 rules
     cell_size 2              # m
@@ -147,7 +147,8 @@ stage
 
 ### 버전
 
-- 첫 문장 `abproj <n>`이 형식 버전이다. 없거나 첫 문장이 아니면 오류다(`default.abproj:1: the file must start with 'abproj <version>'`).
+- 첫 문장 `abproj_version <n>`이 형식 버전이다. 없거나 첫 문장이 아니면 오류다
+  (`default.abproj:1: the file must start with 'abproj_version <version>'`).
 - 형식을 바꿀 때마다(키를 더하거나 빼거나, 필수가 되거나, 의미나 단위가 바뀔 때) 코드의 `ABPROJ_VERSION`을 올리고 이 절의
   표에 행을 더한다.
 - 읽는 쪽은 `1`부터 `ABPROJ_VERSION`까지 읽는다. 옛 버전은 읽을 때 지금 형식으로 바꾼다(표의 "옛 파일 읽기"). 더 높은 버전은
@@ -251,8 +252,8 @@ As in `battle.md`, "Definition files > Syntax": UTF-8, one statement per line, `
 name and word values, angles in degrees, distances in meters, times in seconds. What changes:
 
 - `rules` and `stage` join the statements that open a block (with no value).
-- **Top-level statements come in a fixed order.** Top-level statements are the unindented ones (`abproj`, `rules`, `unit`,
-  `stage`), and they come in this order: `abproj` → `rules` → one or more `unit` → `stage`. Any other order is an error
+- **Top-level statements come in a fixed order.** Top-level statements are the unindented ones (`abproj_version`, `rules`,
+  `unit`, `stage`), and they come in this order: `abproj_version` → `rules` → one or more `unit` → `stage`. Any other order is an error
   (`default.abproj:30: 'rules' must come before the first 'unit'`). A fixed order lets one pass read the file (the rules are there
   when units are read, the units when the stage is) and gives the files an editor writes one shape.
 
@@ -260,7 +261,7 @@ name and word values, angles in degrees, distances in meters, times in seconds. 
 
 | Top-level statement | Count | Contents |
 |---|---|---|
-| `abproj <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `1` |
+| `abproj_version <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `1` |
 | `rules` | Block, exactly one | Rule constants |
 | `unit <name>` | Block, one or more, at most 16 | A unit definition, as in `battle.md`'s `units.txt` table |
 | `stage` | Block, exactly one | Supply, seed, the enemy deployment |
@@ -318,7 +319,7 @@ hash).
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj 1
+abproj_version 1
 
 rules
     cell_size 2              # m
@@ -367,8 +368,8 @@ stage
 
 ### Versions
 
-- The first statement, `abproj <n>`, is the format version. A file without it, or with it anywhere but first, is an error
-  (`default.abproj:1: the file must start with 'abproj <version>'`).
+- The first statement, `abproj_version <n>`, is the format version. A file without it, or with it anywhere but first, is an error
+  (`default.abproj:1: the file must start with 'abproj_version <version>'`).
 - Every change to the format (a key added or removed, made required, or given a new meaning or unit) raises `ABPROJ_VERSION` in code
   and adds a row to this section's table.
 - The reader reads versions `1` to `ABPROJ_VERSION`. An older version is turned into today's format as it is read (the table's
