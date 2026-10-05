@@ -1,0 +1,46 @@
+# autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
+abproj_version 1
+
+rules
+    cell_size 2              # m
+    grid 32 48               # cells across, rows long
+    zone_rows 14             # each side's deployment rows
+    round_time 60            # s
+    gravity 9.8              # m/s²
+    retarget_interval 0.25   # s
+    stop_fraction 0.9        # of the weapon's range
+    min_damage_fraction 0.25 # armor never takes more than 75% of a hit
+
+unit Crawler
+    cost 100
+    health 120
+    armor 5
+    speed 5            # m/s
+    radius 0.5
+    height 0.8
+    weapon Lobber
+        range 20
+        damage 30
+        cooldown 1.5
+        launch_angle 45    # degrees
+        spread 0.5
+        muzzle 0 0.6 0.3
+    ability shield
+        radius 1.2
+        capacity 60
+        regen 10           # per second
+        regen_delay 3
+
+stage
+    supply 1000
+    seed 1
+    place Crawler 12 36
+    place Crawler 14 36
+    place Crawler 16 36
+    place Crawler 18 36
+    place Crawler 13 38
+    place Crawler 15 38
+    place Crawler 17 38
+    place Crawler 14 40
+    place Crawler 16 40
+    place Crawler 15 42

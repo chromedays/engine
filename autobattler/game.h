@@ -26,9 +26,11 @@
 // map's texels keep about the same size on screen as the camera zooms.
 #define SHADOW_DISTANCE_PER_CAMERA_DISTANCE 1.6f
 
-// The field, in meters.
-#define FIELD_WIDTH  (BATTLE_GRID_WIDTH * BATTLE_CELL_SIZE)
-#define FIELD_LENGTH (BATTLE_GRID_LENGTH * BATTLE_CELL_SIZE)
+// The camera starts CAMERA_START_DISTANCE away from a field CAMERA_REFERENCE_LENGTH meters long; a longer or shorter field
+// (the rules' `grid` and `cell_size`) scales that, and the far limits with it.
+#define CAMERA_START_DISTANCE   104.0f
+#define CAMERA_REFERENCE_LENGTH 96.0f
+#define CAMERA_FAR_Z            400.0f
 
 typedef struct Layout {
     NvRect viewport; // framebuffer pixels: where the field is drawn and the camera and taps are read
@@ -58,6 +60,7 @@ typedef struct Game {
 
     BattleDefs defs;
     b32 defs_ok;
+    f32 field_width, field_length; // meters, from the rules
     Battle battle;
     f32 accumulator; // seconds of game time not yet run as ticks
     f32 speed;       // game time per real second: 0.5, 1, 2 or 4 (docs/specs/battle.md, "Time controls")

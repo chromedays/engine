@@ -1,5 +1,5 @@
 // The auto-battler executable (docs/specs/battle.md, "Executable"): it sets up the window, GPU, renderer and UI, reads the
-// definition files, and runs the frame: the battle ticks at a fixed 30 Hz inside it, and the view (battle_view.c) draws
+// project file, and runs the frame: the battle ticks at a fixed 30 Hz inside it, and the view (battle_view.c) draws
 // whatever state the ticks leave.
 
 #include "game.h"
@@ -37,24 +37,28 @@ void game_layout(Game* game)
     game->layout.scene = nv_renderer_scene_output(&game->resolution, game->layout.viewport);
 }
 
-// Reads units.txt and stage.txt; on any failure `defs.first_error` says what, for the panel.
+// What the view draws when the project file could not be read: an empty field and the error. The battle never runs on it.
+global const BattleRules fallback_rules = {
+    .cell_size = 2.0f, .grid_width = 32, .grid_length = 48, .zone_rows = 14, .round_ticks = 1800, .retarget_ticks = 8,
+    .gravity = 9.8f, .stop_fraction = 0.9f, .min_damage_fraction = 0.25f};
+
+// Reads data/default.abproj; on any failure `defs.first_error` says what, for the panel.
 internal b32 load_defs(Game* game)
 {
     BattleDefs* defs = &game->defs;
     umm mark = game->scratch.used;
-    NvFileData units = nv_file_read(&game->scratch, "/data/units.txt");
-    NvFileData stage = nv_file_read(&game->scratch, "/data/stage.txt");
+    NvFileData project = nv_file_read(&game->scratch, "/data/default.abproj");
     b32 ok = false;
-    if (!units.ok || !stage.ok) {
-        snprintf(defs->first_error, sizeof(defs->first_error), "%s: cannot read the file", units.ok ? "stage.txt" : "units.txt");
+    if (!project.ok) {
+        snprintf(defs->first_error, sizeof(defs->first_error), "default.abproj: cannot read the file");
         ++defs->error_count;
         nv_log(NV_LOG_ERROR, "battle", "%s", defs->first_error);
     } else {
-        // The stage looks unit names up, so it is read only when the units are good.
-        ok = defs_read_units(defs, "units.txt", (const char*)units.bytes, units.size) &&
-             defs_read_stage(defs, "stage.txt", (const char*)stage.bytes, stage.size);
+        ok = defs_read_project(defs, "default.abproj", (const char*)project.bytes, project.size);
     }
     game->scratch.used = mark;
+    if (!ok)
+        defs->rules = fallback_rules;
     return ok;
 }
 
