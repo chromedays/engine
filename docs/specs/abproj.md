@@ -228,6 +228,29 @@ stage
 - 파일을 못 읽었거나 오류가 있으면 `main.c`는 뷰가 빈 전장과 오류를 그릴 수 있게 고정된 `BattleRules`(`fallback_rules`)를 `defs.rules`에
   넣는다. 전투는 이 규칙으로 돌지 않는다(`defs_ok`가 거짓이면 `battle_init`을 부르지 않는다).
 
+### 불러오기와 저장
+
+추가(2026-10-05). 패키지에 든 `default.abproj` 말고, 사용자 컴퓨터의 `.abproj` 파일을 열고 저장한다(`docs/specs/local_files.md`).
+다시 빌드하지 않고 바꾼 값을 바로 해 본다.
+
+- **패널:** Battle 패널의 언어 아래 "Project: <파일 이름>"과 버튼 넷: **Open...**(대화 상자로 연다), **Reload**(붙잡아 둔 파일을 다시
+  읽는다), **Save**(그 파일에 제자리로 쓴다), **Save as...**(새 파일에 쓴다, 대체 경로는 내려받기). 그 아래 마지막 결과("Opened x",
+  "Saved x", 오류는 빨강).
+- **불러오기(`game_load_project`):** 읽은 글을 임시 `BattleDefs`로 읽는다. 좋으면 그것이 defs가 되고, 전투는 배치 단계로 돌아가고
+  (`battle_init`), 뷰는 전장 평면, 유닛 메시, 카메라를 새로 맞춘다(`view_apply_project`). 메시는 자기 슬롯에서 다시 만든다
+  (`nv_renderer_replace_mesh`), 그래서 여러 번 불러도 메시 슬롯이 늘지 않는다. 오류가 있으면 지금 프로젝트를 그대로 두고
+  "x has N error(s), so the project in use stays. The first: ..."를 보인다. 좋은 프로젝트가 아직 없을 때(시작 때 실패)만 그 오류가
+  패널의 오류 표시가 된다.
+- **저장은 읽은 글 그대로다.** 프로젝트의 글(`Game.project_text`, 256 KB까지)을 바꾸지 않고 둔다가 쓰므로 주석과 순서가 그대로다. 지금은
+  앱 안에서 값을 고칠 수 없으므로 저장은 복사(다른 이름으로 저장)와, 에디터가 생겼을 때 쓸 제자리 저장의 자리다. 값을 고치는
+  에디터는 이 글을 제자리에서 고친다("나중에").
+- **제자리 저장은 이 프로젝트의 파일에만:** 오류 있는 파일을 열면 브라우저가 그 파일을 붙잡으므로, 지금 프로젝트의 글을 거기에 쓰지
+  않도록 Save를 끈다(`kept_is_project`). Reload는 된다(그 파일을 고치고 다시 읽는다). 바깥에서 고친 파일에는 쓰지 않는다
+  (`local_files.md`의 바깥 수정 보호).
+- 디자이너의 작업: 리포를 받아 둔 폴더의 `.abproj`를 Open하고, 텍스트 편집기에서 고치고, Reload해서 해 본다. 다시 빌드할 필요가 없다.
+- Debug 빌드는 `Module._battle_debug_load(name, text)`, `_battle_debug_project_action(action)`, `_battle_debug_project_message()`와
+  `_battle_debug(14)`(놓인 프로젝트 수), `(15)`(Save가 제자리에 쓸 수 있는지), `(16)`(격자 너비), `(17)`(로컬 파일 상태)를 내보낸다.
+
 ### 테스트
 
 `tests/battle_test.c`:
@@ -496,6 +519,30 @@ stage
   line: `'zone_rows' must be at most 24`.
 - When the file could not be read or has an error, `main.c` puts fixed rules (`fallback_rules`) into `defs.rules` so that the view can
   draw an empty field and the error. The battle does not run on them (`battle_init` is not called when `defs_ok` is false).
+
+### Loading and saving
+
+Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` file on the user's computer can be opened and saved
+(`docs/specs/local_files.md`), so a changed value can be tried at once, without a rebuild.
+
+- **The panel:** under the language in the Battle panel, "Project: <file name>" and four buttons: **Open...** (a dialog),
+  **Reload** (reads the kept file again), **Save** (writes it in place), **Save as...** (writes a new file; in the fallback, a
+  download). Under them, the last result ("Opened x", "Saved x", errors in red).
+- **Loading (`game_load_project`):** the text is read into a scratch `BattleDefs`. A good one becomes the defs, the battle goes back
+  to deployment (`battle_init`), and the view fits the field's planes, the unit meshes and the camera to it (`view_apply_project`).
+  The meshes are remade in their own slots (`nv_renderer_replace_mesh`), so loading again and again uses up no mesh slots. With an
+  error, the project in use stays and the panel says "x has N error(s), so the project in use stays. The first: ...". Only while no
+  good project is in place yet (a failure at start) do its errors become the panel's error display.
+- **Saving writes the text as it was read.** The project's text (`Game.project_text`, up to 256 KB) is kept unchanged and written,
+  so comments and order stay. Nothing in the app edits values yet, so saving is a copy (Save as) and the place for saving in place
+  once the editor comes. That editor edits this text in place ("Later").
+- **In place only to this project's file:** after a file with errors is opened, the browser keeps that file, so Save is disabled
+  rather than writing the project in use into it (`kept_is_project`). Reload works (fix that file and read it again). A file changed
+  outside is not written (`local_files.md`, the outside-edit guard).
+- A designer's work: Open the `.abproj` in the cloned repository, edit it in a text editor, and Reload to try it. No rebuild.
+- Debug builds export `Module._battle_debug_load(name, text)`, `_battle_debug_project_action(action)`, `_battle_debug_project_message()`
+  and `_battle_debug(14)` (projects put in place), `(15)` (whether Save can write in place), `(16)` (the grid's width), `(17)` (the
+  local file's status).
 
 ### Tests
 
