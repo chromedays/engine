@@ -13,17 +13,17 @@
 가운데에 둔다.
 
 지금은 배치 하나가 둘 다를 맡는다: 캔버스 위쪽 60%에 씬 뷰포트, 아래쪽 40%에 탭이 있는 패널 하나
-(`nv_editor_layout`, `app_build_ui`). 세워 든 폰에는 맞다. 넓은 화면에서는 씬이 가는 띠가 되고, Scene 트리와
+(`nv_editor_layout`, `sandbox_build_ui`). 세워 든 폰에는 맞다. 넓은 화면에서는 씬이 가는 띠가 되고, Scene 트리와
 Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안의 한 줄에 머문다.
 
 ### 접근법
 
 | 접근법 | 무엇인가 | 맞음 | 장단점 |
 |---|---|---|---|
-| **자체 사각형 위의 UI 두 개** (추천) | 앱이 모든 영역의 사각형을 직접 계산하고, 지금 `nv_imgui_begin_panel`이 하듯 영역마다 ImGui 창 하나를 연다. 장치마다 자체 배치 함수와 자체 파일이 있다 | 뷰포트는 이미 모든 곳에서 "사각형"이다 (`NvImgui.view_rect`, 렌더러의 뷰포트, picking, 기즈모), 그래서 뷰포트가 캔버스 가운데 있어도 숫자만 바뀐다. 저장과 맞춰야 할 도킹 상태가 없다 | 분할선과 접기는 우리가 써야 한다 (3단계) |
+| **자체 사각형 위의 UI 두 개** (추천) | 샌드박스가 모든 영역의 사각형을 직접 계산하고, 지금 `nv_imgui_begin_panel`이 하듯 영역마다 ImGui 창 하나를 연다. 장치마다 자체 배치 함수와 자체 파일이 있다 | 뷰포트는 이미 모든 곳에서 "사각형"이다 (`NvImgui.view_rect`, 렌더러의 뷰포트, picking, 기즈모), 그래서 뷰포트가 캔버스 가운데 있어도 숫자만 바뀐다. 저장과 맞춰야 할 도킹 상태가 없다 | 분할선과 접기는 우리가 써야 한다 (3단계) |
 | Dear ImGui 도킹 | cimgui 빌드에 이미 `ImGuiConfigFlags_DockingEnable`이 있다. 사용자가 창을 어떤 배치로든 끌어 놓는다 | 끌어 놓기 도킹이 공짜 | 창 위치가 우리 저장 형식과 그 버전 관리와 별개인 ImGui 자체 `.ini` 텍스트에 산다; 뷰포트는 매 프레임 사각형을 읽어 와야 하는 도크 노드가 되고, 엉뚱한 곳에 놓으면 뷰포트나 Play 버튼이 숨을 수 있다. 도킹은 마우스 기능이라 이 데스크톱 UI는 쓰고 폰 UI는 쓰면 안 된다 |
 | 적응형 배치 하나 | 같은 코드 안에서 창 크기에 따라 배치를 바꾼다 | 코드 경로 하나 | 두 장치는 배치만이 아니라 조작, 크기, 제스처가 다르다; 함수 하나가 `if (phone)`으로 가득해진다. 기각: UI는 완전히 분리한다 |
-| 라이브러리 | 맞는 것이 없다: 배치는 앱 자체의 창이다 | | |
+| 라이브러리 | 맞는 것이 없다: 배치는 샌드박스 자체의 창이다 | | |
 
 추천: 자체 사각형 위의 UI 두 개. 도킹은 나중에 바꿀 수 있게 남는다; 여기의 어떤 것도 그것을 막지 않는다.
 
@@ -32,7 +32,7 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
 | 주제 | 결정 |
 |---|---|
 | UI 고르기 | 시작할 때 한 번, 주 포인터로: 거친 포인터 (터치)는 **폰 UI**, 그 밖은 **데스크톱 UI** (`js_touch_is_primary`, 이미 `NvImgui.ui_scale`을 설정함). 선택은 창 크기가 아니라 입력 장치를 따른다: 좁은 데스크톱 창은 데스크톱 UI를 유지한다. 지금은 전환이 없다 |
-| 분리 | `app/ui_desktop.c`와 `app/ui_phone.c`가 각자의 배치, 창, 툴바, 크기, 제스처를 소유한다. `app_build_ui`는 그중 하나의 호출이 된다. 어느 파일도 다른 쪽 장치로 분기하지 않는다. 둘이 나누는 것은 **섹션**뿐이다: 패널 하나의 내용을 현재 창에 그리는 함수들 (`scene_tab`, `inspector_tab`, `view_tab`, `stress_ui`, `console_tab`, `undo_ui`, 그 안의 저장과 그림자 섹션), 그래서 편집 로직은 한 번만 있다. 섹션은 `app->ui_mode`에 크기를 물을 수 있지만, 편집하는 것을 바꾸려고 물으면 안 된다 |
+| 분리 | `sandbox/ui_desktop.c`와 `sandbox/ui_phone.c`가 각자의 배치, 창, 툴바, 크기, 제스처를 소유한다. `sandbox_build_ui`는 그중 하나의 호출이 된다. 어느 파일도 다른 쪽 장치로 분기하지 않는다. 둘이 나누는 것은 **섹션**뿐이다: 패널 하나의 내용을 현재 창에 그리는 함수들 (`scene_tab`, `inspector_tab`, `view_tab`, `stress_ui`, `console_tab`, `undo_ui`, 그 안의 저장과 그림자 섹션), 그래서 편집 로직은 한 번만 있다. 섹션은 `sandbox->ui_mode`에 크기를 물을 수 있지만, 편집하는 것을 바꾸려고 물으면 안 된다 |
 | Play / Stop | 두 UI 모두 화면 위쪽 가운데: 씬 뷰포트 위에 전체 폭으로 걸친 **상단 바** 안에, 중심이 캔버스의 가로 중심인 버튼. 지금처럼 Edit 모드에서는 Play를, 재생 중에는 Stop을 보여 주고, 스트레스 씬이 보이는 동안은 숨는다 (`play.md`) |
 | 상단 바, 데스크톱 | 높이 32 px. 왼쪽: 메뉴 바 (File, Edit, View). 가운데: Play / Stop, 그리고 재생 중에는 바로 뒤에 "Playing: edits are lost on Stop" 안내. 오른쪽: 프레임 시간과 보이는 씬의 이름 |
 | 상단 바, 폰 | 높이 48 CSS 픽셀 (손가락이 닿는 터치 영역). 왼쪽: Undo, 그다음 Find (명령 팔레트를 연다, `search.md`). 가운데: Play / Stop. 오른쪽: Redo. 다른 것은 없다. Play, Undo, Redo 줄이 패널을 떠나고, 패널은 그 줄을 돌려받는다 |
@@ -103,14 +103,14 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
   - `in_view`는 이미 `view_rect`를 사각형으로 검사하므로 입력 라우팅은 바뀔 것이 없다. 분할선이나 도크에서
     시작한 누름은 ImGui의 것이다 (도크는 창이므로 `WantCaptureMouse`가 덮는다).
   - 페이지의 캔버스 커서는 ImGui의 마우스 커서를 따른다 (분할선의 크기 조절 커서를 위해).
-- **앱.**
-  - `app/ui_desktop.c`와 `app/ui_phone.c`; `app/ui.c`는 섹션과 공용 도우미를 유지한다; `App.ui_mode`; `App`
+- **샌드박스.**
+  - `sandbox/ui_desktop.c`와 `sandbox/ui_phone.c`; `sandbox/ui.c`는 섹션과 공용 도우미를 유지한다; `Sandbox.ui_mode`; `Sandbox`
     안의 도크 크기.
-  - `app/main.c`는 매 프레임 활성 UI에 뷰포트 사각형을 묻는다. 기즈모, picking, `badge_box`, Play 버튼은 왼쪽 위
+  - `sandbox/main.c`는 매 프레임 활성 UI에 뷰포트 사각형을 묻는다. 기즈모, picking, `badge_box`, Play 버튼은 왼쪽 위
     뷰포트를 가정하는 대신 그것을 읽는다.
-  - `app/save.c`: `EDIT` 태그 네 개와 스펙 표의 각 행.
+  - `sandbox/save.c`: `EDIT` 태그 네 개와 스펙 표의 각 행.
 - **테스트.** Debug 빌드는 뷰포트와 도크 사각형과 Play 버튼의 사각형을 export하여
-  (`Module._app_debug_layout_*`) 테스트가 그것들을 클릭하고 Play 버튼의 중심을 캔버스 중심과 비교할 수 있게
+  (`Module._sandbox_debug_layout_*`) 테스트가 그것들을 클릭하고 Play 버튼의 중심을 캔버스 중심과 비교할 수 있게
   한다.
 - **문서.** `AGENTS.md` (에디터 배치 규칙), README, 그리고 패널, Play 줄, 배치를 언급하는 `viewport.md`,
   `play.md`, `console.md`, `undo.md`, `save.md`.
@@ -161,7 +161,7 @@ Give the desktop and the phone two separate editor UIs, each built for its input
 the Play / Stop button at the top center of the screen in both.
 
 Today one layout serves both: the scene viewport on the top 60% of the canvas and one tabbed panel
-on the bottom 40% (`nv_editor_layout`, `app_build_ui`). That is right for a phone held upright. On
+on the bottom 40% (`nv_editor_layout`, `sandbox_build_ui`). That is right for a phone held upright. On
 a wide screen it leaves the scene a thin strip, forces tab switches between the Scene tree and the
 Inspector, and keeps Play, Undo and Redo in a row inside the panel.
 
@@ -169,10 +169,10 @@ Inspector, and keeps Play, Undo and Redo in a row inside the panel.
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
-| **Two UIs on our own rectangles** (recommended) | The app computes every region's rectangle itself and opens one ImGui window per region, as `nv_imgui_begin_panel` does today. Each device has its own layout function and its own file | The viewport is already "a rectangle" everywhere (`NvImgui.view_rect`, the renderer's viewport, picking, the gizmo), so the viewport being in the middle of the canvas changes only the numbers. No docking state to keep in step with the save | Splitters and collapsing are ours to write (phase 3) |
+| **Two UIs on our own rectangles** (recommended) | The sandbox computes every region's rectangle itself and opens one ImGui window per region, as `nv_imgui_begin_panel` does today. Each device has its own layout function and its own file | The viewport is already "a rectangle" everywhere (`NvImgui.view_rect`, the renderer's viewport, picking, the gizmo), so the viewport being in the middle of the canvas changes only the numbers. No docking state to keep in step with the save | Splitters and collapsing are ours to write (phase 3) |
 | Dear ImGui docking | The cimgui build already has `ImGuiConfigFlags_DockingEnable`. Users drag windows into any arrangement | Free drag-and-dock behavior | Window positions live in ImGui's own `.ini` text, apart from our save format and its versioning; the viewport is then a dock node whose rectangle we read back each frame, and a stray drop can hide the viewport or the Play button. Docking is a mouse feature, which this desktop UI would use and the phone UI must not |
 | One adaptive layout | Switch arrangement by window size inside the same code | One code path | The two devices differ in controls, sizes and gestures, not only in arrangement; one function ends up full of `if (phone)`. Rejected: the UIs are to be fully separate |
-| A library | None fits: the layout is the app's own windows | | |
+| A library | None fits: the layout is the sandbox's own windows | | |
 
 Recommendation: two UIs on our own rectangles. Docking stays available to switch to later; nothing
 here rules it out.
@@ -182,7 +182,7 @@ here rules it out.
 | Topic | Decision |
 |---|---|
 | Choosing the UI | Once at start, from the primary pointer: a coarse pointer (touch) gives the **phone UI**, anything else the **desktop UI** (`js_touch_is_primary`, which already sets `NvImgui.ui_scale`). The choice follows the input device, not the window size: a narrow desktop window keeps the desktop UI. There is no switch for now |
-| Separation | `app/ui_desktop.c` and `app/ui_phone.c` each own their layout, windows, toolbar, sizes and gestures. `app_build_ui` becomes a call to one of them. Neither file branches on the other's device. They share only the **sections**: functions that draw the content of one panel into the current window (`scene_tab`, `inspector_tab`, `view_tab`, `stress_ui`, `console_tab`, `undo_ui` and the save and shadow sections inside them), so editing logic exists once. A section may ask `app->ui_mode` for a size, never to change what it edits |
+| Separation | `sandbox/ui_desktop.c` and `sandbox/ui_phone.c` each own their layout, windows, toolbar, sizes and gestures. `sandbox_build_ui` becomes a call to one of them. Neither file branches on the other's device. They share only the **sections**: functions that draw the content of one panel into the current window (`scene_tab`, `inspector_tab`, `view_tab`, `stress_ui`, `console_tab`, `undo_ui` and the save and shadow sections inside them), so editing logic exists once. A section may ask `sandbox->ui_mode` for a size, never to change what it edits |
 | Play / Stop | Top center of the screen in both UIs: a button whose center is the canvas's horizontal center, in a **top bar** across the full width above the scene viewport. It shows Play in Edit mode and Stop while playing, as today, and is hidden while the stress scene is shown (`play.md`) |
 | Top bar, desktop | 32 px high. Left: the menu bar (File, Edit, View). Center: Play / Stop, and right after it, while playing, the note "Playing: edits are lost on Stop". Right: frame time and the shown scene's name |
 | Top bar, phone | 48 CSS pixels high (hit areas a finger can reach). Left: Undo, then Find (opens the command palette, `search.md`). Center: Play / Stop. Right: Redo. Nothing else. The row of Play, Undo and Redo leaves the panel, which gets that line back |
@@ -256,14 +256,14 @@ and no splitters.
     that starts on a splitter or a dock belongs to ImGui (docks are windows, so `WantCaptureMouse`
     covers them).
   - The page's canvas cursor follows ImGui's mouse cursor (for the splitters' resize cursor).
-- **App.**
-  - `app/ui_desktop.c` and `app/ui_phone.c`; `app/ui.c` keeps the sections and the shared
-    helpers; `App.ui_mode`; the docks' sizes in `App`.
-  - `app/main.c` asks the active UI for the viewport rectangle each frame. The gizmo, picking,
+- **Sandbox.**
+  - `sandbox/ui_desktop.c` and `sandbox/ui_phone.c`; `sandbox/ui.c` keeps the sections and the shared
+    helpers; `Sandbox.ui_mode`; the docks' sizes in `Sandbox`.
+  - `sandbox/main.c` asks the active UI for the viewport rectangle each frame. The gizmo, picking,
     `badge_box` and the Play button read it instead of assuming a top-left viewport.
-  - `app/save.c`: the four `EDIT` tags and a row each in the spec's table.
+  - `sandbox/save.c`: the four `EDIT` tags and a row each in the spec's table.
 - **Tests.** Debug builds export the viewport and dock rectangles and the Play button's rectangle
-  (`Module._app_debug_layout_*`) so tests can click them and check the Play button's center against
+  (`Module._sandbox_debug_layout_*`) so tests can click them and check the Play button's center against
   the canvas center.
 - **Docs.** `AGENTS.md` (the editor-layout rule), README, `viewport.md`, `play.md`, `console.md`,
   `undo.md` and `save.md` where they name the panel, the Play row, or the layout.

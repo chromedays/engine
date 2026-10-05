@@ -123,10 +123,10 @@
 |---|---|
 | View 탭 | **Post-processing** 섹션: Tone mapping (Clamp, PBR Neutral, ACES), Exposure (0.25–4), Bloom (켜기/끄기), Bloom intensity (0–0.2). **Effects** 섹션: 등록된 효과마다 시험 버튼 (Explosion, Sparks, Smoke, Missile, Laser, Scorch)이 공전 점에서 효과를 낸다. 살아 있는 파티클, 선분, 데칼 수. 모든 행은 `search_row`를 거치고, 문자열은 `T`/`TL`과 한국어 행을 가진다 |
 | 저장 | 새 `EDIT` 태그: `TONE` (u32: 0 Clamp, 1 PBR Neutral, 2 ACES), `EXPO` (f32), `BLOM` (u32), `BLMI` (f32). 살아 있는 효과는 저장하지 않는다 |
-| Edit와 Play | 시험 버튼은 Edit 모드에서도 동작한다: 애니메이션 미리보기처럼 사용자가 누른 일회성 미리보기다. 계속 나오는 효과 (쇼케이스의 장식 효과가 생긴다면)는 `app->playing` 가지에만 둔다. Play와 Stop은 살아 있는 효과를 모두 지운다 |
+| Edit와 Play | 시험 버튼은 Edit 모드에서도 동작한다: 애니메이션 미리보기처럼 사용자가 누른 일회성 미리보기다. 계속 나오는 효과 (쇼케이스의 장식 효과가 생긴다면)는 `sandbox->playing` 가지에만 둔다. Play와 Stop은 살아 있는 효과를 모두 지운다 |
 | Undo | 효과는 undo 대상이 아니다. Post-processing 설정은 다른 에디터 설정처럼 undo되지 않는다 |
 | 스트레스 씬 | **Effects** 워크로드: 살아 있는 파티클 목표 (0–4M, 그 수를 유지하도록 폭발을 터뜨림), 초당 폭발 수 (0–200), 날아다니는 미사일 수 (궤적과 연기, 0–2,000), 빔 수 (0–500), 데칼 수. 통계: 살아 있는 파티클, 선분, 데칼, bloom GPU 시간. 벤치마크에 효과 단계를 더한다 |
-| Debug export | `_app_debug_vfx(n)` (0 파티클, 1 선분, 2 데칼, 3 효과 수), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
+| Debug export | `_sandbox_debug_vfx(n)` (0 파티클, 1 선분, 2 데칼, 3 효과 수), `_sandbox_debug_vfx_fire(effect)`, `_sandbox_debug_set_post(tone, exposure, bloom, intensity)` |
 
 ### 엔진 API
 
@@ -202,9 +202,9 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 - **효과의 CPU 쪽 순수 함수** (버스트를 작업 그룹 작업으로 나누기, 링의 슬롯 할당)는 `engine/vfx_cpu.h`, `vfx_cpu.c`에 있고 `tests/vfx_test.c`가 Node에서 시험한다.
 - **스트레스 씬**: Effects 워크로드 (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); 통계 행 (살아 있는 수, 보이는 수, 버려진 수, 선분, 데칼, GPU bloom과 파티클 패스);
   벤치마크 단계 여섯 (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500)과 열 (GPU bloom / 파티클 ms, 평균 살아 있는 수). 단계마다 빈 하늘에서 시작한다.
-- **Debug export**: `_app_debug_vfx(n)` (0 살아 있는 수, 1 보이는 수, 2 버려진 수, 3 효과 수, 4 선분, 5 데칼), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
-  `_app_debug_post`, `_app_debug_set_post`, `_app_debug_set_sun`.
-- **알려진 문제**: 정렬하지 않은 알파 파티클 (연기)의 순서 오류는 의도대로 보인다 (`app/effects.c`의 `// TODO:`). SwiftShader의 시간은 의미가 없어서 비용 수치는 장치에서 따로 잰다.
+- **Debug export**: `_sandbox_debug_vfx(n)` (0 살아 있는 수, 1 보이는 수, 2 버려진 수, 3 효과 수, 4 선분, 5 데칼), `_sandbox_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_sandbox_debug_set_effects(particles, explosions, missiles, beams, decals)`,
+  `_sandbox_debug_post`, `_sandbox_debug_set_post`, `_sandbox_debug_set_sun`.
+- **알려진 문제**: 정렬하지 않은 알파 파티클 (연기)의 순서 오류는 의도대로 보인다 (`sandbox/effects.c`의 `// TODO:`). SwiftShader의 시간은 의미가 없어서 비용 수치는 장치에서 따로 잰다.
 
 ### 해결된 질문
 
@@ -222,8 +222,8 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 - **엔진.** `engine/vfx.h`, `engine/vfx.c` (효과와 이미터 표, 버스트 큐, 파티클 버퍼, emit, simulate, prepare compute 패스, 선분과 데칼 링, 그리기), `engine/renderer.h`와
   `renderer.c` (`RGBA16Float` 씬 타깃, `NvPostSettings`, 업스케일 패스의 노출과 톤 매핑과 bloom 합성, bloom 체인과 그 패스,
   타임스탬프 10개, 첫 compute 파이프라인), `engine/gpu.c` (큰 파티클 용량을 위한 장치 한도 요청), `engine/imgui.c` (float 텍스처 미리보기 확인).
-- **앱.** View 탭의 Post-processing과 Effects 섹션 (`app/ui.c`), 쇼케이스의 시험 효과 정의 (`app/main.c`), 저장 태그
-  (`app/save.c`, `save.md`), 스트레스 워크로드와 통계와 벤치마크 (`app/stress.c`), 한국어 문자열 (`app/strings.c`),
+- **앱.** View 탭의 Post-processing과 Effects 섹션 (`sandbox/ui.c`), 쇼케이스의 시험 효과 정의 (`sandbox/main.c`), 저장 태그
+  (`sandbox/save.c`, `save.md`), 스트레스 워크로드와 통계와 벤치마크 (`sandbox/stress.c`), 한국어 문자열 (`sandbox/strings.c`),
   Debug export.
 - **테스트.** `tests/vfx_test.c` (Node): 버스트를 작업 그룹 작업으로 나누기 (지연, 경계), 선분과 데칼 링의 할당과 덮어쓰기. GPU 쪽 (emit, simulate, 목록)은 브라우저 테스트로 확인한다.
 - **문서.** `msaa.md`와 `resolution.md` (씬 타깃 형식), `textures.md`, `stress.md`, `save.md`, `AGENTS.md`, README.
@@ -389,16 +389,16 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Cost shown | One more timestamp pair around the bloom passes (`NV_TIMESTAMP_COUNT` 6 → 10 with the particle compute passes' pair). The Stress tab and the benchmark show it |
 | Textures tab | The bloom chain's steps are listed under Render targets. `RGBA16Float` is filterable, so the existing preview path shows them (values shown clipped) |
 
-#### App
+#### Sandbox
 
 | Topic | Decision |
 |---|---|
 | View tab | A **Post-processing** section: Tone mapping (Clamp, PBR Neutral, ACES), Exposure (0.25 to 4), Bloom (on/off), Bloom intensity (0 to 0.2). An **Effects** section: a test button per registered effect (Explosion, Sparks, Smoke, Missile, Laser, Scorch) fires it at the orbit point; the counts of live particles, segments and decals. Every row goes through `search_row`, and strings go through `T`/`TL` with Korean rows |
 | Saved | New `EDIT` tags: `TONE` (u32: 0 Clamp, 1 PBR Neutral, 2 ACES), `EXPO` (f32), `BLOM` (u32), `BLMI` (f32). Live effects are not saved |
-| Edit and Play | Test buttons work in Edit mode too: a one-off preview the user presses, like the animation preview. Continuous effects (if the showcase gets decorative ones) go in the `app->playing` branch only. Play and Stop clear all live effects |
+| Edit and Play | Test buttons work in Edit mode too: a one-off preview the user presses, like the animation preview. Continuous effects (if the showcase gets decorative ones) go in the `sandbox->playing` branch only. Play and Stop clear all live effects |
 | Undo | Effects are not undoable; the Post-processing settings are not undoable, like other editor settings |
 | Stress scene | An **Effects** workload: a target of live particles (0 to 4M, kept by firing explosions), explosions per second (0 to 200), flying missiles (trails and smoke, 0 to 2,000), beams (0 to 500), decals. Stats: live particles, segments, decals, bloom GPU time. The benchmark gains effect steps |
-| Debug exports | `_app_debug_vfx(n)` (0 particles, 1 segments, 2 decals, 3 effect count), `_app_debug_vfx_fire(effect)`, `_app_debug_set_post(tone, exposure, bloom, intensity)` |
+| Debug exports | `_sandbox_debug_vfx(n)` (0 particles, 1 segments, 2 decals, 3 effect count), `_sandbox_debug_vfx_fire(effect)`, `_sandbox_debug_set_post(tone, exposure, bloom, intensity)` |
 
 ### Engine API
 
@@ -474,9 +474,9 @@ All five phases are built. What differs from the spec or was not in it:
 - **The effects' pure CPU functions** (splitting bursts into workgroup jobs, allocating ring slots) are in `engine/vfx_cpu.h` and `vfx_cpu.c`, and `tests/vfx_test.c` tests them under Node.
 - **The stress scene**: an Effects workload (Fire effects, Live particles 0–4M, Explosions / s 0–200, Missiles in flight 0–2,000, Beams 0–500, Decals / s 0–2,000); stats rows (alive, visible, dropped, segments, decals, GPU bloom and particle passes);
   six benchmark steps (Particles 250k, 1M, 2M; Missiles 500, 2000; Beams 500) and columns (GPU bloom / particle ms, average alive). Each step starts from an empty sky.
-- **Debug exports**: `_app_debug_vfx(n)` (0 alive, 1 visible, 2 dropped, 3 effect count, 4 segments, 5 decals), `_app_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_app_debug_set_effects(particles, explosions, missiles, beams, decals)`,
-  `_app_debug_post`, `_app_debug_set_post`, `_app_debug_set_sun`.
-- **Known issue**: the order errors of unsorted alpha particles (smoke) show, as intended (the `// TODO:` in `app/effects.c`). SwiftShader's timings mean nothing, so cost figures are measured separately on devices.
+- **Debug exports**: `_sandbox_debug_vfx(n)` (0 alive, 1 visible, 2 dropped, 3 effect count, 4 segments, 5 decals), `_sandbox_debug_vfx_fire(effect)` (0 Explosion, 1 Sparks, 2 Smoke, 3 Missile, 4 Laser, 5 Scorch), `_sandbox_debug_set_effects(particles, explosions, missiles, beams, decals)`,
+  `_sandbox_debug_post`, `_sandbox_debug_set_post`, `_sandbox_debug_set_sun`.
+- **Known issue**: the order errors of unsorted alpha particles (smoke) show, as intended (the `// TODO:` in `sandbox/effects.c`). SwiftShader's timings mean nothing, so cost figures are measured separately on devices.
 
 ### Resolved questions
 
@@ -496,9 +496,9 @@ All decided on 2026-10-01.
   `engine/renderer.h` and `renderer.c` (`RGBA16Float` scene targets, `NvPostSettings`, exposure, tone mapping and the bloom
   composite in the upscale pass, the bloom chain and its passes, 10 timestamps, the first compute pipelines); `engine/gpu.c` (device limits raised for large particle capacities); `engine/imgui.c` (float texture previews
   checked).
-- **App.** The View tab's Post-processing and Effects sections (`app/ui.c`), the showcase's test effect definitions
-  (`app/main.c`), the save tags (`app/save.c`, `save.md`), the stress workload, stats and benchmark (`app/stress.c`), Korean
-  strings (`app/strings.c`), Debug exports.
+- **Sandbox.** The View tab's Post-processing and Effects sections (`sandbox/ui.c`), the showcase's test effect definitions
+  (`sandbox/main.c`), the save tags (`sandbox/save.c`, `save.md`), the stress workload, stats and benchmark (`sandbox/stress.c`), Korean
+  strings (`sandbox/strings.c`), Debug exports.
 - **Tests.** `tests/vfx_test.c` (Node): splitting bursts into workgroup jobs (delays, edges), allocating and overwriting in the segment and decal rings. The GPU side (emit, simulate, lists) is checked in browser tests.
 - **Docs.** `msaa.md` and `resolution.md` (the scene target format), `textures.md`, `stress.md`, `save.md`, `AGENTS.md`, README.
 

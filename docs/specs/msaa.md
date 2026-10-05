@@ -36,7 +36,7 @@
 | 기본값 | 모든 장치에서 4×. Stress 탭이 장치마다 비용을 보여 주고 (아래), 설정으로 끌 수 있다 |
 | 설정 | View 탭의 Shadows 섹션 옆, **Anti-aliasing** 콤보 (Off, MSAA 4×), 두 UI 모두 |
 | 저장 | 새 `EDIT` 태그 `MSAA` (u32: 1 또는 4; 다른 값은 4로 불러옴). 없으면: 기본값 |
-| 엔진 API | `NvRenderer.msaa` (샘플 수), `NvRenderer.shadows`처럼 앱이 설정. `nv_renderer_draw`는 시그니처를 유지한다: 받은 캔버스 뷰가 resolve 타깃이 된다 |
+| 엔진 API | `NvRenderer.msaa` (샘플 수), `NvRenderer.shadows`처럼 샌드박스가 설정. `nv_renderer_draw`는 시그니처를 유지한다: 받은 캔버스 뷰가 resolve 타깃이 된다 |
 | 색 타깃 | 캔버스 크기와 그 렌더 형식 (sRGB 뷰 형식, 그래서 샘플이 선형 공간에서 평균되어 가장자리가 어두워지지 않음)의 4-샘플 텍스처. Store op Discard: resolve된 캔버스만 남는다. 깊이 버퍼처럼 캔버스 크기, 형식, 샘플 수가 바뀌면 다시 만든다 |
 | 깊이 타깃 | 기존 `depth32float` 타깃도 4-샘플이 된다 (한 패스의 어태치먼트는 샘플 수를 공유한다). Reverse Z는 바뀌지 않는다. WebGPU는 깊이를 resolve할 수 없으므로, Textures 탭이 유지하지 않는 한 (아래) Discard로 남는다 |
 | 파이프라인 | 씬 패스에서 쓰는 모든 파이프라인 (메시, static과 skinned, 단면과 양면, 디버그 라인)이 `multisample.count` = 설정을 받고, 그것이 바뀌면 다시 만든다. 그림자 패스와 ImGui 패스는 단일 샘플로 남는다: 자체 어태치먼트가 있다 |
@@ -69,8 +69,8 @@
   한 4-샘플 뷰를 가리키는 씬 패스의 색 어태치먼트, Off일 때는 캔버스를 바로 가리킴; 샘플 수와 크기가 든 로그 줄.
 - **ImGui 미리보기 (`engine/imgui.c`).** 미리보는 깊이 텍스처의 샘플이 둘 이상일 때 고르는 다중 샘플 깊이
   미리보기 파이프라인과 bind group layout.
-- **앱.** View 탭의 Anti-aliasing 콤보 (`app/ui.c`), `MSAA` 태그 (`app/save.c`와 `save.md`), Stress 탭의 줄과
-  벤치마크의 열 (`app/stress.c`).
+- **샌드박스.** View 탭의 Anti-aliasing 콤보 (`sandbox/ui.c`), `MSAA` 태그 (`sandbox/save.c`와 `save.md`), Stress 탭의 줄과
+  벤치마크의 열 (`sandbox/stress.c`).
 - **문서.** `textures.md` (다중 샘플 깊이), `stress.md`, `AGENTS.md`, README.
 
 ### 단계
@@ -96,9 +96,9 @@
   이미지의 색이 같다.
 - `resolution.md` 이후로 4-샘플 색과 깊이 타깃은 캔버스가 아니라 씬의 해상도 (64로 올림)이고, 4-샘플 색은 씬 색
   타깃으로 resolve된다; 업스케일 패스가 그것을 캔버스에 넣는다. 위의 메모리 표는 캔버스 크기 타깃 기준이다.
-- `NvRenderer.scene_samples`는 파이프라인과 깊이 타깃이 가진 것이다; `NvRenderer.msaa`는 앱이 요청하는 것이고,
-  `update_msaa` (`update_depth_buffer` 전)가 매 프레임 둘을 맞춘다. 엔진의 기본값은 1이다; 앱이 4를 설정한다.
-- Debug 빌드는 테스트가 UI 없이 전환하는 데 쓰는 `_app_debug_msaa`와 `_app_debug_set_msaa`를 export한다.
+- `NvRenderer.scene_samples`는 파이프라인과 깊이 타깃이 가진 것이다; `NvRenderer.msaa`는 샌드박스가 요청하는 것이고,
+  `update_msaa` (`update_depth_buffer` 전)가 매 프레임 둘을 맞춘다. 엔진의 기본값은 1이다; 샌드박스가 4를 설정한다.
+- Debug 빌드는 테스트가 UI 없이 전환하는 데 쓰는 `_sandbox_debug_msaa`와 `_sandbox_debug_set_msaa`를 export한다.
 - 확인: 큐브 가장자리를 따라 4×에서 24개의 서로 다른 색, Off에서 4개, 삼각형 안쪽의 같은 색, 실행 중 전환과 크기
   조절에서 WebGPU 오류 없음, 스트레스 씬이 4×로 그려짐, Textures 탭이 다중 샘플 깊이를 미리 봄, 새로고침이 설정을
   유지, 저장 안의 지원하지 않는 수는 4×로 불러옴, 태그 없는 저장은 4×를 줌.
@@ -145,7 +145,7 @@ Recommendation: MSAA 4×, with Off kept as a setting. No third-party library.
 | Default | 4× on every device. The Stress tab shows what it costs on each one (below), and the setting turns it off |
 | Setting | An **Anti-aliasing** combo in the View tab (Off, MSAA 4×), beside the Shadows section, on both UIs |
 | Saved | A new `EDIT` tag, `MSAA` (u32: 1 or 4; anything else loads as 4). Missing: the default |
-| Engine API | `NvRenderer.msaa` (the sample count), set by the app like `NvRenderer.shadows`. `nv_renderer_draw` keeps its signature: the canvas view it is given becomes the resolve target |
+| Engine API | `NvRenderer.msaa` (the sample count), set by the sandbox like `NvRenderer.shadows`. `nv_renderer_draw` keeps its signature: the canvas view it is given becomes the resolve target |
 | Color target | A 4-sample texture of the canvas's size and its render format (the sRGB view format, so samples are averaged in linear space and edges are not darkened). Store op Discard: only the resolved canvas is kept. Remade when the canvas size, the format or the sample count changes, like the depth buffer |
 | Depth target | The existing `depth32float` target becomes 4-sample too (a pass's attachments share one sample count). Reverse Z is unchanged. WebGPU cannot resolve depth, so it stays Discard, unless the Textures tab keeps it (below) |
 | Pipelines | Every pipeline used in the scene pass (the meshes, static and skinned, single- and double-sided, and the debug lines) gets `multisample.count` = the setting, and is remade when it changes. The shadow pass and the ImGui pass stay single-sample: they have their own attachments |
@@ -182,8 +182,8 @@ canvas after the resolve; it is left for later, once the Stress tab shows whethe
   Off; log lines with the sample count and the sizes.
 - **ImGui previews (`engine/imgui.c`).** A multisampled depth preview pipeline and bind group
   layout, chosen when the previewed depth texture has more than one sample.
-- **App.** The View tab's Anti-aliasing combo (`app/ui.c`), the `MSAA` tag (`app/save.c` and
-  `save.md`), the Stress tab's line and the benchmark's column (`app/stress.c`).
+- **Sandbox.** The View tab's Anti-aliasing combo (`sandbox/ui.c`), the `MSAA` tag (`sandbox/save.c` and
+  `save.md`), the Stress tab's line and the benchmark's column (`sandbox/stress.c`).
 - **Docs.** `textures.md` (the multisampled depth), `stress.md`, `AGENTS.md` and README.
 
 ### Phases
@@ -215,9 +215,9 @@ notes below are what the build taught:
   to 64), not the canvas's, and the 4-sample color resolves into the scene color target; the
   upscale pass puts that into the canvas. The memory table above is for the canvas-sized targets.
 - `NvRenderer.scene_samples` is what the pipelines and the depth target have; `NvRenderer.msaa` is
-  what the app asks for, and `update_msaa` (before `update_depth_buffer`) reconciles them each
-  frame. The engine's default is 1; the app sets 4.
-- Debug builds export `_app_debug_msaa` and `_app_debug_set_msaa`, which the tests use to switch
+  what the sandbox asks for, and `update_msaa` (before `update_depth_buffer`) reconciles them each
+  frame. The engine's default is 1; the sandbox sets 4.
+- Debug builds export `_sandbox_debug_msaa` and `_sandbox_debug_set_msaa`, which the tests use to switch
   without the UI.
 - Checked: 24 distinct colors along a cube's edge with 4× against 4 without, equal colors inside
   triangles, switching at runtime and resizing raise no WebGPU errors, the stress scene draws at

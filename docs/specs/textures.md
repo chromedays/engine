@@ -9,7 +9,7 @@
 
 ### 목표
 
-엔진이 쓰는 텍스처를 앱 안에서 본다: 캐릭터의 base color 맵, 그림자 맵, 씬의 깊이 타깃, ImGui의 글꼴 아틀라스.
+엔진이 쓰는 텍스처를 샌드박스 안에서 본다: 캐릭터의 base color 맵, 그림자 맵, 씬의 깊이 타깃, ImGui의 글꼴 아틀라스.
 **Textures** 탭이 썸네일, 크기, 형식, 밉 레벨, 메모리, 사용처와 함께 그것들을 나열한다; 하나를 고르면 밉 레벨, 채널,
 깊이 범위 조작과 함께 크게 보여 준다. Inspector의 Mesh 섹션도 그 머티리얼의 텍스처를 보여 준다.
 
@@ -31,10 +31,10 @@
 
 | 접근법 | 무엇인가 | 맞음 | 장단점 |
 |---|---|---|---|
-| **`igImage` 위의 자체 뷰어, `imgui.c`의 미리보기 파이프라인과 함께** (추천) | 탭이 ImGui의 `igImage`로 텍스처를 그린다. `imgui.c`에 미리보기 슬롯이 생긴다: 필요할 때 만드는 (텍스처, 밉, 모드)별 bind group, 채널 하나 또는 깊이 텍스처를 고른 범위의 회색으로 보여 줄 수 있는 작은 두 번째 파이프라인으로 그린다 | C17, 고정 슬롯, 새 의존성 없음; 약 400줄 (엔진과 앱) | 우리가 써야 한다. 텍셀 읽어 오기 없음 |
+| **`igImage` 위의 자체 뷰어, `imgui.c`의 미리보기 파이프라인과 함께** (추천) | 탭이 ImGui의 `igImage`로 텍스처를 그린다. `imgui.c`에 미리보기 슬롯이 생긴다: 필요할 때 만드는 (텍스처, 밉, 모드)별 bind group, 채널 하나 또는 깊이 텍스처를 고른 범위의 회색으로 보여 줄 수 있는 작은 두 번째 파이프라인으로 그린다 | C17, 고정 슬롯, 새 의존성 없음; 약 400줄 (엔진과 샌드박스) | 우리가 써야 한다. 텍셀 읽어 오기 없음 |
 | imgui_tex_inspect (andyborrell, C++, MIT) | ImGui 텍스처 인스펙터: 줌, 팬, 텍셀별 값 주석, 채널 마스크 | 기능상 가장 가깝다 | C API가 없는 C++ (cimgui 바인딩 없음), 백엔드는 OpenGL과 DirectX 11만: WebGPU 백엔드 (셰이더와 텍셀 읽어 오기)는 어차피 우리가 써야 하고, 더하여 `anim.cpp` 같은 C++ 래퍼 |
 | Dear ImGui만 (`igImage`, `igImageWithBg`) | 위젯, 현재 파이프라인으로 | 이미 있다 | 색 텍스처에는 충분하지만, 깊이 텍스처, 채널, 밉 레벨을 보여 주지 못한다 |
-| WebGPU Inspector (Brendan Duncan, 브라우저 확장, MIT) | 프레임을 캡처하고 텍스처를 포함한 모든 GPU 객체를 나열한다 | 엔진에 더할 것이 없다 | 앱 밖: 확장이 있는 데스크톱 브라우저, 폰이 아님. 곁에 둘 좋은 도구이지 요청된 기능은 아니다 |
+| WebGPU Inspector (Brendan Duncan, 브라우저 확장, MIT) | 프레임을 캡처하고 텍스처를 포함한 모든 GPU 객체를 나열한다 | 엔진에 더할 것이 없다 | 샌드박스 밖: 확장이 있는 데스크톱 브라우저, 폰이 아님. 곁에 둘 좋은 도구이지 요청된 기능은 아니다 |
 
 추천: `igImage` 위에 직접 작성. 서드파티 라이브러리 없음.
 
@@ -53,7 +53,7 @@
 | 사용처 | 상세 아래에 그것을 쓰는 노드; 하나를 탭하면 그것이 선택된다 (그리고 Scene 탭처럼 Inspector가 열린다) |
 | Inspector | Mesh 섹션이 "Multiplied with a texture."를 텍스처의 썸네일과 이름으로 바꾼다; 그것을 탭하면 그것이 선택된 채 Textures 탭이 열린다 |
 | 깊이 표시 | 깊이는 **범위**로부터 매핑한 회색으로 보인다: 그림자 맵은 날것의 0..1 (정사영이라 이미 선형이다); 깊이 타깃은 카메라의 near와 far 평면으로 뷰 거리로 되돌리고 (reverse Z: 1이 가까움), 카메라에서 검정이고 **White at**에서 흰색 (기본은 공전 카메라 거리의 두 배, far 평면까지의 슬라이더). 깊이 타깃은 그 중 씬 뷰포트 부분을 보여 준다. 깊이에서는 밉과 채널 조작이 숨는다 |
-| 깊이 타깃 샘플링 | 깊이 타깃은 Textures 탭이 보이는 동안에만 `TextureBinding`과 함께 만든다 (`NvRenderer.depth_sampled`, 앱이 설정; 바뀌면 렌더러가 텍스처를 다시 만든다). 그 밖에는 `RenderAttachment`만 유지하므로, 배포된 프레임은 결코 그 비용을 치르지 않는다 (아래 GPU 메모). 샘플링 가능한 동안 씬 패스는 깊이도 저장한다 (`WGPUStoreOp_Store`); 그 밖에는 패스 뒤에 아무것도 읽지 않으므로 버린다 |
+| 깊이 타깃 샘플링 | 깊이 타깃은 Textures 탭이 보이는 동안에만 `TextureBinding`과 함께 만든다 (`NvRenderer.depth_sampled`, 샌드박스가 설정; 바뀌면 렌더러가 텍스처를 다시 만든다). 그 밖에는 `RenderAttachment`만 유지하므로, 배포된 프레임은 결코 그 비용을 치르지 않는다 (아래 GPU 메모). 샘플링 가능한 동안 씬 패스는 깊이도 저장한다 (`WGPUStoreOp_Store`); 그 밖에는 패스 뒤에 아무것도 읽지 않으므로 버린다 |
 | 스왑체인 | 크기, 형식, present mode와 함께 미리보기 없이 나열한다: ImGui 패스가 그 안에 렌더링하고, 패스는 자체 어태치먼트를 샘플링할 수 없다. 그것을 미리 보려는 복사는 적은 이득을 위해 매 프레임 전체 화면 복사가 든다 |
 | 미리보기 슬롯 | `imgui.c`는 ImGui의 16개 옆에 미리보기 슬롯 64개를 둔다. 슬롯은 (텍스처, 밉, 모드, 깊이 범위)로 찾거나 만들고 (그 밉의 텍스처 뷰, 작은 유니폼 버퍼, bind group), GPU가 아직 그것으로 그릴 수 있으므로 3프레임 쓰지 않은 뒤 해제한다. 슬롯의 뷰가 텍스처를 붙잡으므로, 렌더러가 다시 만든 텍스처 (설정 변경 때의 그림자 맵)는 슬롯이 아직 그것을 키로 쓰는 동안 같은 주소로 돌아올 수 없다. 한 번에 64개를 넘으면 assert한다: clipper가 보이는 썸네일을 그보다 훨씬 아래로 유지한다 |
 | 미리보기 파이프라인 | 같은 정점 배치의 두 번째 파이프라인. 그 프래그먼트 셰이더가 슬롯의 모드를 적용한다: 채널 하나를 회색으로, RGB는 알파를 1로 강제, 또는 깊이 (`texture_depth_2d`를 픽셀의 텍셀에서 `textureLoad`로 읽음, 샘플러 없음, 그다음 범위 매핑). 색 모드는 같은 선형 샘플러로 샘플링한다. 그리기 명령은 텍스처 id의 범위로 파이프라인을 고르므로, ImGui 자체의 그리기는 바뀌지 않는다 |
@@ -76,12 +76,12 @@
     이번 프레임 `igImage`에 넘길 id. `near`와 `far`는 reverse-Z 깊이를 거리로 바꾼다; 0과 0은 깊이를 날것으로 읽는다.
   - UI 그룹이 그것을 보여 줄 수 있게 `ImTextureID nv_imgui_font_atlas(NvImgui*)`.
 
-### 앱 변경
+### 샌드박스 변경
 
-- `app/textures.c` (새로 생김): Textures 탭, 그 상태 (`App` 안의 `TextureView`), 보이는 씬의 노드를 도는 "사용 중"과
+- `sandbox/textures.c` (새로 생김): Textures 탭, 그 상태 (`Sandbox` 안의 `TextureView`), 보이는 씬의 노드를 도는 "사용 중"과
   "사용처" 탐색, 체커보드.
-- `app/ui.c`: 탭, 좁은 패널의 축소 맞춤, Inspector의 Mesh 썸네일.
-- `app/main.c`: `renderer.depth_sampled`가 지난 프레임에 Textures 탭이 보였는지를 따른다.
+- `sandbox/ui.c`: 탭, 좁은 패널의 축소 맞춤, Inspector의 Mesh 썸네일.
+- `sandbox/main.c`: `renderer.depth_sampled`가 지난 프레임에 Textures 탭이 보였는지를 따른다.
 
 ### GPU 메모
 
@@ -132,7 +132,7 @@ Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
 ### Goal
 
-See the textures the engine is using, inside the app: the character's base color maps, the shadow
+See the textures the engine is using, inside the sandbox: the character's base color maps, the shadow
 map, the scene's depth target and ImGui's font atlas. A **Textures** tab lists them with a
 thumbnail, size, format, mip levels, memory and what uses them; picking one shows it large, with
 mip level, channel and depth-range controls. The Inspector's Mesh section shows its material's
@@ -156,10 +156,10 @@ replacing textures, and textures of past frames (no capture, as RenderDoc does n
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
-| **Our own viewer on `igImage`, with a preview pipeline in `imgui.c`** (recommended) | The tab draws textures with ImGui's `igImage`. `imgui.c` gains preview slots: a bind group per (texture, mip, mode) made on demand, drawn by a small second pipeline that can show one channel, or a depth texture as gray over a chosen range | C17, fixed slots, no new dependency; about 400 lines (engine and app) | Ours to write. No texel readback |
+| **Our own viewer on `igImage`, with a preview pipeline in `imgui.c`** (recommended) | The tab draws textures with ImGui's `igImage`. `imgui.c` gains preview slots: a bind group per (texture, mip, mode) made on demand, drawn by a small second pipeline that can show one channel, or a depth texture as gray over a chosen range | C17, fixed slots, no new dependency; about 400 lines (engine and sandbox) | Ours to write. No texel readback |
 | imgui_tex_inspect (andyborrell, C++, MIT) | An ImGui texture inspector: zoom, pan, per-texel value annotations, channel masks | The closest match in features | C++ with no C API (no cimgui binding), and backends only for OpenGL and DirectX 11: its WebGPU backend (a shader and texel readback) would be ours to write anyway, plus a C++ wrapper like `anim.cpp` |
 | Dear ImGui alone (`igImage`, `igImageWithBg`) | The widgets, with the current pipeline | Already here | Enough for color textures, but shows no depth texture, no channel, no mip level |
-| WebGPU Inspector (Brendan Duncan, browser extension, MIT) | Captures a frame and lists every GPU object, textures included | Nothing to add to the engine | Outside the app: a desktop browser with the extension, not a phone. A good tool alongside, not the feature asked for |
+| WebGPU Inspector (Brendan Duncan, browser extension, MIT) | Captures a frame and lists every GPU object, textures included | Nothing to add to the engine | Outside the sandbox: a desktop browser with the extension, not a phone. A good tool alongside, not the feature asked for |
 
 Recommendation: write it ourselves on `igImage`. No third-party library.
 
@@ -178,7 +178,7 @@ Recommendation: write it ourselves on `igImage`. No third-party library.
 | Used by | Under the detail, the nodes using it; tapping one selects it (and opens the Inspector, as the Scene tab does) |
 | Inspector | The Mesh section replaces "Multiplied with a texture." with the texture's thumbnail and name; tapping it opens the Textures tab with it selected |
 | Depth display | Depth is shown as gray, mapped from a **range**: the shadow map raw 0..1 (it is orthographic, so already linear); the depth target turned back into view distance with the camera's near and far planes (reverse Z: 1 is near), black at the camera and white at **White at** (twice the orbit camera's distance by default, a slider up to the far plane). The depth target shows the scene viewport's part of it. Mip and channel controls are hidden for depth |
-| Depth target sampling | The depth target is made with `TextureBinding` only while the Textures tab is shown (`NvRenderer.depth_sampled`, set by the app; the renderer recreates the texture when it changes). Otherwise it keeps `RenderAttachment` alone, so a shipped frame never pays for it (GPU notes below). While samplable, the scene pass also stores its depth (`WGPUStoreOp_Store`); otherwise it discards it, as nothing reads it after the pass |
+| Depth target sampling | The depth target is made with `TextureBinding` only while the Textures tab is shown (`NvRenderer.depth_sampled`, set by the sandbox; the renderer recreates the texture when it changes). Otherwise it keeps `RenderAttachment` alone, so a shipped frame never pays for it (GPU notes below). While samplable, the scene pass also stores its depth (`WGPUStoreOp_Store`); otherwise it discards it, as nothing reads it after the pass |
 | Swapchain | Listed with size, formats and present mode, without a preview: the ImGui pass renders into it, and a pass cannot sample its own attachment. A copy to preview it would cost a full-screen copy every frame for little gain |
 | Preview slots | `imgui.c` keeps 64 preview slots beside ImGui's 16. A slot is found by (texture, mip, mode, depth range) or made (a texture view of that mip, a small uniform buffer, a bind group), and released after 3 frames unused, since the GPU may still draw with it. The slot's view holds its texture, so a texture the renderer recreates (the shadow map on a setting change) cannot come back at the same address while a slot is still keyed by it. More than 64 at once asserts: the clipper keeps the visible thumbnails far below that |
 | Preview pipeline | A second pipeline with the same vertex layout. Its fragment shader applies the slot's mode: a channel as gray, alpha forced to 1 for RGB, or depth (`texture_depth_2d` read with `textureLoad` at the pixel's texel, no sampler, then the range mapping). Color modes sample with the same linear sampler. Draw commands pick the pipeline by their texture id's range, so ImGui's own draws are unchanged |
@@ -203,12 +203,12 @@ Recommendation: write it ourselves on `igImage`. No third-party library.
     0 and 0 read depth raw.
   - `ImTextureID nv_imgui_font_atlas(NvImgui*)`, so the UI group can show it.
 
-### App changes
+### Sandbox changes
 
-- `app/textures.c` (new): the Textures tab, its state (`TextureView` in `App`), the "in use" and
+- `sandbox/textures.c` (new): the Textures tab, its state (`TextureView` in `Sandbox`), the "in use" and
   "used by" walk over the shown scene's nodes, and the checkerboard.
-- `app/ui.c`: the tab, shrink fitting on narrow panels, and the Inspector's Mesh thumbnail.
-- `app/main.c`: `renderer.depth_sampled` follows whether the Textures tab was shown last frame.
+- `sandbox/ui.c`: the tab, shrink fitting on narrow panels, and the Inspector's Mesh thumbnail.
+- `sandbox/main.c`: `renderer.depth_sampled` follows whether the Textures tab was shown last frame.
 
 ### GPU notes
 

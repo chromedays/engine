@@ -10,8 +10,8 @@
 폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
 
 참고 (2026-10-02, `shared.md`): `T`, `TL`, 언어와 조회는 엔진으로 옮겨졌다(`engine/strings.h`, `engine/strings.c`; 이름은 `nv_strings_*`,
-`NvLanguage`, `NV_LANGUAGE_*`). 표는 실행 파일마다 남는다(앱의 것은 `app/strings.c`, `app_strings_init`이 엔진에 넘긴다). 아래의
-`app/strings.h`, `strings_*`, `Language`, `LANG_*`는 옛 이름이다. 한글 글꼴은 `nv_imgui_load_ui_font`가 읽는다.
+`NvLanguage`, `NV_LANGUAGE_*`). 표는 실행 파일마다 남는다(샌드박스의 것은 `sandbox/strings.c`, `sandbox_strings_init`이 엔진에 넘긴다). 아래의
+`sandbox/strings.h`, `strings_*`, `Language`, `LANG_*`는 옛 이름이다. 한글 글꼴은 `nv_imgui_load_ui_font`가 읽는다.
 
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
@@ -60,7 +60,7 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 
 | 접근법 | 무엇인가 | 맞음 | 장단점 |
 |---|---|---|---|
-| **영어 텍스트를 키로 하는 자체 문자열 표** (추천) | `app/strings.c`가 (영어, 한국어) 쌍을 담는다. UI 코드는 `T("Speed")`라고 쓴다; 사용 중인 언어에 맞는 영어나 한국어 텍스트를 돌려주며, 시작할 때 만든 해시 테이블로 찾는다. 위젯 라벨은 ImGui ID를 영어로 유지한다: `TL("Speed")`는 `"속도###Speed"`를 돌려준다 | 코드에서 영어가 원본으로 남아 코드가 지금처럼 읽힌다; 번역이 없으면 영어로 돌아간다. 고정 배열, 순수 C | 모든 UI 문자열을 감싸야 한다; 번역 없는 문자열은 테스트가 나열한다 |
+| **영어 텍스트를 키로 하는 자체 문자열 표** (추천) | `sandbox/strings.c`가 (영어, 한국어) 쌍을 담는다. UI 코드는 `T("Speed")`라고 쓴다; 사용 중인 언어에 맞는 영어나 한국어 텍스트를 돌려주며, 시작할 때 만든 해시 테이블로 찾는다. 위젯 라벨은 ImGui ID를 영어로 유지한다: `TL("Speed")`는 `"속도###Speed"`를 돌려준다 | 코드에서 영어가 원본으로 남아 코드가 지금처럼 읽힌다; 번역이 없으면 영어로 돌아간다. 고정 배열, 순수 C | 모든 UI 문자열을 감싸야 한다; 번역 없는 문자열은 테스트가 나열한다 |
 | GNU gettext (C, LGPL, `.po` 파일) | 고전 | 표준 도구 | 두 언어를 위한 런타임 라이브러리와 파일 형식; 웹에서의 LGPL 링크 조건 |
 | 문자열 id 열거형 | `T(STR_SPEED)` | 컴파일 시간 검사 | 코드가 더 이상 영어로 읽히지 않고, 모든 문자열에 id가 필요하다 |
 
@@ -97,15 +97,15 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 | 저장 | 새 `EDIT` 태그 `LANG` (u32: 0 영어, 1 한국어; 다른 값은 영어로 불러옴). 그것이 없는 저장은 브라우저 언어를 쓴다. `SAVE_VERSION`은 그대로. 에디터 설정이고 undo되지 않는다 |
 | 검색 | 맞춰 볼 행의 텍스트는 영어 라벨, 한국어 라벨, 키워드다, 그래서 "shadow"와 "그림자" 둘 다 어느 언어에서든 Shadows 섹션을 찾는다; 팔레트의 액션도 마찬가지 |
 | 배치 | 한국어 라벨을 가장 넓은 문자열로 모든 도크, 폰 패널, 상단 바에서 확인한다; 그것을 자르는 고정 폭 (폰의 Find와 Undo 버튼, 데스크톱 Play 버튼)은 넓히거나 더 짧은 말을 쓴다 |
-| 빠진 번역 | Debug 빌드는 한국어가 보이는 동안 한국어 항목이 없는 문자열을 각각 한 번 기록한다; ctest 테스트 (`tests/`)는 `app/`의 모든 `T`/`TL` 리터럴에 항목이 있는지 확인한다 |
+| 빠진 번역 | Debug 빌드는 한국어가 보이는 동안 한국어 항목이 없는 문자열을 각각 한 번 기록한다; ctest 테스트 (`tests/`)는 `sandbox/`의 모든 `T`/`TL` 리터럴에 항목이 있는지 확인한다 |
 
 ### 변경
 
 - **엔진 (`engine/imgui.h`, `engine/imgui.c`).** `nv_imgui_set_font`의 한글 폴백 (두 번째 글꼴 인자), 데스크톱의
   텍스트 에이전트, `Platform_SetImeDataFn`, 조합 오버레이, 조합 중 막는 키, 문자 경계에서 이름 자르기
   (`engine/scene.c`).
-- **앱.** `app/strings.c`와 `app/strings.h` (표, `T`, `TL`, 언어), `app/*.c`의 모든 UI 문자열을 감싸는 `T`/`TL`,
-  View 탭의 Language 행, `app/save.c`의 `LANG` 태그, 두 언어의 검색 텍스트 (`app/search.c`), `app/main.c`에서
+- **샌드박스.** `sandbox/strings.c`와 `sandbox/strings.h` (표, `T`, `TL`, 언어), `sandbox/*.c`의 모든 UI 문자열을 감싸는 `T`/`TL`,
+  View 탭의 Language 행, `sandbox/save.c`의 `LANG` 태그, 두 언어의 검색 텍스트 (`sandbox/search.c`), `sandbox/main.c`에서
   불러오는 글꼴 파일.
 - **도구와 에셋.** `tools/subset_hangul.sh` (`npx subset-font`), `assets/fonts/`의 서브셋 글꼴과 그 라이선스.
 - **테스트.** `tests/strings.c`: `T`/`TL`로 감싼 모든 리터럴에 한국어 항목이 있다.
@@ -120,7 +120,7 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 2. **데스크톱 입력:** 데스크톱의 텍스트 에이전트, 캐럿 위치의 조합 오버레이, 조합 중 막는 키. Playwright의
    IME 이벤트 (CDP `Input.imeSetComposition`과 `Input.insertText`)로 확인: Name 필드, 검색 상자, 팔레트에
    "그림자" 입력; 조합 중에 단축키가 발동하지 않음; Escape, Enter, Backspace가 여전히 동작; 폰은 바뀌지 않음.
-3. **한국어 UI:** 문자열 표, 앱 전체의 `T`/`TL`, Language 행과 태그, 두 언어 검색, 빠진 문자열 테스트. 확인:
+3. **한국어 UI:** 문자열 표, 샌드박스 전체의 `T`/`TL`, Language 행과 태그, 두 언어 검색, 빠진 문자열 테스트. 확인:
    모든 도크, 메뉴, 팝업, 팔레트, 도움말 창이 1280×800과 390×664에서 잘린 라벨 없이 한국어로, 새로고침이 언어를
    유지, "그림자"와 "shadow"가 같은 행을 찾음, 한국어로 설정된 새 브라우저가 한국어로 시작.
 4. **문서.**
@@ -129,10 +129,10 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 
 만든 결과와 만들면서 알게 된 점:
 
-- **한글 글꼴.** `assets/fonts/Hangul-Subset.ttf` (387 KB; `app/strings.c`의 모든 문자가 KS X 1001의 2,350자 안에
+- **한글 글꼴.** `assets/fonts/Hangul-Subset.ttf` (387 KB; `sandbox/strings.c`의 모든 문자가 KS X 1001의 2,350자 안에
   있어서 스크립트가 더한 것은 없다), Pretendard Regular의 TrueType 파일로부터 `tools/subset_hangul.sh`가 만듦.
   OFL이 "Pretendard"라는 이름을 수정하지 않은 글꼴에 예약하므로 이름을 바꿨다 (라이선스의 예약 이름 조항은
-  사용자에게 보이는 이름을 다루는데, 앱은 그것을 보여 주지 않는다); 글꼴 자체의 name 테이블은 저자가 공개한
+  사용자에게 보이는 이름을 다루는데, 샌드박스는 그것을 보여 주지 않는다); 글꼴 자체의 name 테이블은 저자가 공개한
   서브셋처럼 여전히 Pretendard의 것이다. `nv_imgui_set_font`는 폴백을 두 번째 글꼴로 받아 합친다
   (`MergeMode`); 한글은 조정 없이 같은 크기로 Inter의 기준선에 앉았다. 패키지가 0.39 MB 커졌다.
 - **이름.** `nv_utf8_fit` (`engine/base.h`)은 문자 단위로 자른다: `nv_scene_add_node`와 저장에서 읽은 이름은 온전한
@@ -151,7 +151,7 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
   입력한 글자는 더 이상 브라우저로부터 막히지 않는다 (그것에 대해 `defaultPrevented`가 false), 텍스트 필드에는
   원래 필요 없던 일이다. CDP `Input.imeSetComposition`과 `Input.insertText`로 확인.
 - **문자열.** `T(english)`는 텍스트를, `TL(english)`는 위젯 라벨 `text###English`를 두 언어로 돌려주므로, 언어가
-  바뀌어도 위젯이 id를 유지한다 (탭이 제자리를 지킨다). `app/strings.c`에 222행의 표, 처음 쓸 때 만든 해시
+  바뀌어도 위젯이 id를 유지한다 (탭이 제자리를 지킨다). `sandbox/strings.c`에 222행의 표, 처음 쓸 때 만든 해시
   테이블로 찾는다. `local_persist`였던 콤보 항목 배열은 호출마다 `T()`로 만든다. `tests/strings_test.mjs`
   (ctest `strings_test`)는 코드가 감싸거나, 검색에 넘기거나 (`search_row`, `search_group`, `search_section`),
   단축키 표에 넣거나 (그룹, 이름, 키 텍스트), 통계, 텍스처 메모, 패널 이름에 쓰는 문자열에 행이 없을 때, 그리고
@@ -165,8 +165,8 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
   ("moon Position": 노드 이름과 필드 이름은 영어로 남고, "Undo"와 "Redo"만 번역된다).
 - 가는 길에 발견한 것: `focus_panel`이 0 (패널 0)에서 시작해서 시작할 때 Scene 탭의 검색 상자가 포커스를 받았다;
   이제는 패널 번호에 1을 더해 담는다.
-- Debug 빌드는 `_app_debug_language`, `_app_debug_set_language`, `_app_debug_selected_name(k)`,
-  `_app_debug_rename_selected` (선택된 노드의 이름을 검색 버퍼의 텍스트로 바꿈), `_app_debug_search_query(panel, k)`를
+- Debug 빌드는 `_sandbox_debug_language`, `_sandbox_debug_set_language`, `_sandbox_debug_selected_name(k)`,
+  `_sandbox_debug_rename_selected` (선택된 노드의 이름을 검색 버퍼의 텍스트로 바꿈), `_sandbox_debug_search_query(panel, k)`를
   export한다.
 - Debug (데스크톱 1280×800과 폰 390×664, 2×)와 Release에서 확인: 트리에서 라틴 옆의 한글 이름, 10음절 한도, 저장
   왕복과 새로고침; Name 필드, 검색 상자, 팔레트로의 IME 조합과 확정, 보통 입력, Backspace, 화살표가 여전히 동작;
@@ -179,7 +179,7 @@ Console 로그 메시지 번역 (개발자 출력, 영어로 유지), 문서 번
 - 영어와 한국어 외의 언어, 오른쪽에서 왼쪽 쓰기와 글자 모양이 바뀌는 문자 체계.
 - KS X 1001의 2,350자 밖의 음절 (상자로 보인다), 한자.
 - 초성 검색.
-- 로그 메시지와 문서의 번역 (앱 안에서). 저장소의 문서 자체는 2026-10-01부터 `AGENTS.md`의 규칙에 따라
+- 로그 메시지와 문서의 번역 (샌드박스 안에서). 저장소의 문서 자체는 2026-10-01부터 `AGENTS.md`의 규칙에 따라
   한국어와 영어로 함께 쓴다.
 
 ## English
@@ -190,8 +190,8 @@ fallback arguments of `nv_imgui_set_font` are gone. The size stays 14 px (the tw
 What follows about Inter and the subset is the design before that.
 
 Note (2026-10-02, `shared.md`): `T`, `TL`, the language and the lookup moved to the engine (`engine/strings.h`,
-`engine/strings.c`; the names are `nv_strings_*`, `NvLanguage`, `NV_LANGUAGE_*`). Each executable keeps its own table (the app's is
-`app/strings.c`, which `app_strings_init` hands to the engine). `app/strings.h`, `strings_*`, `Language` and `LANG_*` below are the
+`engine/strings.c`; the names are `nv_strings_*`, `NvLanguage`, `NV_LANGUAGE_*`). Each executable keeps its own table (the sandbox's is
+`sandbox/strings.c`, which `sandbox_strings_init` hands to the engine). `sandbox/strings.h`, `strings_*`, `Language` and `LANG_*` below are the
 old names. The Hangul font is read by `nv_imgui_load_ui_font`.
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
@@ -245,7 +245,7 @@ Subsetting tool candidates (offline, run by hand, nothing in the build or the re
 
 | Approach | What it is | Fit | Trade-offs |
 |---|---|---|---|
-| **Our own string table, keyed by the English text** (recommended) | `app/strings.c` holds pairs (English, Korean). UI code writes `T("Speed")`; it returns the English or the Korean text for the language in use, found through a hash table built at start. Widget labels keep their ImGui ID in English: `TL("Speed")` returns `"속도###Speed"` | English stays the source in the code, so code reads as today; a missing translation falls back to English. Fixed arrays, plain C | Every UI string has to be wrapped; a test lists strings that have no translation |
+| **Our own string table, keyed by the English text** (recommended) | `sandbox/strings.c` holds pairs (English, Korean). UI code writes `T("Speed")`; it returns the English or the Korean text for the language in use, found through a hash table built at start. Widget labels keep their ImGui ID in English: `TL("Speed")` returns `"속도###Speed"` | English stays the source in the code, so code reads as today; a missing translation falls back to English. Fixed arrays, plain C | Every UI string has to be wrapped; a test lists strings that have no translation |
 | GNU gettext (C, LGPL, `.po` files) | The classic | Standard tooling | A runtime library and a file format for two languages; LGPL linking terms on the web |
 | An enum of string ids | `T(STR_SPEED)` | Compile-time checked | The code no longer reads in English, and every string needs an id |
 
@@ -283,7 +283,7 @@ confirmed.
 | Saved | A new `EDIT` tag `LANG` (u32: 0 English, 1 Korean; anything else loads as English). A save without it uses the browser's language. `SAVE_VERSION` stays. An editor setting, not undoable |
 | Search | A row's text for matching is its English label, its Korean label and its keywords, so "shadow" and "그림자" both find the Shadows section in either language; the palette's actions likewise |
 | Layout | Korean labels are checked in every dock, the phone panel and the top bars at the widest strings; fixed widths that cut them (the phone's Find and Undo buttons, the desktop Play button) grow or use shorter words |
-| Missing translations | A Debug build logs, once each, a string that has no Korean entry while Korean is shown; a ctest test (`tests/`) checks that every `T`/`TL` literal in `app/` has an entry |
+| Missing translations | A Debug build logs, once each, a string that has no Korean entry while Korean is shown; a ctest test (`tests/`) checks that every `T`/`TL` literal in `sandbox/` has an entry |
 
 ### Changes
 
@@ -291,10 +291,10 @@ confirmed.
   second face argument), the text agent on the desktop, `Platform_SetImeDataFn`, the composing
   overlay, keys held back during composition, cutting names at character boundaries
   (`engine/scene.c`).
-- **App.** `app/strings.c` and `app/strings.h` (the table, `T`, `TL`, the language), `T`/`TL`
-  around every UI string in `app/*.c`, the Language row in the View tab, the `LANG` tag in
-  `app/save.c`, the search texts in both languages (`app/search.c`), the font file loaded in
-  `app/main.c`.
+- **Sandbox.** `sandbox/strings.c` and `sandbox/strings.h` (the table, `T`, `TL`, the language), `T`/`TL`
+  around every UI string in `sandbox/*.c`, the Language row in the View tab, the `LANG` tag in
+  `sandbox/save.c`, the search texts in both languages (`sandbox/search.c`), the font file loaded in
+  `sandbox/main.c`.
 - **Tools and assets.** `tools/subset_hangul.sh` (`npx subset-font`), the subset font and its
   license in `assets/fonts/`.
 - **Tests.** `tests/strings.c`: every literal wrapped in `T`/`TL` has a Korean entry.
@@ -312,7 +312,7 @@ confirmed.
    and `Input.insertText`): "그림자" typed into the Name field, a search box and the palette;
    no shortcut fires during composition; Escape, Enter and Backspace still work; the phone is
    unchanged.
-3. **Korean UI:** the string table, `T`/`TL` through the app, the Language row and tag, search in
+3. **Korean UI:** the string table, `T`/`TL` through the sandbox, the Language row and tag, search in
    both languages, the missing-string test. Checked: every dock, menu, popup, the palette and the
    help window in Korean at 1280×800 and 390×664 with no cut labels, a reload keeps the language,
    "그림자" and "shadow" find the same rows, a fresh browser in Korean starts in Korean.
@@ -322,10 +322,10 @@ Every phase is checked in Release and Debug in headless Chromium.
 
 As built, with the notes the build taught:
 
-- **Hangul font.** `assets/fonts/Hangul-Subset.ttf` (387 KB; every character of `app/strings.c` is
+- **Hangul font.** `assets/fonts/Hangul-Subset.ttf` (387 KB; every character of `sandbox/strings.c` is
   inside KS X 1001's 2,350, so the script added none), made by `tools/subset_hangul.sh` from
   Pretendard Regular's TrueType file. It is renamed because the OFL reserves the name "Pretendard" for
-  unmodified fonts (the license's reserved-name clause covers the name shown to users, which the app
+  unmodified fonts (the license's reserved-name clause covers the name shown to users, which the sandbox
   never shows); the font's own name table is still Pretendard's, as in the author's published
   subsets. `nv_imgui_set_font` takes the fallback as a second face and merges it (`MergeMode`);
   Hangul sat on Inter's baseline at the same size with no tuning. The package grew by 0.39 MB.
@@ -350,7 +350,7 @@ As built, with the notes the build taught:
   Checked with CDP `Input.imeSetComposition` and `Input.insertText`.
 - **Strings.** `T(english)` returns the text and `TL(english)` a widget label, `text###English`, in
   both languages, so a widget keeps its id when the language changes (a tab keeps its place). A table of
-  222 rows in `app/strings.c`, found through a hash table built on first use. Combo item arrays that
+  222 rows in `sandbox/strings.c`, found through a hash table built on first use. Combo item arrays that
   were `local_persist` are built each call with `T()`. `tests/strings_test.mjs` (ctest `strings_test`)
   fails when a string the code wraps, passes to the search (`search_row`, `search_group`,
   `search_section`), puts in the shortcut table (group, name, keys text), the stats, a texture note or
@@ -367,9 +367,9 @@ As built, with the notes the build taught:
   translated).
 - Found on the way: the Scene tab's search box was focused at start, because `focus_panel` began at 0
   (panel 0); it now holds the panel plus one.
-- Debug builds export `_app_debug_language`, `_app_debug_set_language`, `_app_debug_selected_name(k)`,
-  `_app_debug_rename_selected` (renames the selected node to the search buffer's text) and
-  `_app_debug_search_query(panel, k)`.
+- Debug builds export `_sandbox_debug_language`, `_sandbox_debug_set_language`, `_sandbox_debug_selected_name(k)`,
+  `_sandbox_debug_rename_selected` (renames the selected node to the search buffer's text) and
+  `_sandbox_debug_search_query(panel, k)`.
 - Checked in Debug (desktop 1280×800 and phone 390×664 at 2×) and Release: Hangul names in the tree
   beside Latin, the 10 syllable limit, the save round trip and a reload; IME composition and commit into
   the Name field, a search box and the palette, with ordinary typing, Backspace and arrows still
@@ -382,5 +382,5 @@ As built, with the notes the build taught:
 - Languages other than English and Korean, right-to-left and shaped scripts.
 - Syllables outside KS X 1001's 2,350 (they show as boxes), Hanja.
 - Initial-consonant (chosung) search.
-- Translating log messages and documents (inside the app). The repository's documents themselves are
+- Translating log messages and documents (inside the sandbox). The repository's documents themselves are
   written in both Korean and English since 2026-10-01, by the rule in `AGENTS.md`.

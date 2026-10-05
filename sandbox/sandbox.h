@@ -1,6 +1,6 @@
 #pragma once
 
-// The nv app: a showcase scene with a planet and moon and an animated character, a stress scene
+// The nv sandbox: a showcase scene with a planet and moon and an animated character, a stress scene
 // that loads the engine with many objects (docs/specs/stress.md), and an editor panel to inspect
 // and change them. main.c owns the showcase and the frame, stress.c the stress scene and its
 // benchmark, ui.c the panel.
@@ -20,18 +20,18 @@
 
 #include <engine/strings.h>
 
-// The Korean table of this app (app/strings.c): hands it to the engine's T() and TL(). Call once, before the first frame.
-void app_strings_init(void);
+// The Korean table of this sandbox (sandbox/strings.c): hands it to the engine's T() and TL(). Call once, before the first frame.
+void sandbox_strings_init(void);
 
 // The commit's hash and subject line (nv_version.h, written by cmake/version.cmake on every
-// build) and the build type (set by app/CMakeLists.txt); shown on the build label, in the View tab
+// build) and the build type (set by sandbox/CMakeLists.txt); shown on the build label, in the View tab
 // and in benchmark reports.
 #include "nv_version.h"
 #ifndef NV_BUILD_NAME
 #define NV_BUILD_NAME "unknown"
 #endif
 
-#define APP_MAX_CLIPS 16
+#define SANDBOX_MAX_CLIPS 16
 #define SELECTION_MAX 256 // selected nodes at once, the primary included (docs/specs/selection.md)
 #define TREE_ROWS_MAX 4096 // Scene tab rows a Shift+click range can reach
 
@@ -53,7 +53,7 @@ typedef enum UiMode {
     UI_PHONE,
 } UiMode;
 
-// Where the editor's regions are, in framebuffer pixels (app_layout, every frame). A region the
+// Where the editor's regions are, in framebuffer pixels (sandbox_layout, every frame). A region the
 // shown UI does not have is empty. The phone's tabbed panel is `panel`.
 typedef struct Layout {
     NvRect viewport;
@@ -63,7 +63,7 @@ typedef struct Layout {
     NvRect panel;               // phone
 } Layout;
 
-// The desktop docks (app/ui_desktop.c). Sizes are the wanted ones, in CSS pixels; the layout
+// The desktop docks (sandbox/ui_desktop.c). Sizes are the wanted ones, in CSS pixels; the layout
 // clamps them to the window each frame. They are saved with the editor settings.
 typedef struct Docks {
     f32 left_width, right_width, bottom_height;
@@ -80,7 +80,7 @@ typedef struct Docks {
 #define DOCK_SIDE_MAX   640.0f
 #define DOCK_BOTTOM_MAX 600.0f
 
-// The desktop shortcuts (app/shortcuts.c); the menus ask for their labels.
+// The desktop shortcuts (sandbox/shortcuts.c); the menus ask for their labels.
 typedef enum ShortcutId {
     SC_SAVE,
     SC_UNDO,
@@ -283,7 +283,7 @@ typedef struct SceneView {
     NvVec3 pan;          // added to the target by panning; cleared when the selection changes
     NvNodeId panned_for; // the selection `pan` belongs to
     bool follow_selection; // orbit the selection; otherwise stay at orbit.target
-    NvOrbitCamera home;    // the view the scene starts with, for Home (app_set_home)
+    NvOrbitCamera home;    // the view the scene starts with, for Home (sandbox_set_home)
 } SceneView;
 
 // CPU time of the frame's stages, in milliseconds.
@@ -318,7 +318,7 @@ typedef struct BenchmarkResult {
 
 // How busy the frame is: the larger of the CPU stages and the GPU pass, as a share of the frame
 // time. Unlike the frame time it keeps rising while vsync holds the frame rate at the display's.
-f64 app_load(const FrameTimes* t);
+f64 sandbox_load(const FrameTimes* t);
 
 // What the stress scene is asked to hold. bools because ImGui writes them through bool*.
 typedef struct StressWorkloads {
@@ -462,7 +462,7 @@ typedef struct Search {
     u32 recent_count;
     PaletteResult results[SEARCH_MAX_RESULTS];
     u32 result_count;
-    char debug_buffer[SEARCH_QUERY_MAX]; // tests write a query here (_app_debug_search_buffer)
+    char debug_buffer[SEARCH_QUERY_MAX]; // tests write a query here (_sandbox_debug_search_buffer)
 } Search;
 
 typedef enum JumpPhase {
@@ -478,7 +478,7 @@ typedef struct Flight {
     f32 life;
 } Flight;
 
-// The effects the app fires (effects.c).
+// The effects the sandbox fires (effects.c).
 typedef struct Effects {
     NvVfxEffectId explosion, sparks, smoke, missile, swarm;
     NvVfxLineStyle missile_trail, laser;
@@ -492,7 +492,7 @@ typedef struct Effects {
     NvRandom rng;
 } Effects;
 
-typedef struct App {
+typedef struct Sandbox {
     NvWindow window;
     NvGpu gpu;
     NvArena permanent;
@@ -527,9 +527,9 @@ typedef struct App {
     // Character
     NvGltfModel character;
     NvAnimatorId animator; // character.animator
-    NvClipId clips[APP_MAX_CLIPS]; // in place
+    NvClipId clips[SANDBOX_MAX_CLIPS]; // in place
     u32 clip_count;
-    NvClipId root_motion_clips[APP_MAX_CLIPS]; // same names, root motion taken out
+    NvClipId root_motion_clips[SANDBOX_MAX_CLIPS]; // same names, root motion taken out
     u32 root_motion_clip_count;
 
     // Playback
@@ -628,173 +628,173 @@ typedef struct App {
     // Effects (effects.c, docs/specs/vfx.md).
     NvVfx vfx;
     Effects effects;
-} App;
+} Sandbox;
 
 // main.c
-NvClipId app_find_clip(App* app, const char* name);
-NvClipId app_regular_clip(App* app, NvClipId clip); // the in-place clip with the same name
-void app_play(App* app, NvClipId clip);             // crossfades, with root motion while it is on
-void app_jump(App* app);
-void app_back_to_center(App* app);
-void app_start_playing(App* app); // Play: snapshot the showcase and run it
-void app_stop_playing(App* app);  // Stop: restore the showcase from the snapshot
+NvClipId sandbox_find_clip(Sandbox* sandbox, const char* name);
+NvClipId sandbox_regular_clip(Sandbox* sandbox, NvClipId clip); // the in-place clip with the same name
+void sandbox_play(Sandbox* sandbox, NvClipId clip);             // crossfades, with root motion while it is on
+void sandbox_jump(Sandbox* sandbox);
+void sandbox_back_to_center(Sandbox* sandbox);
+void sandbox_start_playing(Sandbox* sandbox); // Play: snapshot the showcase and run it
+void sandbox_stop_playing(Sandbox* sandbox);  // Stop: restore the showcase from the snapshot
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
-NvAnimatorId app_node_animator(NvScene* scene, NvNodeId id);
-void app_show_scene(App* app, SceneKind kind);
-void app_focus_selection(App* app); // F: the orbit point moves to the selected node
-void app_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
-NvMeshId app_box_mesh(App* app, NvVec3 half);
-SceneView* app_view(App* app); // the shown scene's view
+NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id);
+void sandbox_show_scene(Sandbox* sandbox, SceneKind kind);
+void sandbox_focus_selection(Sandbox* sandbox); // F: the orbit point moves to the selected node
+void sandbox_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
+NvMeshId sandbox_box_mesh(Sandbox* sandbox, NvVec3 half);
+SceneView* sandbox_view(Sandbox* sandbox); // the shown scene's view
 
 // effects.c
-void effects_init(App* app);               // makes the particle system and registers the effects
-void effects_update(App* app, f32 dt);     // each frame, before drawing
-void effects_clear(App* app);              // Play and Stop: every live effect goes
-void effects_fire(App* app, u32 which);    // 0 explosion, 1 sparks, 2 smoke, 3 missile, beside the orbit point
-NvVec3 effects_test_point(App* app);
-void effects_ui(App* app);
+void effects_init(Sandbox* sandbox);               // makes the particle system and registers the effects
+void effects_update(Sandbox* sandbox, f32 dt);     // each frame, before drawing
+void effects_clear(Sandbox* sandbox);              // Play and Stop: every live effect goes
+void effects_fire(Sandbox* sandbox, u32 which);    // 0 explosion, 1 sparks, 2 smoke, 3 missile, beside the orbit point
+NvVec3 effects_test_point(Sandbox* sandbox);
+void effects_ui(Sandbox* sandbox);
 // The Effects workload of the stress scene: keeps the asked numbers of particles, explosions,
 // missiles, beams and decals going. Call each frame while the stress scene is shown.
-void effects_stress_update(App* app, const StressWorkloads* want, f32 dt);
+void effects_stress_update(Sandbox* sandbox, const StressWorkloads* want, f32 dt);
 
 // selection.c (docs/specs/selection.md)
 u32 selection_count(SceneView* view);
 NvNodeId selection_get(SceneView* view, u32 i); // 0 is the primary, then the others
 b32 selection_has(SceneView* view, NvNodeId id);
 void selection_set(SceneView* view, NvNodeId id);              // only this node; 0 clears
-void selection_add(App* app, SceneView* view, NvNodeId id);    // adds it as the primary
-void selection_toggle(App* app, SceneView* view, NvNodeId id); // adds it, or removes it if selected
+void selection_add(Sandbox* sandbox, SceneView* view, NvNodeId id);    // adds it as the primary
+void selection_toggle(Sandbox* sandbox, SceneView* view, NvNodeId id); // adds it, or removes it if selected
 void selection_keep_primary(SceneView* view);
 void selection_prune(SceneView* view); // drops nodes that no longer exist
 
 // stress.c
-void stress_build(App* app);
-void stress_update(App* app, f32 dt);  // before nv_anim_update_scene
-void stress_after_frame(App* app);     // after the frame's times are known: runs the benchmark
-void stress_draw_bones(App* app);
+void stress_build(Sandbox* sandbox);
+void stress_update(Sandbox* sandbox, f32 dt);  // before nv_anim_update_scene
+void stress_after_frame(Sandbox* sandbox);     // after the frame's times are known: runs the benchmark
+void stress_draw_bones(Sandbox* sandbox);
 u32 stress_live_nodes(NvScene* scene);
-void stress_ui(App* app);
+void stress_ui(Sandbox* sandbox);
 
 // ui.c: the UI chosen at start, and the sections both UIs draw into their own windows.
-void app_layout(App* app); // fills app->layout from the canvas size; before nv_imgui_new_frame
-void app_build_ui(App* app);
-void ui_scene_tab(App* app);
-void ui_inspector_tab(App* app);
-void ui_view_tab(App* app);
+void sandbox_layout(Sandbox* sandbox); // fills sandbox->layout from the canvas size; before nv_imgui_new_frame
+void sandbox_build_ui(Sandbox* sandbox);
+void ui_scene_tab(Sandbox* sandbox);
+void ui_inspector_tab(Sandbox* sandbox);
+void ui_view_tab(Sandbox* sandbox);
 // The Play / Stop button, `size` wide and high (0 = natural), at the cursor; nothing in the stress
-// scene. Records its box in app->play_box.
-void ui_play_button(App* app, ImVec2_c size);
+// scene. Records its box in sandbox->play_box.
+void ui_play_button(Sandbox* sandbox, ImVec2_c size);
 // The line telling that edits are lost on Stop, while the showcase plays.
-void ui_playing_note(App* app);
+void ui_playing_note(Sandbox* sandbox);
 // Begins the Console tab item with its unseen count and color; if true, draw console_tab and
 // igEndTabItem.
-b32 ui_begin_console_tab(App* app);
-b32 ui_begin_textures_tab(App* app); // the Textures tab item; jumps to it on app->open_textures
+b32 ui_begin_console_tab(Sandbox* sandbox);
+b32 ui_begin_textures_tab(Sandbox* sandbox); // the Textures tab item; jumps to it on sandbox->open_textures
 // The build label in the viewport's top-left corner, with its badge.
-void ui_draw_build_label(App* app);
+void ui_draw_build_label(Sandbox* sandbox);
 // A tint for the panels while the showcase plays: push before igBegin, pop after.
-b32 ui_push_play_tint(App* app);
+b32 ui_push_play_tint(Sandbox* sandbox);
 void ui_pop_play_tint(b32 pushed);
 
 
 // shortcuts.c
-void shortcuts_update(App* app); // fires the shortcuts pressed this frame; desktop UI, after the docks
+void shortcuts_update(Sandbox* sandbox); // fires the shortcuts pressed this frame; desktop UI, after the docks
 b32 shortcuts_claim(void* data, ImGuiKeyChord chord); // NvImgui.claims_key
 const char* shortcut_label(ShortcutId id);            // "Ctrl+Shift+Z / Ctrl+Y"
-void shortcuts_help(App* app);                        // the Keyboard shortcuts window
+void shortcuts_help(Sandbox* sandbox);                        // the Keyboard shortcuts window
 
 // search.c
-void search_frame(App* app); // start of the frame's UI
+void search_frame(Sandbox* sandbox); // start of the frame's UI
 // The panel's search box and, under it, the child window its content is drawn in. In collect mode
 // they draw nothing. Every widget of a searchable panel goes through search_row or search_group.
-void search_panel_begin(App* app, SearchPanel panel);
-void search_panel_end(App* app);
-void search_section(App* app, const char* heading); // the heading draws with the section's first row; NULL = no heading
-b32 search_row(App* app, const char* label, const char* keywords);   // one widget carrying `label`: draw it if true
-b32 search_group(App* app, const char* label, const char* keywords); // several widgets, or a button: same, no highlight
-b32 search_plain(App* app); // text that is no setting: only with an empty query
-b32 search_active(App* app); // the current panel has a query
-b32 search_match(App* app, const char* text);                  // whether `text` matches the current query
-void search_mark(App* app, const char* text, ImVec2_c origin, f32 height); // marks the matched parts of text drawn at origin
-void search_set_query(App* app, SearchPanel panel, const char* text);
-void search_palette(App* app); // the palette window, the top level of the frame's UI
-void search_open_palette(App* app);
-void search_focus_box(App* app); // Ctrl+F
+void search_panel_begin(Sandbox* sandbox, SearchPanel panel);
+void search_panel_end(Sandbox* sandbox);
+void search_section(Sandbox* sandbox, const char* heading); // the heading draws with the section's first row; NULL = no heading
+b32 search_row(Sandbox* sandbox, const char* label, const char* keywords);   // one widget carrying `label`: draw it if true
+b32 search_group(Sandbox* sandbox, const char* label, const char* keywords); // several widgets, or a button: same, no highlight
+b32 search_plain(Sandbox* sandbox); // text that is no setting: only with an empty query
+b32 search_active(Sandbox* sandbox); // the current panel has a query
+b32 search_match(Sandbox* sandbox, const char* text);                  // whether `text` matches the current query
+void search_mark(Sandbox* sandbox, const char* text, ImVec2_c origin, f32 height); // marks the matched parts of text drawn at origin
+void search_set_query(Sandbox* sandbox, SearchPanel panel, const char* text);
+void search_palette(Sandbox* sandbox); // the palette window, the top level of the frame's UI
+void search_open_palette(Sandbox* sandbox);
+void search_focus_box(Sandbox* sandbox); // Ctrl+F
 
 // shortcuts.c: the table's rows are the palette's actions.
 b32 command_listed(u32 id);
 const char* command_name(u32 id);
 const char* command_group(u32 id);
-b32 command_enabled(App* app, u32 id);
-void command_run(App* app, u32 id);
+b32 command_enabled(Sandbox* sandbox, u32 id);
+void command_run(Sandbox* sandbox, u32 id);
 
 // ui_desktop.c and ui_phone.c
-void desktop_layout(App* app, f32 width, f32 height, f32 ratio);
-void desktop_build_ui(App* app);
-void phone_layout(App* app, f32 width, f32 height, f32 ratio);
-void phone_build_ui(App* app);
+void desktop_layout(Sandbox* sandbox, f32 width, f32 height, f32 ratio);
+void desktop_build_ui(Sandbox* sandbox);
+void phone_layout(Sandbox* sandbox, f32 width, f32 height, f32 ratio);
+void phone_build_ui(Sandbox* sandbox);
 // Keeps the next checkbox or button on this line when `width` fits, else starts a new one.
 void ui_same_line_if_fits(f32 width);
 
 // console.c
 // Warnings and errors that arrived since the Console tab was last shown (0 while it is shown), and
 // the worst level among them.
-u32 console_unseen(App* app, NvLogLevel* worst);
-void console_tab(App* app); // the Console tab's contents
+u32 console_unseen(Sandbox* sandbox, NvLogLevel* worst);
+void console_tab(Sandbox* sandbox); // the Console tab's contents
 ImU32 console_level_color(NvLogLevel level);
 b32 console_is_compact(void); // the panel is too narrow (a phone) for the full layout
 void console_record(Console* console, ConsoleRect id); // the last item's rect, for tests
 
 // textures.c
-void textures_tab(App* app);
-void textures_inspector_thumbnail(App* app, NvTextureId texture); // the Inspector's Mesh section
+void textures_tab(Sandbox* sandbox);
+void textures_inspector_thumbnail(Sandbox* sandbox, NvTextureId texture); // the Inspector's Mesh section
 void textures_record(TextureViewer* viewer, TexturesRect id);     // the last item's rect, for tests
 
 // save.c
 u32 save_scene_layout(NvScene* scene); // a hash of the tree's shape and names
-// Writes the app state. Fails when it does not fit.
-NvChunkWritten save_write(App* app, void* buffer, u32 capacity);
-// Loads a save into the app. It is checked whole first, and nothing changes unless it is good. On failure `error` says
+// Writes the sandbox state. Fails when it does not fit.
+NvChunkWritten save_write(Sandbox* sandbox, void* buffer, u32 capacity);
+// Loads a save into the sandbox. It is checked whole first, and nothing changes unless it is good. On failure `error` says
 // what is wrong with it.
 typedef struct SaveLoad {
     b32 ok;
     const char* error;
 } SaveLoad;
-SaveLoad save_load(App* app, const void* bytes, u32 size);
+SaveLoad save_load(Sandbox* sandbox, const void* bytes, u32 size);
 // Loads only some parts of a save (SAVE_PART_*), e.g. the scene without the view for Stop.
 #define SAVE_PART_EDITOR (1u << 0) // gizmo and autosave settings
 #define SAVE_PART_VIEW   (1u << 1) // the showcase's camera view and selection
 #define SAVE_PART_SCENE  (1u << 2) // nodes, character and scene settings
 #define SAVE_PART_ALL    (SAVE_PART_EDITOR | SAVE_PART_VIEW | SAVE_PART_SCENE)
-SaveLoad save_load_parts(App* app, const void* bytes, u32 size, u32 parts);
+SaveLoad save_load_parts(Sandbox* sandbox, const void* bytes, u32 size, u32 parts);
 // Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
-// (docs/specs/undo.md). Values the app drives every frame are left out.
+// (docs/specs/undo.md). Values the sandbox drives every frame are left out.
 // The Node scope holds each of `nodes` in a container, in order; the other scopes ignore them.
 // Fails when it does not fit.
-NvChunkWritten save_write_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity);
+NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity);
 // Applies the fields present. Returns 0, changing nothing, if the bytes are malformed.
-b32 save_apply_scope(App* app, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size);
-// Which parts of a node's transform the app drives (bit 0 position, bit 1 rotation).
-u32 save_driven_fields(App* app, u32 node);
+b32 save_apply_scope(Sandbox* sandbox, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size);
+// Which parts of a node's transform the sandbox drives (bit 0 position, bit 1 rotation).
+u32 save_driven_fields(Sandbox* sandbox, u32 node);
 const char* save_field_label(u32 tag); // "Position", "Clip", ...
 
 // undo.c
-void undo_init(App* app);   // after the save is loaded
-void undo_update(App* app); // every frame, after every edit (the gizmo's included)
+void undo_init(Sandbox* sandbox);   // after the save is loaded
+void undo_update(Sandbox* sandbox); // every frame, after every edit (the gizmo's included)
 // The Undo (direction -1) or Redo (+1) button in the current window; `labels` adds the step's name.
-void undo_button(App* app, s32 direction, b32 labels, ImVec2_c size);
+void undo_button(Sandbox* sandbox, s32 direction, b32 labels, ImVec2_c size);
 // Undo and Redo as menu items with their shortcuts.
-void undo_menu_items(App* app);
+void undo_menu_items(Sandbox* sandbox);
 
 // Mounts browser storage and loads the save, if there is one. Call once the showcase is built.
-void save_init(App* app);
+void save_init(Sandbox* sandbox);
 // Autosaves every AUTOSAVE_SECONDS while autosave is on. Call every frame.
-void save_update(App* app);
+void save_update(Sandbox* sandbox);
 // Writes the save now if it changed since the last write, or even if not when `force` is set.
-void save_now(App* app, b32 force);
-void save_ui(App* app); // the View tab's Autosave section
-void save_reset_popup(App* app); // the modal Reset asks in; call where igOpenPopup_Str("Reset everything?") ran
-void save_show_viewer(App* app); // opens the save viewer (in the View tab)
+void save_now(Sandbox* sandbox, b32 force);
+void save_ui(Sandbox* sandbox); // the View tab's Autosave section
+void save_reset_popup(Sandbox* sandbox); // the modal Reset asks in; call where igOpenPopup_Str("Reset everything?") ran
+void save_show_viewer(Sandbox* sandbox); // opens the save viewer (in the View tab)
 // Whether saving, loading that save and saving again gives the same bytes. It loads, so it may
 // end a jump or a crossfade; Debug builds check it at start and tests call it.
-b32 save_round_trip_matches(App* app);
+b32 save_round_trip_matches(Sandbox* sandbox);

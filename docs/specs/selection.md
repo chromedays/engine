@@ -19,7 +19,7 @@ duplicate yet).
 |---|---|---|---|
 | **A primary node plus a list of others** (recommended) | `SceneView.selected` stays the primary node (the last one picked); a fixed array holds the other selected nodes. Clicks with Ctrl or Shift, a Shift range in the Scene tab, and a Multi toggle on the phone change it | Everything that only needs one node (the Inspector, the camera's follow, the palette's node jump, the save's `SELN`) keeps working on the primary. Plain C, fixed arrays | Our own click and range rules |
 | Dear ImGui's multi-select (`BeginMultiSelect`, 1.92) | ImGui's own selection requests for lists and trees: Ctrl, Shift ranges, Ctrl+A, box select in a list | Built in, for the Scene tab | Covers the Scene tab only (not the viewport); its tree support needs every row submitted in order, which the clipped, filtered tree does not do; touch has no Ctrl, so the phone's toggle would need to fake modifier keys |
-| A library | None: selection is about the app's own data | | |
+| A library | None: selection is about the sandbox's own data | | |
 
 Recommendation: a primary node plus a list of others. No third-party library.
 
@@ -54,22 +54,22 @@ Recommendation: a primary node plus a list of others. No third-party library.
   a tap's press went down. A left press in the viewport waits two frames for the gizmo's hit test,
   so reading the keys when the tap arrives missed a quick Ctrl+click on a slow frame.
 
-## App changes
+## Sandbox changes
 
-- `app/selection.c` (new): selecting only, adding or removing, a range, clearing, keeping only the
+- `sandbox/selection.c` (new): selecting only, adding or removing, a range, clearing, keeping only the
   primary, the stale-node check, and whether a node is selected.
-- `app/main.c`: picking with Ctrl / Shift and the Multi toggle; the outline for every node; the
+- `sandbox/main.c`: picking with Ctrl / Shift and the Multi toggle; the outline for every node; the
   multi-node gizmo; the stale-node check at the start of the frame.
-- `app/ui.c`: the Scene tab's clicks and ranges (rows recorded in the order drawn; a click ranges over
+- `sandbox/ui.c`: the Scene tab's clicks and ranges (rows recorded in the order drawn; a click ranges over
   last frame's rows, since this frame's are still being drawn); the Inspector's "N selected" line.
-- `app/ui_phone.c`: the Multi toggle.
-- `app/undo.c`, `app/save.c`: the Node scope over several nodes; `SELO`.
-- `app/search.c`, `app/shortcuts.c`: picking a node in the palette selects only it; Esc clears all.
-- Debug builds export `_app_debug_selection_count()`, `_app_debug_selection(i)` (the node index,
-  0 = the primary), `_app_debug_select(index, mode)` (0 only, 1 add or remove),
-  `_app_debug_set_multi(on)`, `_app_debug_tree_row(k, component)` (the Scene tab's k-th row: its
-  node, then its rect), `_app_debug_find_node()` (the node named as the search buffer's text),
-  `_app_debug_node(index, which)` (world and local position) and `_app_debug_set_grid(cubes)` (the
+- `sandbox/ui_phone.c`: the Multi toggle.
+- `sandbox/undo.c`, `sandbox/save.c`: the Node scope over several nodes; `SELO`.
+- `sandbox/search.c`, `sandbox/shortcuts.c`: picking a node in the palette selects only it; Esc clears all.
+- Debug builds export `_sandbox_debug_selection_count()`, `_sandbox_debug_selection(i)` (the node index,
+  0 = the primary), `_sandbox_debug_select(index, mode)` (0 only, 1 add or remove),
+  `_sandbox_debug_set_multi(on)`, `_sandbox_debug_tree_row(k, component)` (the Scene tab's k-th row: its
+  node, then its rect), `_sandbox_debug_find_node()` (the node named as the search buffer's text),
+  `_sandbox_debug_node(index, which)` (world and local position) and `_sandbox_debug_set_grid(cubes)` (the
   stress scene's grid) for tests.
 
 ## Tests
@@ -83,7 +83,7 @@ Playwright, Release and Debug, desktop mouse and phone touch sizes:
 - A move drag with three nodes moves all three by the same offset; a rotate drag keeps their center;
   a parent and its child selected together move once. One undo puts all three back; redo again.
 - The Inspector shows the primary and "3 selected"; Keep one keeps the primary.
-- The save round trip keeps the others (`_app_debug_save_round_trip`); a reload restores them.
+- The save round trip keeps the others (`_sandbox_debug_save_round_trip`); a reload restores them.
 - The stress scene: selecting grid cubes, then lowering the grid count, drops them without an assert.
 - No WebGPU errors, nothing logged at warning level except the 257th-node warning when tested.
 

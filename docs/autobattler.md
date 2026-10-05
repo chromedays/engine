@@ -56,7 +56,7 @@ anti-aliasing, 다중 샘플 안티앨리어싱), 씬 고유 해상도, ImGui �
 | 9 | 시간 조작 | 일시정지, 2배속, 4배속, 슬로 모션: 프레임당 틱 수만 바뀐다 (`autobattler/`에 구현됨) | app |
 | 10 | 배치 UI와 게임 UI | 그리드 스냅 배치, 드래그와 회전, 상점, 카드, 체력바, 라운드 결과. ImGui 에디터와 분리된 게임 UI | engine (UI 기반), app (화면) |
 | 11 | 오디오 | Web Audio API 래퍼, 위치 사운드, 동시 재생 수 제한, 음악 | engine |
-| 12 | 캠페인과 진행 | 스테이지 목록, 승리 조건이나 별점, 유닛과 테크 해금, 난이도. 진행은 `app/save.c`에 새 태그로 저장 | app |
+| 12 | 캠페인과 진행 | 스테이지 목록, 승리 조건이나 별점, 유닛과 테크 해금, 난이도. 진행은 `sandbox/save.c`에 새 태그로 저장 | app |
 | 13 | 리플레이와 재시도 | 초기 상태와 라운드별 배치만 저장; 진 라운드를 배치만 바꿔 다시 하기 | app |
 | 14 | 튜토리얼 | 단계별 안내, 하이라이트, 입력 제한 | app |
 | 15 | 카메라와 전장 | 줌, 팬, 경계가 있는 RTS(real-time strategy, 실시간 전략) 카메라; 지형; 본부 오브젝트; 전투 중 유닛 추적 | engine 일부, app |
@@ -130,7 +130,7 @@ it?
 | 9 | Time controls | Pause, 2x and 4x speed, slow motion: the number of ticks per frame changes (built in `autobattler/`) | app |
 | 10 | Deployment and game UI | Grid-snapped placement, drag and rotate, shop, cards, health bars, round results; a game UI apart from the ImGui editor | engine (UI base), app (screens) |
 | 11 | Audio | Web Audio API wrapper, positional sound, a cap on simultaneous sounds, music | engine |
-| 12 | Campaign and progression | Stage list, win conditions or stars, unit and tech unlocks, difficulty; progress saved with new tags in `app/save.c` | app |
+| 12 | Campaign and progression | Stage list, win conditions or stars, unit and tech unlocks, difficulty; progress saved with new tags in `sandbox/save.c` | app |
 | 13 | Replays and retries | Store the initial state and each round's deployment; replay a lost round with a changed deployment | app |
 | 14 | Tutorial | Step-by-step guidance, highlights, limited input | app |
 | 15 | Camera and battlefield | RTS (real-time strategy) camera with zoom, pan and bounds; terrain; base objects; following units in battle | engine in part, app |

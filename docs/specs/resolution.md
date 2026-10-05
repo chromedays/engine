@@ -57,7 +57,7 @@
 | 크기와 크기 조절 | Scale 모드에서 타깃은 64 픽셀의 배수로 올려 할당하고 충분히 큰 동안 유지하므로, 분할선 드래그나 창 크기 조절이 매 프레임 다시 만들지 않는다; 필요한 픽셀의 두 배보다 많이 담으면 더 작게 다시 만든다. 씬은 왼쪽 위 부분 (뷰포트와 시저)에 렌더링하고, 업스케일 패스는 그 부분을 읽는다. Fixed 모드에서는 크기가 창을 전혀 따르지 않는다 |
 | 한도 | 씬 해상도는 장치의 `maxTextureDimension2D` (WebGPU 기본값에서 8192)로, 그리고 최소 1 × 1로 제한된다 |
 | 업스케일 패스 | 이미지 사각형의 뷰포트와 시저를 가진 전체 화면 삼각형, clamp-to-edge 샘플러로 씬 타깃을 샘플링. 먼저 캔버스를 검게 clear한다 (씬 패스는 더 이상 캔버스를 건드리지 않는다): 그 검정이 Fixed 모드의 띠이고, 나중에 그리는 도크가 나머지를 덮는다 |
-| 이미지 사각형 | 앱이 뷰포트 안에서 이미지가 갈 곳을 계산한다 (`App.layout.image`, 프레임버퍼 픽셀): Scale 모드에서는 뷰포트 전체, Fixed 모드에서는 가운데 맞춤. 렌더러, picking, 기즈모, 팬이 그것을 쓴다; 뷰포트는 입력을 받는 영역으로 남는다 |
+| 이미지 사각형 | 샌드박스가 뷰포트 안에서 이미지가 갈 곳을 계산한다 (`Sandbox.layout.image`, 프레임버퍼 픽셀): Scale 모드에서는 뷰포트 전체, Fixed 모드에서는 가운데 맞춤. 렌더러, picking, 기즈모, 팬이 그것을 쓴다; 뷰포트는 입력을 받는 영역으로 남는다 |
 | 디버그 라인, 선택 상자 | 씬 패스에서 그리므로 씬과 함께 배율이 바뀐다 (씬 해상도에서 1 픽셀 폭). 기즈모와 빌드 라벨은 ImGui라서 선명하게 남는다 |
 | Textures 탭 | **scene color** 타깃을 미리보기와 함께 나열하고 (어차피 샘플링된다), 깊이와 MSAA 타깃을 새 크기로 나열한다. 깊이 타깃은 더 이상 "씬 부분"을 잘라 낼 필요가 없다: 그것이 씬이다 |
 | 비용 표시 | Stress 탭이 해상도 ("585 × 497, scale 1/2" 또는 "1280 × 720 fixed, shown ×1")와 업스케일 패스의 GPU 시간 (세 번째 타임스탬프 쌍)을 보여 준다; 벤치마크가 그것을 기록한다 |
@@ -110,9 +110,9 @@
   씬 색 타깃과 MSAA와 깊이 타깃; 업스케일 파이프라인 (전체 화면 삼각형과 최근접 샘플러); 씬 타깃으로의 씬 패스,
   그다음 캔버스로의 업스케일 패스; 업스케일 패스를 위한 세 번째 타임스탬프 쌍. `nv_renderer_view_ray`와
   `nv_renderer_camera_matrices`가 이미지 사각형과 해상도를 받는다.
-- **앱.** `App`의 해상도 설정; 모드로부터 씬 크기와 `App.layout.image`를 계산하는 `app_layout`; 이미지 사각형 위의
-  picking, 팬, 기즈모, 띠 탭 무시 (`app/main.c`); View 탭의 Resolution 섹션 (`app/ui.c`); 장치별 기본값; 태그 네 개
-  (`app/save.c`, `save.md`); Textures 탭 항목 (`app/textures.c`); Stress 탭 줄과 벤치마크 열 (`app/stress.c`). 씬
+- **샌드박스.** `Sandbox`의 해상도 설정; 모드로부터 씬 크기와 `Sandbox.layout.image`를 계산하는 `sandbox_layout`; 이미지 사각형 위의
+  picking, 팬, 기즈모, 띠 탭 무시 (`sandbox/main.c`); View 탭의 Resolution 섹션 (`sandbox/ui.c`); 장치별 기본값; 태그 네 개
+  (`sandbox/save.c`, `save.md`); Textures 탭 항목 (`sandbox/textures.c`); Stress 탭 줄과 벤치마크 열 (`sandbox/stress.c`). 씬
   크기와 이미지 사각형을 위한 Debug export.
 - **문서.** `msaa.md` (씬 크기의 타깃), `viewport.md`와 `gizmo.md` (이미지 사각형), `textures.md`, `stress.md`,
   `AGENTS.md`, README.
@@ -151,7 +151,7 @@
   4096 × 2160; 분할선 드래그 뒤 이미지 안의 씬이 동일; 캐릭터를 고르는 탭, 선택을 유지하는 띠 탭, 선택을 지우는 빈
   배경 탭, 기즈모 드래그와 띠에서 시작한 드래그의 공전; 두 모드를 유지하는 새로고침; 잘못된 제수와 없는 태그; 폰의
   기본값 1/2; Stress 탭의 해상도 줄.
-- 나중에 추가: Fit to viewport와 Stretch to viewport가 있는 **Fit** 설정 (`App.resolution.fixed_fit`, `RSFT`로 저장).
+- 나중에 추가: Fit to viewport와 Stretch to viewport가 있는 **Fit** 설정 (`Sandbox.resolution.fixed_fit`, `RSFT`로 저장).
   `NvSceneOutput`은 이제 `pixel_size` 하나 대신 `pixel_width`와 `pixel_height`를 가지고, 업스케일 셰이더의 블록은
   `vec2f`다. 1920 × 1080에서 확인: 2.06×로 맞춘 640 × 360, 높이로 1.3×에 맞춘 360 × 640, 캐릭터를 고르는 탭과 기즈모
   드래그와 함께 정확히 뷰포트로 늘린 것, 여전히 ×2인 정수 배, 맞춤을 유지하는 새로고침.
@@ -225,7 +225,7 @@ pass and set the scale.
 | Sizes and resizing | In Scale mode the targets are allocated rounded up to multiples of 64 pixels and kept while they are large enough, so a splitter drag or a window resize does not remake them every frame; they are remade smaller when they hold more than twice the pixels needed. The scene renders into the top-left part (viewport and scissor), and the upscale pass reads that part. In Fixed mode the size does not follow the window at all |
 | Limits | The scene resolution is clamped to the device's `maxTextureDimension2D` (8192 in WebGPU's defaults) and to at least 1 × 1 |
 | Upscale pass | A full-screen triangle with the viewport and scissor of the image's rectangle, sampling the scene target with a clamp-to-edge sampler. It clears the canvas to black first (the scene pass no longer touches the canvas): that black is the bars in Fixed mode, and the docks drawn later cover the rest |
-| Image rectangle | The app computes where the image goes inside the viewport (`App.layout.image`, framebuffer pixels): the whole viewport in Scale mode, the centered fit in Fixed mode. The renderer, picking, the gizmo and panning use it; the viewport stays the area that takes input |
+| Image rectangle | The sandbox computes where the image goes inside the viewport (`Sandbox.layout.image`, framebuffer pixels): the whole viewport in Scale mode, the centered fit in Fixed mode. The renderer, picking, the gizmo and panning use it; the viewport stays the area that takes input |
 | Debug lines, selection boxes | Drawn in the scene pass, so they scale with the scene (1 pixel wide at the scene resolution). The gizmo and the build label are ImGui and stay sharp |
 | Textures tab | Lists the **scene color** target with a preview (it is sampled anyway), and the depth and MSAA targets at their new size. The depth target no longer needs "the scene's part" cut out: it is the scene |
 | Cost shown | The Stress tab shows the resolution ("585 × 497, scale 1/2" or "1280 × 720 fixed, shown ×1") and the GPU time of the upscale pass (a third timestamp pair); the benchmark records them |
@@ -281,11 +281,11 @@ default docks (viewport 680 × 552), about 13 MB against 32 MB.
   a nearest sampler); the scene pass into the scene target, then the upscale pass into the canvas;
   a third timestamp pair for the upscale pass. `nv_renderer_view_ray` and
   `nv_renderer_camera_matrices` take the image rectangle and the resolution.
-- **App.** The resolution settings in `App`; `app_layout` computing the scene size and
-  `App.layout.image` from the mode; picking, panning and the gizmo on the image rectangle, and a
-  tap on a bar ignored (`app/main.c`); the View tab's Resolution section (`app/ui.c`); the defaults
-  by device; the four tags (`app/save.c`, `save.md`); the Textures tab's entries (`app/textures.c`);
-  the Stress tab line and the benchmark columns (`app/stress.c`). Debug exports for the scene size
+- **Sandbox.** The resolution settings in `Sandbox`; `sandbox_layout` computing the scene size and
+  `Sandbox.layout.image` from the mode; picking, panning and the gizmo on the image rectangle, and a
+  tap on a bar ignored (`sandbox/main.c`); the View tab's Resolution section (`sandbox/ui.c`); the defaults
+  by device; the four tags (`sandbox/save.c`, `save.md`); the Textures tab's entries (`sandbox/textures.c`);
+  the Stress tab line and the benchmark columns (`sandbox/stress.c`). Debug exports for the scene size
   and the image rectangle.
 - **Docs.** `msaa.md` (targets sized to the scene), `viewport.md` and `gizmo.md` (the image
   rectangle), `textures.md`, `stress.md`, `AGENTS.md`, README.
@@ -336,7 +336,7 @@ As built:
   orbiting; a reload keeping both modes; a bad divisor and a missing tag; the phone's default of
   1/2; the Stress tab's resolution line.
 - Added afterwards: the **Fit** setting with Fit to viewport and Stretch to viewport
-  (`App.resolution.fixed_fit`, saved as `RSFT`). `NvSceneOutput` now has `pixel_width` and
+  (`Sandbox.resolution.fixed_fit`, saved as `RSFT`). `NvSceneOutput` now has `pixel_width` and
   `pixel_height` instead of one `pixel_size`, and the upscale shader's block is a `vec2f`. Checked at
   1920 × 1080: 640 × 360 fitted at 2.06×, 360 × 640 fitted by height at 1.3×, stretched to exactly
   the viewport with a tap picking the character and the gizmo dragging, whole multiples still at

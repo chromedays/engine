@@ -181,6 +181,6 @@ endforeach()
 
 enable_testing()
 add_subdirectory(engine)
-add_subdirectory(app)
+add_subdirectory(sandbox)
 add_subdirectory(autobattler)
 add_subdirectory(tests)

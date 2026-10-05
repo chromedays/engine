@@ -1,7 +1,7 @@
 #pragma once
 
 // The auto-battler executable's state (docs/specs/battle.md, "Executable"): the window, GPU and renderer, the battle, and
-// what the view keeps to draw it. Nothing here is the editor app's (app/): this executable links only the engine.
+// what the view keeps to draw it. Nothing here is the sandbox's (sandbox/): this executable links only the engine.
 
 #include "battle.h"
 

@@ -1,4 +1,4 @@
-#include "app.h"
+#include "sandbox.h"
 
 #include <emscripten/emscripten.h>
 
@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-internal void resolution_text(App* app, char* out, umm size);
+internal void resolution_text(Sandbox* sandbox, char* out, umm size);
 
 // The stress scene (docs/specs/stress.md): workloads that load the engine with many objects,
 // live frame statistics and a benchmark that steps through fixed setups.
@@ -54,10 +54,10 @@ internal void color_wheel(u32 i, u32 count, f32* rgb)
     rgb[2] = 0.15f + 0.8f * b;
 }
 
-void stress_build(App* app)
+void stress_build(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
-    NvScene* scene = NV_PUSH_STRUCT(&app->permanent, NvScene);
+    Stress* stress = &sandbox->stress;
+    NvScene* scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
     stress->scene = scene;
     NvNodeId none = {0};
 
@@ -74,20 +74,20 @@ void stress_build(App* app)
     sun->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.5f), nv_quat_axis_angle(nv_vec3(1, 0, 0), -0.8f));
     sun->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.1f};
 
-    stress->cube = app_box_mesh(app, nv_vec3(0.5f, 0.5f, 0.5f));
-    stress->small_cube = app_box_mesh(app, nv_vec3(0.06f, 0.06f, 0.06f));
-    stress->colors[0] = nv_renderer_add_material(&app->renderer, &(NvMaterialDesc){.base_color = {0.6f, 0.62f, 0.66f, 1.0f}});
+    stress->cube = sandbox_box_mesh(sandbox, nv_vec3(0.5f, 0.5f, 0.5f));
+    stress->small_cube = sandbox_box_mesh(sandbox, nv_vec3(0.06f, 0.06f, 0.06f));
+    stress->colors[0] = nv_renderer_add_material(&sandbox->renderer, &(NvMaterialDesc){.base_color = {0.6f, 0.62f, 0.66f, 1.0f}});
     for (u32 i = 1; i < STRESS_MAX_COLORS; ++i) {
         NvMaterialDesc desc = {.base_color = {0, 0, 0, 1}};
         color_wheel(i, STRESS_MAX_COLORS, desc.base_color);
-        stress->colors[i] = nv_renderer_add_material(&app->renderer, &desc);
+        stress->colors[i] = nv_renderer_add_material(&sandbox->renderer, &desc);
     }
 
     NvNode* ground = nv_scene_get(scene, nv_scene_add_node(scene, none, "ground"));
     ground->position = nv_vec3(0, -0.05f, -50.0f);
     ground->scale = nv_vec3(260.0f, 0.1f, 260.0f);
     ground->mesh = stress->cube;
-    ground->material = nv_renderer_add_material(&app->renderer, &(NvMaterialDesc){.base_color = {0.28f, 0.3f, 0.34f, 1.0f}});
+    ground->material = nv_renderer_add_material(&sandbox->renderer, &(NvMaterialDesc){.base_color = {0.28f, 0.3f, 0.34f, 1.0f}});
 
     // The grid grows away from the camera, the crowd stands in front of it, the chain to its right.
     stress->grid_group = nv_scene_add_node(scene, none, "grid");
@@ -118,14 +118,14 @@ void stress_build(App* app)
     memcpy(stress->steps, steps, sizeof(steps));
     stress->step_count = NV_ARRAY_COUNT(steps);
 
-    app->views[SCENE_STRESS] = (SceneView){
+    sandbox->views[SCENE_STRESS] = (SceneView){
         .scene = scene,
         .camera = camera,
         .focus = stress->grid_group,
         .orbit = {.yaw = 0.45f, .pitch = 0.42f, .distance = 28.0f, ORBIT_LIMITS},
         .follow_selection = false,
     };
-    app_set_home(&app->views[SCENE_STRESS]);
+    sandbox_set_home(&sandbox->views[SCENE_STRESS]);
     stress->built = 1;
 }
 
@@ -182,11 +182,11 @@ internal void update_chain(Stress* stress, u32 target, f32 dt)
         nv_scene_get(scene, stress->chain[i])->rotation = twist;
 }
 
-internal void update_crowd(App* app, u32 target)
+internal void update_crowd(Sandbox* sandbox, u32 target)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     NvScene* scene = stress->scene;
-    const NvGltfModel* source = &app->character;
+    const NvGltfModel* source = &sandbox->character;
     NV_ASSERT(source->mesh_node_count + 1 == CROWD_NODES);
 
     // Characters are made on first use and then kept: an animator cannot be destroyed.
@@ -201,11 +201,11 @@ internal void update_crowd(App* app, u32 target)
         snprintf(root->name, sizeof(root->name), "character %u", i + 1);
 
         // Every character loops its own clip from its own point in time.
-        NvClipId loops[APP_MAX_CLIPS];
+        NvClipId loops[SANDBOX_MAX_CLIPS];
         u32 loop_count = 0;
-        for (u32 c = 0; c < app->clip_count; ++c) {
-            if (strstr(nv_anim_clip_name(app->clips[c]), "_Loop"))
-                loops[loop_count++] = app->clips[c];
+        for (u32 c = 0; c < sandbox->clip_count; ++c) {
+            if (strstr(nv_anim_clip_name(sandbox->clips[c]), "_Loop"))
+                loops[loop_count++] = sandbox->clips[c];
         }
         NvAnimator* animator = nv_anim_get(model->animator);
         NvClipId clip = loops[i % loop_count];
@@ -239,9 +239,9 @@ internal void churn(Stress* stress, u32 count)
     }
 }
 
-void stress_update(App* app, f32 dt)
+void stress_update(Sandbox* sandbox, f32 dt)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     StressWorkloads* want = &stress->want;
 
     // Every workload fits under NV_MAX_NODES: the crowd and the chain first, the grid gets the rest.
@@ -267,17 +267,17 @@ void stress_update(App* app, f32 dt)
     u32 colors = want->colors_on ? (u32)want->color_count : 0;
     update_grid(stress, grid < stress->grid_built ? grid : stress->grid_built, colors);
     update_chain(stress, chain < stress->chain_built ? chain : stress->chain_built, 0.0f);
-    update_crowd(app, crowd);
+    update_crowd(sandbox, crowd);
     update_chain(stress, chain, dt);
     update_grid(stress, grid, colors);
     if (want->churn_on)
         churn(stress, (u32)want->churn_count);
-    effects_stress_update(app, want, dt);
+    effects_stress_update(sandbox, want, dt);
 }
 
-void stress_draw_bones(App* app)
+void stress_draw_bones(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     for (u32 i = 0; i < stress->crowd_active; ++i) {
         NvAnimator* animator = nv_anim_get(stress->crowd[i].animator);
         const NvJointDesc* joints = nv_anim_joints(animator->skeleton);
@@ -287,7 +287,7 @@ void stress_draw_bones(App* app)
                 continue;
             NvVec3 a = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[joints[j].parent]));
             NvVec3 b = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[j]));
-            nv_renderer_debug_line(&app->renderer, a, b, nv_vec3(1.0f, 0.8f, 0.2f));
+            nv_renderer_debug_line(&sandbox->renderer, a, b, nv_vec3(1.0f, 0.8f, 0.2f));
         }
     }
 }
@@ -296,9 +296,9 @@ void stress_draw_bones(App* app)
 // Benchmark
 //
 
-internal void start_step(App* app, u32 step, f64 now)
+internal void start_step(Sandbox* sandbox, u32 step, f64 now)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     const BenchmarkStep* s = &stress->steps[step];
     stress->want = (StressWorkloads){
         .grid_on = s->grid > 0,
@@ -313,27 +313,27 @@ internal void start_step(App* app, u32 step, f64 now)
         .effect_missiles = s->missiles,
         .effect_beams = s->beams,
     };
-    effects_clear(app); // every step starts from an empty sky
+    effects_clear(sandbox); // every step starts from an empty sky
     stress->benchmark_step = step;
     stress->benchmark_step_start = now;
     stress->results[step] = (BenchmarkResult){0};
 }
 
-internal void start_benchmark(App* app)
+internal void start_benchmark(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     stress->before_benchmark = stress->want;
-    stress->benchmark_shadows = app->renderer.shadows;
-    stress->benchmark_msaa = app->renderer.scene_samples;
-    resolution_text(app, stress->benchmark_resolution, sizeof(stress->benchmark_resolution));
+    stress->benchmark_shadows = sandbox->renderer.shadows;
+    stress->benchmark_msaa = sandbox->renderer.scene_samples;
+    resolution_text(sandbox, stress->benchmark_resolution, sizeof(stress->benchmark_resolution));
     stress->benchmark_running = 1;
     stress->result_count = 0;
-    start_step(app, 0, nv_time_seconds());
+    start_step(sandbox, 0, nv_time_seconds());
 }
 
-internal void stop_benchmark(App* app, b32 restore)
+internal void stop_benchmark(Sandbox* sandbox, b32 restore)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     stress->benchmark_running = 0;
     if (restore)
         stress->want = stress->before_benchmark;
@@ -342,13 +342,13 @@ internal void stop_benchmark(App* app, b32 restore)
 #define BENCHMARK_WARMUP_SECONDS  1.0
 #define BENCHMARK_MEASURE_SECONDS 3.0
 
-void stress_after_frame(App* app)
+void stress_after_frame(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     if (!stress->benchmark_running)
         return;
-    if (app->shown != SCENE_STRESS) {
-        stop_benchmark(app, 1);
+    if (sandbox->shown != SCENE_STRESS) {
+        stop_benchmark(sandbox, 1);
         return;
     }
     f64 now = nv_time_seconds();
@@ -357,7 +357,7 @@ void stress_after_frame(App* app)
         return;
 
     BenchmarkResult* result = &stress->results[stress->benchmark_step];
-    FrameTimes* t = &app->times;
+    FrameTimes* t = &sandbox->times;
     FrameTimes* sum = &result->average; // a sum until the step ends
     sum->frame += t->frame;
     sum->anim += t->anim;
@@ -369,7 +369,7 @@ void stress_after_frame(App* app)
     sum->gpu_upscale += t->gpu_upscale;
     sum->gpu_bloom += t->gpu_bloom;
     sum->gpu_particles += t->gpu_particles;
-    result->particles += (f64)nv_vfx_stats(&app->vfx).alive;
+    result->particles += (f64)nv_vfx_stats(&sandbox->vfx).alive;
     if (t->frame > result->worst_frame)
         result->worst_frame = t->frame;
     ++result->frames;
@@ -382,9 +382,9 @@ void stress_after_frame(App* app)
     result->particles /= n;
     stress->result_count = stress->benchmark_step + 1;
     if (stress->benchmark_step + 1 < stress->step_count)
-        start_step(app, stress->benchmark_step + 1, now);
+        start_step(sandbox, stress->benchmark_step + 1, now);
     else
-        stop_benchmark(app, 1);
+        stop_benchmark(sandbox, 1);
 }
 
 EM_JS_DEPS(nv_stress, "$stringToUTF8");
@@ -394,10 +394,10 @@ EM_JS(void, js_user_agent, (char* out, int size), {
 });
 
 // "585 x 497, scale 1/2" or "1280 x 720 fixed, shown x2": what the scene renders at.
-internal void resolution_text(App* app, char* out, umm size)
+internal void resolution_text(Sandbox* sandbox, char* out, umm size)
 {
-    const NvSceneOutput* scene = &app->layout.scene;
-    if (app->resolution.mode == NV_RESOLUTION_FIXED) {
+    const NvSceneOutput* scene = &sandbox->layout.scene;
+    if (sandbox->resolution.mode == NV_RESOLUTION_FIXED) {
         if (scene->pixel_width != scene->pixel_height)
             snprintf(out, size, "%u x %u fixed, stretched %.2fx%.2f", scene->width, scene->height, (f64)scene->pixel_width,
                      (f64)scene->pixel_height);
@@ -406,7 +406,7 @@ internal void resolution_text(App* app, char* out, umm size)
         else
             snprintf(out, size, "%u x %u fixed, shown at %.2fx", scene->width, scene->height, (f64)scene->pixel_width);
     } else {
-        snprintf(out, size, "%u x %u, scale 1/%u", scene->width, scene->height, app->resolution.divisor);
+        snprintf(out, size, "%u x %u, scale 1/%u", scene->width, scene->height, sandbox->resolution.divisor);
     }
 }
 
@@ -420,9 +420,9 @@ internal void shadow_settings_text(const NvShadowSettings* s, char* out, umm siz
                  s->filter == NV_SHADOW_FILTER_HIGH ? "High" : "Low", (f64)s->distance);
 }
 
-internal void copy_results(App* app)
+internal void copy_results(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     char agent[256];
     js_user_agent(agent, sizeof(agent));
     char text[4096];
@@ -433,12 +433,12 @@ internal void copy_results(App* app)
                           "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
                           "shadows: %s\nanti-aliasing: %s\nresolution: %s\n\n"
                           "step            frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale  bloom  particles  alive\n",
-                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, app->gpu.width, app->gpu.height, app->gpu.has_timestamps ? "yes" : "no",
+                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, sandbox->gpu.width, sandbox->gpu.height, sandbox->gpu.has_timestamps ? "yes" : "no",
                           shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off", stress->benchmark_resolution);
     for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
         const BenchmarkResult* r = &stress->results[i];
         used += (umm)snprintf(text + used, sizeof(text) - used, "%-15s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f  %5.2f  %9.2f  %5.0f\n",
-                              stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, app_load(&r->average),
+                              stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, sandbox_load(&r->average),
                               r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
                               r->average.gpu_shadow, r->average.gpu_upscale, r->average.gpu_bloom, r->average.gpu_particles, r->particles);
     }
@@ -468,18 +468,18 @@ internal void stat_text(Stat* stats, u32* count, const char* label, const char* 
     stats[(*count)++] = (Stat){.label = label, .text = text};
 }
 
-internal void stats_section(App* app)
+internal void stats_section(Sandbox* sandbox)
 {
-    const FrameTimes* a = &app->shown_average;
-    const NvRenderStats* r = &app->renderer.stats;
-    search_section(app, "Frame (1 s average, ms)");
+    const FrameTimes* a = &sandbox->shown_average;
+    const NvRenderStats* r = &sandbox->renderer.stats;
+    search_section(sandbox, "Frame (1 s average, ms)");
     Stat stats[40];
     u32 count = 0;
     stat(stats, &count, "Frame", "%.2f", a->frame);
-    stat(stats, &count, "Load %", "%.0f", app_load(a));
+    stat(stats, &count, "Load %", "%.0f", sandbox_load(a));
     stat(stats, &count, "FPS", "%.0f", a->frame > 0.0 ? 1000.0 / a->frame : 0.0);
-    stat(stats, &count, "Worst frame", "%.2f", app->shown_worst_frame);
-    if (app->gpu.has_timestamps) {
+    stat(stats, &count, "Worst frame", "%.2f", sandbox->shown_worst_frame);
+    if (sandbox->gpu.has_timestamps) {
         stat(stats, &count, "GPU scene pass", "%.2f", a->gpu);
         stat(stats, &count, "GPU shadow pass", "%.2f", a->gpu_shadow);
         stat(stats, &count, "GPU upscale pass", "%.2f", a->gpu_upscale);
@@ -492,7 +492,7 @@ internal void stats_section(App* app)
     stat(stats, &count, "CPU scene", "%.2f", a->scene);
     stat(stats, &count, "CPU draw", "%.2f", a->draw);
     stat(stats, &count, "CPU ui", "%.2f", a->ui);
-    stat(stats, &count, "Nodes", "%.0f", (f64)stress_live_nodes(app->stress.scene));
+    stat(stats, &count, "Nodes", "%.0f", (f64)stress_live_nodes(sandbox->stress.scene));
     stat(stats, &count, "Draws", "%.0f", (f64)r->draws);
     stat(stats, &count, "Triangles", "%.0f", (f64)r->triangles);
     stat(stats, &count, "Skinned draws", "%.0f", (f64)r->skinned_draws);
@@ -502,27 +502,27 @@ internal void stats_section(App* app)
     stat(stats, &count, "Material changes", "%.0f", (f64)r->material_changes);
     stat(stats, &count, "Mesh changes", "%.0f", (f64)r->mesh_changes);
     stat(stats, &count, "Shadow draws", "%.0f", (f64)r->shadow_draws);
-    NvVfxStats effects = nv_vfx_stats(&app->vfx);
+    NvVfxStats effects = nv_vfx_stats(&sandbox->vfx);
     stat(stats, &count, "Particles alive", "%.0f", (f64)effects.alive);
     stat(stats, &count, "Particles visible", "%.0f", (f64)effects.visible);
     stat(stats, &count, "Particles dropped", "%.0f", (f64)effects.dropped);
     stat(stats, &count, "Segments", "%.0f", (f64)effects.segments);
     stat(stats, &count, "Decals", "%.0f", (f64)effects.decals);
-    stat_text(stats, &count, "Anti-aliasing", app->renderer.scene_samples > 1 ? "MSAA 4x" : "off");
+    stat_text(stats, &count, "Anti-aliasing", sandbox->renderer.scene_samples > 1 ? "MSAA 4x" : "off");
     char resolution[64];
-    resolution_text(app, resolution, sizeof(resolution));
+    resolution_text(sandbox, resolution, sizeof(resolution));
     stat_text(stats, &count, "Resolution", resolution);
 
     // The search decides which rows show before the table starts, so the heading is not drawn in a cell.
     u32 visible = 0;
     for (u32 i = 0; i < count; ++i) {
-        stats[i].visible = search_row(app, stats[i].label, NULL);
+        stats[i].visible = search_row(sandbox, stats[i].label, NULL);
         visible += stats[i].visible;
     }
     if (!visible)
         return;
     // Label and value pairs: two per row where the panel is wide, one on phones.
-    int columns = igGetContentRegionAvail().x > 520.0f * app->imgui.ui_scale ? 4 : 2;
+    int columns = igGetContentRegionAvail().x > 520.0f * sandbox->imgui.ui_scale ? 4 : 2;
     if (!igBeginTable("stats", columns, ImGuiTableFlags_SizingStretchProp, (ImVec2_c){0, 0}, 0.0f))
         return;
     for (u32 i = 0; i < count; ++i) {
@@ -539,65 +539,65 @@ internal void stats_section(App* app)
     igEndTable();
 }
 
-internal void workloads_section(App* app)
+internal void workloads_section(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     StressWorkloads* w = &stress->want;
-    search_section(app, "Workloads");
-    if (search_row(app, "Cube grid", "workload cubes"))
+    search_section(sandbox, "Workloads");
+    if (search_row(sandbox, "Cube grid", "workload cubes"))
         igCheckbox(TL("Cube grid"), &w->grid_on);
-    if (search_row(app, "Cubes", "workload grid count"))
+    if (search_row(sandbox, "Cubes", "workload grid count"))
         igSliderInt(TL("Cubes"), &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
-    if (search_row(app, "Many colors", "workload materials"))
+    if (search_row(sandbox, "Many colors", "workload materials"))
         igCheckbox(TL("Many colors"), &w->colors_on);
-    if (search_row(app, "Colors", "workload materials count"))
+    if (search_row(sandbox, "Colors", "workload materials count"))
         igSliderInt(TL("Colors"), &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
-    if (search_row(app, "Deep chain", "workload hierarchy"))
+    if (search_row(sandbox, "Deep chain", "workload hierarchy"))
         igCheckbox(TL("Deep chain"), &w->chain_on);
-    if (search_row(app, "Links", "workload chain count"))
+    if (search_row(sandbox, "Links", "workload chain count"))
         igSliderInt(TL("Links"), &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
-    if (search_row(app, "Crowd", "workload characters animation"))
+    if (search_row(sandbox, "Crowd", "workload characters animation"))
         igCheckbox(TL("Crowd"), &w->crowd_on);
-    if (search_row(app, "Characters", "workload crowd count"))
+    if (search_row(sandbox, "Characters", "workload crowd count"))
         igSliderInt(TL("Characters"), &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
-    if (search_row(app, "Churn", "workload add remove nodes"))
+    if (search_row(sandbox, "Churn", "workload add remove nodes"))
         igCheckbox(TL("Churn"), &w->churn_on);
-    if (search_row(app, "Cubes / frame", "workload churn count"))
+    if (search_row(sandbox, "Cubes / frame", "workload churn count"))
         igSliderInt(TL("Cubes / frame"), &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
-    if (search_row(app, "Crowd bones", "workload skeleton debug"))
+    if (search_row(sandbox, "Crowd bones", "workload skeleton debug"))
         igCheckbox(TL("Crowd bones"), &w->show_bones);
-    if (search_row(app, "Fire effects", "workload particles vfx"))
+    if (search_row(sandbox, "Fire effects", "workload particles vfx"))
         igCheckbox(TL("Fire effects"), &w->effects_on);
-    if (search_row(app, "Live particles", "workload effects vfx count"))
+    if (search_row(sandbox, "Live particles", "workload effects vfx count"))
         igSliderInt(TL("Live particles"), &w->effect_particles, 0, STRESS_MAX_PARTICLES, "%d", ImGuiSliderFlags_Logarithmic);
-    if (search_row(app, "Explosions / s", "workload effects vfx"))
+    if (search_row(sandbox, "Explosions / s", "workload effects vfx"))
         igSliderInt(TL("Explosions / s"), &w->effect_explosions, 0, STRESS_MAX_EXPLOSIONS, "%d", 0);
-    if (search_row(app, "Missiles in flight", "workload effects vfx trails"))
+    if (search_row(sandbox, "Missiles in flight", "workload effects vfx trails"))
         igSliderInt(TL("Missiles in flight"), &w->effect_missiles, 0, STRESS_MAX_MISSILES, "%d", 0);
-    if (search_row(app, "Beams", "workload effects vfx laser"))
+    if (search_row(sandbox, "Beams", "workload effects vfx laser"))
         igSliderInt(TL("Beams"), &w->effect_beams, 0, STRESS_MAX_BEAMS, "%d", 0);
-    if (search_row(app, "Decals / s", "workload effects vfx scorch"))
+    if (search_row(sandbox, "Decals / s", "workload effects vfx scorch"))
         igSliderInt(TL("Decals / s"), &w->effect_decals, 0, STRESS_MAX_DECALS, "%d", 0);
-    if (search_plain(app))
+    if (search_plain(sandbox))
         igTextDisabled(T("Built: %u cubes, %u links, %u of %u characters"), stress->grid_built, stress->chain_built,
                        stress->crowd_active, stress->crowd_created);
 }
 
-internal void benchmark_section(App* app)
+internal void benchmark_section(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
-    search_section(app, "Benchmark");
+    Stress* stress = &sandbox->stress;
+    search_section(sandbox, "Benchmark");
     // One group: the buttons, the step line and the results go together.
-    if (!search_group(app, "Benchmark", "run stop copy results table"))
+    if (!search_group(sandbox, "Benchmark", "run stop copy results table"))
         return;
     if (stress->benchmark_running) {
         f64 elapsed = nv_time_seconds() - stress->benchmark_step_start;
         igText("Step %u/%u: %s (%s)", stress->benchmark_step + 1, stress->step_count, stress->steps[stress->benchmark_step].name,
                elapsed < BENCHMARK_WARMUP_SECONDS ? "warming up" : "measuring");
         if (igButton(TL("Stop"), (ImVec2_c){-1.0f, 0.0f}))
-            stop_benchmark(app, 1);
+            stop_benchmark(sandbox, 1);
     } else if (igButton(TL("Run benchmark"), (ImVec2_c){-1.0f, 0.0f})) {
-        start_benchmark(app);
+        start_benchmark(sandbox);
     }
     if (!stress->result_count)
         return;
@@ -625,18 +625,18 @@ internal void benchmark_section(App* app)
             igTableNextColumn();
             igText("%.2f", r->average.frame);
             igTableNextColumn();
-            igText("%.0f", app_load(&r->average));
+            igText("%.0f", sandbox_load(&r->average));
             igTableNextColumn();
             igText("%.2f", r->worst_frame);
             igTableNextColumn();
             igText("%.2f/%.2f/%.2f", r->average.anim, r->average.scene, r->average.draw);
             igTableNextColumn();
-            if (app->gpu.has_timestamps)
+            if (sandbox->gpu.has_timestamps)
                 igText("%.2f/%.2f/%.2f", r->average.gpu, r->average.gpu_shadow, r->average.gpu_upscale);
             else
                 igTextDisabled("-");
             igTableNextColumn();
-            if (app->gpu.has_timestamps)
+            if (sandbox->gpu.has_timestamps)
                 igText("%.2f/%.2f", r->average.gpu_bloom, r->average.gpu_particles);
             else
                 igTextDisabled("-");
@@ -646,19 +646,19 @@ internal void benchmark_section(App* app)
         igEndTable();
     }
     if (!stress->benchmark_running && igButton(TL("Copy results"), (ImVec2_c){-1.0f, 0.0f}))
-        copy_results(app);
+        copy_results(sandbox);
 }
 
-void stress_ui(App* app)
+void stress_ui(Sandbox* sandbox)
 {
-    Stress* stress = &app->stress;
+    Stress* stress = &sandbox->stress;
     StressWorkloads before = stress->want;
-    search_panel_begin(app, SEARCH_STRESS);
-    stats_section(app);
-    workloads_section(app);
+    search_panel_begin(sandbox, SEARCH_STRESS);
+    stats_section(sandbox);
+    workloads_section(sandbox);
     // Touching a workload during a run stops it and keeps what was touched.
     if (stress->benchmark_running && !same_workloads(&before, &stress->want))
-        stop_benchmark(app, 0);
-    benchmark_section(app);
-    search_panel_end(app);
+        stop_benchmark(sandbox, 0);
+    benchmark_section(sandbox);
+    search_panel_end(sandbox);
 }

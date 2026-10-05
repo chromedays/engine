@@ -1,6 +1,6 @@
-#include "app.h"
+#include "sandbox.h"
 
-// The editor app's Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in
+// The sandbox's Korean UI strings (docs/specs/korean.md): pairs of the English text, exactly as written in
 // the code, and its Korean. The lookup is the engine's (engine/strings.h). tests/strings_test.mjs checks that every string the
 // code wraps has a row and that a row keeps its printf conversions. The UI font (Pretendard) has every Hangul syllable.
 
@@ -19,7 +19,7 @@ global const NvStringPair entries[] = {
     {"Not saved: the state is larger than %u KB.", "저장되지 않음: 상태가 %u KB보다 큽니다."},
     {"Not saved: writing %s failed.", "저장되지 않음: %s 쓰기에 실패했습니다."},
     {"Reload", "다시 불러오기"},
-    {"The save could not be loaded: %s. The app started fresh and kept it as %s.", "저장 파일을 불러오지 못했습니다: %s. 앱을 새로 시작했고 파일은 %s(으)로 남겨 두었습니다."},
+    {"The save could not be loaded: %s. The sandbox started fresh and kept it as %s.", "저장 파일을 불러오지 못했습니다: %s. 샌드박스를 새로 시작했고 파일은 %s(으)로 남겨 두었습니다."},
     {"Reset everything?", "모두 초기화할까요?"},
     {"Delete the save and start over as on a first visit?", "저장 파일을 지우고 처음 방문한 것처럼 다시 시작할까요?"},
     {"Reset", "초기화"},
@@ -267,7 +267,7 @@ global const NvStringPair entries[] = {
 };
 // clang-format on
 
-void app_strings_init(void)
+void sandbox_strings_init(void)
 {
     nv_strings_set_table(entries, NV_ARRAY_COUNT(entries));
 }
