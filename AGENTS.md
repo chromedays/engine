@@ -40,7 +40,7 @@ app/                       the app: main.c (showcase scene, frame), stress.c (st
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), app.h (shared state)
 autobattler/               the auto-battler, a second executable with its own page (docs/specs/battle.md): battle.c/.h (the rules and
-                           the 30 Hz tick; no GPU), defs.c (reads data/units.txt and stage.txt), main.c (window, frame loop),
+                           the 30 Hz tick; no GPU), defs.c (reads data/default.abproj), main.c (window, frame loop),
                            battle_view.c (drawing, deployment input, the Battle panel), game.h (its state), strings.c (its Korean table)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
@@ -272,8 +272,11 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   which only browser developer tools download.
 - The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
   rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
-  `battle_remove`, `battle_start` and `battle_retry`. Units, weapons and the stage are the text files in `autobattler/data/`, read by
-  `defs.c` (a bad file blocks Start and is reported with its line); a new key goes in `defs.c`'s field tables and the spec's. Its
+  `battle_remove`, `battle_start` and `battle_retry`. The rules (grid, round time, gravity and so on), the units, weapons and the
+  stage are one text file, `autobattler/data/default.abproj` (`docs/specs/abproj.md`), read by `defs_read_project` in `defs.c` (a bad
+  file blocks Start and is reported with its line). A new key goes in `defs.c`'s field tables and the spec's tables and raises
+  `ABPROJ_VERSION`; a rule is read from `defs->rules`, never from a macro, and tests try the format only with text of their own, never
+  with the file's values. Its
   viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
   `autobattler/strings.c`, like the app's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
   `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout` and `_battle_debug_project` for tests. Speed controls change only
