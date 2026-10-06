@@ -173,10 +173,11 @@ internal void set_plane(Game* game, u32 field, f32 half_x, f32 half_z, NvVec3 po
     nv_mesh_append_plane(&mesh, half_x, half_z);
     NvMeshData data = nv_mesh_builder_data(&mesh);
     NvNode* node = nv_scene_get(game->scene, game->field_nodes[field]);
-    if (node->mesh.index)
-        nv_renderer_replace_mesh(&game->renderer, node->mesh, &data);
+    if (game->field_meshes[field].index)
+        nv_renderer_replace_mesh(&game->renderer, game->field_meshes[field], &data);
     else
-        node->mesh = nv_renderer_add_mesh(&game->renderer, &data);
+        game->field_meshes[field] = nv_renderer_add_mesh(&game->renderer, &data);
+    node->mesh = game->field_meshes[field];
     node->position = position;
 }
 
@@ -227,9 +228,11 @@ void view_apply_project(Game* game)
         game->selected_def = 0;
 }
 
-void view_apply_rules(Game* game)
+void view_apply_edit(Game* game)
 {
     apply_field(game, false);
+    for (u32 i = 0; i < game->defs.unit_count; ++i)
+        set_unit_mesh(game, i, &game->defs.units[i]);
 }
 
 void view_build(Game* game)
@@ -248,12 +251,26 @@ void view_build(Game* game)
     sun_node->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.3f};
 
     // The field's planes; their size comes with the project (view_apply_project).
-    add_plane_node(game, FIELD_GROUND, "ground", add_color(game, 0.07f, 0.08f, 0.09f));
+    NvMaterialId ground = add_color(game, 0.07f, 0.08f, 0.09f);
+    add_plane_node(game, FIELD_GROUND, "ground", ground);
     add_plane_node(game, FIELD_PLAYER_ZONE, "player zone", add_color(game, 0.04f, 0.09f, 0.2f));
     add_plane_node(game, FIELD_ENEMY_ZONE, "enemy zone", add_color(game, 0.2f, 0.06f, 0.05f));
 
     game->team_materials[TEAM_PLAYER] = add_color(game, 0.1f, 0.35f, 1.0f);
     game->team_materials[TEAM_ENEMY] = add_color(game, 1.0f, 0.18f, 0.12f);
+
+    // Units mode's unit and ground (docs/specs/abproj.md, "Editing units"); their meshes are set while that mode is shown.
+    game->preview_node = nv_scene_add_node(scene, none, "unit preview");
+    nv_scene_get(scene, game->preview_node)->material = game->team_materials[TEAM_PLAYER];
+    game->preview_ground = nv_scene_add_node(scene, none, "unit preview ground");
+    nv_scene_get(scene, game->preview_ground)->material = ground;
+    NvVertex ground_vertices[NV_MESH_PLANE_VERTICES];
+    u32 ground_indices[NV_MESH_PLANE_INDICES];
+    NvMeshBuilder ground_mesh = {.vertices = ground_vertices, .vertex_capacity = NV_ARRAY_COUNT(ground_vertices),
+                                 .indices = ground_indices, .index_capacity = NV_ARRAY_COUNT(ground_indices)};
+    nv_mesh_append_plane(&ground_mesh, UNIT_GROUND_HALF, UNIT_GROUND_HALF);
+    NvMeshData ground_data = nv_mesh_builder_data(&ground_mesh);
+    game->preview_ground_mesh = nv_renderer_add_mesh(&game->renderer, &ground_data);
     game->shell_material = add_color(game, 1.0f, 0.75f, 0.25f);
     NvVertex vertices[NV_MESH_SPHERE_VERTICES(8, 6)];
     u32 indices[NV_MESH_SPHERE_INDICES(8, 6)];
@@ -297,7 +314,8 @@ internal PlayerCell player_cell_at(Game* game, f32 x, f32 y)
 void view_input(Game* game)
 {
     const NvViewInput* in = &game->imgui.view;
-    NvOrbitCamera* orbit = &game->orbit;
+    b32 units = game->mode == MODE_UNITS;
+    NvOrbitCamera* orbit = units ? &game->unit_orbit : &game->orbit;
     f32 ratio = nv_window_pixel_ratio(&game->window);
     const NvSceneOutput* scene_output = &game->layout.scene;
 
@@ -307,6 +325,11 @@ void view_input(Game* game)
         f32 image_height_css = (f32)scene_output->height * scene_output->pixel_height / ratio;
         NvVec3 move = nv_orbit_camera_pan_ground(orbit, nv_scene_get(game->scene, game->camera), image_height_css, in->orbit_x, in->orbit_y);
         orbit->target = nv_vec3_add(orbit->target, move);
+    }
+    if (units) { // the unit editor keeps its height (the unit's middle) and its ground
+        orbit->target.x = nv_clamp_f32(orbit->target.x, -UNIT_GROUND_HALF, UNIT_GROUND_HALF);
+        orbit->target.z = nv_clamp_f32(orbit->target.z, -UNIT_GROUND_HALF, UNIT_GROUND_HALF);
+        return; // no cells to point at or tap
     }
     orbit->target.x = nv_clamp_f32(orbit->target.x, 0.0f, game->field_width);
     orbit->target.z = nv_clamp_f32(orbit->target.z, 0.0f, game->field_length);
@@ -350,9 +373,8 @@ internal void draw_zone_grid(NvRenderer* renderer, const BattleRules* rules, u32
         nv_renderer_debug_line(renderer, cell_corner(rules, x, first_row, 0.03f), cell_corner(rules, x, first_row + rules->zone_rows, 0.03f), color);
 }
 
-internal void draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color)
+internal void draw_ring(NvRenderer* renderer, NvVec3 center, NvVec3 u, NvVec3 v, f32 radius, NvVec3 color, u32 segments)
 {
-    const u32 segments = 20;
     NvVec3 previous = nv_vec3_add(center, nv_vec3_scale(u, radius));
     for (u32 i = 1; i <= segments; ++i) {
         f32 angle = (f32)i * (2.0f * NV_PI / (f32)segments);
@@ -410,11 +432,100 @@ internal NvNode* shell_node(Game* game, u32 index)
 
 // Every frame: the nodes follow the battle (between two ticks while it runs), and the lines, effects' clock, the scene's
 // matrices and the camera are brought up to date.
+// Units mode's view (docs/specs/abproj.md, "Editing units"): the chosen unit alone at the origin, facing +Z, with its sizes,
+// its range, its muzzle and a shell's arc to the end of its range, and its shield.
+internal void draw_unit_preview(Game* game)
+{
+    NvRenderer* renderer = &game->renderer;
+    const UnitDef* def = &game->defs.units[game->selected_def];
+    const WeaponDef* weapon = &def->weapon;
+    const BattleRules* rules = &game->defs.rules;
+    NvNode* node = nv_scene_get(game->scene, game->preview_node);
+    node->mesh = game->unit_meshes[game->selected_def];
+    nv_scene_get(game->scene, game->preview_ground)->mesh = game->preview_ground_mesh;
+    if (!game->unit_orbit_set) {
+        game->unit_orbit = (NvOrbitCamera){
+            // Behind the unit and to its side (yaw pi looks along +Z, as the unit faces), looking past it at the middle of its
+            // shot, far enough for most of its range's circle.
+            .target = {0.0f, def->height * 0.5f, weapon->range * 0.4f}, .yaw = NV_PI + 0.7f, .pitch = 35.0f * NV_PI / 180.0f,
+            .distance = fmaxf(4.0f, weapon->range * 1.1f), .min_pitch = 5.0f * NV_PI / 180.0f,
+            .max_pitch = CAMERA_MAX_PITCH, .min_distance = UNIT_CAMERA_MIN_DISTANCE, .max_distance = UNIT_CAMERA_MAX_DISTANCE};
+        game->unit_orbit_set = true;
+    }
+
+    NvVec3 x = nv_vec3(1.0f, 0.0f, 0.0f), y = nv_vec3(0.0f, 1.0f, 0.0f), z = nv_vec3(0.0f, 0.0f, 1.0f);
+    NvVec3 ground = nv_vec3(0.0f, 0.03f, 0.0f);
+    draw_ring(renderer, ground, x, z, def->radius, nv_vec3(0.9f, 0.9f, 0.9f), 32);
+    draw_ring(renderer, ground, x, z, weapon->range, nv_vec3(1.0f, 0.55f, 0.15f), 96);
+    draw_ring(renderer, ground, x, z, weapon->range * rules->stop_fraction, nv_vec3(0.45f, 0.22f, 0.06f), 96);
+
+    // The muzzle in the world: facing +Z, the unit's right is -X (battle.c, fire_shell).
+    NvVec3 muzzle = nv_vec3(-weapon->muzzle.x, weapon->muzzle.y, weapon->muzzle.z);
+    NvVec3 yellow = nv_vec3(1.0f, 0.85f, 0.3f);
+    const f32 cross = 0.12f;
+    nv_renderer_debug_line(renderer, nv_vec3_sub(muzzle, nv_vec3_scale(x, cross)), nv_vec3_add(muzzle, nv_vec3_scale(x, cross)), yellow);
+    nv_renderer_debug_line(renderer, nv_vec3_sub(muzzle, nv_vec3_scale(y, cross)), nv_vec3_add(muzzle, nv_vec3_scale(y, cross)), yellow);
+    nv_renderer_debug_line(renderer, nv_vec3_sub(muzzle, nv_vec3_scale(z, cross)), nv_vec3_add(muzzle, nv_vec3_scale(z, cross)), yellow);
+
+    // A shell to the ground at the end of the range, as fire_shell aims it: it climbs distance * tan(angle) over the way, and
+    // the time follows from that rise and gravity.
+    NvVec3 aim = nv_vec3(0.0f, 0.0f, weapon->range);
+    f32 dx = aim.x - muzzle.x, dz = aim.z - muzzle.z;
+    f32 distance = sqrtf(dx * dx + dz * dz);
+    f32 tan_angle = tanf(weapon->launch_angle);
+    f32 rise = distance * tan_angle + muzzle.y;
+    if (rise > 0.0f && rules->gravity > 0.0f) {
+        f32 time = sqrtf(2.0f * rise / rules->gravity);
+        NvVec3 velocity = nv_vec3(dx / time, tan_angle * distance / time, dz / time);
+        const u32 segments = 40;
+        NvVec3 previous = muzzle;
+        for (u32 i = 1; i <= segments; ++i) {
+            f32 t = time * (f32)i / (f32)segments;
+            NvVec3 point = nv_vec3_add(muzzle, nv_vec3_scale(velocity, t));
+            point.y -= 0.5f * rules->gravity * t * t;
+            nv_renderer_debug_line(renderer, previous, point, yellow);
+            previous = point;
+        }
+    }
+
+    if (def->ability.kind == ABILITY_SHIELD) {
+        NvVec3 center = nv_vec3(0.0f, def->height * 0.5f, 0.0f);
+        NvVec3 blue = nv_vec3(0.3f, 0.8f, 1.0f);
+        f32 radius = def->ability.shield.radius;
+        draw_ring(renderer, center, x, z, radius, blue, 32);
+        draw_ring(renderer, center, x, y, radius, blue, 32);
+        draw_ring(renderer, center, y, z, radius, blue, 32);
+    }
+}
+
+// The battle's nodes from slot or index `first` on (units and shells) show nothing.
+internal void hide_battle_nodes(Game* game, u32 first_unit_slot, u32 first_shell)
+{
+    for (u32 slot = first_unit_slot; slot <= game->unit_nodes_made; ++slot)
+        nv_scene_get(game->scene, game->unit_nodes[slot])->mesh = (NvMeshId){0};
+    for (u32 i = first_shell; i < game->shell_nodes_made; ++i)
+        nv_scene_get(game->scene, game->shell_nodes[i])->mesh = (NvMeshId){0};
+}
+
 void view_update(Game* game, f32 game_dt)
 {
     const Battle* battle = &game->battle;
     NvRenderer* renderer = &game->renderer;
     NvNode* camera = nv_scene_get(game->scene, game->camera);
+    b32 units = game->mode == MODE_UNITS && game->defs_ok && game->defs.unit_count > 0;
+    for (u32 i = 0; i < FIELD_PLANE_COUNT; ++i)
+        nv_scene_get(game->scene, game->field_nodes[i])->mesh = units ? (NvMeshId){0} : game->field_meshes[i];
+    nv_scene_get(game->scene, game->preview_node)->mesh = (NvMeshId){0};
+    nv_scene_get(game->scene, game->preview_ground)->mesh = (NvMeshId){0};
+    if (units) {
+        hide_battle_nodes(game, 1, 0);
+        draw_unit_preview(game);
+        nv_vfx_update(&game->vfx, game_dt);
+        nv_scene_update(game->scene);
+        nv_orbit_camera_place(&game->unit_orbit, camera);
+        renderer->shadows.distance = game->unit_orbit.distance * SHADOW_DISTANCE_PER_CAMERA_DISTANCE;
+        return;
+    }
     // Between the last two ticks while it runs; paused (and stepping), exactly at the last tick.
     f32 alpha = battle->phase == BATTLE_FIGHT && !game->paused ? nv_clamp_f32(game->accumulator / BATTLE_TICK_SECONDS, 0.0f, 1.0f) : 1.0f;
     NvVec3 screen_right = nv_quat_rotate(camera->rotation, nv_vec3(1.0f, 0.0f, 0.0f));
@@ -439,14 +550,12 @@ void view_update(Game* game, f32 game_dt)
                 NvVec3 color = nv_vec3_scale(nv_vec3(0.3f, 0.8f, 1.0f), 0.3f + 0.7f * share);
                 NvVec3 center = nv_vec3_add(position, nv_vec3(0.0f, def->height * 0.5f, 0.0f));
                 f32 radius = def->ability.shield.radius;
-                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), radius, color);
-                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 1, 0), radius, color);
-                draw_ring(renderer, center, nv_vec3(0, 1, 0), nv_vec3(0, 0, 1), radius, color);
+                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 0, 1), radius, color, 20);
+                draw_ring(renderer, center, nv_vec3(1, 0, 0), nv_vec3(0, 1, 0), radius, color, 20);
+                draw_ring(renderer, center, nv_vec3(0, 1, 0), nv_vec3(0, 0, 1), radius, color, 20);
             }
         }
     }
-    for (u32 slot = battle->unit_count + 1; slot <= game->unit_nodes_made; ++slot)
-        nv_scene_get(game->scene, game->unit_nodes[slot])->mesh = (NvMeshId){0};
 
     for (u32 i = 0; i < battle->projectile_count; ++i) {
         const Projectile* shell = &battle->projectiles[i];
@@ -456,8 +565,7 @@ void view_update(Game* game, f32 game_dt)
                                  lerp(shell->previous_position.y, shell->position.y, alpha),
                                  lerp(shell->previous_position.z, shell->position.z, alpha));
     }
-    for (u32 i = battle->projectile_count; i < game->shell_nodes_made; ++i)
-        nv_scene_get(game->scene, game->shell_nodes[i])->mesh = (NvMeshId){0};
+    hide_battle_nodes(game, battle->unit_count + 1, battle->projectile_count);
 
     if (battle->phase == BATTLE_DEPLOY && game->defs_ok) {
         const BattleRules* rules = &battle->defs->rules;
@@ -511,49 +619,64 @@ internal b32 step_button(const char* label)
     return clicked || held;
 }
 
-// A rule's widget in the Rules section (docs/specs/abproj.md, "Editing the rules"): it shows the value the project's text
-// gives and writes a change back there (game_set_rule). The widget's range only guides the drag; the project's reader judges.
-internal void rule_number(Game* game, const char* key, const char* label, f32 speed, f32 min, f32 max, const char* format)
+// A value's widget in the Rules section or Units mode (docs/specs/abproj.md, "Editing the rules", "Editing units"): it shows the
+// value the project's text gives and writes a change back there (game_set_value). The widget's range only guides the drag; the
+// project's reader judges.
+internal void value_number(Game* game, DefsKey where, const char* label, f32 speed, f32 min, f32 max, const char* format)
 {
-    f64 values[BATTLE_RULE_MAX_VALUES];
-    if (defs_rule_get(game->project_text, game->project_size, key, values) != 1)
+    f64 values[DEFS_MAX_VALUES];
+    if (defs_value_get(game->project_text, game->project_size, where, values) != 1)
         return;
     f32 value = (f32)values[0];
     if (igDragFloat(label, &value, speed, min, max, format, ImGuiSliderFlags_AlwaysClamp)) {
         f64 changed = value;
-        game_set_rule(game, key, &changed, 1);
+        game_set_value(game, where, &changed, 1);
     }
 }
 
-internal void rule_integers(Game* game, const char* key, const char* label, u32 count, f32 speed, s32 min, s32 max)
+internal void value_vector(Game* game, DefsKey where, const char* label, f32 speed, f32 min, f32 max, const char* format)
 {
-    f64 values[BATTLE_RULE_MAX_VALUES];
-    if (defs_rule_get(game->project_text, game->project_size, key, values) != count)
+    f64 values[DEFS_MAX_VALUES];
+    if (defs_value_get(game->project_text, game->project_size, where, values) != 3)
         return;
-    s32 value[BATTLE_RULE_MAX_VALUES] = {(s32)values[0], count > 1 ? (s32)values[1] : 0};
+    f32 value[3] = {(f32)values[0], (f32)values[1], (f32)values[2]};
+    if (igDragFloat3(label, value, speed, min, max, format, ImGuiSliderFlags_AlwaysClamp)) {
+        f64 changed[3] = {value[0], value[1], value[2]};
+        game_set_value(game, where, changed, 3);
+    }
+}
+
+internal void value_integers(Game* game, DefsKey where, const char* label, u32 count, f32 speed, s32 min, s32 max)
+{
+    f64 values[DEFS_MAX_VALUES];
+    if (defs_value_get(game->project_text, game->project_size, where, values) != count)
+        return;
+    s32 value[2] = {(s32)values[0], count > 1 ? (s32)values[1] : 0};
     b32 changed = count > 1 ? igDragInt2(label, value, speed, min, max, "%d", ImGuiSliderFlags_AlwaysClamp)
                             : igDragInt(label, value, speed, min, max, "%d", ImGuiSliderFlags_AlwaysClamp);
     if (changed) {
-        f64 next[BATTLE_RULE_MAX_VALUES] = {value[0], value[1]};
-        game_set_rule(game, key, next, count);
+        f64 next[2] = {value[0], value[1]};
+        game_set_value(game, where, next, count);
     }
 }
+
+#define RULE(key) ((DefsKey){DEFS_RULES, NULL, key})
 
 // The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
 internal void rules_section(Game* game)
 {
     if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), 0))
         return;
-    igBeginDisabled(!game_rules_editable(game));
+    igBeginDisabled(!game_values_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
-    rule_number(game, "cell_size", TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
-    rule_integers(game, "grid", TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
-    rule_integers(game, "zone_rows", TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
-    rule_number(game, "round_time", TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
-    rule_number(game, "gravity", TL("Gravity (m/s²)"), 0.05f, 0.1f, 100.0f, "%.2f");
-    rule_number(game, "retarget_interval", TL("Retarget interval (s)"), 0.01f, 0.01f, 10.0f, "%.2f");
-    rule_number(game, "stop_fraction", TL("Stop fraction"), 0.005f, 0.01f, 1.0f, "%.3f");
-    rule_number(game, "min_damage_fraction", TL("Min. damage fraction"), 0.005f, 0.0f, 1.0f, "%.3f");
+    value_number(game, RULE("cell_size"), TL("Cell size (m)"), 0.01f, 0.1f, 10.0f, "%.2f");
+    value_integers(game, RULE("grid"), TL("Grid (across, long)"), 2, 0.1f, 1, BATTLE_MAX_GRID_LENGTH);
+    value_integers(game, RULE("zone_rows"), TL("Zone rows"), 1, 0.1f, 1, BATTLE_MAX_ZONE_ROWS);
+    value_number(game, RULE("round_time"), TL("Round time (s)"), 0.5f, 1.0f, 600.0f, "%.1f");
+    value_number(game, RULE("gravity"), TL("Gravity (m/s²)"), 0.05f, 0.1f, 100.0f, "%.2f");
+    value_number(game, RULE("retarget_interval"), TL("Retarget interval (s)"), 0.01f, 0.01f, 10.0f, "%.2f");
+    value_number(game, RULE("stop_fraction"), TL("Stop fraction"), 0.005f, 0.01f, 1.0f, "%.3f");
+    value_number(game, RULE("min_damage_fraction"), TL("Min. damage fraction"), 0.005f, 0.0f, 1.0f, "%.3f");
     igPopItemWidth();
     igEndDisabled();
     if (game->battle.phase != BATTLE_DEPLOY) {
@@ -561,6 +684,70 @@ internal void rules_section(Game* game)
         igTextWrapped("%s", T("Rules change only in deployment (Retry goes back to it)."));
         igPopStyleColor(1);
     }
+}
+
+// Units mode's panel (docs/specs/abproj.md, "Editing units"): the chosen unit's values, its weapon's and its shield's.
+internal void units_panel(Game* game)
+{
+    const BattleDefs* defs = &game->defs;
+    igSeparator();
+    igSetNextItemWidth(igGetFontSize() * 10.0f);
+    if (igBeginCombo(TL("Unit"), defs->units[game->selected_def].name, 0)) {
+        for (u32 i = 0; i < defs->unit_count; ++i) {
+            igPushID_Int((int)i);
+            if (igSelectable_Bool(defs->units[i].name, game->selected_def == i, 0, (ImVec2_c){0, 0}))
+                game->selected_def = i;
+            igPopID();
+        }
+        igEndCombo();
+    }
+    // The defs are replaced by every change, so the names the keys point at are copies.
+    const UnitDef* def = &defs->units[game->selected_def];
+    char unit[BATTLE_NAME_SIZE], weapon[BATTLE_NAME_SIZE];
+    memcpy(unit, def->name, sizeof(unit));
+    memcpy(weapon, def->weapon.name, sizeof(weapon));
+    b32 shield = def->ability.kind == ABILITY_SHIELD;
+
+    igBeginDisabled(!game_values_editable(game));
+    igPushItemWidth(igGetFontSize() * 8.0f);
+    igPushID_Str("unit");
+    igSeparatorText(T("Unit"));
+    value_integers(game, (DefsKey){DEFS_UNIT, unit, "cost"}, TL("Cost"), 1, 1.0f, 1, 10000);
+    value_number(game, (DefsKey){DEFS_UNIT, unit, "health"}, TL("Health"), 0.5f, 0.1f, 100000.0f, "%.1f");
+    value_number(game, (DefsKey){DEFS_UNIT, unit, "armor"}, TL("Armor"), 0.1f, 0.0f, 1000.0f, "%.1f");
+    value_number(game, (DefsKey){DEFS_UNIT, unit, "speed"}, TL("Speed (m/s)"), 0.05f, 0.0f, 100.0f, "%.2f");
+    value_number(game, (DefsKey){DEFS_UNIT, unit, "radius"}, TL("Radius (m)"), 0.01f, 0.05f, 20.0f, "%.2f");
+    value_number(game, (DefsKey){DEFS_UNIT, unit, "height"}, TL("Height (m)"), 0.01f, 0.05f, 20.0f, "%.2f");
+    igPopID();
+
+    igPushID_Str("weapon");
+    char heading[64];
+    snprintf(heading, sizeof(heading), T("Weapon: %s"), weapon);
+    igSeparatorText(heading);
+    value_number(game, (DefsKey){DEFS_WEAPON, unit, "range"}, TL("Range (m)"), 0.1f, 0.1f, 500.0f, "%.1f");
+    value_number(game, (DefsKey){DEFS_WEAPON, unit, "damage"}, TL("Damage"), 0.5f, 0.0f, 100000.0f, "%.1f");
+    value_number(game, (DefsKey){DEFS_WEAPON, unit, "cooldown"}, TL("Cooldown (s)"), 0.01f, 0.01f, 60.0f, "%.2f");
+    value_number(game, (DefsKey){DEFS_WEAPON, unit, "launch_angle"}, TL("Launch angle (°)"), 0.5f, 0.5f, 90.0f, "%.1f");
+    value_number(game, (DefsKey){DEFS_WEAPON, unit, "spread"}, TL("Spread (m)"), 0.01f, 0.0f, 50.0f, "%.2f");
+    value_vector(game, (DefsKey){DEFS_WEAPON, unit, "muzzle"}, TL("Muzzle (m)"), 0.01f, -10.0f, 10.0f, "%.2f");
+    igPopID();
+
+    igPushID_Str("ability");
+    if (shield) {
+        igSeparatorText(T("Ability: shield"));
+        value_number(game, (DefsKey){DEFS_ABILITY, unit, "radius"}, TL("Radius (m)"), 0.01f, 0.05f, 50.0f, "%.2f");
+        value_number(game, (DefsKey){DEFS_ABILITY, unit, "capacity"}, TL("Capacity"), 0.5f, 0.1f, 100000.0f, "%.1f");
+        value_number(game, (DefsKey){DEFS_ABILITY, unit, "regen"}, TL("Regen (per s)"), 0.1f, 0.0f, 10000.0f, "%.1f");
+        value_number(game, (DefsKey){DEFS_ABILITY, unit, "regen_delay"}, TL("Regen delay (s)"), 0.05f, 0.0f, 600.0f, "%.2f");
+    } else {
+        igSeparatorText(T("Ability"));
+        igTextDisabled("%s", T("No ability"));
+    }
+    igPopID();
+    igPopItemWidth();
+    igEndDisabled();
+    igSeparator();
+    igTextWrapped("%s", T("Drag a value, or double-click it and type. The view shows the unit's range, where it stops, its muzzle, a shell's arc to the end of its range and its shield. Save writes the changes to the file."));
 }
 
 internal void start_over(Game* game)
@@ -573,8 +760,22 @@ void view_panel(Game* game)
 {
     Battle* battle = &game->battle;
     if (nv_imgui_begin_panel(&game->imgui, "Battle", game->layout.panel)) {
+        // The mode: the battle, or the unit editor (only in deployment, so no round runs behind it).
         const char* phases[3] = {T("Deployment"), T("Fight"), T("Result")};
-        igText("%s", T("Battle"));
+        const char* modes[2] = {TL("Battle"), TL("Units")};
+        for (u32 i = 0; i < NV_ARRAY_COUNT(modes); ++i) {
+            if (i)
+                igSameLine(0.0f, -1.0f);
+            b32 lit = game->mode == (GameMode)i;
+            igBeginDisabled(i == MODE_UNITS && !lit && (!game->defs_ok || battle->phase != BATTLE_DEPLOY));
+            if (lit)
+                igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+            if (igButton(modes[i], (ImVec2_c){0, 0}))
+                game_set_mode(game, (GameMode)i);
+            if (lit)
+                igPopStyleColor(1);
+            igEndDisabled();
+        }
         igSameLine(0.0f, -1.0f);
         igTextDisabled("%s", phases[battle->phase]);
 
@@ -607,13 +808,19 @@ void view_panel(Game* game)
             if (game->project_message_bad)
                 igPopStyleColor(1);
         }
-        rules_section(game);
+        if (game->mode == MODE_BATTLE)
+            rules_section(game);
 
         if (!game->defs_ok) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.4f, 0.35f, 1.0f});
             igTextWrapped("%s", T("Definitions could not be loaded"));
             igPopStyleColor(1);
             igTextWrapped("%s", game->defs.first_error); // the file's own text, so English
+            igEnd();
+            return;
+        }
+        if (game->mode == MODE_UNITS) {
+            units_panel(game);
             igEnd();
             return;
         }

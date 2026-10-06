@@ -784,52 +784,111 @@ b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text,
     return reader.base.errors == 0;
 }
 
-// Editing the rules (docs/specs/abproj.md, "Editing the rules"). These work on the text of a project that was read without
-// errors, so every rule has its one line in the `rules` block.
+// Editing values (docs/specs/abproj.md, "Editing the rules" and "Editing units"). These work on the text of a project that was
+// read without errors, so each block is there once and each key has at most one line in it.
 
-// Rule `key`'s line, its tokens pointing into the text. Fails (zeroed) when `key` is not a rule or its line is not there.
-typedef struct RuleLine {
+internal const Field* block_fields(DefsBlock block, u32* count)
+{
+    switch (block) {
+    case DEFS_RULES: *count = FIELD_COUNT(rules_fields); return rules_fields;
+    case DEFS_UNIT: *count = FIELD_COUNT(unit_fields); return unit_fields;
+    case DEFS_WEAPON: *count = FIELD_COUNT(weapon_fields); return weapon_fields;
+    case DEFS_ABILITY: *count = FIELD_COUNT(shield_fields); return shield_fields;
+    }
+    *count = 0;
+    return NULL;
+}
+
+// Where a value is in the text. Fails (zeroed) when the key is not one of the block's or the block is not there.
+typedef struct ValueLine {
     b32 ok;
     const Field* field;
+    b32 found; // the key has a line: `line` (its tokens point into the text) and `end` (where its text ends)
     Line line;
-    const char* end; // where the line's text ends (its '\n', or the text's end)
-} RuleLine;
+    const char* end;
+    // Where a line for the key goes when it has none: after the block's last own line (or its header), at `indent`.
+    const char* insert_after_end; // that line's end (its '\n', or the text's end)
+    u32 indent;
+    b32 crlf; // that line ends in CRLF
+} ValueLine;
 
-internal RuleLine find_rule(const char* text, umm size, const char* key)
+internal ValueLine find_value(const char* text, umm size, DefsKey where)
 {
+    u32 count = 0;
+    const Field* fields = block_fields(where.block, &count);
     const Field* field = NULL;
-    for (u32 i = 0; i < FIELD_COUNT(rules_fields); ++i)
-        if (strcmp(rules_fields[i].key, key) == 0)
-            field = &rules_fields[i];
-    if (!field)
-        return (RuleLine){0};
+    for (u32 i = 0; i < count; ++i)
+        if (where.key && strcmp(fields[i].key, where.key) == 0)
+            field = &fields[i];
+    if (!field || (where.block != DEFS_RULES && !where.unit))
+        return (ValueLine){0};
+
+    ValueLine result = {.field = field};
     Lines lines = {text, size, 0, 0};
-    b32 in_rules = false;
+    enum { TOP_OTHER, TOP_THE_RULES, TOP_THE_UNIT } top = TOP_OTHER;
+    s32 unit_indent = -1;      // the unit's own lines' indentation
+    DefsBlock sub = DEFS_UNIT; // within the unit: DEFS_WEAPON or DEFS_ABILITY in their blocks, else DEFS_UNIT
     for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
         Tokenized tokenized = tokenize(NULL, text_line.begin, text_line.end, lines.number);
         const Line* line = &tokenized.line;
         if (!tokenized.ok || !line->token_count)
             continue;
-        if (line->indent == 0) // a top-level statement: the rules block starts or ends
-            in_rules = token_is(line->tokens[0], "rules");
-        else if (in_rules && token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field))
-            return (RuleLine){.ok = true, .field = field, .line = *line, .end = text_line.end};
+        Token first = line->tokens[0];
+        b32 header = false, own = false;
+        if (line->indent == 0) {
+            b32 the_unit = line->token_count == 2 && token_is(first, "unit") && where.unit && token_is(line->tokens[1], where.unit);
+            top = token_is(first, "rules") ? TOP_THE_RULES : the_unit ? TOP_THE_UNIT : TOP_OTHER;
+            unit_indent = -1;
+            sub = DEFS_UNIT;
+            header = (top == TOP_THE_RULES && where.block == DEFS_RULES) || (top == TOP_THE_UNIT && where.block == DEFS_UNIT);
+        } else if (top == TOP_THE_RULES) {
+            own = where.block == DEFS_RULES;
+        } else if (top == TOP_THE_UNIT) {
+            if (unit_indent < 0)
+                unit_indent = (s32)line->indent;
+            if ((s32)line->indent == unit_indent) {
+                b32 shield = token_is(first, "ability") && line->token_count == 2 && token_is(line->tokens[1], "shield");
+                sub = token_is(first, "weapon") ? DEFS_WEAPON : shield ? DEFS_ABILITY : DEFS_UNIT;
+                header = sub != DEFS_UNIT && sub == where.block;
+                own = sub == DEFS_UNIT && where.block == DEFS_UNIT;
+            } else {
+                own = sub != DEFS_UNIT && sub == where.block;
+            }
+        }
+        if (!header && !own)
+            continue;
+        result.ok = true;
+        result.insert_after_end = text_line.end;
+        result.crlf = text_line.end > text_line.begin && text_line.end[-1] == '\r';
+        if (header) {
+            result.indent = line->indent + 4; // until an own line shows the block's
+        } else {
+            result.indent = line->indent;
+            if (!result.found && token_is(first, where.key) && line->token_count == 1 + field_values(field)) {
+                result.found = true;
+                result.line = *line;
+                result.end = text_line.end;
+            }
+        }
     }
-    return (RuleLine){0};
+    return result;
 }
 
-u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE_RULE_MAX_VALUES])
+u32 defs_value_get(const char* text, umm size, DefsKey where, f64 values[DEFS_MAX_VALUES])
 {
-    RuleLine rule = find_rule(text, size, key);
-    if (!rule.ok)
+    ValueLine value = find_value(text, size, where);
+    if (!value.ok)
         return 0;
-    u32 count = field_values(rule.field);
-    NV_ASSERT(count <= BATTLE_RULE_MAX_VALUES);
+    u32 count = field_values(value.field);
+    NV_ASSERT(count <= DEFS_MAX_VALUES);
     for (u32 i = 0; i < count; ++i) {
-        Number number = parse_number(NULL, 0, rule.line.tokens[1 + i], false);
-        if (!number.ok)
-            return 0;
-        values[i] = number.value;
+        values[i] = 0.0; // an omitted key: the reader's default, 0 for every optional key of these blocks
+        if (value.found) {
+            Number number = parse_number(NULL, 0, value.line.tokens[1 + i], false);
+            if (!number.ok)
+                return 0;
+            values[i] = number.value;
+        }
     }
     return count;
 }
@@ -853,13 +912,34 @@ internal u32 format_value(char* out, umm capacity, f64 value, b32 integer)
     return (u32)length;
 }
 
-umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity)
+// Copies `text` into `out` with the bytes from `cut_begin` to `cut_end` replaced by the pieces given (NULL ends them).
+// Returns the new size, 0 when it does not fit in `capacity`.
+internal umm splice(const char* text, umm size, const char* cut_begin, const char* cut_end, const char* const* pieces,
+                    const umm* lengths, char* out, umm capacity)
 {
-    RuleLine rule = find_rule(text, size, key);
-    if (!rule.ok || count != field_values(rule.field))
+    umm head = (umm)(cut_begin - text), tail = (umm)(text + size - cut_end);
+    umm total = head + tail;
+    for (u32 i = 0; pieces[i]; ++i)
+        total += lengths[i];
+    if (total > capacity)
         return 0;
-    b32 integer = rule.field->kind == FIELD_INTEGER || rule.field->kind == FIELD_GRID;
-    char written[96];
+    memcpy(out, text, head);
+    umm used = head;
+    for (u32 i = 0; pieces[i]; ++i) {
+        memcpy(out + used, pieces[i], lengths[i]);
+        used += lengths[i];
+    }
+    memcpy(out + used, cut_end, tail);
+    return total;
+}
+
+umm defs_value_set(const char* text, umm size, DefsKey where, const f64* values, u32 count, char* out, umm capacity)
+{
+    ValueLine value = find_value(text, size, where);
+    if (!value.ok || count != field_values(value.field))
+        return 0;
+    b32 integer = value.field->kind == FIELD_INTEGER || value.field->kind == FIELD_GRID;
+    char written[160];
     u32 used = 0;
     for (u32 i = 0; i < count; ++i) {
         if (i)
@@ -870,27 +950,41 @@ umm defs_rule_set(const char* text, umm size, const char* key, const f64* values
         used += length;
     }
 
+    if (!value.found) {
+        // A new line after the block's last own line, with that line's line end; after a last line without one, the line end
+        // goes before it instead.
+        const char* eol = value.crlf ? "\r\n" : "\n";
+        b32 at_end = value.insert_after_end == text + size;
+        const char* at = at_end ? value.insert_after_end : value.insert_after_end + 1; // past the '\n'
+        char indent[64];
+        if (value.indent > sizeof(indent))
+            return 0;
+        memset(indent, ' ', value.indent);
+        const char* key = value.field->key;
+        const char* pieces[] = {at_end ? eol : "", indent, key, " ", written, at_end ? "" : eol, NULL};
+        umm lengths[] = {strlen(pieces[0]), value.indent, strlen(key), 1, used, strlen(pieces[5])};
+        return splice(text, size, at, at, pieces, lengths, out, capacity);
+    }
+
     // The values' old text, from the first value to the end of the last, is replaced. The spaces after it shrink or grow
     // with the change so that a comment keeps its column (one space at the least).
-    const char* first = rule.line.tokens[1].text;
-    const Token* last = &rule.line.tokens[count];
+    const char* first = value.line.tokens[1].text;
+    const Token* last = &value.line.tokens[count];
     const char* after = last->text + last->length;
     const char* rest = after;
-    while (rest < rule.end && *rest == ' ')
+    while (rest < value.end && *rest == ' ')
         ++rest;
     s64 gap = rest - after;
-    if (rest < rule.end && *rest == '#') {
+    if (rest < value.end && *rest == '#') {
         gap += (s64)(after - first) - (s64)used;
         if (gap < 1)
             gap = 1;
     }
-    umm head = (umm)(first - text), tail = (umm)(text + size - rest);
-    umm total = head + used + (umm)gap + tail;
-    if (total > capacity)
+    char spaces[256];
+    if ((u64)gap > sizeof(spaces))
         return 0;
-    memmove(out, text, head);
-    memcpy(out + head, written, used);
-    memset(out + head + used, ' ', (umm)gap);
-    memmove(out + head + used + (umm)gap, rest, tail);
-    return total;
+    memset(spaces, ' ', (umm)gap);
+    const char* pieces[] = {written, spaces, NULL};
+    umm lengths[] = {used, (umm)gap};
+    return splice(text, size, first, rest, pieces, lengths, out, capacity);
 }

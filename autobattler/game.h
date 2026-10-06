@@ -44,6 +44,14 @@ typedef enum ProjectAction { PROJECT_OPEN, PROJECT_RELOAD, PROJECT_SAVE, PROJECT
 // The field's planes.
 enum { FIELD_GROUND, FIELD_PLAYER_ZONE, FIELD_ENEMY_ZONE, FIELD_PLANE_COUNT };
 
+// What the viewport and the panel show (docs/specs/abproj.md, "Editing units"): the battle, or the unit editor's one unit.
+typedef enum GameMode { MODE_BATTLE, MODE_UNITS } GameMode;
+
+// The unit editor's camera and ground.
+#define UNIT_CAMERA_MIN_DISTANCE 1.0f
+#define UNIT_CAMERA_MAX_DISTANCE 150.0f
+#define UNIT_GROUND_HALF         100.0f // meters from the unit to the ground's edge
+
 typedef struct Layout {
     NvRect viewport; // framebuffer pixels: where the field is drawn and the camera and taps are read
     NvRect panel;
@@ -72,13 +80,14 @@ typedef struct Game {
 
     BattleDefs defs;
     b32 defs_ok;
+    GameMode mode;
     f32 field_width, field_length; // meters, from the rules
 
     // The project the defs were read from. Its text is kept, so Save writes it back with its comments; the Rules section
     // changes only the values it edits in it.
     char* project_text; // PROJECT_MAX_SIZE bytes of permanent memory and a NUL after the text
     umm project_size;   // 0 while no good project is in place
-    b32 project_edited; // the panel's Rules section changed the text since it was read or saved
+    b32 project_edited; // the panel (Rules, Units mode) changed the text since it was read or saved
     char project_name[128];
     b32 kept_is_project; // the local file the browser keeps (NvLocalFile.kept) is this project's, so Save may write it
     NvLocalFile local_file;
@@ -98,6 +107,11 @@ typedef struct Game {
     NvMeshId unit_meshes[BATTLE_MAX_UNIT_DEFS];
     u32 unit_meshes_made;
     NvNodeId field_nodes[FIELD_PLANE_COUNT];
+    NvMeshId field_meshes[FIELD_PLANE_COUNT]; // kept here, since Units mode takes them off the nodes
+    NvNodeId preview_node, preview_ground;    // Units mode's unit and ground
+    NvMeshId preview_ground_mesh;
+    NvOrbitCamera unit_orbit;                 // Units mode's camera
+    b32 unit_orbit_set;
     NvMaterialId team_materials[2];
     NvMeshId shell_mesh;
     NvMaterialId shell_material;
@@ -114,11 +128,14 @@ void game_layout(Game* game);
 // Reads `text` as a project. A good one is put in place (the battle back in deployment, the view remade for it) and its text
 // kept; a bad one is reported in the panel and changes nothing, unless no good project is in place yet. True when it was good.
 b32 game_load_project(Game* game, const char* name, const char* text, umm size);
-// The panel's Rules section (docs/specs/abproj.md, "Editing the rules"): whether the rules can be changed now, and changing
-// rule `key` to `values` in the project's text. A good result is put in place at once, keeping the player's deployment where
-// it still fits; a bad one changes nothing and says why in the panel. True when the change was made.
-b32 game_rules_editable(const Game* game);
-b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count);
+// The panel's Rules section and Units mode (docs/specs/abproj.md, "Editing the rules", "Editing units"): whether values can
+// be changed now, and changing the value at `where` to `values` in the project's text. A good result is put in place at once,
+// keeping the player's deployment where it still fits; a bad one changes nothing and says why in the panel. True when the
+// change was made.
+b32 game_values_editable(const Game* game);
+b32 game_set_value(Game* game, DefsKey where, const f64* values, u32 count);
+// Switches what the viewport and panel show; Units only in deployment. True when it switched.
+b32 game_set_mode(Game* game, GameMode mode);
 // Whether a project button can be pressed now, and pressing it (it starts a dialog, read or write; false when it cannot).
 b32 game_project_action_allowed(const Game* game, ProjectAction action);
 b32 game_project_action(Game* game, ProjectAction action);
@@ -126,7 +143,7 @@ b32 game_project_action(Game* game, ProjectAction action);
 // battle_view.c
 void view_build(Game* game); // materials, the shell mesh, the field's nodes, the camera and the effects, once
 void view_apply_project(Game* game); // the field, the unit meshes and the camera for the project in place
-void view_apply_rules(Game* game);   // the field after a rule changed; the camera starts over only if the field's size did
+void view_apply_edit(Game* game);    // the field and unit meshes after a value changed; the camera starts over only if the field's size did
 void view_input(Game* game); // the camera from drags and the wheel; taps place and remove units
 void view_on_tick(Game* game); // after each battle_tick: effects for its events and shells; clears the events
 void view_update(Game* game, f32 game_dt); // every frame: nodes follow the units and shells, lines, effects' clock

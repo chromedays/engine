@@ -304,83 +304,223 @@ internal void test_project_file(void)
     CHECK(defs.enemy[9].cell_x == 15 && defs.enemy[9].cell_row == 42);
 }
 
-// Editing the rules in a project's text (defs_rule_get, defs_rule_set): the values as the file writes them, a change that
+#define RULE(key) ((DefsKey){DEFS_RULES, NULL, key})
+
+// Editing the rules in a project's text (defs_value_get, defs_value_set): the values as the file writes them, a change that
 // touches only its values (the comment keeps its column) and reads back, and what is refused.
 internal void test_rule_editing(void)
 {
     static char edited[sizeof(full_project) + 64];
     umm size = sizeof(full_project) - 1;
-    f64 values[BATTLE_RULE_MAX_VALUES] = {0};
-    CHECK(defs_rule_get(full_project, size, "grid", values) == 2 && values[0] == 32.0 && values[1] == 48.0);
-    CHECK(defs_rule_get(full_project, size, "round_time", values) == 1 && values[0] == 60.0); // seconds, not ticks
-    CHECK(defs_rule_get(full_project, size, "retarget_interval", values) == 1 && values[0] == 0.25);
-    CHECK(defs_rule_get(full_project, size, "gravity", values) == 1 && values[0] == 9.8);
-    CHECK(defs_rule_get(full_project, size, "supply", values) == 0); // the stage's, not a rule
-    CHECK(defs_rule_get(full_project, size, "radius", values) == 0);
-    CHECK(defs_rule_get(full_project, size, "rules", values) == 0);
+    f64 values[DEFS_MAX_VALUES] = {0};
+    CHECK(defs_value_get(full_project, size, RULE("grid"), values) == 2 && values[0] == 32.0 && values[1] == 48.0);
+    CHECK(defs_value_get(full_project, size, RULE("round_time"), values) == 1 && values[0] == 60.0); // seconds, not ticks
+    CHECK(defs_value_get(full_project, size, RULE("retarget_interval"), values) == 1 && values[0] == 0.25);
+    CHECK(defs_value_get(full_project, size, RULE("gravity"), values) == 1 && values[0] == 9.8);
+    CHECK(defs_value_get(full_project, size, RULE("supply"), values) == 0); // the stage's, not a rule
+    CHECK(defs_value_get(full_project, size, RULE("radius"), values) == 0);
+    CHECK(defs_value_get(full_project, size, RULE("rules"), values) == 0);
 
     // Writing every rule's own values back gives the same text, byte for byte.
     const char* keys[] = {"cell_size", "grid", "zone_rows", "round_time", "gravity", "retarget_interval", "stop_fraction",
                           "min_damage_fraction"};
     for (u32 i = 0; i < NV_ARRAY_COUNT(keys); ++i) {
-        u32 count = defs_rule_get(full_project, size, keys[i], values);
+        u32 count = defs_value_get(full_project, size, RULE(keys[i]), values);
         CHECK(count > 0);
-        umm written = defs_rule_set(full_project, size, keys[i], values, count, edited, sizeof(edited));
+        umm written = defs_value_set(full_project, size, RULE(keys[i]), values, count, edited, sizeof(edited));
         CHECK(written == size && memcmp(edited, full_project, size) == 0);
     }
 
     // A longer value takes spaces from before the comment, a shorter one gives them back; other lines stay.
     f64 gravity = 12.3456789;
-    umm written = defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, sizeof(edited));
+    umm written = defs_value_set(full_project, size, RULE("gravity"), &gravity, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(written == size && strstr(edited, "\n    gravity 12.3457          # m/s²\n"));
     gravity = 3.0;
-    written = defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("gravity"), &gravity, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(written == size && strstr(edited, "\n    gravity 3                # m/s²\n"));
     CHECK(memcmp(edited, full_project, (umm)(strstr(full_project, "    gravity") - full_project)) == 0);
     CHECK(read_project(edited) && defs.rules.gravity == 3.0f && defs.rules.cell_size == 2.0f);
     f64 longer = 0.123; // past the comment's column: one space is kept
-    written = defs_rule_set(full_project, size, "min_damage_fraction", &longer, 1, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("min_damage_fraction"), &longer, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(strstr(edited, "\n    min_damage_fraction 0.123 # armor"));
     f64 negative_zero = -0.00001;
-    written = defs_rule_set(full_project, size, "min_damage_fraction", &negative_zero, 1, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("min_damage_fraction"), &negative_zero, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(strstr(edited, "\n    min_damage_fraction 0    # armor"));
 
     // Integers are rounded; the grid takes two values; seconds stay seconds and become ticks when read.
     f64 grid[2] = {40.4, 47.6}; // the length stays 48: the stage's places are in the last 14 rows
-    written = defs_rule_set(full_project, size, "grid", grid, 2, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("grid"), grid, 2, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(strstr(edited, "\n    grid 40 48               # cells across"));
     CHECK(read_project(edited) && defs.rules.grid_width == 40 && defs.rules.grid_length == 48);
     f64 round_time = 90.5;
-    written = defs_rule_set(full_project, size, "round_time", &round_time, 1, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("round_time"), &round_time, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(read_project(edited) && defs.rules.round_ticks == 2715);
-    CHECK(defs_rule_get(edited, written, "round_time", values) == 1 && values[0] == 90.5);
+    CHECK(defs_value_get(edited, written, RULE("round_time"), values) == 1 && values[0] == 90.5);
 
     // A line without a comment, and CRLF line ends, keep what follows the values.
     const char* plain = "abproj_version 1\r\nrules\r\n    zone_rows 14\r\n";
     f64 rows = 9.0;
-    written = defs_rule_set(plain, strlen(plain), "zone_rows", &rows, 1, edited, sizeof(edited));
+    written = defs_value_set(plain, strlen(plain), RULE("zone_rows"), &rows, 1, edited, sizeof(edited));
     CHECK(written == strlen(plain) - 1 && memcmp(edited, "abproj_version 1\r\nrules\r\n    zone_rows 9\r\n", written) == 0);
 
     // A value the rules refuse is still written: the reader judges it.
     f64 rows_too_many = 30.0; // over half the grid's 48 rows
-    written = defs_rule_set(full_project, size, "zone_rows", &rows_too_many, 1, edited, sizeof(edited));
+    written = defs_value_set(full_project, size, RULE("zone_rows"), &rows_too_many, 1, edited, sizeof(edited));
     edited[written] = 0;
     CHECK(written > 0 && !read_project(edited));
 
     // Refused: not a rule, the wrong number of values, no room.
     f64 one = 1.0;
-    CHECK(defs_rule_set(full_project, size, "supply", &one, 1, edited, sizeof(edited)) == 0);
-    CHECK(defs_rule_set(full_project, size, "grid", &one, 1, edited, sizeof(edited)) == 0);
-    CHECK(defs_rule_set(full_project, size, "gravity", grid, 2, edited, sizeof(edited)) == 0);
+    CHECK(defs_value_set(full_project, size, RULE("supply"), &one, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_value_set(full_project, size, RULE("grid"), &one, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_value_set(full_project, size, RULE("gravity"), grid, 2, edited, sizeof(edited)) == 0);
     gravity = 9.8;
-    CHECK(defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, size - 1) == 0);
-    CHECK(defs_rule_set(full_project, size, "gravity", &gravity, 1, edited, size) == size);
+    CHECK(defs_value_set(full_project, size, RULE("gravity"), &gravity, 1, edited, size - 1) == 0);
+    CHECK(defs_value_set(full_project, size, RULE("gravity"), &gravity, 1, edited, size) == size);
+}
+
+// Editing units in a project's text: a unit's own keys, its weapon's and its shield's, by the unit's name; a key the text
+// omits is read as 0 and gets a line of its own when it is set.
+internal void test_unit_editing(void)
+{
+    // Two units with the same keys, so that a change to one is seen to leave the other alone. Brute has no shield, no armor
+    // and no spread, and its weapon is the file's last block.
+    static const char two_units[] =
+        "abproj_version 1\n"
+        "rules\n"
+        "    cell_size 2\n"
+        "    grid 32 48\n"
+        "    zone_rows 14\n"
+        "    round_time 60\n"
+        "    gravity 9.8\n"
+        "    retarget_interval 0.25\n"
+        "    stop_fraction 0.9\n"
+        "    min_damage_fraction 0.25\n"
+        "unit Crawler\n"
+        "    cost 100\n"
+        "    health 120\n"
+        "    armor 5            # plates\n"
+        "    radius 0.5\n"
+        "    height 0.8\n"
+        "    speed 5\n"
+        "    weapon Lobber\n"
+        "        range 20\n"
+        "        damage 30\n"
+        "        cooldown 1.5\n"
+        "        launch_angle 45    # degrees\n"
+        "    ability shield\n"
+        "        radius 1.2\n"
+        "        capacity 60\n"
+        "        regen 10\n"
+        "        regen_delay 3\n"
+        "unit Brute\n"
+        "    cost 200\n"
+        "    health 300\n"
+        "    speed 3\n"
+        "    radius 0.9\n"
+        "    height 1.4\n"
+        "    weapon Fist\n"
+        "        range 2\n"
+        "        damage 50\n"
+        "        cooldown 1\n"
+        "        launch_angle 10\n"
+        "stage\n"
+        "    supply 1000\n"
+        "    place Crawler 12 36\n"
+        "    place Brute 14 36\n";
+    static char edited[sizeof(two_units) + 256];
+    umm size = sizeof(two_units) - 1;
+    CHECK(read_project(two_units));
+    f64 values[DEFS_MAX_VALUES] = {0};
+    DefsKey crawler_radius = {DEFS_UNIT, "Crawler", "radius"};
+    DefsKey shield_radius = {DEFS_ABILITY, "Crawler", "radius"};
+    DefsKey brute_radius = {DEFS_UNIT, "Brute", "radius"};
+    CHECK(defs_value_get(two_units, size, crawler_radius, values) == 1 && values[0] == 0.5);
+    CHECK(defs_value_get(two_units, size, shield_radius, values) == 1 && values[0] == 1.2);
+    CHECK(defs_value_get(two_units, size, brute_radius, values) == 1 && values[0] == 0.9);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_WEAPON, "Crawler", "launch_angle"}, values) == 1 && values[0] == 45.0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_UNIT, "Crawler", "cost"}, values) == 1 && values[0] == 100.0);
+
+    // Omitted keys read as the reader's default.
+    values[0] = values[1] = values[2] = 7.0;
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_UNIT, "Brute", "armor"}, values) == 1 && values[0] == 0.0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_WEAPON, "Crawler", "muzzle"}, values) == 3);
+    CHECK(values[0] == 0.0 && values[1] == 0.0 && values[2] == 0.0);
+    // Not there: a unit without a shield, a name no unit has, a key the block has not, no unit name.
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_ABILITY, "Brute", "radius"}, values) == 0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_UNIT, "Ghost", "radius"}, values) == 0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_UNIT, "Crawler", "range"}, values) == 0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_WEAPON, "Crawler", "cost"}, values) == 0);
+    CHECK(defs_value_get(two_units, size, (DefsKey){DEFS_UNIT, NULL, "radius"}, values) == 0);
+    f64 one = 1.0;
+    CHECK(defs_value_set(two_units, size, (DefsKey){DEFS_ABILITY, "Brute", "radius"}, &one, 1, edited, sizeof(edited)) == 0);
+    CHECK(defs_value_set(two_units, size, (DefsKey){DEFS_UNIT, "Ghost", "radius"}, &one, 1, edited, sizeof(edited)) == 0);
+
+    // A unit's radius is not its shield's, nor the other unit's.
+    f64 radius = 0.65;
+    umm written = defs_value_set(two_units, size, crawler_radius, &radius, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(written == size + 1 && strstr(edited, "\n    radius 0.65\n    height 0.8\n"));
+    CHECK(defs_value_get(edited, written, shield_radius, values) == 1 && values[0] == 1.2);
+    CHECK(defs_value_get(edited, written, brute_radius, values) == 1 && values[0] == 0.9);
+    CHECK(read_project(edited) && defs.units[0].radius == 0.65f && defs.units[0].ability.shield.radius == 1.2f);
+    f64 shield = 2.5;
+    written = defs_value_set(two_units, size, shield_radius, &shield, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n        radius 2.5\n        capacity 60\n") && strstr(edited, "\n    radius 0.5\n"));
+    CHECK(read_project(edited) && defs.units[0].ability.shield.radius == 2.5f && defs.units[0].radius == 0.5f);
+    // The comment keeps its column; degrees stay degrees.
+    f64 angle = 60.5;
+    written = defs_value_set(two_units, size, (DefsKey){DEFS_WEAPON, "Crawler", "launch_angle"}, &angle, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n        launch_angle 60.5  # degrees\n"));
+    CHECK(read_project(edited) && near_value(defs.units[0].weapon.launch_angle, 60.5f * NV_PI / 180.0f, 1e-6f));
+    f64 cost = 150.4;
+    written = defs_value_set(two_units, size, (DefsKey){DEFS_UNIT, "Brute", "cost"}, &cost, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "unit Brute\n    cost 150\n") && strstr(edited, "unit Crawler\n    cost 100\n"));
+
+    // An omitted key gets a line after the block's last own line: Brute's armor after its height (before the weapon block),
+    // Crawler's muzzle after its weapon's launch_angle (before the ability block), Brute's spread at the end of the file's
+    // last unit block (before 'stage').
+    f64 armor = 2.0;
+    written = defs_value_set(two_units, size, (DefsKey){DEFS_UNIT, "Brute", "armor"}, &armor, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n    height 1.4\n    armor 2\n    weapon Fist\n"));
+    CHECK(read_project(edited) && defs.units[1].armor == 2.0f && defs.units[0].armor == 5.0f);
+    f64 muzzle[3] = {0.1, 0.6, -0.25};
+    written = defs_value_set(two_units, size, (DefsKey){DEFS_WEAPON, "Crawler", "muzzle"}, muzzle, 3, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n        launch_angle 45    # degrees\n        muzzle 0.1 0.6 -0.25\n    ability shield\n"));
+    CHECK(read_project(edited) && defs.units[0].weapon.muzzle.x == 0.1f && defs.units[0].weapon.muzzle.z == -0.25f);
+    CHECK(defs_value_get(edited, written, (DefsKey){DEFS_WEAPON, "Crawler", "muzzle"}, values) == 3 && values[1] == 0.6);
+    f64 spread = 0.75;
+    written = defs_value_set(two_units, size, (DefsKey){DEFS_WEAPON, "Brute", "spread"}, &spread, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strstr(edited, "\n        launch_angle 10\n        spread 0.75\nstage\n"));
+    CHECK(read_project(edited) && defs.units[1].weapon.spread == 0.75f);
+    // Set again, the inserted line is changed in place, and stays at 0.
+    static char again[sizeof(edited)];
+    f64 zero = 0.0;
+    umm again_size = defs_value_set(edited, written, (DefsKey){DEFS_WEAPON, "Brute", "spread"}, &zero, 1, again, sizeof(again));
+    again[again_size] = 0;
+    CHECK(again_size == written - 3 && strstr(again, "\n        spread 0\nstage\n"));
+
+    // CRLF line ends, and a block that ends the text without a line end.
+    const char* crlf = "abproj_version 1\r\nrules\r\n    zone_rows 14\r\nunit A\r\n    cost 1\r\n    weapon W\r\n        range 2\r\n";
+    written = defs_value_set(crlf, strlen(crlf), (DefsKey){DEFS_UNIT, "A", "armor"}, &armor, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strcmp(edited, "abproj_version 1\r\nrules\r\n    zone_rows 14\r\nunit A\r\n    cost 1\r\n    armor 2\r\n    weapon W\r\n        range 2\r\n") == 0);
+    const char* unended = "unit A\n    cost 1\n    weapon W\n        range 2";
+    written = defs_value_set(unended, strlen(unended), (DefsKey){DEFS_WEAPON, "A", "spread"}, &spread, 1, edited, sizeof(edited));
+    edited[written] = 0;
+    CHECK(strcmp(edited, "unit A\n    cost 1\n    weapon W\n        range 2\n        spread 0.75") == 0);
 }
 
 // The repository's own file: it reads without errors, whatever values a designer has put in it, and the round it plays ends
@@ -1511,6 +1651,7 @@ int main(void)
 {
     test_project_file();
     test_rule_editing();
+    test_unit_editing();
     test_repository_file();
     test_definition_syntax();
     test_project_structure();

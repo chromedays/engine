@@ -97,24 +97,24 @@ b32 game_load_project(Game* game, const char* name, const char* text, umm size)
     return ok;
 }
 
-b32 game_rules_editable(const Game* game)
+b32 game_values_editable(const Game* game)
 {
     // Only before a round: a round's seek replays it with the rules in place, which must be those it was played with. Not
     // while a file is read or written, so the text a save sends is the one it marks as saved.
     return game->project_size && game->battle.phase == BATTLE_DEPLOY && game->local_file.status != NV_LOCAL_FILE_BUSY;
 }
 
-b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
+b32 game_set_value(Game* game, DefsKey where, const f64* values, u32 count)
 {
-    if (!game_rules_editable(game))
+    if (!game_values_editable(game))
         return false;
     umm mark = game->scratch.used;
     char* text = NV_PUSH_ARRAY(&game->scratch, PROJECT_MAX_SIZE, char);
     BattleDefs* next = NV_PUSH_STRUCT(&game->scratch, BattleDefs);
-    umm size = defs_rule_set(game->project_text, game->project_size, key, values, count, text, PROJECT_MAX_SIZE);
+    umm size = defs_value_set(game->project_text, game->project_size, where, values, count, text, PROJECT_MAX_SIZE);
     b32 ok = size && defs_read_project(next, game->project_name, text, size);
     if (ok) {
-        // The player's units stay where the new rules still allow them (in the zone, within the supply), row by row.
+        // The player's units stay where the new definitions still allow them (in the zone, within the supply), row by row.
         Battle* battle = &game->battle;
         u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
         memcpy(placed, battle->placed, sizeof(battle->placed));
@@ -128,7 +128,7 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
             for (u32 x = 0; x < BATTLE_MAX_GRID_WIDTH; ++x)
                 if (placed[row * BATTLE_MAX_GRID_WIDTH + x])
                     battle_place(battle, placed[row * BATTLE_MAX_GRID_WIDTH + x] - 1u, (s32)x, (s32)row);
-        view_apply_rules(game);
+        view_apply_edit(game);
         if (game->project_message_bad)
             game->project_message[0] = 0; // a refused change's message is out of date
     } else {
@@ -136,6 +136,15 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
     }
     game->scratch.used = mark;
     return ok;
+}
+
+b32 game_set_mode(Game* game, GameMode mode)
+{
+    if (mode == MODE_UNITS && (!game->defs_ok || game->battle.phase != BATTLE_DEPLOY))
+        return false; // no round runs behind the unit editor
+    game->mode = mode;
+    game->hover_cell_x = game->hover_cell_row = -1;
+    return true;
 }
 
 b32 game_project_action_allowed(const Game* game, ProjectAction action)
@@ -212,7 +221,7 @@ internal void poll_local_file(Game* game)
             nv_utf8_trim(game->project_name);
             game->kept_is_project = true;
         }
-        game->project_edited = false; // rules are not edited while a save runs (game_rules_editable)
+        game->project_edited = false; // values are not edited while a save runs (game_values_editable)
         set_message(game, false, T("Saved %s"), file->name);
         break;
     case NV_LOCAL_FILE_FAILED:
@@ -298,7 +307,7 @@ internal void frame(void* userdata)
 // in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
-// length in ticks.
+// length in ticks, 20 the mode (GameMode).
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -323,6 +332,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 17: return (int)game->local_file.status;
     case 18: return game->project_edited;
     case 19: return (int)game->defs.rules.round_ticks;
+    case 20: return (int)game->mode;
     default: return (int)game->selected_def;
     }
 }
@@ -361,11 +371,20 @@ EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_message(void)
     return game_state.project_message;
 }
 
-// Changes rule `key` to `a` (and `b`, the grid's length) as the panel's Rules section does; 1 when the change was made.
-EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double b)
+// Changes a value as the panel's Rules section and Units mode do: `block` is a DefsBlock, `unit` the unit's name (ignored for
+// the rules), and as many of `a`, `b` and `c` are used as the key has values. 1 when the change was made.
+EMSCRIPTEN_KEEPALIVE int battle_debug_set_value(int block, const char* unit, const char* key, double a, double b, double c)
 {
-    f64 values[BATTLE_RULE_MAX_VALUES] = {a, b};
-    return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
+    DefsKey where = {(DefsBlock)block, unit, key};
+    f64 values[DEFS_MAX_VALUES] = {a, b, c};
+    u32 count = defs_value_get(game_state.project_text, game_state.project_size, where, (f64[DEFS_MAX_VALUES]){0});
+    return count && game_set_value(&game_state, where, values, count);
+}
+
+// Switches the panel's mode as its Battle and Units buttons do (GameMode); 1 when it switched.
+EMSCRIPTEN_KEEPALIVE int battle_debug_set_mode(int mode)
+{
+    return game_set_mode(&game_state, (GameMode)mode);
 }
 
 // The project's text as Save would write it, for tests.

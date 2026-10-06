@@ -89,17 +89,26 @@ typedef struct BattleDefs {
 // in `defs->first_error`. Reading goes on to the end of the text to report every error. `defs` starts zeroed.
 b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size);
 
-// Editing the rules in a project's text (docs/specs/abproj.md, "Editing the rules"): the text must have been read without
-// errors. A rule's values are those of its key in the `rules` block, as the file writes them (seconds, not ticks); `grid`
-// has two, every other rule one.
-#define BATTLE_RULE_MAX_VALUES 2
-// Reads rule `key`'s values; returns how many, 0 when `key` is not a rule.
-u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE_RULE_MAX_VALUES]);
-// Writes the text with rule `key`'s values changed to `values` (`count` of them) into `out`, which may not overlap `text`; the
-// rest of the line (its indentation, its comment, which keeps its column where it can) and every other line stay as they
-// were. Returns the new text's size, 0 when `key` is not a rule, `count` is not its number of values or the text does not fit
-// in `capacity` bytes. The values are not checked against the rules' ranges: read the result with defs_read_project.
-umm defs_rule_set(const char* text, umm size, const char* key, const f64* values, u32 count, char* out, umm capacity);
+// Editing values in a project's text (docs/specs/abproj.md, "Editing the rules" and "Editing units"): the text must have been
+// read without errors. A value's place is a key of a block: the `rules` block, or a unit's own lines, its weapon or its
+// shield ability (`unit` names the unit). Values are as the file writes them (seconds, not ticks; degrees, not radians);
+// `grid` has two, `muzzle` three, every other key one.
+typedef enum DefsBlock { DEFS_RULES, DEFS_UNIT, DEFS_WEAPON, DEFS_ABILITY } DefsBlock;
+typedef struct DefsKey {
+    DefsBlock block;
+    const char* unit; // for a unit's blocks
+    const char* key;
+} DefsKey;
+#define DEFS_MAX_VALUES 3
+// Reads the values; returns how many, 0 when the key is not one of the block's or the block is not there. An optional key
+// the text omits gives 0s, the reader's default.
+u32 defs_value_get(const char* text, umm size, DefsKey where, f64 values[DEFS_MAX_VALUES]);
+// Writes the text with the values changed to `values` (`count` of them) into `out`, which may not overlap `text`; the rest of
+// the line (its indentation, its comment, which keeps its column where it can) and every other line stay as they were. An
+// omitted key gets a line after the block's last own line. Returns the new text's size, 0 when the key is not one of the
+// block's, the block is not there, `count` is not the key's number of values or the text does not fit in `capacity` bytes.
+// The values are not checked against their ranges: read the result with defs_read_project.
+umm defs_value_set(const char* text, umm size, DefsKey where, const f64* values, u32 count, char* out, umm capacity);
 
 // Seconds as whole ticks, rounded up (with room for float error, so 1.5 s is 45 ticks and not 46); at least 1.
 u32 battle_seconds_to_ticks(f32 seconds);

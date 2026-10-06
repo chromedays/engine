@@ -254,16 +254,16 @@ stage
 
 추가(2026-10-05). Battle 패널에서 규칙(`rules` 블록의 여덟 키)을 고친다. 텍스트 편집기 없이 값을 바꿔 바로 해 보고, Save로 파일에 쓴다.
 
-- **패널:** 프로젝트 줄 아래 접힌 **Rules** 머리. 펼치면 키마다 위젯 하나: Cell size (m), Grid (across, long)(정수 둘), Zone rows,
+- **패널:** Battle 모드에서 프로젝트 줄 아래 접힌 **Rules** 머리. 펼치면 키마다 위젯 하나: Cell size (m), Grid (across, long)(정수 둘), Zone rows,
   Round time (s), Gravity (m/s²), Retarget interval (s), Stop fraction, Min. damage fraction. 끌거나, 두 번 눌러(또는 Ctrl+클릭)
   값을 친다. 위젯의 범위는 끌기를 돕는 것뿐이고, 판단은 읽기가 한다.
-- **글이 원본이다.** 위젯은 프로젝트 글에 적힌 값을 보인다(`defs_rule_get`: 시간은 틱이 아니라 파일의 초). 바꾸면 그 키의 줄에서 값만
-  새 값으로 바꾼 글을 만들고(`defs_rule_set`), 그 글 전체를 `defs_read_project`로 읽는다. 다른 줄과 그 줄의 들여쓰기, 주석은 그대로다.
+- **글이 원본이다.** 위젯은 프로젝트 글에 적힌 값을 보인다(`defs_value_get`: 시간은 틱이 아니라 파일의 초). 바꾸면 그 키의 줄에서 값만
+  새 값으로 바꾼 글을 만들고(`defs_value_set`), 그 글 전체를 `defs_read_project`로 읽는다. 다른 줄과 그 줄의 들여쓰기, 주석은 그대로다.
   값이 길어지거나 짧아지면 주석 앞의 공백이 줄거나 늘어 주석이 제 열에 남는다(적어도 한 칸). 값은 정수거나 소수점 아래 넷째 자리까지
   쓰고 끝의 0은 뺀다("9.8", "60"). 지수 표기는 쓰지 않는다(형식에 없다).
-- **좋으면 바로 놓인다(`game_set_rule`):** 새 defs와 글이 자리에 들어가고, 플레이어의 배치는 새 규칙에서도 되는 칸에 그대로 남는다
-  (구역 밖이나 공급을 넘는 유닛은 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
-  유닛 메시는 그대로다. 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
+- **좋으면 바로 놓인다(`game_set_value`):** 새 defs와 글이 자리에 들어가고, 플레이어의 배치는 새 규칙에서도 되는 칸에 그대로 남는다
+  (구역 밖이나 공급을 넘는 유닛은 빠진다; 줄 순서, 칸 순서로 다시 놓는다). 전장 평면과 유닛 메시는 새로 맞추고, 카메라는 전장 크기가
+  바뀔 때만 처음 자리로 간다(`view_apply_edit`). 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
 - **나쁘면 아무것도 바꾸지 않는다:** "Not changed: <첫 오류>"를 빨강으로 보인다. 예: `zone_rows`가 격자 길이의 반을 넘음, 격자를 줄여
   스테이지의 `place`가 적 구역 밖으로 나감. 다음에 받아들여진 고침이 이 알림을 지운다.
 - **배치 단계에서만:** 라운드가 시작되면 위젯이 꺼진다("Rules change only in deployment"). 되감기(`battle_seek`)는 라운드를 처음부터 다시
@@ -272,8 +272,38 @@ stage
 - **바뀜 표시:** 고친 뒤에는 "Project: x (changed)". Save나 Save as가 끝나면(대체 경로의 내려받기 포함) 지운다. Open과 Reload는 고침을
   버린다(묻지 않는다).
 - 실행 취소는 없다(값을 다시 바꾸거나 Reload한다).
-- Debug 빌드는 `Module._battle_debug_set_rule(key, a, b)`(`b`는 `grid`의 길이), `_battle_debug_project_text()`와
+- Debug 빌드는 `Module._battle_debug_set_value(block, unit, key, a, b, c)`(아래 "유닛 고치기"), `_battle_debug_project_text()`와
   `_battle_debug(18)`(저장하지 않은 고침이 있는지), `(19)`(라운드 길이, 틱)를 내보낸다.
+
+### 유닛 고치기
+
+추가(2026-10-06). 유닛의 값(유닛, 무기, 실드 능력의 키)을 따로 된 Units 모드에서 고친다. 규칙 고치기와 같은 방식이다: 글이 원본이고, 바뀐
+줄의 값만 바꾸고, 글 전체를 읽어 좋으면 바로 놓는다.
+
+- **모드:** 패널 맨 위에 **Battle**과 **Units** 버튼(지금 모드가 밝다, `Game.mode`). Units는 배치 단계에서만 누를 수 있고, Units 모드에서는
+  전투를 시작할 수 없다(Start는 Battle 모드에 있다). 언어와 프로젝트 줄(Open..., Reload, Save, Save as..., 알림)은 두 모드에 다 있다.
+- **뷰포트(Units 모드):** 전장, 놓인 유닛, 포탄을 감추고 고른 유닛 하나를 원점에 +Z를 보게 세운다(자기 메시, 플레이어 색, 바닥 평면 하나).
+  선으로 그리는 것:
+  - 바닥에 유닛 반지름(흰색), 무기 사거리(주황), 멈추는 거리(사거리 × 규칙의 `stop_fraction`, 어두운 주황).
+  - 총구(`muzzle`) 자리의 작은 십자와, 거기서 사거리 끝의 바닥까지 날아가는 포탄의 호(`launch_angle`과 규칙의 `gravity`; `battle.c`의
+    `fire_shell`과 같은 계산).
+  - 실드가 있으면 몸 가운데를 지나는 세 원(반지름 `radius`, 하늘색).
+  - 카메라는 Battle 모드와 따로다(`Game.unit_orbit`, 모드를 오가도 각자 자리를 지킨다). 유닛을 보도록 시작하고, 1–150 m까지 당기고 민다.
+    뷰포트의 탭은 아무것도 하지 않는다.
+- **패널(Units 모드):** 유닛 콤보(이름; 고른 유닛은 Battle 모드에서 놓을 유닛이기도 하다), 그리고 절 셋:
+  - **Unit:** Cost(정수), Health, Armor, Speed (m/s), Radius (m), Height (m)
+  - **Weapon <이름>:** Range (m), Damage, Cooldown (s), Launch angle (°), Spread (m), Muzzle (m)(값 셋)
+  - **Ability shield:** Radius (m), Capacity, Regen (per s), Regen delay (s). 실드가 없는 유닛은 "No ability".
+- **글 고치기(`defs_value_get`, `defs_value_set`):** 값의 자리는 `DefsKey`다: 블록(`DEFS_RULES`, `DEFS_UNIT`, `DEFS_WEAPON`, `DEFS_ABILITY`),
+  유닛 이름(유닛의 블록일 때), 키. 규칙 고치기의 쓰기 규칙(주석 열, 넷째 자리, 지수 없음)이 그대로다. 각도는 파일처럼 도(°)다.
+  - **생략된 키:** 파일에 없는 생략 가능한 키(`armor`, `spread`, `muzzle`)를 읽으면 읽기의 기본값(0)이다. 그 키를 고치면 줄을 하나
+    끼워 넣는다: 그 블록의 자기 줄(하위 블록의 줄이 아닌) 중 마지막 줄 바로 뒤, 그 블록의 들여쓰기로, 주석 없이. 줄 끝은 그 앞 줄을
+    따른다(CRLF면 CRLF). 끼워 넣은 줄은 값을 0으로 되돌려도 남는다(지우지 않는다).
+  - 유닛이나 블록이 없으면(이름이 틀림, 실드 없는 유닛의 `DEFS_ABILITY`) 읽기와 쓰기 모두 0이다. 블록을 더하지 않는다("나중에").
+- **놓기(`game_set_value`):** 규칙과 같다. 유닛 메시는 고칠 때마다 다시 만든다(`radius`, `height`). 비용이 오르면 배치가 공급을 넘을 수
+  있다: 줄 순서, 칸 순서로 다시 놓아 넘는 유닛이 빠진다. 스테이지가 공급을 넘으면(적의 비용 합) 읽기가 거절한다.
+- Debug 빌드는 `Module._battle_debug_set_value(block, unit, key, a, b, c)`(블록은 `DefsBlock`의 수, 값은 키의 개수만큼 쓴다),
+  `_battle_debug_set_mode(mode)`(0 Battle, 1 Units; 배치 단계가 아니면 Units가 되지 않는다)와 `_battle_debug(20)`(모드)을 내보낸다.
 
 ### 테스트
 
@@ -281,6 +311,8 @@ stage
 - **형식 검사는 테스트 안의 텍스트로만** 한다. 저장소 파일의 값을 확인하지 않는다(디자이너가 값을 바꿔도 테스트가 깨지지 않게).
   `full_project`는 `default.abproj`의 한 때의 사본이고, 값 확인과 라운드는 이것으로 한다.
 - 저장소의 `default.abproj`는 오류 없이 읽히고, 플레이어 구역을 채운 한 라운드가 `round_ticks` 안에 끝나는지만 본다.
+- 유닛 고치기: 유닛, 무기, 실드의 값 읽기(각도는 도), 다른 유닛의 같은 키는 건드리지 않음, 생략된 키 읽기(0)와 끼워 넣기(자리,
+  들여쓰기, CRLF, 마지막 줄에 줄바꿈이 없을 때), 끼워 넣은 글을 읽은 값, 실드 없는 유닛과 없는 유닛 이름은 0, 블록에 없는 키는 0.
 - 규칙 고치기: 파일의 값 읽기(초 그대로, 규칙이 아닌 키는 0), 모든 규칙을 자기 값으로 다시 쓰면 바이트가 같다, 길고 짧은 값과 주석 열,
   공백 한 칸 남기기, 주석 없는 줄과 CRLF, 정수 반올림, `grid` 두 값, -0, 범위 밖 값도 쓰고 읽기가 거절한다, 규칙이 아닌 키·값 개수·
   자리 모자람은 거절.
@@ -299,8 +331,8 @@ stage
 
 ### 나중에 (이 스펙 밖)
 
-- **에디터:** 유닛과 스테이지(배치 포함)도 패널에서 고친다. 규칙처럼 바뀐 값만 제자리에서 바꾼다("규칙 고치기"). 새 문장을 더하는
-  곳은 최상위 순서가 정해져 있어 분명하다. 실행 취소도 그때 정한다.
+- **에디터:** 유닛의 구조(추가, 복사, 삭제, 이름 바꾸기와 `place` 줄, 실드 넣기와 빼기)와 스테이지(배치 포함)도 고친다. 값처럼 바뀐
+  곳만 제자리에서 바꾼다("유닛 고치기"). 새 문장을 더하는 곳은 최상위 순서가 정해져 있어 분명하다. 실행 취소도 그때 정한다.
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
   옮긴다. 버전을 올린다.
@@ -576,18 +608,18 @@ Added (2026-10-05). Besides the `default.abproj` in the package, a `.abproj` fil
 Added (2026-10-05). The rules (the eight keys of the `rules` block) are edited in the Battle panel: a value is changed and tried at
 once, without a text editor, and Save writes it to the file.
 
-- **The panel:** a closed **Rules** header under the project's row. Opened, it has a widget per key: Cell size (m), Grid (across,
+- **The panel:** in Battle mode, a closed **Rules** header under the project's row. Opened, it has a widget per key: Cell size (m), Grid (across,
   long) (two integers), Zone rows, Round time (s), Gravity (m/s²), Retarget interval (s), Stop fraction, Min. damage fraction. Drag,
   or double-click (or Ctrl+click) and type. The widgets' ranges only guide a drag; the reader judges.
-- **The text is the source.** A widget shows the value the project's text gives (`defs_rule_get`: times in the file's seconds, not
-  ticks). A change makes the text with only the values on that key's line replaced (`defs_rule_set`) and reads all of it with
+- **The text is the source.** A widget shows the value the project's text gives (`defs_value_get`: times in the file's seconds, not
+  ticks). A change makes the text with only the values on that key's line replaced (`defs_value_set`) and reads all of it with
   `defs_read_project`. Every other line, and the line's indentation and comment, stay. When a value gets longer or shorter, the
   spaces before the comment shrink or grow, so the comment keeps its column (one space at the least). A value is written as an
   integer or with at most four decimals, without trailing zeros ("9.8", "60"); never with an exponent, which the format does not have.
-- **A good change is put in place at once (`game_set_rule`):** the new defs and text take over, and the player's deployment stays on
-  the cells the new rules still allow (units outside the zone or over the supply drop out). The field's planes are fitted again, and
-  the camera starts over only when the field's size changed (`view_apply_rules`). The unit meshes stay. It does not count as a
-  project put in place (`project_loads`).
+- **A good change is put in place at once (`game_set_value`):** the new defs and text take over, and the player's deployment stays on
+  the cells the new rules still allow (units outside the zone or over the supply drop out; they are placed again row by row, cell
+  by cell). The field's planes and the unit meshes are fitted again, and the camera starts over only when the field's size changed
+  (`view_apply_edit`). It does not count as a project put in place (`project_loads`).
 - **A bad change changes nothing:** the panel says "Not changed: <the first error>" in red; for example, `zone_rows` over half the
   grid's length, or a smaller grid that leaves a stage `place` outside the enemy zone. The next change made clears that message.
 - **Only in deployment:** once a round starts the widgets are disabled ("Rules change only in deployment"). Stepping back
@@ -596,8 +628,46 @@ once, without a text editor, and Save writes it to the file.
 - **The changed mark:** after an edit, "Project: x (changed)". A finished Save or Save as (the fallback's download too) clears it.
   Open and Reload drop the edits (without asking).
 - There is no undo (change the value back, or Reload).
-- Debug builds export `Module._battle_debug_set_rule(key, a, b)` (`b` is the `grid`'s length), `_battle_debug_project_text()` and
-  `_battle_debug(18)` (whether there are edits not yet saved) and `(19)` (the round's length in ticks).
+- Debug builds export `Module._battle_debug_set_value(block, unit, key, a, b, c)` ("Editing units" below),
+  `_battle_debug_project_text()` and `_battle_debug(18)` (whether there are edits not yet saved) and `(19)` (the round's length in ticks).
+
+### Editing units
+
+Added (2026-10-06). A unit's values (the keys of the unit, its weapon and its shield ability) are edited in a Units mode of their own,
+the same way as the rules: the text is the source, only the changed line's values change, and the whole text is read and, when good,
+put in place at once.
+
+- **The mode:** **Battle** and **Units** buttons at the top of the panel (the current mode lit, `Game.mode`). Units can be pressed only
+  in deployment, and no round starts in Units mode (Start is in Battle mode). The language and the project row (Open..., Reload, Save,
+  Save as..., the message) are in both modes.
+- **The viewport (Units mode):** the field, the placed units and the shells are hidden, and the chosen unit stands alone at the origin
+  facing +Z (its own mesh, the player's color, one ground plane). Lines show:
+  - On the ground, the unit's radius (white), its weapon's range (orange) and where it stops (the range times the rules'
+    `stop_fraction`, dark orange).
+  - A small cross at the muzzle (`muzzle`), and the arc of a shell from there to the ground at the end of the range (`launch_angle`
+    and the rules' `gravity`; the arithmetic of `fire_shell` in `battle.c`).
+  - With a shield, three circles through the middle of the body (its `radius`, sky blue).
+  - The camera is apart from Battle mode's (`Game.unit_orbit`; each keeps its place across mode switches). It starts on the unit and
+    zooms from 1 to 150 m. A tap in the viewport does nothing.
+- **The panel (Units mode):** a unit combo (by name; the unit chosen is also the one Battle mode places), then three sections:
+  - **Unit:** Cost (integer), Health, Armor, Speed (m/s), Radius (m), Height (m)
+  - **Weapon <name>:** Range (m), Damage, Cooldown (s), Launch angle (°), Spread (m), Muzzle (m) (three values)
+  - **Ability shield:** Radius (m), Capacity, Regen (per s), Regen delay (s). A unit without a shield shows "No ability".
+- **Editing the text (`defs_value_get`, `defs_value_set`):** a value's place is a `DefsKey`: the block (`DEFS_RULES`, `DEFS_UNIT`,
+  `DEFS_WEAPON`, `DEFS_ABILITY`), the unit's name (for a unit's blocks) and the key. The rules' writing rules (the comment's column,
+  four decimals, no exponent) hold. Angles are in degrees, as in the file.
+  - **Omitted keys:** reading an optional key the file does not have (`armor`, `spread`, `muzzle`) gives the reader's default (0).
+    Changing one inserts a line: right after the block's last own line (not a line of a block inside it), at the block's indentation,
+    without a comment. Its line end follows the line before it (CRLF after CRLF). An inserted line stays when its value goes back to 0
+    (nothing is deleted).
+  - Without the unit or the block (a wrong name; `DEFS_ABILITY` of a unit without a shield), reading and writing give 0. No block is
+    added ("Later").
+- **Putting it in place (`game_set_value`):** as for the rules. The unit meshes are remade on every change (`radius`, `height`). A
+  higher cost can take the deployment over the supply: the units are placed again row by row, cell by cell, and those over it drop
+  out. A stage over its supply (the enemies' cost) is refused by the reader.
+- Debug builds export `Module._battle_debug_set_value(block, unit, key, a, b, c)` (the block is a `DefsBlock` number; as many values
+  as the key has are used), `_battle_debug_set_mode(mode)` (0 Battle, 1 Units; Units is refused outside deployment) and
+  `_battle_debug(20)` (the mode).
 
 ### Tests
 
@@ -606,6 +676,9 @@ once, without a text editor, and Save writes it to the file.
   value breaks no test). `full_project` is a copy of `default.abproj` from one time, and the value checks and rounds run on it.
 - The repository's `default.abproj` is only checked to read without errors and to play a round, with the player's zone filled, that
   ends within `round_ticks`.
+- Editing units: reading a unit's, its weapon's and its shield's values (angles in degrees), the same key of another unit left alone,
+  an omitted key read (0) and inserted (its place, indentation, CRLF, and a last line without a line end), the values the inserted
+  text reads as, 0 for a unit without a shield, a unit name that is not there and a key not in the block.
 - Editing the rules: reading the file's values (seconds as they are; 0 for a key that is not a rule), writing every rule's own
   values back gives the same bytes, longer and shorter values and the comment's column, keeping one space, a line without a comment
   and CRLF, integers rounded, `grid`'s two values, -0, a value out of range is written and the reader refuses it, and refusing a key
@@ -628,8 +701,9 @@ once, without a text editor, and Save writes it to the file.
 
 ### Later (outside this spec)
 
-- **Editor:** units and the stage (its places too) are edited in the panel as well, changing only the edited values in place as the
-  rules do ("Editing the rules"). The fixed top-level order makes it clear where new statements go. Undo is decided then too.
+- **Editor:** a unit's structure (adding, copying, deleting, renaming with its `place` lines, adding and removing the shield) and the
+  stage (its places too) are edited as well, changing only what changed, in place, as values are ("Editing units"). The fixed
+  top-level order makes it clear where new statements go. Undo is decided then too.
 - **A repository of its own:** `default.abproj` moves to a data repository, pinned by the engine repository as a submodule. The
   version line checks that the two fit.
 - **Several stages:** `stage` gets a name (`stage <name>`) and there can be several. If stages come to have fields of different
