@@ -28,7 +28,7 @@
 #define BATTLE_MAX_EVENTS      4096
 
 // The newest format of the project file this build reads (docs/specs/abproj.md, "Versions").
-#define ABPROJ_VERSION 2
+#define ABPROJ_VERSION 1
 
 // Definitions: what autobattler/data/default.abproj says. Zero is empty.
 

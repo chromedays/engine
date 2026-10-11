@@ -80,7 +80,7 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 
 ### 분대
 
-추가(2026-10-11). B의 분대(배치 단위)를 A로 당겨 왔다. 유닛 정의의 `squad`와 `footprint`가 정한다(`abproj.md`, 형식 버전 2).
+추가(2026-10-11). B의 분대(배치 단위)를 A로 당겨 왔다. 유닛 정의의 `squad`와 `footprint`가 정한다(`abproj.md`).
 
 - **분대:** 한 번 놓는 단위다. `footprint` × `footprint` 칸을 차지하고 그 위에 유닛 `squad`기가 선다. 비용(`cost`)과 공급은 분대
   단위다. 두 키가 없으면 한 칸에 하나다(전과 같다).
@@ -112,7 +112,7 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 멈춤 비율, 최소 피해 비율)를 **프로젝트 파일 하나**, `autobattler/data/default.abproj`로 합쳤다. 문법, `rules`, `unit`, `stage`의 키
 표, 버전, 읽기와 오류, 테스트는 `docs/specs/abproj.md`에 있다. 읽는 함수는 `defs_read_project`(`autobattler/defs.c`)다. B에서
 더할 키(`layer`, `size`, `altitude`, 여러 `weapon`, `ability jump`, `prop` 등)도 거기 "나중에"에 적혀 있다. 분대의 `squad`와
-`footprint`는 형식 버전 2에 더했다(2026-10-11).
+`footprint`는 형식에 더했다(2026-10-11, 버전은 1 그대로).
 
 "A 규칙"의 표와 아래 Crawler 표의 값은 `default.abproj`가 지금 담은 값이다.
 
@@ -542,7 +542,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 3. **A 확인과 문서 (끝남):** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
    **프로젝트 파일 (끝남, 2026-10-05):** 두 정의 파일과 규칙 상수를 `default.abproj` 하나로(`docs/specs/abproj.md`).
-   **분대 (끝남, 2026-10-11):** B의 분대를 A로 당겨 옴(`squad`, `footprint`, 형식 버전 2; "분대" 절).
+   **분대 (끝남, 2026-10-11):** B의 분대를 A로 당겨 옴(`squad`, `footprint`, 형식; "분대" 절).
 4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
    Jump, 공간 격자), 더한 글자의 한국어 행, B 테스트.
 
@@ -643,7 +643,7 @@ Details settled in the build (phase 1):
 ### Squads
 
 Added (2026-10-11). B's squads (the unit of deployment) were brought forward into A. A unit definition's `squad` and `footprint` set
-them (`abproj.md`, format version 2).
+them (`abproj.md`).
 
 - **A squad** is what one placement puts down: `squad` units on `footprint` × `footprint` cells. The cost (`cost`) and the supply are
   per squad. Without the two keys it is one unit on one cell (as before).
@@ -678,7 +678,7 @@ round length, gravity, the retarget interval, the stop fraction, the minimum dam
 `autobattler/data/default.abproj`. The syntax, the key tables of `rules`, `unit` and `stage`, the versions, reading and errors, and
 the tests are in `docs/specs/abproj.md`. The function that reads it is `defs_read_project` (`autobattler/defs.c`). The keys B adds
 (`layer`, `size`, `altitude`, several `weapon`s, `ability jump`, `prop` and so on) are listed there too, under "Later". A squad's
-`squad` and `footprint` came with format version 2 (2026-10-11).
+`squad` and `footprint` came with the format (2026-10-11), still version 1.
 
 The values in the "Stage A rules" tables and in the Crawler table below are what `default.abproj` holds now.
 
@@ -1149,7 +1149,7 @@ to count as a tap, so the checks wait about two seconds.
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
    **The project file (done, 2026-10-05):** the two definition files and the rule constants into one `default.abproj`
    (`docs/specs/abproj.md`).
-   **Squads (done, 2026-10-11):** B's squads brought forward into A (`squad`, `footprint`, format version 2; "Squads").
+   **Squads (done, 2026-10-11):** B's squads brought forward into A (`squad`, `footprint`, in the format; "Squads").
 4. **B:** the rest of "Stage B rules" (five unit types, air, several weapons, bullets and missiles, area damage and
    friendly fire, props, cover, flow fields, Jump, the spatial grid), Korean rows for the added text, B's tests.
 

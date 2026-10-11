@@ -32,8 +32,7 @@ typedef struct Line {
 typedef struct Reader {
     BattleDefs* defs;
     const char* file_name;
-    u32 errors;  // found by this read
-    u32 version; // the file's format (its abproj_version line; ABPROJ_VERSION while it has none)
+    u32 errors; // found by this read
 } Reader;
 
 // `reader` is NULL in a scan of text already read without errors (the rules editor's), which reports nothing.
@@ -215,15 +214,6 @@ typedef struct Field {
     b32 required;
 } Field;
 
-// Keys added after the first format, with the version that added each: a file of an older version that has one is wrong.
-global const struct {
-    const char* key;
-    u32 version;
-} newer_keys[] = {
-    {"squad", 2},
-    {"footprint", 2},
-};
-
 #define UNIT_FIELD(key, kind, member, min, min_open, required) \
     {key, kind, offsetof(UnitDef, member), min, NO_LIMIT, min_open, false, required}
 
@@ -312,12 +302,6 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
         return;
     }
     *seen |= 1u << index; // a bad value is not "missing" on top of that
-    for (u32 i = 0; i < NV_ARRAY_COUNT(newer_keys); ++i) {
-        if (strcmp(field->key, newer_keys[i].key) == 0 && reader->version < newer_keys[i].version) {
-            report(reader, line->number, "'%s' needs abproj_version %u or newer", field->key, newer_keys[i].version);
-            return;
-        }
-    }
     u32 values = field_values(field);
     if (line->token_count != 1 + values) {
         report(reader, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
@@ -550,8 +534,6 @@ internal void read_version(ProjectReader* reader, const Line* line)
         // A newer format may mean anything by what follows, so the rest is not read.
         report(base, line->number, "format %.0f is newer than this build reads (%d)", number.value, ABPROJ_VERSION);
         reader->stop = true;
-    } else {
-        base->version = (u32)number.value;
     }
 }
 
@@ -559,7 +541,7 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1}; // a file of version 1 has neither: a unit is a squad of one
+    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1}; // without `squad` and `footprint`, a unit is a squad of one
     reader->unit_named = false;
     reader->unit_kept = false;
     reader->footprint_line = 0;
@@ -824,7 +806,7 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
 
 b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size)
 {
-    ProjectReader reader = {.base = {defs, file_name, 0, ABPROJ_VERSION}, .first_statement = true};
+    ProjectReader reader = {.base = {defs, file_name, 0}, .first_statement = true};
     reader.stack[0] = (Block){.kind = BLOCK_ROOT, .header_indent = -1, .child_indent = 0};
     reader.depth = 1;
     defs->seed = 1;

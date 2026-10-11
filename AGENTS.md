@@ -279,8 +279,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   file blocks Start and is reported with its line). The panel opens, reloads and saves a local `.abproj` (`engine/local_file.h`;
   abproj.md, "Loading and saving"): a good file is put in place by `game_load_project`, a bad one leaves the project in use, and Save
   writes the kept text as it was read. The panel's Rules section edits that text in place, before a round only (`defs_rule_set`,
-  `game_set_rule`; abproj.md, "Editing the rules"): a change rewrites only that rule's values and is read whole, a bad one is refused. A new key goes in `defs.c`'s field tables (and `newer_keys`, so older files may not use it) and the spec's tables and raises
-  `ABPROJ_VERSION`. A unit def is placed as a squad (`squad` units on `footprint` cells a side; battle.md, "Squads"), by its footprint's
+  `game_set_rule`; abproj.md, "Editing the rules"): a change rewrites only that rule's values and is read whole, a bad one is refused. A new key goes in `defs.c`'s field tables and the spec's tables. The format stays at version 1 while it is in development
+  (abproj.md, "Versions"). A unit def is placed as a squad (`squad` units on `footprint` cells a side; battle.md, "Squads"), by its footprint's
   corner nearest the grid's origin; a rule is read from `defs->rules`, never from a macro, and tests try the format only with text of their own, never
   with the file's values. Its
   viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in

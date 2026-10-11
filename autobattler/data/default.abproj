@@ -1,5 +1,5 @@
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj_version 2
+abproj_version 1
 
 rules
     cell_size 2              # m
