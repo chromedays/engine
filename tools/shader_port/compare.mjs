@@ -11,6 +11,10 @@ const [baseline, current] = process.argv.slice(2).map((d) => path.resolve(d));
 if (!baseline || !current) { console.error('usage: compare.mjs <baseline dir> <current dir>'); process.exit(2); }
 
 const CHANNEL_TOLERANCE = 2, PIXEL_FRACTION = 0.001;
+// The effects' screens, by case: about twice what two runs of the same baseline differ by (the particle dumps of the two runs
+// are identical, so this is only the order in which the unsorted translucent particles are blended). V4's smoke is large
+// and mostly translucent: its screen only shows that something is drawn.
+const BLOCK_TOLERANCE = { V1: 3, V2: 40, V3: 20, V4: 200, V11: 20 };
 const FIELD_NAMES = ['emitter', 'seed', 'x', 'y', 'z', 'age', 'vx', 'vy', 'vz', 'life', 'scale', 'rotation'];
 const HALF_FIELDS = new Set([6, 7, 8, 9, 10, 11]);
 
@@ -51,7 +55,24 @@ async function comparePng(name, masks) {
             if (d > max) max = d;
             if (d > tolerance) ++over;
         }
-        return { counted, over, max };
+        // Also the largest difference between 16x16 block averages: what is left when the order of overlapping
+        // translucent particles (which the effects draw unsorted) moves single pixels but not areas.
+        let blockMax = 0;
+        for (let by = 0; by + 16 <= x.height; by += 16)
+            for (let bx = 0; bx + 16 <= x.width; bx += 16) {
+                const sum = [0, 0, 0, 0, 0, 0];
+                let n = 0;
+                for (let j = by; j < by + 16; ++j)
+                    for (let i = bx; i < bx + 16; ++i) {
+                        const k = j * x.width + i;
+                        if (masked[k]) continue;
+                        ++n;
+                        for (let c = 0; c < 3; ++c) { sum[c] += p[k * 4 + c]; sum[3 + c] += q[k * 4 + c]; }
+                    }
+                if (n < 128) continue;
+                for (let c = 0; c < 3; ++c) blockMax = Math.max(blockMax, Math.abs(sum[c] - sum[3 + c]) / n);
+            }
+        return { counted, over, max, blockMax };
     }, { a, b, masks, tolerance: CHANNEL_TOLERANCE });
 }
 
@@ -100,10 +121,17 @@ for (const name of names) {
         if (result.error) report(name, [result.error]);
         else {
             const fraction = result.over / result.counted;
-            report(name, fraction > PIXEL_FRACTION ? [`${(fraction * 100).toFixed(3)}% of the pixels differ by more than ${CHANNEL_TOLERANCE}/255 (largest ${result.max})`] : [],
-                `largest ${result.max}/255, ${(fraction * 100).toFixed(4)}% over`);
+            // The effects' screens (V*) hold unsorted translucent particles: their pixels may differ run to run, so they are
+            // held to the block averages instead (BLOCK_TOLERANCE, set from the baseline's two runs).
+            const loose = /^V\d/.test(name);
+            const tolerance = BLOCK_TOLERANCE[name.split('-')[0]] ?? 20;
+            const problems = [];
+            if (loose ? result.blockMax > tolerance : fraction > PIXEL_FRACTION)
+                problems.push(loose ? `16x16 block averages differ by up to ${result.blockMax.toFixed(2)}/255 (more than ${tolerance})`
+                                    : `${(fraction * 100).toFixed(3)}% of the pixels differ by more than ${CHANNEL_TOLERANCE}/255 (largest ${result.max})`);
+            report(name, problems, `largest ${result.max}/255, ${(fraction * 100).toFixed(4)}% over, blocks ${result.blockMax.toFixed(2)}`);
         }
-    } else if (/^V\d+[-\w]*\.json$/.test(name)) {
+    } else if (/^V\d+[-\w]*\.json$/.test(name) && !fs.existsSync(path.join(baseline, name.replace(/\.json$/, '.png')))) {
         if (!fs.existsSync(path.join(current, name))) { report(name, ['missing from the current run']); continue; }
         const a = JSON.parse(fs.readFileSync(path.join(baseline, name), 'utf8'));
         const b = JSON.parse(fs.readFileSync(path.join(current, name), 'utf8'));

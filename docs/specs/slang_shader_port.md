@@ -173,11 +173,11 @@ SwiftShader(AGENTS.md "Testing without a display")에서 한다.
   (`npx -y -p playwright@1.56.1 ...`, AGENTS.md의 tools 규칙). Chromium은 Playwright의 것을 쓴다. `tests/`는 "브라우저가 필요 없는
   테스트"라서 거기 두지 않는다.
 - 이미지 비교는 별도 라이브러리 없이 Chromium 안에서 한다: 두 PNG를 `<canvas>`에 그려 `getImageData`로 픽셀을 비교한다.
-- 기준선은 **커밋한다** (2026-10-11 합의). 단계 0에서 지금의 WGSL로 만든 결과를 `tools/shader_port/baseline/`에 둔다. 포팅한 빌드의
+- 기준선은 **커밋한다** (2026-10-11 합의). 단계 0에서 지금의 WGSL로 만든 결과를 `tools/shader_port/baseline/`에 평평하게 둔다(PNG와 그 옆의 마스크 `.json`, 효과 덤프 `V*.json`). 포팅한 빌드의
   결과는 `<build>/shader_port/current/`에 쓰고 커밋하지 않는다.
-  - 스크린샷: `baseline/screens/<경우>.png` (예: `S3-chess.png`, `V2-f030.png`). PNG는 이미 `.gitattributes`에서 Git LFS로 간다.
+  - 스크린샷: `baseline/<경우>.png` (예: `S3-chess-clamp.png`, `V2-f030.png`). 37장, 약 5 MB. PNG는 이미 `.gitattributes`에서 Git LFS로 간다.
     Release 빌드에서 찍고, Debug 빌드도 같은 기준선과 비교한다(`NV_ASSERT`는 화면을 바꾸지 않는다). 약 35장.
-  - VFX 덤프: `baseline/vfx/<경우>.json`, 일반 Git(텍스트, diff가 보인다). 비교하는 것만 담는다: 덤프한 프레임마다 counters와 살아 있는
+  - VFX 덤프: `baseline/V*.json`, 일반 Git(텍스트, diff가 보인다). 비교하는 것만 담는다: 덤프한 프레임마다 counters와 살아 있는
     파티클을 (emitter, seed)로 정렬한 목록(위치, 속도, 나이, 크기, 회전; float는 왕복이 정확한 9자리). 용량 전체의 버퍼(2,097,152 × 32
     바이트)는 담지 않는다. 불변식은 실행할 때 검사하므로 저장하지 않는다. V9, V12는 counters만.
   - 기준선을 두 번 만들어 자기와의 비교를 통과한 쪽을 커밋한다. 기준선을 다시 만드는 것은 의도적인 변경이고, 커밋 메시지에 까닭을 쓴다.
@@ -302,6 +302,25 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
   부정, #13566 `f(a < b, a > b)`가 템플릿 목록으로 읽힘 등). 지금 우리 셰이더에는 그 두 패턴이 없다. Slang CI에서 WebGPU로 도는 테스트
   파일은 143개(Vulkan 1,361, D3D12 463)이고, CI가 실패를 예상하는 19개 중 9개가 WebGPU이며 그중 4개가 `groupshared`다. VFX `emit`이
   워크그룹 아토믹을 쓰므로 단계 2를 계속할지 정하는 지점으로 두는 이유가 이것이다.
+
+### 단계 0에서 알게 된 것 (2026-10-12)
+
+- 디버그 내보내기는 Debug 빌드에만 있어서 하네스는 **Debug 빌드로만** 돌린다(기준선도, 포팅한 것도). Release는 시작 때 WebGPU 오류가
+  없는지만 본다. 위 "Release 빌드에서 찍고"는 이 때문에 Debug다.
+- SwiftShader에서 프레임이 약 160 ms(작고 낮은 품질의 씬은 약 70 ms)라서 `fast` 경우(V6, V9, V10, V12)는 Scale 4, MSAA 1로 돈다.
+  전체 캡처는 약 50분이다(V9의 2,097,152개 가득 찬 프레임이 느리다).
+- 효과는 Edit 모드에서도 돌아서 V1–V11은 Play를 누르지 않는다. V12만 Play다(`effects` 행동이 Play에서 돈다). 그리고 V12는 dt 0.1
+  (프레임 5, 25, 50)로 돈다: dt 1/60이면 2,000,000개 경우가 너무 오래 걸린다. 행동이 dt를 0.1로 자른다.
+- Swarm과 Missile을 발사하는 버튼이 없어서 `sandbox_debug_vfx_fire_n(effect, count)`를 더했다(0–5는 기존, 6은 swarm). V11은 Missile 3 +
+  Laser 1 + Scorch 1이다(궤적, 빔, 데칼을 한 번에 본다).
+- 효과의 클럭을 결정적으로 만들려고 `sandbox_debug_fixed_dt`가 효과를 비우고 클럭을 1.0, 난수를 시작값으로 되돌린다(클럭 0은
+  지연된 버스트를 한꺼번에 풀어 버린다).
+- **자기와의 비교: 두 번의 기준선이 모두 일치한다.** 파티클 덤프(V*.json)는 정확히 같다: 아토믹으로 슬롯 순서가 달라져도 (emitter, seed)로
+  정렬하면 값이 같다. V9는 예측대로 dropped = 53,248이다. S1–S10의 화면도 같다.
+- 예외는 효과의 화면(V*.png)이다. 반투명한 알파 파티클을 정렬하지 않아서 겹침의 블렌드 순서가 달라지고(`compare.mjs`의 `BLOCK_TOLERANCE`),
+  16x16 블록 평균의 최대 차이가 V1 1.2, V11 7.9, V3 7.7, V2 17.7, V4 100.7(/255)이다. 그래서 V 화면은 픽셀이 아니라 블록 평균으로, 위
+  차이의 약 두 배를 허용한다(V1 3, V3·V11 20, V2 40, V4 200: V4의 연기는 "그려졌다"만 본다). 덤프가 정확히 같으므로 효과의 값은
+  덤프가 지킨다.
 
 ### 열린 질문
 
