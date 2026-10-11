@@ -1225,7 +1225,7 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity)
 NvBuildLabel nv_imgui_draw_build_label(NvImgui* imgui, NvRect viewport, const char* text, f32 extra_width, const char* subject)
 {
     const ImU32 backdrop = 0x99000000u;
-    ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+    ImDrawList* draw = igGetBackgroundDrawList(NULL); // behind every window: a popup that overlaps the label covers it
     f32 ratio = nv_window_pixel_ratio(imgui->window);
     ImVec2_c pos = {(f32)viewport.x / ratio + 6.0f, (f32)viewport.y / ratio + 6.0f};
     ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);

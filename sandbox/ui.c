@@ -625,12 +625,9 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
 void ui_draw_build_label(Sandbox* sandbox)
 {
-    // A popup (the command palette, the help window) is above everything but this foreground
-    // drawing, so the label waits.
-    if (igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
-        sandbox->badge_box[0] = sandbox->badge_box[1] = sandbox->badge_box[2] = sandbox->badge_box[3] = 0.0f;
-        return;
-    }
+    // The label is drawn behind the windows, so a popup that overlaps it covers it. While one is open a tap does not reach the
+    // badge, so its box is empty.
+    b32 popup = igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     char text[160];
     snprintf(text, sizeof(text), "%s build %s%s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, sandbox->download_text[0] ? " \xC2\xB7 " : "",
              sandbox->download_text, sandbox->playing ? " \xC2\xB7 Playing" : "");
@@ -648,7 +645,7 @@ void ui_draw_build_label(Sandbox* sandbox)
     f32* box = sandbox->badge_box;
     memcpy(box, label.box, sizeof(label.box));
     if (unseen) {
-        ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+        ImDrawList* draw = igGetBackgroundDrawList(NULL);
         ImU32 color = console_level_color(worst);
         f32 x = label.text_end + 8.0f;
         ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, label.text_top + label.text_height * 0.5f}, radius, color, 12);
@@ -656,7 +653,7 @@ void ui_draw_build_label(Sandbox* sandbox)
     }
 
     // The box a tap counts in: the label (not the subject line), grown to a size a finger can hit.
-    if (!unseen) {
+    if (!unseen || popup) {
         box[0] = box[1] = box[2] = box[3] = 0.0f;
         return;
     }

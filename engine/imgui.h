@@ -178,7 +178,7 @@ void nv_imgui_fit_text(const char* text, f32 room, char* out, umm capacity);
 // The build label in a viewport's top-left corner (AGENTS.md): `text` (the build, the commit, what was downloaded) in white on a
 // dark backdrop, and `subject` (the commit's subject line) in gray under it, cut to the viewport's width. `viewport` is in
 // framebuffer pixels. `extra_width` CSS pixels widen the first backdrop for what the caller draws after the text (a badge).
-// Draws in the foreground. Call between nv_imgui_new_frame and nv_imgui_render. `subject` is cut to 511 bytes.
+// Draws behind every window, so a popup that overlaps it covers it. Call between nv_imgui_new_frame and nv_imgui_render. `subject` is cut to 511 bytes.
 typedef struct NvBuildLabel { // CSS pixels
     f32 text_end;               // x where `text` ends: what the caller draws goes after it
     f32 text_top, text_height;  // the first line's text
