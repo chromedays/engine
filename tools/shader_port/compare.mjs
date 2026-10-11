@@ -103,7 +103,7 @@ for (const name of names) {
             report(name, fraction > PIXEL_FRACTION ? [`${(fraction * 100).toFixed(3)}% of the pixels differ by more than ${CHANNEL_TOLERANCE}/255 (largest ${result.max})`] : [],
                 `largest ${result.max}/255, ${(fraction * 100).toFixed(4)}% over`);
         }
-    } else if (/^V\d+\.json$/.test(name)) {
+    } else if (/^V\d+[-\w]*\.json$/.test(name)) {
         if (!fs.existsSync(path.join(current, name))) { report(name, ['missing from the current run']); continue; }
         const a = JSON.parse(fs.readFileSync(path.join(baseline, name), 'utf8'));
         const b = JSON.parse(fs.readFileSync(path.join(current, name), 'utf8'));

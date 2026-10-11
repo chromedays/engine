@@ -126,47 +126,44 @@ async function resolutionScreens(context, wanted, out) {
 
 async function texturesScreens(context, wanted, out) {
     if (!wanted('S9')) return [];
-    const { page, problems } = await openSandbox(context.browser, context.url);
-    const click = async (rect) => {
-        await page.mouse.move((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2);
-        await page.mouse.down();
-        await sleep(120);
-        await page.mouse.up();
-        await sleep(300);
-    };
-    const rect = (id) => page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_rect(i, c)), id);
+    const problems = [];
     const IMAGE = 12;
-    // The tab is where the right dock's third tab is; the rects of the tab come from the first frame it is drawn.
-    const dock = await page.evaluate(() => [0, 1, 2, 3].map((c) => Module._sandbox_debug_layout(3, c)));
-    await page.mouse.move(dock[0] + 137, dock[1] + 19);
-    await page.mouse.down(); await sleep(120); await page.mouse.up();
-    await sleep(800);
-    const wantedPicks = [
+    const picks = [
         { name: 'color', msaa: 4, kind: 0 },
         { name: 'depth', msaa: 1, kind: 2 },
         { name: 'depth-multisampled', msaa: 4, kind: 2 },
     ];
-    for (const pick of wantedPicks) {
+    // A narrow dock shows the list or the picked texture, so each pick starts from a fresh page.
+    for (const pick of picks) {
+        const { page, problems: p } = await openSandbox(context.browser, context.url);
+        problems.push(...p);
+        const press = async (x, y) => {
+            await page.mouse.move(x, y);
+            await page.mouse.down();
+            await sleep(120);
+            await page.mouse.up();
+            await sleep(400);
+        };
+        const dock = await page.evaluate(() => [0, 1, 2, 3].map((c) => Module._sandbox_debug_layout(3, c)));
+        await press(dock[0] + 137, dock[1] + 19); // the Textures tab
         await page.evaluate((m) => Module._sandbox_debug_set_msaa(m), pick.msaa);
         await stillScreen(page);
-        await sleep(600);
-        const listed = await page.evaluate(() => Module._sandbox_debug_textures_listed());
-        let found = false;
-        for (let k = 0; k < listed && !found; ++k) {
-            const row = await page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_row(i, c)), k);
-            if (!row[2]) continue;
-            await click(row);
-            const selected = await page.evaluate(() => Module._sandbox_debug_textures_selected());
-            if (Math.floor(selected / 1000) === pick.kind) found = true;
-        }
-        if (!found) throw new Error(`S9: no row of kind ${pick.kind}`);
+        await sleep(800);
+        // The list is the materials, then the render targets in gather's order: the shadow map, the depth target, ...
+        const materials = await page.evaluate(() => Module._sandbox_debug_texture_count());
+        const index = pick.kind === 0 ? 0 : materials + 1;
+        const row = await page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_row(i, c)), index);
+        await press((row[0] + row[2]) / 2, (row[1] + row[3]) / 2);
+        const selected = await page.evaluate(() => Module._sandbox_debug_textures_selected());
+        const found = Math.floor(selected / 1000) === pick.kind;
+        if (!found) throw new Error(`S9: no row of kind ${pick.kind} (${pick.name})`);
         await stillScreen(page);
-        await sleep(600);
-        const image = await rect(IMAGE);
+        await sleep(800);
+        const image = await page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_rect(i, c)), IMAGE);
         await shootRect(page, out, `S9-textures-${pick.name}`, [image[0], image[1], image[2] - image[0], image[3] - image[1]]);
         console.log('   S9', pick.name);
+        await page.context().close();
     }
-    await page.context().close();
     return problems;
 }
 
@@ -221,6 +218,11 @@ const VFX = {
     V8: { dt: 1 / 60, fire: [], fireAt: Object.fromEntries(range(0, 12).map((i) => [i * 5, [[SPARKS, 1]]])), dump: [30, 60, 61, 120] },
     V9: { dt: 1 / 60, fire: [[SWARM, 4200]], dump: [1, 2, 200], counters: true, fast: true },
     V10: { dt: 1 / 60, fire: [[SWARM, 4200]], dump: [], afterwards: { at: 200, fire: [[SPARKS, 1]], dump: [201, 260] }, fast: true },
+    // The stress scene's `effects` behavior at the particle counts of its file; it runs in Play, so the steps are the
+    // behavior's own (dt 0.1: the particles live about 2.5 s). Counters only.
+    'V12-250k': { dt: 0.1, scene: 1, play: [250000], dump: [5, 25, 50], counters: true, fast: true },
+    'V12-1M': { dt: 0.1, scene: 1, play: [1000000], dump: [5, 25, 50], counters: true, fast: true },
+    'V12-2M': { dt: 0.1, scene: 1, play: [2000000], dump: [5, 25, 50], counters: true, fast: true },
     V11: { dt: 1 / 60, fire: [[MISSILE, 3], [LASER, 1], [SCORCH, 1]], dump: [30, 90, 200], shots: [30, 90] },
 };
 
@@ -254,8 +256,15 @@ async function dumpOnce(page, counters) {
 
 async function vfxCase(context, id, spec, out) {
     const { page, problems } = await openSandbox(context.browser, context.url);
-    await showScene(page, 0);
+    await showScene(page, spec.scene || 0);
     await DEFAULTS(page);
+    if (spec.play) {
+        const [x, y, w, h] = await page.evaluate(() => [0, 1, 2, 3].map((c) => Module._sandbox_debug_layout(6, c)));
+        await page.mouse.move(x + w / 2, y + h / 2);
+        await page.mouse.down(); await sleep(120); await page.mouse.up();
+        await page.waitForFunction(() => Module._sandbox_debug_playing() === 1, null, { timeout: 60000 });
+        await page.evaluate((n) => Module._sandbox_debug_set_effects(n, 0, 0, 0, 0), spec.play[0]);
+    }
     if (spec.fast) await page.evaluate(() => { Module._sandbox_debug_set_resolution(0, 4, 0); Module._sandbox_debug_set_msaa(1); });
     await page.waitForTimeout(500);
     await call(page, 'fixed_dt', spec.dt); // clears the effects, so everything below is counted from here
