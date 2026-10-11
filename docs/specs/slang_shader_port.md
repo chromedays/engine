@@ -173,10 +173,18 @@ SwiftShader(AGENTS.md "Testing without a display")에서 한다.
   (`npx -y -p playwright@1.56.1 ...`, AGENTS.md의 tools 규칙). Chromium은 Playwright의 것을 쓴다. `tests/`는 "브라우저가 필요 없는
   테스트"라서 거기 두지 않는다.
 - 이미지 비교는 별도 라이브러리 없이 Chromium 안에서 한다: 두 PNG를 `<canvas>`에 그려 `getImageData`로 픽셀을 비교한다.
-- 기준선은 **커밋하지 않는다.** 단계 0의 커밋을 저장소 밖의 `git worktree`에 체크아웃해 빌드하고, 거기서 만든 결과를
-  `<build>/shader_port/baseline/`에, 포팅한 빌드의 결과를 `<build>/shader_port/current/`에 쓴다. 기준선은 언제든 같은 커밋에서 다시
-  만들 수 있으므로 이미지를 Git LFS에 넣지 않는다.
-- 단계 6에서 `tools/shader_port/`와 이 검증만을 위한 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)를 지운다.
+- 기준선은 **커밋한다** (2026-10-11 합의). 단계 0에서 지금의 WGSL로 만든 결과를 `tools/shader_port/baseline/`에 둔다. 포팅한 빌드의
+  결과는 `<build>/shader_port/current/`에 쓰고 커밋하지 않는다.
+  - 스크린샷: `baseline/screens/<경우>.png` (예: `S3-chess.png`, `V2-f030.png`). PNG는 이미 `.gitattributes`에서 Git LFS로 간다.
+    Release 빌드에서 찍고, Debug 빌드도 같은 기준선과 비교한다(`NV_ASSERT`는 화면을 바꾸지 않는다). 약 35장.
+  - VFX 덤프: `baseline/vfx/<경우>.json`, 일반 Git(텍스트, diff가 보인다). 비교하는 것만 담는다: 덤프한 프레임마다 counters와 살아 있는
+    파티클을 (emitter, seed)로 정렬한 목록(위치, 속도, 나이, 크기, 회전; float는 왕복이 정확한 9자리). 용량 전체의 버퍼(2,097,152 × 32
+    바이트)는 담지 않는다. 불변식은 실행할 때 검사하므로 저장하지 않는다. V9, V12는 counters만.
+  - 기준선을 두 번 만들어 자기와의 비교를 통과한 쪽을 커밋한다. 기준선을 다시 만드는 것은 의도적인 변경이고, 커밋 메시지에 까닭을 쓴다.
+- CI는 기준선 PNG를 받지 않는다: `build.yml`의 `git lfs pull`과 LFS 캐시 키(`.lfs-objects`)에서 `tools/shader_port/baseline/`을
+  뺀다(`--exclude`). CI는 브라우저 검사를 돌리지 않으므로 필요 없다.
+- 단계 6에서 `tools/shader_port/`(스크립트와 기준선)와 이 검증만을 위한 디버그 내보내기(`_sandbox_debug_fixed_dt`,
+  `_sandbox_debug_vfx_dump`)를 지운다. 기준선은 Git 기록에 남는다.
 
 #### 공통 검사 (모든 단계)
 
@@ -259,8 +267,8 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
 ### 단계
 
 0. **기준선** (셰이더 변경 없음): 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)와 `tools/shader_port/`의
-   스크립트를 더하고, 지금의 WGSL로 S1–S10, V1–V12를 두 번 돌려 자기와의 비교를 확인한다. 이 커밋이 이후 모든 비교의 기준이다
-   (결과 파일은 커밋하지 않는다).
+   스크립트를 더하고, 지금의 WGSL로 S1–S10, V1–V12를 두 번 돌려 자기와의 비교를 확인한 뒤 기준선(`tools/shader_port/baseline/`)을
+   커밋한다. `build.yml`의 LFS 제외도 여기서 한다. 이 커밋이 이후 모든 비교의 기준이다.
 1. **빌드 통합 + 가장 쉬운 것**: `cmake/slang.cmake`, `cmake/tint.cmake`, `cmake/embed_text.cmake`, CI 캐시, `shader_layout_test`의 틀,
    `imgui.slang`. 공통 검사 1–4 (S10 중심). 일부러 잘못 쓴 셰이더(깊이 텍스처를 `Texture2D<float>`로)가 Tint 단계에서 빌드를 멈추는지도 본다.
 2. **가장 어려운 것**: `vfx_common.slang`, `vfx_compute.slang`. V1–V12의 덤프와 불변식(화면은 단계 3). **여기서 계속할지 정한다.** Slang의 WGSL 출력으로 같은
