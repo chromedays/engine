@@ -213,7 +213,7 @@ internal void apply_field(Game* game, b32 restart_camera)
     set_plane(game, FIELD_GROUND, field_width * 0.5f, field_length * 0.5f, nv_vec3(field_width * 0.5f, 0.0f, field_length * 0.5f));
     set_plane(game, FIELD_PLAYER_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, zone_half));
     set_plane(game, FIELD_ENEMY_ZONE, field_width * 0.5f, zone_half, nv_vec3(field_width * 0.5f, 0.01f, field_length - zone_half));
-    game->hover_cell_x = game->hover_cell_row = -1;
+    game->hover_shown = false;
     nv_vfx_clear(&game->vfx);
     game->accumulator = 0.0f;
 }
@@ -225,6 +225,7 @@ void view_apply_project(Game* game)
         set_unit_mesh(game, i, &game->defs.units[i]);
     if (game->selected_def >= game->defs.unit_count)
         game->selected_def = 0;
+    game->role_filter = 0; // the bits are the new project's roles
 }
 
 void view_apply_rules(Game* game)
@@ -264,36 +265,52 @@ void view_build(Game* game)
     game->shell_mesh = nv_renderer_add_mesh(&game->renderer, &data);
 
     make_effects(game);
-    game->hover_cell_x = game->hover_cell_row = -1;
+    game->hover_shown = false;
 }
 
 // Input
 
-typedef struct PlayerCell {
+typedef struct ZonePoint {
     b32 ok;
-    s32 x, row;
-} PlayerCell;
+    f32 x, row; // in cells from the grid's origin
+} ZonePoint;
 
-// The ground cell a point of the viewport (CSS pixels) shows, if it is in the player's zone.
-internal PlayerCell player_cell_at(Game* game, f32 x, f32 y)
+// The ground point a point of the viewport (CSS pixels) shows, if it is in the player's zone.
+internal ZonePoint zone_point_at(Game* game, f32 x, f32 y)
 {
     NvTapRay tap = nv_renderer_tap_ray(game->scene, game->layout.scene, x, y, nv_window_pixel_ratio(&game->window));
     NvRay ray = tap.ray;
     if (!tap.ok || ray.direction.y >= -1e-4f)
-        return (PlayerCell){0};
+        return (ZonePoint){0};
     f32 distance = -ray.origin.y / ray.direction.y;
-    f32 ground_x = ray.origin.x + ray.direction.x * distance, ground_z = ray.origin.z + ray.direction.z * distance;
-    if (ground_x < 0.0f || ground_z < 0.0f)
-        return (PlayerCell){0};
     const BattleRules* rules = &game->defs.rules;
-    s32 cell_x = (s32)(ground_x / rules->cell_size), cell_row = (s32)(ground_z / rules->cell_size);
-    if (cell_x >= (s32)rules->grid_width || cell_row >= (s32)rules->zone_rows)
-        return (PlayerCell){0};
-    return (PlayerCell){.ok = true, .x = cell_x, .row = cell_row};
+    f32 cell_x = (ray.origin.x + ray.direction.x * distance) / rules->cell_size;
+    f32 cell_row = (ray.origin.z + ray.direction.z * distance) / rules->cell_size;
+    if (cell_x < 0.0f || cell_row < 0.0f || cell_x >= (f32)rules->grid_width || cell_row >= (f32)rules->zone_rows)
+        return (ZonePoint){0};
+    return (ZonePoint){.ok = true, .x = cell_x, .row = cell_row};
+}
+
+// A point on a placed squad takes it away. Anywhere else a squad of the chosen unit def goes where its footprint's middle is
+// nearest the point, moved in to fit the zone at its edges (one cell of a 1-cell footprint is the cell under the point).
+internal DeployTarget deploy_target(const Game* game, ZonePoint point)
+{
+    const Battle* battle = &game->battle;
+    const BattleRules* rules = &game->defs.rules;
+    BattleCell squad = battle_squad_at(battle, (s32)point.x, (s32)point.row);
+    if (squad.ok) {
+        u32 def = battle->placed[squad.row][squad.x] - 1u;
+        return (DeployTarget){.remove = true, .x = squad.x, .row = squad.row, .size = game->defs.units[def].footprint};
+    }
+    u32 size = game->defs.units[game->selected_def].footprint;
+    f32 half = (f32)size * 0.5f;
+    f32 x = nv_clamp_f32(floorf(point.x - half + 0.5f), 0.0f, (f32)rules->grid_width - (f32)size);
+    f32 row = nv_clamp_f32(floorf(point.row - half + 0.5f), 0.0f, (f32)rules->zone_rows - (f32)size);
+    return (DeployTarget){.x = (s32)x, .row = (s32)row, .size = size};
 }
 
 // A left drag or one finger moves the view over the ground; a right or middle drag or two fingers turn it; the wheel and
-// pinch zoom. A tap places the chosen unit in a cell of the player's zone, or removes the one standing there.
+// pinch zoom. A tap in the player's zone places a squad of the chosen unit there, or removes the squad standing there.
 void view_input(Game* game)
 {
     const NvViewInput* in = &game->imgui.view;
@@ -312,25 +329,31 @@ void view_input(Game* game)
     orbit->target.z = nv_clamp_f32(orbit->target.z, 0.0f, game->field_length);
     orbit->target.y = 0.0f;
 
-    // The cell under the mouse pointer (a touch screen has none).
-    game->hover_cell_x = game->hover_cell_row = -1;
-    if (game->imgui.ui_scale <= 1.0f && game->battle.phase == BATTLE_DEPLOY) {
+    // What a tap under the mouse pointer would do (a touch screen has none).
+    game->hover_shown = false;
+    if (game->imgui.ui_scale <= 1.0f && game->defs_ok && game->battle.phase == BATTLE_DEPLOY) {
         ImVec2_c mouse = igGetIO_Nil()->MousePos;
         const NvRect* v = &game->layout.viewport;
         if (mouse.x * ratio >= (f32)v->x && mouse.x * ratio < (f32)(v->x + v->width) && mouse.y * ratio >= (f32)v->y &&
             mouse.y * ratio < (f32)(v->y + v->height)) {
-            PlayerCell cell = player_cell_at(game, mouse.x, mouse.y);
-            if (cell.ok) {
-                game->hover_cell_x = cell.x;
-                game->hover_cell_row = cell.row;
+            ZonePoint point = zone_point_at(game, mouse.x, mouse.y);
+            if (point.ok) {
+                game->hover = deploy_target(game, point);
+                game->hover_shown = true;
+                game->hover_ok = game->hover.remove || battle_can_place(&game->battle, game->selected_def, game->hover.x, game->hover.row);
             }
         }
     }
 
     if (in->tapped && game->defs_ok && game->battle.phase == BATTLE_DEPLOY) {
-        PlayerCell cell = player_cell_at(game, in->tap_x, in->tap_y);
-        if (cell.ok && !battle_remove(&game->battle, cell.x, cell.row))
-            battle_place(&game->battle, game->selected_def, cell.x, cell.row);
+        ZonePoint point = zone_point_at(game, in->tap_x, in->tap_y);
+        if (point.ok) {
+            DeployTarget target = deploy_target(game, point);
+            if (target.remove)
+                battle_remove(&game->battle, target.x, target.row);
+            else
+                battle_place(&game->battle, game->selected_def, target.x, target.row);
+        }
     }
 }
 
@@ -430,6 +453,9 @@ void view_update(Game* game, f32 game_dt)
                                   lerp(unit->previous_position.z, unit->position.z, alpha));
         node->position = position;
         node->rotation = nv_quat_axis_angle(nv_vec3(0.0f, 1.0f, 0.0f), lerp_angle(unit->previous_yaw, unit->yaw, alpha));
+        // A flier's shadow-like line down to the ground, so its height reads.
+        if (alive && def->layer == UNIT_LAYER_AIR)
+            nv_renderer_debug_line(renderer, nv_vec3(position.x, 0.0f, position.z), position, nv_vec3(0.35f, 0.35f, 0.4f));
         if (!alive)
             continue;
         if (battle->phase != BATTLE_DEPLOY) {
@@ -463,17 +489,16 @@ void view_update(Game* game, f32 game_dt)
         const BattleRules* rules = &battle->defs->rules;
         draw_zone_grid(renderer, rules, 0, nv_vec3(0.25f, 0.42f, 0.75f));
         draw_zone_grid(renderer, rules, battle_enemy_first_row(rules), nv_vec3(0.6f, 0.25f, 0.2f));
-        if (game->hover_cell_x >= 0) {
-            b32 ok = battle_can_place(battle, game->selected_def, game->hover_cell_x, game->hover_cell_row) ||
-                     battle->placed[game->hover_cell_row][game->hover_cell_x]; // a placed unit can be taken away
-            NvVec3 color = ok ? nv_vec3(0.2f, 1.0f, 0.3f) : nv_vec3(1.0f, 0.2f, 0.2f);
-            u32 x = (u32)game->hover_cell_x, row = (u32)game->hover_cell_row;
+        if (game->hover_shown) {
+            // The footprint a tap would fill (or empty, on a placed squad): green when it can, red when it cannot.
+            NvVec3 color = game->hover_ok ? nv_vec3(0.2f, 1.0f, 0.3f) : nv_vec3(1.0f, 0.2f, 0.2f);
+            u32 x = (u32)game->hover.x, row = (u32)game->hover.row, size = game->hover.size;
             for (u32 inset = 0; inset < 2; ++inset) {
                 f32 pad = 0.05f + 0.08f * (f32)inset;
                 NvVec3 a = nv_vec3_add(cell_corner(rules, x, row, 0.05f), nv_vec3(pad, 0.0f, pad));
-                NvVec3 b = nv_vec3_add(cell_corner(rules, x + 1, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
-                NvVec3 c = nv_vec3_add(cell_corner(rules, x + 1, row + 1, 0.05f), nv_vec3(-pad, 0.0f, -pad));
-                NvVec3 d = nv_vec3_add(cell_corner(rules, x, row + 1, 0.05f), nv_vec3(pad, 0.0f, -pad));
+                NvVec3 b = nv_vec3_add(cell_corner(rules, x + size, row, 0.05f), nv_vec3(-pad, 0.0f, pad));
+                NvVec3 c = nv_vec3_add(cell_corner(rules, x + size, row + size, 0.05f), nv_vec3(-pad, 0.0f, -pad));
+                NvVec3 d = nv_vec3_add(cell_corner(rules, x, row + size, 0.05f), nv_vec3(pad, 0.0f, -pad));
                 nv_renderer_debug_line(renderer, a, b, color);
                 nv_renderer_debug_line(renderer, b, c, color);
                 nv_renderer_debug_line(renderer, c, d, color);
@@ -542,7 +567,7 @@ internal void rule_integers(Game* game, const char* key, const char* label, u32 
 // The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
 internal void rules_section(Game* game)
 {
-    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), 0))
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), ImGuiTreeNodeFlags_DefaultOpen))
         return;
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);
@@ -560,6 +585,27 @@ internal void rules_section(Game* game)
         igPushStyleColor_Vec4(ImGuiCol_Text, igGetStyle()->Colors[ImGuiCol_TextDisabled]);
         igTextWrapped("%s", T("Rules change only in deployment (Retry goes back to it)."));
         igPopStyleColor(1);
+    }
+}
+
+// Keeps the next button, labeled `label` (up to its "###"), on this line when it fits, so a row of them wraps at the panel's width.
+internal void same_line_if_fits(const char* label)
+{
+    f32 width = igCalcTextSize(label, NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
+    igSameLine(0.0f, -1.0f);
+    if (igGetContentRegionAvail().x < width)
+        igNewLine();
+}
+
+// The names of the roles in `mask`, joined with ", " into `out` ("" when there are none).
+internal void format_roles(const BattleDefs* defs, u32 mask, char* out, umm capacity)
+{
+    out[0] = 0;
+    for (u32 r = 0; r < defs->role_count; ++r) {
+        if (!((mask >> r) & 1u))
+            continue;
+        umm used = strlen(out);
+        snprintf(out + used, capacity - used, "%s%s", used ? ", " : "", defs->roles[r]);
     }
 }
 
@@ -619,11 +665,38 @@ void view_panel(Game* game)
         }
 
         igSeparator();
-        // The unit types: one button each, the chosen one lit.
+        // The role filter: a unit type shows when it has every role lit here. Only roles the file declares are offered.
+        if (battle->defs->role_count) {
+            igText("%s", T("Roles:"));
+            for (u32 r = 0; r < battle->defs->role_count; ++r) {
+                char label[BATTLE_NAME_SIZE + 8];
+                snprintf(label, sizeof(label), "%s###role%u", battle->defs->roles[r], r);
+                if (r)
+                    same_line_if_fits(label);
+                b32 lit = (game->role_filter >> r) & 1u;
+                if (lit)
+                    igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+                if (igButton(label, (ImVec2_c){0, 0}))
+                    game->role_filter ^= 1u << r;
+                if (lit)
+                    igPopStyleColor(1);
+            }
+        }
+        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)"). A unit type that
+        // lacks a lit role is left out; the chosen one stays chosen.
         igBeginDisabled(battle->phase != BATTLE_DEPLOY);
+        u32 shown = 0;
         for (u32 i = 0; i < battle->defs->unit_count; ++i) {
-            char label[BATTLE_NAME_SIZE + 24];
-            snprintf(label, sizeof(label), "%s (%u)###unit%u", battle->defs->units[i].name, battle->defs->units[i].cost, i);
+            if ((battle->defs->unit_roles[i] & game->role_filter) != game->role_filter)
+                continue;
+            const UnitDef* def = &battle->defs->units[i];
+            char label[BATTLE_NAME_SIZE + 32];
+            if (def->squad_size > 1)
+                snprintf(label, sizeof(label), "%s x%u (%u)###unit%u", def->name, def->squad_size, def->cost, i);
+            else
+                snprintf(label, sizeof(label), "%s (%u)###unit%u", def->name, def->cost, i);
+            if (shown++)
+                same_line_if_fits(label);
             b32 chosen = game->selected_def == i;
             if (chosen)
                 igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
@@ -631,10 +704,26 @@ void view_panel(Game* game)
                 game->selected_def = i;
             if (chosen)
                 igPopStyleColor(1);
-            igSameLine(0.0f, -1.0f);
         }
-        igNewLine();
+        game->unit_buttons_shown = shown;
         igEndDisabled();
+        if (battle->defs->role_count) {
+            char names[BATTLE_MAX_ROLES * (BATTLE_NAME_SIZE + 2)];
+            format_roles(battle->defs, battle->defs->unit_roles[game->selected_def], names, sizeof(names));
+            igText(T("Roles: %s"), names[0] ? names : T("none"));
+        }
+        // The chosen unit's layer, and the layers its weapon can hit.
+        {
+            const UnitDef* def = &battle->defs->units[game->selected_def];
+            char targets[32] = "";
+            if (def->weapon.targets & TARGET_GROUND)
+                snprintf(targets, sizeof(targets), "%s", T("Ground"));
+            if (def->weapon.targets & TARGET_AIR) {
+                umm used = strlen(targets);
+                snprintf(targets + used, sizeof(targets) - used, "%s%s", used ? ", " : "", T("Air"));
+            }
+            igText(T("Layer: %s, targets: %s"), def->layer == UNIT_LAYER_AIR ? T("Air") : T("Ground"), targets);
+        }
 
         b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
         igBeginDisabled(!can_start);
@@ -715,7 +804,7 @@ void view_panel(Game* game)
             igText(T("Value left: %.0f against %.0f"), battle_remaining_value(battle, TEAM_PLAYER), battle_remaining_value(battle, TEAM_ENEMY));
         }
         igSeparator();
-        igTextWrapped("%s", T("Tap a cell of your zone (blue) to place the chosen unit; tap a placed unit to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
+        igTextWrapped("%s", T("Tap your zone (blue) to place a squad of the chosen unit; tap a placed squad to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom."));
     }
     igEnd();
 }

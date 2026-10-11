@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define MAX_LOGGED_ERRORS 20
-#define MAX_TOKENS        8
+#define MAX_TOKENS        (1 + BATTLE_MAX_ROLES) // a line's words: its key, and up to a role for each declared role
 #define NO_LIMIT          1e30
 
 typedef struct Token {
@@ -217,13 +217,17 @@ typedef struct Field {
 #define UNIT_FIELD(key, kind, member, min, min_open, required) \
     {key, kind, offsetof(UnitDef, member), min, NO_LIMIT, min_open, false, required}
 
+// A unit's `squad` and `footprint` default to 1 (read_unit_header).
 global const Field unit_fields[] = {
     {"cost", FIELD_INTEGER, offsetof(UnitDef, cost), 1, 10000, false, false, true},
+    {"squad", FIELD_INTEGER, offsetof(UnitDef, squad_size), 1, BATTLE_MAX_SQUAD_SIZE, false, false, false},
+    {"footprint", FIELD_INTEGER, offsetof(UnitDef, footprint), 1, BATTLE_MAX_FOOTPRINT, false, false, false},
     UNIT_FIELD("health", FIELD_NUMBER, health, 0, true, true),
     UNIT_FIELD("armor", FIELD_NUMBER, armor, 0, false, false),
     UNIT_FIELD("speed", FIELD_NUMBER, speed, 0, false, true),
     UNIT_FIELD("radius", FIELD_NUMBER, radius, 0, true, true),
     UNIT_FIELD("height", FIELD_NUMBER, height, 0, true, true),
+    UNIT_FIELD("altitude", FIELD_NUMBER, altitude, 0, true, false),
 };
 
 global const Field weapon_fields[] = {
@@ -398,9 +402,10 @@ internal LineText next_line(Lines* lines)
 
 // The project file
 
-typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
+typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_ROLES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
-enum { SEEN_WEAPON = 1 << 8, SEEN_ABILITY = 1 << 9 }; // beyond the unit's own fields in Block.seen
+enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17, SEEN_ROLES = 1 << 18, SEEN_LAYER = 1 << 19, SEEN_TARGETS = 1 << 20 };
+// beyond the unit's own fields in Block.seen (a weapon block's `targets` is SEEN_TARGETS)
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
 typedef struct Block {
@@ -412,7 +417,7 @@ typedef struct Block {
 } Block;
 
 // The last top-level statement that was in its place; they come in this order (docs/specs/abproj.md, "Syntax").
-typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_UNIT, TOP_STAGE } Top;
+typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_ROLES, TOP_UNIT, TOP_STAGE } Top;
 
 typedef struct ProjectReader {
     Reader base;
@@ -425,11 +430,18 @@ typedef struct ProjectReader {
     UnitDef unit;   // the unit being read
     b32 unit_named; // its name is a good one, so what it lacks can be reported by name
     b32 unit_kept;  // there was room for it
+    u32 footprint_line; // of the unit being read; 0 when it has none
+    u32 squad_line;     // the same for its `squad`
+    u32 unit_errors_start;
+    u32 unit_roles;     // the roles of the unit being read, as a mask over BattleDefs.roles
+    u32 altitude_line;  // the unit being read: its `altitude` line when that value is good; 0 when none
+    b32 altitude_seen;  // the unit being read has an `altitude` line, good or not
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
     u32 stage_errors_start, places_seen; // `place` lines, also those that could not be judged against a wrong grid
-    u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells with a unit, by row in the zone
+    u32 enemy_units;                     // the units the enemy's places make
+    u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells under a squad, by row in the zone
     u32 place_lines[BATTLE_MAX_PLACES];                   // the line of each enemy place
 } ProjectReader;
 
@@ -451,9 +463,30 @@ internal void close_block(ProjectReader* reader)
             check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
             if (!(block->seen & SEEN_WEAPON))
                 report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
+            if (reader->unit.layer == UNIT_LAYER_AIR && !reader->altitude_seen)
+                report(base, block->header_line, "unit '%s' flies (layer air) and needs 'altitude'", reader->unit.name);
+            if (reader->unit.layer == UNIT_LAYER_GROUND && reader->altitude_line)
+                report(base, reader->altitude_line, "'altitude' is only for air units");
         }
-        if (reader->unit_kept)
+        // A squad must fit in a zone, and its units must not stand on each other (judged only against rules that were read right,
+        // and for a unit read without an error, so one mistake is one error).
+        if (reader->rules_ok && reader->footprint_line) {
+            const BattleRules* rules = &defs->rules;
+            u32 most = rules->zone_rows < rules->grid_width ? rules->zone_rows : rules->grid_width;
+            if (reader->unit.footprint > most)
+                report(base, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
+        }
+        if (reader->rules_ok && reader->squad_line && base->errors == reader->unit_errors_start) {
+            const UnitDef* unit = &reader->unit;
+            f32 apart = (f32)unit->footprint * defs->rules.cell_size / (f32)battle_squad_columns(unit->squad_size);
+            if (unit->squad_size > 1 && apart < 2.0f * unit->radius)
+                report(base, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
+                       unit->footprint, unit->footprint, apart, 2.0f * unit->radius);
+        }
+        if (reader->unit_kept) {
+            defs->unit_roles[defs->unit_count] = reader->unit_roles;
             defs->units[defs->unit_count++] = reader->unit;
+        }
         break;
     case BLOCK_WEAPON:
         check_required(base, weapon_fields, FIELD_COUNT(weapon_fields), block->seen, block->header_line, "weapon", reader->unit.weapon.name);
@@ -478,6 +511,7 @@ internal void close_block(ProjectReader* reader)
         }
         break;
     case BLOCK_ROOT:
+    case BLOCK_ROLES:
     case BLOCK_SKIP:
         break;
     }
@@ -519,9 +553,15 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    reader->unit = (UnitDef){0};
+    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1, .weapon = {.targets = TARGET_GROUND}}; // without `squad` and `footprint`, a unit is a squad of one
     reader->unit_named = false;
     reader->unit_kept = false;
+    reader->footprint_line = 0;
+    reader->unit_roles = 0;
+    reader->altitude_line = 0;
+    reader->altitude_seen = false;
+    reader->squad_line = 0;
+    reader->unit_errors_start = base->errors;
     open_block(reader, BLOCK_UNIT, line);
     if (line->token_count != 2) {
         report(base, line->number, "'unit' takes a name");
@@ -570,8 +610,18 @@ internal void read_top_line(ProjectReader* reader, const Line* line)
             report(base, line->number, "'rules' is given twice");
             open_block(reader, BLOCK_SKIP, line);
         }
+    } else if (token_is(key, "roles")) {
+        if (reader->last == TOP_RULES) {
+            if (line->token_count != 1)
+                report(base, line->number, "'roles' takes no value");
+            reader->last = TOP_ROLES;
+            open_block(reader, BLOCK_ROLES, line);
+        } else {
+            report(base, line->number, reader->last == TOP_ROLES ? "'roles' is given twice" : "'roles' must come after 'rules' and before the units");
+            open_block(reader, BLOCK_SKIP, line);
+        }
     } else if (token_is(key, "unit")) {
-        if (reader->last == TOP_RULES || reader->last == TOP_UNIT) {
+        if (reader->last == TOP_RULES || reader->last == TOP_ROLES || reader->last == TOP_UNIT) {
             reader->last = TOP_UNIT;
             read_unit_header(reader, line);
         } else {
@@ -599,6 +649,76 @@ internal void read_top_line(ProjectReader* reader, const Line* line)
 }
 
 // Lines inside blocks
+
+// Reads the words of `line` from `first` on as names from a fixed list (`count` names, `stride` bytes apart) into `mask`: bit i is
+// name i. An unknown name (`hint` says what the names are) and a name given twice are reported; `mask` is then left as it was.
+internal b32 read_name_mask(Reader* reader, const Line* line, u32 first, const char* names, u32 count, u32 stride, const char* what,
+                            const char* hint, u32* mask)
+{
+    u32 bits = 0;
+    for (u32 t = first; t < line->token_count; ++t) {
+        Token word = line->tokens[t];
+        u32 i = 0;
+        while (i < count && !token_is(word, names + i * stride))
+            ++i;
+        if (i == count) {
+            report(reader, line->number, "unknown %s '%.*s' (%s)", what, shown(word), word.text, hint);
+            return false;
+        }
+        if (bits & (1u << i)) {
+            report(reader, line->number, "%s '%.*s' is given twice", what, shown(word), word.text);
+            return false;
+        }
+        bits |= 1u << i;
+    }
+    *mask = bits;
+    return true;
+}
+
+// A weapon's `targets` line: the layers it can hit, as words (`ground`, `air`, or both). Given once, with at least one.
+global const char layer_names[2][8] = {"ground", "air"}; // by layer: bit i of a target mask is layer i
+internal void read_targets(ProjectReader* reader, const Line* line, Block* block)
+{
+    Reader* base = &reader->base;
+    b32 repeated = (block->seen & SEEN_TARGETS) != 0;
+    block->seen |= SEEN_TARGETS;
+    if (repeated) {
+        report(base, line->number, "'targets' is given twice in this weapon");
+        return;
+    }
+    if (line->token_count < 2) {
+        report(base, line->number, "'targets' takes ground, air or both");
+        return;
+    }
+    u32 mask = 0;
+    if (read_name_mask(base, line, 1, (const char*)layer_names, 2, 8, "target", "ground or air", &mask))
+        reader->unit.weapon.targets = mask;
+}
+
+// A line of the `roles` block: one role's name, declared once.
+internal void read_role(ProjectReader* reader, const Line* line)
+{
+    Reader* base = &reader->base;
+    BattleDefs* defs = base->defs;
+    if (line->token_count != 1) {
+        report(base, line->number, "a role line takes one name");
+        return;
+    }
+    char role[BATTLE_NAME_SIZE];
+    if (!parse_name(base, line->number, line->tokens[0], role))
+        return;
+    for (u32 i = 0; i < defs->role_count; ++i) {
+        if (strcmp(defs->roles[i], role) == 0) {
+            report(base, line->number, "role '%s' is declared twice", role);
+            return;
+        }
+    }
+    if (defs->role_count == BATTLE_MAX_ROLES) {
+        report(base, line->number, "too many roles (at most %d)", BATTLE_MAX_ROLES);
+        return;
+    }
+    memcpy(defs->roles[defs->role_count++], role, BATTLE_NAME_SIZE);
+}
 
 internal void read_unit_line(ProjectReader* reader, const Line* line, Block* block)
 {
@@ -628,11 +748,53 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
         }
         return;
     }
+    if (token_is(key, "layer")) {
+        b32 repeated = (block->seen & SEEN_LAYER) != 0;
+        block->seen |= SEEN_LAYER;
+        if (repeated)
+            report(base, line->number, "'layer' is given twice in this block");
+        else if (line->token_count != 2)
+            report(base, line->number, "'layer' takes ground or air");
+        else if (token_is(line->tokens[1], "ground"))
+            reader->unit.layer = UNIT_LAYER_GROUND;
+        else if (token_is(line->tokens[1], "air"))
+            reader->unit.layer = UNIT_LAYER_AIR;
+        else
+            report(base, line->number, "unknown layer '%.*s' (ground or air)", shown(line->tokens[1]), line->tokens[1].text);
+        return;
+    }
+    if (token_is(key, "roles")) {
+        b32 repeated = (block->seen & SEEN_ROLES) != 0;
+        block->seen |= SEEN_ROLES;
+        if (repeated) {
+            report(base, line->number, "'roles' is given twice in this block");
+        } else if (line->token_count < 2) {
+            report(base, line->number, "'roles' takes at least one role");
+        } else {
+            u32 mask = 0;
+            BattleDefs* defs = base->defs;
+            if (read_name_mask(base, line, 1, (const char*)defs->roles, defs->role_count, BATTLE_NAME_SIZE, "role",
+                               "declare it under 'roles'", &mask))
+                reader->unit_roles = mask;
+        }
+        return;
+    }
     const Field* field = find_field(unit_fields, FIELD_COUNT(unit_fields), key);
-    if (!field)
+    if (!field) {
         report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
-    else
-        read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
+        return;
+    }
+    u32 errors = base->errors;
+    read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
+    if (token_is(key, "footprint") && base->errors == errors)
+        reader->footprint_line = line->number;
+    if (token_is(key, "altitude")) {
+        reader->altitude_seen = true;
+        if (base->errors == errors)
+            reader->altitude_line = line->number;
+    }
+    if (token_is(key, "squad") && base->errors == errors)
+        reader->squad_line = line->number;
 }
 
 typedef struct UnitIndex {
@@ -673,24 +835,42 @@ internal void read_place(ProjectReader* reader, const Line* line)
         return;
     if (!reader->rules_ok)
         return; // the grid is not known, so a cell cannot be judged (and no cell is reported against a wrong grid)
+    // The cell is the corner of the squad's footprint nearest the grid's origin; the whole footprint is in the enemy zone (a
+    // footprint larger than the zone was reported with its unit). An unknown unit's cell is judged as a single cell.
+    u32 footprint = unit.ok ? defs->units[unit.index].footprint : 1;
+    if (footprint > rules->zone_rows || footprint > rules->grid_width)
+        return;
     f64 x = x_number.value, row = row_number.value;
     u32 first_row = battle_enemy_first_row(rules);
-    if (x < 0 || x >= rules->grid_width) {
-        report(base, line->number, "cell x must be 0 to %u", rules->grid_width - 1);
+    u32 last_x = rules->grid_width - footprint, last_row = rules->grid_length - footprint;
+    if (x < 0 || x > last_x) {
+        report(base, line->number, "cell x must be 0 to %u", last_x);
         ok = false;
     }
-    if (row < first_row || row >= rules->grid_length) {
-        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, rules->grid_length - 1);
+    if (row < first_row || row > last_row) {
+        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, last_row);
         ok = false;
     }
     if (!ok)
         return;
+    const UnitDef* def = &defs->units[unit.index];
     u32 cell_x = (u32)x, cell_row = (u32)row - first_row;
-    if (reader->taken[cell_row][cell_x]) {
-        report(base, line->number, "cell (%u, %u) already has a unit", cell_x, (u32)row);
+    for (u32 r = cell_row; r < cell_row + footprint; ++r) {
+        for (u32 c = cell_x; c < cell_x + footprint; ++c) {
+            if (reader->taken[r][c]) {
+                report(base, line->number, "cell (%u, %u) already has a unit", c, r + first_row);
+                return;
+            }
+        }
+    }
+    if (reader->enemy_units + def->squad_size > BATTLE_MAX_TEAM_UNITS) {
+        report(base, line->number, "the enemy has more than %d units", BATTLE_MAX_TEAM_UNITS);
         return;
     }
-    reader->taken[cell_row][cell_x] = 1;
+    for (u32 r = cell_row; r < cell_row + footprint; ++r)
+        for (u32 c = cell_x; c < cell_x + footprint; ++c)
+            reader->taken[r][c] = 1;
+    reader->enemy_units += def->squad_size;
     reader->place_lines[defs->enemy_count] = line->number;
     defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
 }
@@ -714,6 +894,9 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     switch (block->kind) {
     case BLOCK_ROOT:
         read_top_line(reader, line);
+        break;
+    case BLOCK_ROLES:
+        read_role(reader, line);
         break;
     case BLOCK_UNIT:
         read_unit_line(reader, line, block);
@@ -741,6 +924,10 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     } break;
     case BLOCK_WEAPON:
     case BLOCK_SHIELD: {
+        if (block->kind == BLOCK_WEAPON && token_is(key, "targets")) {
+            read_targets(reader, line, block);
+            break;
+        }
         const Field* fields = block->kind == BLOCK_WEAPON ? weapon_fields : shield_fields;
         u32 count = block->kind == BLOCK_WEAPON ? FIELD_COUNT(weapon_fields) : FIELD_COUNT(shield_fields);
         void* data = block->kind == BLOCK_WEAPON ? (void*)&reader->unit.weapon : (void*)&reader->unit.ability;

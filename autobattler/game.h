@@ -50,6 +50,13 @@ typedef struct Layout {
     NvSceneOutput scene;
 } Layout;
 
+// What a tap in the player's zone does there: take away the squad on that cell, or place one of the chosen unit def.
+typedef struct DeployTarget {
+    b32 remove;
+    s32 x, row; // the corner of the footprint nearest the grid's origin
+    u32 size;   // the footprint's side, in cells
+} DeployTarget;
+
 typedef struct Effects {
     NvVfxEffectId explosion, shield_hit, muzzle;
     NvVfxLineStyle trail;
@@ -106,7 +113,12 @@ typedef struct Game {
     NvNodeId shell_nodes[BATTLE_MAX_PROJECTILES]; // by index in Battle.projectiles
     u32 shell_nodes_made;
     u32 selected_def; // the unit type the next tap places
-    s32 hover_cell_x, hover_cell_row; // under the mouse pointer, in the player's zone; -1 = none
+    // What a tap under the mouse pointer would do (a touch screen has no pointer), and whether it can.
+    DeployTarget hover;
+    b32 hover_shown, hover_ok;
+    // The role filter (the Battle panel's toggles): a unit type shows when it has every role lit here. Not saved; a new project clears it.
+    u32 role_filter;
+    u32 unit_buttons_shown; // how many unit buttons the panel drew last frame (debug)
 } Game;
 
 // main.c

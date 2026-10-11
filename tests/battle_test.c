@@ -290,6 +290,7 @@ internal void test_project_file(void)
     const UnitDef* crawler = &defs.units[0];
     CHECK(strcmp(crawler->name, "Crawler") == 0);
     CHECK(crawler->cost == 100 && crawler->health == 120.0f && crawler->armor == 5.0f && crawler->speed == 5.0f);
+    CHECK(crawler->squad_size == 1 && crawler->footprint == 1); // without `squad` and `footprint`: a squad of one on one cell
     CHECK(crawler->radius == 0.5f && crawler->height == 0.8f);
     CHECK(strcmp(crawler->weapon.name, "Lobber") == 0);
     CHECK(crawler->weapon.range == 20.0f && crawler->weapon.damage == 30.0f && crawler->weapon.cooldown == 1.5f);
@@ -699,6 +700,8 @@ internal void scene_defs(void)
         UnitDef* def = &defs.units[i];
         snprintf(def->name, sizeof(def->name), "%s", names[i]);
         def->cost = 100;
+        def->squad_size = 1;
+        def->footprint = 1;
         def->health = 100.0f;
         def->radius = 0.5f;
         def->height = 0.8f;
@@ -708,7 +711,19 @@ internal void scene_defs(void)
         def->weapon.cooldown = 1.5f;
         def->weapon.launch_angle = NV_PI / 4.0f;
         def->weapon.muzzle = nv_vec3(0.0f, 0.6f, 0.3f);
+        def->weapon.targets = TARGET_GROUND;
     }
+}
+
+// Unit 2 is a Wasp: a Dummy that flies, at 10 m, with a body 0.6 m high.
+internal void scene_air_unit(void)
+{
+    defs.units[2] = defs.units[1];
+    snprintf(defs.units[2].name, sizeof(defs.units[2].name), "Wasp");
+    defs.units[2].layer = UNIT_LAYER_AIR;
+    defs.units[2].altitude = 10.0f;
+    defs.units[2].height = 0.6f;
+    defs.unit_count = 3;
 }
 
 internal void give_shield(u32 def, f32 capacity)
@@ -757,7 +772,8 @@ internal void inject_shell(u32 team, NvVec3 position, NvVec3 velocity, f32 damag
 {
     NV_ASSERT(battle.projectile_count < BATTLE_MAX_PROJECTILES);
     battle.projectiles[battle.projectile_count++] = (Projectile){.team = (u8)team, .shooter = {1}, .position = position,
-                                                                 .previous_position = position, .velocity = velocity, .damage = damage};
+                                                                 .previous_position = position, .velocity = velocity, .damage = damage,
+                                                                 .targets = TARGET_GROUND | TARGET_AIR};
 }
 
 // A fast player shell that crosses `x`, `z` from 4.5 m before it, level at `y`, in two ticks (3 m per tick).
@@ -1393,6 +1409,239 @@ internal void test_rules_in_use(void)
     }
 }
 
+// Squads (docs/specs/battle.md, "Squads"; abproj.md, "unit <name>"): the project file's `squad` and `footprint`, a squad placed
+// on its footprint, where its units stand, the limits, and a round of squads.
+
+// A project with squads: `units` as given, then a stage of `stage`'s lines (indented here). The units start on line 11.
+internal b32 read_squad_project(const char* units, const char* stage)
+{
+    project_text[0] = 0;
+    append_indented("abproj_version 1\n", 0);
+    append_indented(strstr(good_header, "rules"), 0);
+    append_indented(units, 0);
+    append_indented("stage\n", 0);
+    append_indented(stage, 4);
+    return read_project(project_text);
+}
+
+// `text` with its first `from` replaced by `to`.
+internal const char* replaced(const char* text, const char* from, const char* to)
+{
+    static char out[8192];
+    const char* at = strstr(text, from);
+    NV_ASSERT(at && strlen(text) - strlen(from) + strlen(to) < sizeof(out));
+    snprintf(out, sizeof(out), "%.*s%s%s", (int)(at - text), text, to, at + strlen(from));
+    return out;
+}
+
+global const char squad_unit[] =
+    "unit Crawler\n"           // 11
+    "    cost 100\n"           // 12
+    "    squad 4\n"            // 13
+    "    footprint 2\n"        // 14
+    "    health 120\n"         // 15
+    "    speed 5\n"            // 16
+    "    radius 0.5\n"         // 17
+    "    height 0.8\n"         // 18
+    "    weapon Lobber\n"      // 19
+    "        range 20\n"       // 20
+    "        damage 30\n"      // 21
+    "        cooldown 1.5\n"   // 22
+    "        launch_angle 45\n"; // 23; the stage is 24, its first line 25
+#define SQUAD_STAGE "supply 1000\nplace Crawler 12 36\n"
+
+internal b32 first_error_at(u32 line, const char* message)
+{
+    char prefix[48];
+    snprintf(prefix, sizeof(prefix), "%s:%u:", FILE_NAME, line);
+    b32 ok = strncmp(defs.first_error, prefix, strlen(prefix)) == 0 && first_error_has(message);
+    if (!ok)
+        printf("wanted \"%s ... %s\", got \"%s\" (%u error(s))\n", prefix, message, defs.first_error, defs.error_count);
+    return ok;
+}
+
+internal void test_squad_file(void)
+{
+    // Read, and a unit without them is a squad of one on one cell.
+    CHECK(read_squad_project(squad_unit, SQUAD_STAGE));
+    CHECK(defs.units[0].squad_size == 4 && defs.units[0].footprint == 2 && defs.units[0].cost == 100);
+    CHECK(read_squad_project(good_units, SQUAD_STAGE));
+    CHECK(defs.units[0].squad_size == 1 && defs.units[0].footprint == 1);
+    CHECK(read_units(squad_unit, "Crawler"));
+
+    // A squad's units must not stand on each other: side by side in a row they are footprint * cell_size / columns apart, and
+    // that is at least their width (2 * radius). Touching is fine: 16 on 2 x 2 cells of 2 m are 1 m apart, as wide as they are.
+    char overlap[4096];
+    CHECK(read_squad_project(replaced(squad_unit, "squad 4", "squad 16"), SQUAD_STAGE));
+    snprintf(overlap, sizeof(overlap), "%s", replaced(squad_unit, "squad 4", "squad 16"));
+    CHECK(!read_squad_project(replaced(overlap, "footprint 2", "footprint 1"), SQUAD_STAGE) && defs.error_count == 1);
+    CHECK(first_error_at(13, "16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)"));
+    CHECK(!read_squad_project(replaced(overlap, "radius 0.5", "radius 0.6"), SQUAD_STAGE) && defs.error_count == 1);
+    CHECK(first_error_at(13, "stand 1 m apart, under their width (1.2 m)"));
+    char pair[4096];
+    snprintf(pair, sizeof(pair), "%s", replaced(squad_unit, "squad 4", "squad 2"));
+    CHECK(read_squad_project(replaced(pair, "footprint 2", "footprint 1"), SQUAD_STAGE)); // 2 on one cell: 1 m apart
+    // A unit with another error is not judged on top of it.
+    snprintf(overlap, sizeof(overlap), "%s", replaced(overlap, "footprint 2", "footprint 1"));
+    CHECK(!read_squad_project(replaced(overlap, "health 120", "health 0"), SQUAD_STAGE) && defs.error_count == 1 && first_error_at(15, "'health'"));
+    // The rules editor cannot shrink the cells under a squad either: 4 on 2 x 2 cells of 0.4 m stand 0.4 m apart.
+    CHECK(read_squad_project(squad_unit, SQUAD_STAGE));
+    {
+        char edited[8192];
+        f64 small = 0.4;
+        umm size = defs_rule_set(project_text, strlen(project_text), "cell_size", &small, 1, edited, sizeof(edited) - 1);
+        edited[size] = 0;
+        CHECK(size && !read_project(edited) && defs.error_count == 1 && first_error_has("stand 0.4 m apart, under their width (1 m)"));
+    }
+
+    // Their ranges.
+    const struct { const char* from; const char* to; u32 line; const char* message; } bad[] = {
+        {"squad 4", "squad 0", 13, "'squad' must be >= 1 and <= 64"},
+        {"squad 4", "squad 65", 13, "<= 64"},
+        {"squad 4", "squad 1.5", 13, "not an integer"},
+        {"squad 4", "squad 4\n    squad 4", 14, "'squad' is given twice"},
+        {"footprint 2", "footprint 0", 14, "'footprint' must be >= 1 and <= 4"},
+        {"footprint 2", "footprint 5", 14, "<= 4"},
+    };
+    for (u32 i = 0; i < NV_ARRAY_COUNT(bad); ++i) {
+        CHECK(!read_squad_project(replaced(squad_unit, bad[i].from, bad[i].to), SQUAD_STAGE) && defs.error_count == 1);
+        CHECK(first_error_at(bad[i].line, bad[i].message));
+    }
+    // A footprint must fit in a zone: 4 cells is too many for zones of 3 rows (its places are then not judged).
+    char text[4096];
+    snprintf(text, sizeof(text), "%s", replaced(squad_unit, "footprint 2", "footprint 4"));
+    CHECK(read_squad_project(text, SQUAD_STAGE)); // 4 fits zones of 14 rows
+    snprintf(text, sizeof(text), "%s", replaced(project_text, "zone_rows 14", "zone_rows 3"));
+    CHECK(!read_project(text) && defs.error_count == 1 && first_error_at(14, "'footprint' must be at most 3"));
+    // The rules editor cannot shrink the zone under a footprint either: the edited text does not read.
+    CHECK(read_squad_project(squad_unit, SQUAD_STAGE));
+    char edited[8192];
+    f64 one = 1;
+    umm size = defs_rule_set(project_text, strlen(project_text), "zone_rows", &one, 1, edited, sizeof(edited) - 1);
+    edited[size] = 0;
+    CHECK(size && !read_project(edited) && defs.error_count == 1 && first_error_has("'footprint' must be at most 1"));
+
+    // The stage: a place is the footprint's corner nearest the origin, and the whole footprint is in the enemy zone, free.
+    CHECK(read_squad_project(squad_unit, "supply 1000\nplace Crawler 30 34\nplace Crawler 0 46\nplace Crawler 12 36\nplace Crawler 14 36\n"));
+    CHECK(defs.enemy_count == 4 && defs.enemy[1].cell_x == 0 && defs.enemy[1].cell_row == 46);
+    CHECK(!read_squad_project(squad_unit, "supply 1000\nplace Crawler 31 36\n") && first_error_at(26, "cell x must be 0 to 30"));
+    CHECK(!read_squad_project(squad_unit, "supply 1000\nplace Crawler 12 47\n") && first_error_at(26, "cell row must be 34 to 46"));
+    CHECK(!read_squad_project(squad_unit, "supply 1000\nplace Crawler 12 36\nplace Crawler 13 37\n") && defs.error_count == 1 &&
+          first_error_at(27, "cell (13, 37) already has a unit"));
+    // An unknown unit's cell is judged as one cell.
+    CHECK(!read_squad_project(squad_unit, "supply 1000\nplace Nobody 31 47\n") && defs.error_count == 1);
+    // The supply buys squads.
+    CHECK(!read_squad_project(squad_unit, "supply 150\nplace Crawler 12 36\nplace Crawler 14 36\n") && first_error_at(27, "over the supply"));
+    // At most BATTLE_MAX_TEAM_UNITS enemy units: 32 squads of 64 are 2048, a 33rd is one too many.
+    snprintf(text, sizeof(text), "%s", replaced(squad_unit, "squad 4", "squad 64"));
+    snprintf(text, sizeof(text), "%s", replaced(text, "footprint 2", "footprint 1"));
+    snprintf(text, sizeof(text), "%s", replaced(text, "radius 0.5", "radius 0.1")); // 64 on one cell stand 0.25 m apart
+    char places[2048] = "supply 100000\n";
+    for (u32 i = 0; i < 33; ++i) {
+        char place[48];
+        snprintf(place, sizeof(place), "place Crawler %u %u\n", i % 32, 34 + i / 32);
+        strcat(places, place);
+    }
+    CHECK(!read_squad_project(text, places) && defs.error_count == 1 && first_error_at(25 + 33, "the enemy has more than 2048 units"));
+}
+
+internal void test_squad_deployment(void)
+{
+    // 0 "Shooter": squads of 4 on 2 x 2 cells; 1 "Dummy": squads of 3 on one cell. The enemy has one squad of Dummies.
+    scene_defs();
+    defs.units[0].squad_size = 4;
+    defs.units[0].footprint = 2;
+    defs.units[1].squad_size = 3;
+    defs.enemy_count = 1;
+    defs.enemy[0] = (StagePlace){1, 5, 40};
+    battle_init(&battle, &defs);
+    CHECK(battle.unit_count == 3 && battle.player_units == 0);
+
+    // The units of a squad of 4 on 2 x 2 cells of 2 m stand on the middles of the four cells, row by row.
+    CHECK(battle_place(&battle, 0, 0, 0) && battle.unit_count == 7 && battle.player_units == 4);
+    const f32 four[4][2] = {{1.0f, 1.0f}, {3.0f, 1.0f}, {1.0f, 3.0f}, {3.0f, 3.0f}};
+    for (u32 i = 0; i < 4; ++i)
+        CHECK(battle.units[1 + i].team == TEAM_PLAYER && battle.units[1 + i].position.x == four[i][0] && battle.units[1 + i].position.z == four[i][1]);
+    // A squad need not have as many units as cells: 6 on 2 x 2 cells stand in 3 columns of 4/3 m and 2 rows of 2 m.
+    defs.units[0].squad_size = 6;
+    battle_init(&battle, &defs);
+    CHECK(battle_place(&battle, 0, 0, 0) && battle.player_units == 6);
+    const f32 six[6][2] = {{2.0f / 3.0f, 1.0f}, {2.0f, 1.0f}, {10.0f / 3.0f, 1.0f}, {2.0f / 3.0f, 3.0f}, {2.0f, 3.0f}, {10.0f / 3.0f, 3.0f}};
+    for (u32 i = 0; i < 6; ++i)
+        CHECK(near_value(battle.units[1 + i].position.x, six[i][0], 1e-5f) && near_value(battle.units[1 + i].position.z, six[i][1], 1e-5f));
+    defs.units[0].squad_size = 4;
+    battle_init(&battle, &defs);
+    CHECK(battle_place(&battle, 0, 0, 0));
+    // A squad of 3 on one cell: two in the first row and one centered in the second.
+    const f32 three[3][2] = {{10.5f, 80.5f}, {11.5f, 80.5f}, {11.0f, 81.5f}};
+    for (u32 i = 0; i < 3; ++i)
+        CHECK(battle.units[5 + i].team == TEAM_ENEMY && battle.units[5 + i].position.x == three[i][0] && battle.units[5 + i].position.z == three[i][1]);
+
+    // A footprint must be free and inside the zone; any of its cells finds the squad.
+    CHECK(!battle_can_place(&battle, 0, 1, 1) && !battle_place(&battle, 1, 1, 1)); // on the first squad
+    CHECK(battle_place(&battle, 0, 2, 0));                                          // beside it
+    CHECK(!battle_place(&battle, 0, 31, 0) && !battle_place(&battle, 0, 0, 13));   // over the zone's edge
+    CHECK(battle_place(&battle, 0, 30, 12));                                        // the last corner that fits
+    BattleCell at = battle_squad_at(&battle, 31, 13);
+    CHECK(at.ok && at.x == 30 && at.row == 12);
+    CHECK(!battle_squad_at(&battle, 4, 0).ok && !battle_squad_at(&battle, -1, 0).ok && !battle_squad_at(&battle, 0, 14).ok);
+    CHECK(battle_supply_left(&battle) == 700 && battle.player_units == 12);
+    // Removing by any cell of its footprint gives the whole squad's supply back.
+    CHECK(battle_remove(&battle, 3, 1) && battle_supply_left(&battle) == 800 && battle.player_units == 8 && battle.unit_count == 11);
+    CHECK(!battle_remove(&battle, 3, 1));
+    CHECK(battle.units[5].position.x == 61.0f && battle.units[5].position.z == 25.0f); // the squad at (30, 12) is next in row order
+
+    // The remaining value: a unit is worth its squad's cost over the squad's size.
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_PLAYER), 200.0f, 1e-3f));
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_ENEMY), 100.0f, 1e-3f));
+    battle.units[1].health = 50.0f;
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_PLAYER), 187.5f, 1e-3f));
+
+    // Each unit of a squad fights on its own: it picks the enemy nearest to it.
+    CHECK(battle_start(&battle));
+    run(1);
+    CHECK(battle.units[1].target.index == 9 && battle.units[2].target.index == 9 && battle.units[5].target.index == 10);
+
+    // At most BATTLE_MAX_TEAM_UNITS on a side: 32 squads of 64 fill it.
+    scene_defs();
+    defs.units[0].squad_size = 64;
+    defs.units[0].cost = 1;
+    defs.units[1].cost = 1;
+    battle_init(&battle, &defs);
+    for (s32 x = 0; x < 32; ++x)
+        CHECK(battle_place(&battle, 0, x, 0));
+    CHECK(battle.player_units == BATTLE_MAX_TEAM_UNITS && battle.unit_count == BATTLE_MAX_TEAM_UNITS);
+    CHECK(!battle_place(&battle, 0, 0, 1) && !battle_place(&battle, 1, 0, 1));
+}
+
+// A round of squads plays to its end, the same every time.
+internal void test_squad_round(void)
+{
+    char units[1024];
+    snprintf(units, sizeof(units), "%s    armor 5\n    ability shield\n        radius 1.2\n        capacity 60\n        regen 10\n        regen_delay 3\n",
+             squad_unit);
+    CHECK(read_squad_project(units, "supply 1000\nseed 1\nplace Crawler 12 36\nplace Crawler 14 36\nplace Crawler 16 36\nplace Crawler 18 36\n"
+                                "place Crawler 13 38\nplace Crawler 15 38\nplace Crawler 17 38\nplace Crawler 14 40\nplace Crawler 16 40\n"
+                                "place Crawler 15 42\n"));
+    u32 hashes[2] = {0, 0};
+    for (u32 pass = 0; pass < 2; ++pass) {
+        battle_init(&battle, &defs);
+        const s32 corners[10][2] = {{12, 10}, {14, 10}, {16, 10}, {18, 10}, {13, 8}, {15, 8}, {17, 8}, {14, 6}, {16, 6}, {15, 4}};
+        for (u32 i = 0; i < 10; ++i)
+            CHECK(battle_place(&battle, 0, corners[i][0], corners[i][1]));
+        CHECK(battle.unit_count == 80 && battle_supply_left(&battle) == 0);
+        CHECK(battle_start(&battle));
+        while (battle.phase == BATTLE_FIGHT) {
+            battle_tick(&battle);
+            battle.event_count = 0;
+        }
+        CHECK(battle.phase == BATTLE_RESULT && battle.outcome != OUTCOME_NONE && battle.tick <= defs.rules.round_ticks);
+        CHECK(battle_alive_count(&battle, TEAM_PLAYER) + battle_alive_count(&battle, TEAM_ENEMY) < 80); // the shells do hurt
+        hashes[pass] = battle_hash(&battle);
+    }
+    CHECK(hashes[0] == hashes[1]);
+}
+
 // Whole rounds on a copy of the repository's project (full_project).
 
 internal void load_full_project(void)
@@ -1507,6 +1756,215 @@ internal void test_seek(void)
     CHECK(battle.phase == BATTLE_RESULT && battle.tick == last && battle_hash(&battle) == hashes[last]);
 }
 
+// Roles (abproj.md, "Roles"): the names a file declares, each unit's mask over them, and the errors. A role does not change a round.
+
+// The line of the first match of `needle` in project_text, from 1.
+internal u32 line_of(const char* needle)
+{
+    const char* at = strstr(project_text, needle);
+    NV_ASSERT(at);
+    u32 line = 1;
+    for (const char* p = project_text; p < at; ++p)
+        line += *p == '\n';
+    return line;
+}
+
+// Makes project_text and reads it: the good header, `block` (the roles block, if any), and a Crawler with `unit_roles` (its roles
+// line, or "") and no other changes.
+internal b32 read_roles_project(const char* block, const char* unit_roles)
+{
+    snprintf(project_text, sizeof(project_text),
+             "%sunit Crawler\n%s    cost 100\n    health 120\n    speed 5\n    radius 0.5\n    height 0.8\n"
+             "    weapon Lobber\n        range 20\n        damage 30\n        cooldown 1.5\n        launch_angle 45\n"
+             "stage\n    supply 1000\n    place Crawler 12 36\n",
+             good_header, unit_roles);
+    // The block goes between the header and the unit.
+    static char text[32768];
+    snprintf(text, sizeof(text), "%s%s", good_header, block);
+    u32 used = (u32)strlen(text);
+    snprintf(text + used, sizeof(text) - used, "%s", strstr(project_text, "unit Crawler"));
+    snprintf(project_text, sizeof(project_text), "%s", text);
+    return read_project(project_text);
+}
+
+internal void test_roles(void)
+{
+    // A declared role, and a unit with two of them: its mask is its roles' bits, in the order the file declares them.
+    CHECK(read_roles_project("roles\n    frontline\n    backline\n", "    roles backline frontline\n"));
+    CHECK(defs.error_count == 0 && defs.role_count == 2 && strcmp(defs.roles[0], "frontline") == 0 && strcmp(defs.roles[1], "backline") == 0);
+    CHECK(defs.unit_roles[0] == 3);
+    // A unit without roles has none; a block with no roles, or no block, is fine.
+    CHECK(read_roles_project("roles\n    frontline\n", "") && defs.unit_roles[0] == 0 && defs.role_count == 1);
+    CHECK(read_roles_project("roles\n", "") && defs.role_count == 0);
+    CHECK(read_roles_project("", "") && defs.role_count == 0 && defs.unit_roles[0] == 0);
+
+    // A role the file does not declare, at the unit's line.
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles shielder\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles shielder"), "unknown role 'shielder' (declare it under 'roles')"));
+    // A unit's roles given twice, a role named twice in a line, and a line with no role.
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles frontline\n    roles frontline\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles frontline\n    roles frontline") + 1, "'roles' is given twice in this block"));
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles frontline frontline\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles frontline frontline"), "role 'frontline' is given twice"));
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    roles\n"), "'roles' takes at least one role"));
+
+    // The block: each name once, at most 32, one name a line.
+    CHECK(!read_roles_project("roles\n    frontline\n    frontline\n", "") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    frontline\n    frontline") + 1, "role 'frontline' is declared twice"));
+    CHECK(!read_roles_project("roles\n    frontline backline\n", "") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    frontline backline"), "a role line takes one name"));
+    static char many[4096];
+    snprintf(many, sizeof(many), "roles\n");
+    for (u32 i = 0; i < 33; ++i) {
+        char one[32];
+        snprintf(one, sizeof(one), "    r%u\n", i);
+        strcat(many, one);
+    }
+    CHECK(!read_roles_project(many, "") && defs.error_count == 1 && first_error_has("too many roles (at most 32)"));
+
+    // Order: the block comes after the rules and before the units; given once.
+    snprintf(project_text, sizeof(project_text), "%s%sroles\n    frontline\nstage\n    supply 1000\n    place Crawler 12 36\n", good_header, good_units);
+    CHECK(!read_project(project_text) && defs.error_count == 1);
+    CHECK(first_error_at(GOOD_HEADER_LINES + GOOD_UNITS_LINES + 1, "'roles' must come after 'rules' and before the units"));
+    static char twice[8192];
+    snprintf(twice, sizeof(twice), "%s%s%s%s", good_header, "roles\n    frontline\nroles\n    backline\n", good_units,
+             "stage\n    supply 1000\n    place Crawler 12 36\n");
+    snprintf(project_text, sizeof(project_text), "%s", twice);
+    CHECK(!read_project(project_text) && defs.error_count == 1);
+    CHECK(first_error_at(GOOD_HEADER_LINES + 3, "'roles' is given twice"));
+
+    // The rules editor edits a rule in a text with a roles block, and the result reads.
+    static char with_roles[8192];
+    snprintf(with_roles, sizeof(with_roles), "%s", replaced(full_project, "unit Crawler\n", "roles\n    frontline\n\nunit Crawler\n    roles frontline\n"));
+    static char edited[8192];
+    f64 zone = 12.0; // the enemy's rows then start at 36, where the stage's places are
+    umm size = defs_rule_set(with_roles, strlen(with_roles), "zone_rows", &zone, 1, edited, sizeof(edited));
+    edited[size] = 0;
+    CHECK(size && read_project(edited) && defs.rules.zone_rows == 12 && defs.unit_roles[0] == 1);
+
+    // Roles do not change a round: full_project's round, with a roles block and a role on the Crawler, is the same round.
+    load_full_project();
+    b32 finished = false;
+    u32 plain = play_round(1, &finished);
+    CHECK(read_project(replaced(full_project, "unit Crawler\n", "roles\n    frontline\n    backline\n\nunit Crawler\n    roles backline\n")));
+    CHECK(defs.unit_roles[0] == 2 && defs.role_count == 2);
+    CHECK(play_round(1, &finished) == plain && finished);
+}
+
+// Layers (abproj.md, "Layers"; battle.md, "Layers"): what a unit's layer, altitude and a weapon's targets read as, and what the
+// layers do in a round.
+
+// A unit named Wasp with `extra` (its lines after its stats, indented: "  layer air\n") and a weapon whose `targets` line is `targets`.
+// Its lines: the unit is 1, the layer 7 (or altitude 8 after a layer line), the weapon's targets line 12.
+static char wasp[1024];
+internal const char* make_wasp(const char* extra, const char* targets)
+{
+    snprintf(wasp, sizeof(wasp), "unit Wasp\n  cost 1\n  health 1\n  speed 0\n  radius 1\n  height 1\n%s"
+                                 "  weapon W\n    range 1\n    damage 0\n    cooldown 1\n    launch_angle 30\n%s",
+             extra, targets);
+    return wasp;
+}
+
+internal void test_layers_format(void)
+{
+    // An air unit with its altitude, and a weapon that hits air.
+    CHECK(read_units(make_wasp("  layer air\n  altitude 10\n", "    targets air\n"), "Wasp"));
+    CHECK(defs.units[0].layer == UNIT_LAYER_AIR && defs.units[0].altitude == 10.0f && defs.units[0].weapon.targets == TARGET_AIR);
+    CHECK(read_units(make_wasp("  layer air\n  altitude 10\n", "    targets ground air\n"), "Wasp") &&
+          defs.units[0].weapon.targets == (TARGET_GROUND | TARGET_AIR));
+    // Without them a unit is on the ground and hits the ground.
+    CHECK(read_units(good_units, "Crawler") && defs.units[0].layer == UNIT_LAYER_GROUND && defs.units[0].altitude == 0.0f &&
+          defs.units[0].weapon.targets == TARGET_GROUND);
+
+    // An air unit needs its altitude, a ground unit has none, and the altitude is above zero.
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n", ""), 1, 1, "flies (layer air) and needs 'altitude'");
+    expect_error_in(PART_UNITS, make_wasp("  layer ground\n  altitude 5\n", ""), 1, 8, "'altitude' is only for air units");
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n  altitude 0\n", ""), 1, 8, "'altitude' must be > 0");
+    // A layer is ground or air, given once, with a word.
+    expect_error_in(PART_UNITS, make_wasp("  layer sea\n", ""), 1, 7, "unknown layer 'sea' (ground or air)");
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n  layer air\n  altitude 3\n", ""), 1, 8, "'layer' is given twice in this block");
+    expect_error_in(PART_UNITS, make_wasp("  layer\n", ""), 1, 7, "'layer' takes ground or air");
+    // A weapon's targets: ground, air or both; at least one; once. In a unit block they are an unknown key.
+    expect_error_in(PART_UNITS, make_wasp("", "    targets sea\n"), 1, 12, "unknown target 'sea' (ground or air)");
+    expect_error_in(PART_UNITS, make_wasp("", "    targets\n"), 1, 12, "'targets' takes ground, air or both");
+    expect_error_in(PART_UNITS, make_wasp("", "    targets air air\n"), 1, 12, "target 'air' is given twice");
+    expect_error_in(PART_UNITS, make_wasp("  targets air\n", ""), 1, 7, "unknown key 'targets'");
+}
+
+internal void test_layers_in_use(void)
+{
+    // An air unit stands at its altitude; a ground unit on the ground.
+    scene_defs();
+    scene_air_unit();
+    u8 wasp_player[1] = {2};
+    u8 dummy_enemy[1] = {1};
+    scene_start(wasp_player, 1, dummy_enemy, 1);
+    CHECK(battle.units[1].position.y == 10.0f && battle.units[2].position.y == 0.0f);
+
+    // A ground unit only picks the enemies its weapon can hit: an air unit is none of them until the weapon can hit air.
+    scene_defs();
+    scene_air_unit();
+    u8 shooter[1] = {0};
+    u8 wasp_enemy[1] = {2};
+    scene_start(shooter, 1, wasp_enemy, 1);
+    put(1, 10.0f, 10.0f);
+    put(2, 10.0f, 20.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    run(1);
+    CHECK(battle.units[1].target.index == 0 && battle.units[1].position.z == 10.0f); // no target: it stands
+    defs.units[0].weapon.targets = TARGET_GROUND | TARGET_AIR;
+    run(1);
+    CHECK(battle.units[1].target.index == 2);
+
+    // A ground-only shell passes an air unit and goes on; an anti-air shell hits it.
+    for (u32 pass = 0; pass < 2; ++pass) {
+        scene_defs();
+        scene_air_unit();
+        u8 dummy_player[1] = {1};
+        scene_start(dummy_player, 1, wasp_enemy, 1);
+        put(1, 5.0f, 2.0f);
+        put(2, 10.0f, 15.0f);
+        battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+        inject_shell(TEAM_PLAYER, nv_vec3(10.0f, 10.3f, 14.0f), nv_vec3(0.0f, 0.0f, 90.0f), 30.0f);
+        battle.projectiles[0].targets = pass ? (TARGET_GROUND | TARGET_AIR) : TARGET_GROUND;
+        run(1);
+        if (pass) {
+            CHECK(battle.units[2].health == 70.0f && battle.projectile_count == 0); // hit
+        } else {
+            CHECK(battle.units[2].health == 100.0f && battle.projectile_count == 1); // passed
+        }
+    }
+
+    // An anti-air shell is aimed at an air unit's middle, so a stopped flier 20 m away is hit (a shell aimed at the ground would
+    // pass over it).
+    scene_defs();
+    scene_air_unit();
+    defs.units[0].weapon.range = 30.0f;
+    defs.units[0].weapon.targets = TARGET_AIR;
+    defs.units[0].weapon.cooldown = 1000.0f; // one shot
+    u8 aa_shooter[1] = {0};
+    scene_start(aa_shooter, 1, wasp_enemy, 1);
+    put(1, 10.0f, 5.0f);
+    put(2, 10.0f, 25.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    run(120);
+    CHECK(battle.units[2].health == 70.0f);
+
+    // Units of different layers do not push each other apart; two air units do.
+    scene_defs();
+    scene_air_unit();
+    u8 two_wasps[2] = {2, 2};
+    scene_start(dummy_enemy, 1, two_wasps, 2); // a ground Dummy of the player's, and two Wasps
+    put(1, 10.0f, 15.0f);
+    put(2, 10.0f, 15.0f);
+    put(3, 10.0f, 15.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    battle.units[3].position.y = battle.units[3].previous_position.y = 10.0f;
+    run(1);
+    CHECK(battle.units[1].position.x == 10.0f && battle.units[2].position.x != battle.units[3].position.x);
+}
+
 int main(void)
 {
     test_project_file();
@@ -1524,6 +1982,12 @@ int main(void)
     test_shield();
     test_round_end();
     test_rules_in_use();
+    test_squad_file();
+    test_squad_deployment();
+    test_squad_round();
+    test_roles();
+    test_layers_format();
+    test_layers_in_use();
     test_whole_round();
     test_golden_rounds();
     test_seek();
