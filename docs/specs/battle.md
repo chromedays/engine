@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: A의 1~3단계(시뮬레이션과 정의 파일, 실행 파일, 확인과 문서) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔. 정의 파일과 규칙 상수는 프로젝트 파일 하나로 합쳐졌다(2026-10-05, `abproj.md`).
+상태: A의 1~3단계(시뮬레이션과 정의 파일, 실행 파일, 확인과 문서) 구현됨 (2026-10-03), 나머지는 초안. A와 B 두 단계로 나눔. 정의 파일과 규칙 상수는 프로젝트 파일 하나로 합쳐졌다(2026-10-05, `abproj.md`). B의 분대를 A로 당겨 왔다(2026-10-11, "분대" 절).
 
 ### 목표
 
@@ -23,7 +23,7 @@
 
 | A (먼저) | B (다음) | 빠짐 (나중) |
 |---|---|---|
-| 칸 단위 배치 그리드(칸 하나에 유닛 하나) | 분대 단위 배치 | 높이맵 지형 (지면은 평평한 y = 0) |
+| 칸 단위 배치 그리드, 분대 단위 배치(B에서 당겨 옴, "분대" 절) | | 높이맵 지형 (지면은 평평한 y = 0) |
 | 실제 높이: 포탄의 탄도 | 공중 유닛과 고도, 3D 범위 피해 | 여러 라운드, 본부 체력 |
 | 유닛 1종(Crawler), 지상만, 크기 등급 없음 | 유닛 5종, 크기 등급 3개 | 업그레이드, 테크, 카드, 전문가 |
 | 유닛당 무기 하나, 능력 하나(Shield) | 무기 여러 개, Jump | AI 상대 (적 배치는 스테이지 데이터에 고정) |
@@ -41,9 +41,9 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다. 
 | 항목 | A |
 |---|---|
 | 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0. 칸 (x, 행)의 중심은 ((x + 0.5) · 2, 0, (행 + 0.5) · 2) m: 플레이어 쪽이 −Z, 적 쪽이 +Z |
-| 배치 | 칸 하나에 Crawler 하나. 양쪽 공급 1000, Crawler 비용 100(편마다 최대 10기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
-| 유닛 | Crawler 한 종류, 지상만. 크기 등급과 분대가 없다 |
-| 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부. 같은 틱에 양쪽이 전멸해도 무승부 |
+| 배치 | 분대 단위("분대" 절): Crawler 분대는 2 × 2칸에 넷. 양쪽 공급 1000, Crawler 분대 비용 100(편마다 최대 10분대, 40기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
+| 유닛 | Crawler 한 종류, 지상만. 크기 등급이 없다 |
+| 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`분대 비용 / 분대 크기 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부. 같은 틱에 양쪽이 전멸해도 무승부 |
 | 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽. 거리(타게팅과 사거리 모두)는 지면(XZ) 위 중심 사이 거리 |
 | 이동 | 대상으로 곧장 다가가고, 대상이 사거리의 90% 안이면 멈춘다. 겹친 유닛끼리 서로 밀어낸다(분리, 무게는 모두 같다). 전장 밖으로 나가지 않는다. 가까운 유닛 찾기와 분리는 모든 쌍을 직접 비교한다(공간 격자 없음). 회전은 즉시: 움직일 때는 속도 방향, 멈췄을 때는 대상 쪽을 본다 |
 | 무기 | 하나. 쿨다운이 끝나고 대상이 사거리 안이면 움직이는 중에도 쏜다. 쿨다운은 0에서 시작한다. 투사체는 포탄 한 종류: 중력 9.8 m/s²의 탄도로 날고, 발사각과 목표점에서 초기 속도를 구한다. 목표점은 **리드 조준**(대상의 지금 속도로 착탄 때의 위치를 예측: 비행 시간과 예측을 3번 번갈아 구한다)에 퍼짐(반지름 `spread` 원 안의 균등 난수)을 더한 지면 위의 점이다 |
@@ -53,6 +53,7 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다. 
 
 | Crawler (A) | 값 |
 |---|---|
+| 분대 | 넷, 2 × 2칸 (비용 100은 분대 전체) |
 | 체력, 방어력 | 120, 5 |
 | 속도 | 5 m/s |
 | 반지름 / 높이 | 0.5 / 0.8 m |
@@ -63,7 +64,7 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 닿은 것), 죽음, 실드 회복, 끝 조건.
 
 구현에서 정한 세부(1단계):
-- **슬롯 순서:** 유닛은 플레이어 것이 먼저(행, 칸 순), 그다음 적(파일 순)이다. 배치가 바뀔 때마다(놓기, 지우기, Reset, Retry) 유닛 배열을
+- **슬롯 순서:** 유닛은 플레이어 분대의 것이 먼저(분대 모서리의 행, 칸 순), 그다음 적 분대의 것(파일 순)이다. 분대 안에서는 행 순이다. 배치가 바뀔 때마다(놓기, 지우기, Reset, Retry) 유닛 배열을
   처음부터 다시 만든다. Start는 그대로 시작할 뿐이라 Retry는 같은 배치를 돌려준다.
 - **시간은 틱으로:** 쿨다운과 실드의 기다림은 틱 수(초 × 30, 올림)로 센다. 1.5초는 정확히 45틱이다. 실드는 맞은 틱도 기다림의 첫
   틱으로 센다(3초 = 90틱 뒤에 차기 시작).
@@ -77,6 +78,28 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
   줄 번호로, 파일 전체의 오류(빠진 `supply`, 유닛이나 `place`가 하나도 없음)는 줄 번호 없이 알린다. 공급 초과는 합이 처음 넘는 `place`의
   줄로 알린다. 오류가 있는 줄은 빠진 키 오류를 더 만들지 않도록 해당 키를 "받은 것"으로 센다.
 
+### 분대
+
+추가(2026-10-11). B의 분대(배치 단위)를 A로 당겨 왔다. 유닛 정의의 `squad`와 `footprint`가 정한다(`abproj.md`, 형식 버전 2).
+
+- **분대:** 한 번 놓는 단위다. `footprint` × `footprint` 칸을 차지하고 그 위에 유닛 `squad`기가 선다. 비용(`cost`)과 공급은 분대
+  단위다. 두 키가 없으면 한 칸에 하나다(전과 같다).
+- **자리:** 분대의 유닛은 footprint 위에 될 수 있는 대로 정사각형인 격자로 선다: 열은 `ceil(sqrt(squad))`, 행은 유닛 수를 열로 나눈
+  올림. 유닛마다 자기 몫의 가운데에 서고, 다 차지 않은 마지막 행은 가운데로 모은다. 행은 +Z 쪽으로 늘고 유닛은 행 순으로 만든다
+  (2 × 2칸에 넷이면 네 칸의 중심, 한 칸에 하나면 칸의 중심).
+- **전투:** 시작한 뒤 유닛은 각자 대상을 고르고 움직이고 싸운다(대형 없음, 열린 질문 4). 전투 중에는 분대가 따로 없다(`Squad` 배열 없음).
+- **남은 가치:** 유닛마다 `분대 비용 / 분대 크기 × 체력 / 최대 체력`.
+- **배치:** 분대는 footprint에서 원점에 가장 가까운 모서리 칸으로 놓인다(`battle_place(battle, def, x, row)`; `Battle.placed`에는 그
+  칸에만 적는다). footprint 전체가 플레이어 구역 안이고 다른 분대와 겹치지 않으며, 공급과 한 편의 유닛 수(`BATTLE_MAX_TEAM_UNITS`
+  2048) 안이어야 한다. `battle_remove`와 `battle_squad_at`은 footprint의 아무 칸으로나 분대를 찾는다. 적 분대(스테이지의 `place`)도
+  같은 규칙이다.
+- **탭:** "실행 파일"의 "배치 입력".
+- **규칙 고치기:** 바뀐 규칙에서 footprint가 구역 밖으로 나가는 분대는 빠진다. `zone_rows`를 어느 유닛의 footprint보다 작게 하는
+  고침은 거절된다.
+- **용량:** 분대 크기는 64까지(`BATTLE_MAX_SQUAD_SIZE`), footprint는 4칸까지(`BATTLE_MAX_FOOTPRINT`), 한 편의 유닛은 2048기까지
+  (`BATTLE_MAX_TEAM_UNITS`; `BATTLE_MAX_UNITS`는 `1 + 2 × 2048`로 전과 같다). 분리와 가장 가까운 적 찾기는 아직 모든 쌍을 비교하므로
+  (공간 격자는 B) 유닛이 많으면 느리다.
+
 ### 정의 파일
 
 결정(2026-10-03): 유닛 정의와 스테이지는 코드가 아니라 텍스트 파일에 둔다. 형식은 줄 단위 텍스트이고, 읽는 코드도 직접 쓴다(새
@@ -86,7 +109,8 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 변경(2026-10-05): 두 파일(`units.txt`, `stage.txt`)과 코드에 있던 규칙 상수(칸 크기, 격자, 구역, 라운드 시간, 중력, 재선택 주기,
 멈춤 비율, 최소 피해 비율)를 **프로젝트 파일 하나**, `autobattler/data/default.abproj`로 합쳤다. 문법, `rules`, `unit`, `stage`의 키
 표, 버전, 읽기와 오류, 테스트는 `docs/specs/abproj.md`에 있다. 읽는 함수는 `defs_read_project`(`autobattler/defs.c`)다. B에서
-더할 키(`layer`, `size`, `squad`, `footprint`, `altitude`, 여러 `weapon`, `ability jump`, `prop` 등)도 거기 "나중에"에 적혀 있다.
+더할 키(`layer`, `size`, `altitude`, 여러 `weapon`, `ability jump`, `prop` 등)도 거기 "나중에"에 적혀 있다. 분대의 `squad`와
+`footprint`는 형식 버전 2에 더했다(2026-10-11).
 
 "A 규칙"의 표와 아래 Crawler 표의 값은 `default.abproj`가 지금 담은 값이다.
 
@@ -118,7 +142,7 @@ Shield 값은 B의 표를 따른다.
 #### 유닛
 
 분대는 배치 단위다: 정의의 footprint만큼 칸을 차지하고, 전투가 시작되면 그 칸 안에 분대 크기만큼 유닛을 격자로 놓는다.
-그 뒤 유닛은 각자 움직이고 싸운다(대형 유지 없음). 분대는 살아 있는 유닛 수만 센다.
+그 뒤 유닛은 각자 움직이고 싸운다(대형 유지 없음). 분대는 살아 있는 유닛 수만 센다. 이 단락은 A에 구현됐다("분대" 절).
 
 초기 값은 밸런스 출발점일 뿐이다.
 
@@ -347,15 +371,15 @@ typedef struct Battle {
 ```
 
 위 코드는 B까지 더한 모양이다. A의 구조체는 쓰는 것만 가진다(쓰기 전에는 두지 않는다는 코딩 표준):
-- `UnitDef`: 이름, 비용, 체력, 방어력, 속도, 반지름, 높이, 무기 하나(`WeaponDef`), 능력(`AbilityDef`: `ABILITY_NONE`이나
-  `ABILITY_SHIELD`). `layer`, `size`, `squad_size`, `footprint`, `altitude`, `weapon_count`는 없다.
+- `UnitDef`: 이름, 비용(분대 전체), 분대 크기(`squad_size`), footprint, 체력, 방어력, 속도, 반지름, 높이, 무기 하나(`WeaponDef`),
+  능력(`AbilityDef`: `ABILITY_NONE`이나 `ABILITY_SHIELD`). `layer`, `size`, `altitude`, `weapon_count`는 없다.
 - `WeaponDef`: 사거리, 피해, 쿨다운, 발사각, 퍼짐, 총구. 투사체 종류, 대상, 최소 사거리, 범위, 속도, 선회는 없다.
 - `Unit`: 플래그, 팀, 정의, 위치와 이전 위치, 속도, 방향과 이전 방향, 체력, 이번 틱의 피해, 대상, 쿨다운(틱: `cooldown_ticks`), 능력 상태
   (`union`에 `shield`만: 에너지와 맞은 뒤의 틱 `since_hit_ticks`). 분대는 없다. 틱으로 세는 값은 초로 쓰는 정의의 값과 헷갈리지 않게 이름에
   `_ticks`를 붙인다(`docs/CODING_STANDARD.md`의 "이름 짓기").
 - `Projectile`: 팀, 쏜 유닛, 위치와 이전 위치, 속도, 피해(방어력 전; 실드가 일부만 받으면 남은 만큼). 종류와 미사일 데이터는 없다.
-- `Battle`: 정의, 단계, 결과, 틱, 난수, 플레이어의 배치(칸마다 유닛 종류)와 쓴 공급, 유닛, 포탄, 이벤트(발사, 명중, 실드 피격,
-  죽음; 이벤트마다 팀과 유닛 종류), 분리를 위한 임시 배열. 지형지물, `blocked`, 분대, 흐름장, 공간 격자는 없다.
+- `Battle`: 정의, 단계, 결과, 틱, 난수, 플레이어의 배치(분대마다 footprint 모서리 칸에 유닛 종류), 쓴 공급과 배치의 유닛 수(`player_units`), 유닛, 포탄, 이벤트(발사, 명중, 실드 피격,
+  죽음; 이벤트마다 팀과 유닛 종류), 분리를 위한 임시 배열. 지형지물, `blocked`, 분대 배열(`Squad`), 흐름장, 공간 격자는 없다(유닛은 자기 분대를 모른다).
 
 ### 틱 순서 (B; A의 것은 "A 규칙" 끝에)
 
@@ -416,7 +440,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
     A의 Crawler는 캡슐 몸통과 앞쪽의 원뿔(향하는 방향), 포탄은 작은 구다. 몸통의 반지름은 유닛의 반지름과 높이의 절반 중 작은 쪽이다
     (Crawler는 높이가 지름보다 낮아 둥근 덩어리가 된다). 노드는 처음 필요할 때 만들고, 죽은 유닛과 사라진 포탄은 메시를 떼어 숨긴다.
     틱 사이를 보간한다(방향은 짧은 쪽으로).
-  - 땅과 구역 색(두 구역은 땅 위 얇은 평면)은 메시, 배치 격자(배치 단계에서만)와 마우스가 가리키는 칸의 초록/빨강 상자, 체력 바(전투
+  - 땅과 구역 색(두 구역은 땅 위 얇은 평면)은 메시, 배치 격자(배치 단계에서만)와 마우스가 가리키는 footprint의 초록/빨강 상자, 체력 바(전투
     중에만; 화면 오른쪽 방향의 선 몇 개)는 디버그 라인이다. 지형지물은 회색 상자(B).
   - 포탄은 틱마다 지난 구간에 `nv_vfx_trail`, 이벤트는 효과로: 발사는 총구의 작은 섬광, 명중은 작은 폭발과 `nv_vfx_decal`의 그을음,
     실드 피격은 파란 불꽃, 죽음은 큰 폭발(`nv_vfx_burst`). 실드는 남은 에너지에 따라 밝기가 바뀌는 디버그 라인 원(세 축) 셋이다.
@@ -436,13 +460,15 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
     처음부터 그 틱까지 다시 돌린다: 규칙이 결정적이므로 그때의 상태와 같다(해시가 같다). 거꾸로 돌릴 수 없는 이펙트는 지운다. 일시정지
     중에는 보간 없이 마지막 틱 그대로 그린다. 처음부터 다시 돌리는 비용은 틱 수에 비례하는데, A의 군대(유닛 수십)에는 작다. B의 큰 군대에는
     1초마다 스냅숏을 두고 가장 가까운 것부터 다시 돌린다(`// TODO:`).
-- **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 칸을 탭하면 놓는다. 놓을 수 있는 칸은 초록, 없는 칸은 빨강으로
-  미리 보여 준다(마우스가 가리키는 칸만; 터치 화면에는 없다). 놓인 유닛을 탭하면 지운다. 데스크톱과 폰 모두 같다. 배치 단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 유닛 종류 버튼(이름과 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
+- **배치 입력:** 패널에서 유닛 종류를 고르고 뷰포트의 플레이어 구역을 탭하면 그 분대를 놓는다: footprint의 가운데가 탭한 점에 가장
+  가까운 자리, 구역 가장자리에서는 안으로 밀어 맞춘 자리다. 놓인 분대의 아무 칸이나 탭하면 그 분대를 지운다. 탭이 채울(또는 비울)
+  footprint를 된다면 초록, 안 되면 빨강으로 미리 보여 준다(마우스가 가리키는 곳만; 터치 화면에는 없다). 데스크톱과 폰 모두 같다. 배치
+  단계에서만.
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x4 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
-  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`, `_battle_debug_start()`, `_battle_debug_run(ticks)`,
+  공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`(분대의 footprint 모서리 칸), `_battle_debug_start()`, `_battle_debug_run(ticks)`,
   `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
@@ -486,6 +512,8 @@ A:
   실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 에너지가 모자라면 남은 피해만 지나간다
   (에너지 10, 피해 30 → 유닛은 `max(20 - 5, 20 × 0.25)` = 15); 실드가 이웃을 노린 포탄도 막는다; 같은 틱에 양쪽이 전멸하면 무승부; 겹친 두 유닛이
   분리로 떨어진다; 한쪽이 전멸하면 끝난다; 60초에 끝나고 남은 가치로 판정한다.
+- 분대: footprint에 놓고 아무 칸으로나 지운다, 분대 안 유닛의 자리(2 × 2칸에 넷, 한 칸에 셋), 겹침과 구역 가장자리, 남은 가치는 분대 비용
+  ÷ 크기, 유닛마다 자기 대상, 한 편 2048기, 분대끼리의 라운드가 끝나고 두 번 돌려도 해시가 같다.
 
 B:
 - 공간 격자: 질의가 무차별 검사와 같은 유닛을 같은 순서로 돌려준다.
@@ -496,8 +524,8 @@ B:
 A부터 `tests/strings_test.mjs`가 `autobattler/`의 문자열도 검사한다(ctest 명령에 `autobattler` 폴더를 더한다).
 
 Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으로 돌리는 검사이고 스크립트는 저장소에 없다): `autobattler/` 페이지를
-열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 놓고 지운다;
-플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10기) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
+열고 다음을 본다. 정의 파일을 읽고 적이 놓였다; 패널이 데스크톱에서는 뷰포트 오른쪽에, 폰에서는 아래에 있다; 탭으로 분대를 놓고 (footprint의 아무 칸을 탭해) 지운다;
+플레이어 구역 밖(적 구역, 가운데)의 탭은 아무것도 하지 않는다; 공급이 다하면(10분대) 열한 번째는 거절된다; 드래그가 화면을 옮기고, 휠이
 확대하고, 오른쪽 드래그가 돌린다(그 뒤에도 탭이 맞는 칸에 놓인다); 패널의 Start로 전투가 시작되고 틱이 실시간으로 가며 전투 중에는
 놓을 수 없다; 속도 버튼이 속도를 바꾸고 Start가 일시정지를 푼다; 일시정지는 틱을 멈추고 4x는 1x보다 2.5배 넘게, 0.5x는 0.75배 안 되게
 돈다; `Tick >`가 한 틱씩 가고 `< Tick`이 같은 해시로 돌아가며, 누르고 있으면 여러 틱을 간다; 라운드가 결과로 끝난다(속도를 바꿔 가며 돈 결과가 한 번에 돌린 결과와 해시가 같다); Retry는 같은 배치로 돌아가고 같은 배치는 같은 해시를 낸다; Reset은 배치를 비우고 비면 Start가
@@ -512,7 +540,8 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 3. **A 확인과 문서 (끝남):** Playwright 검사(디버그 내보내기는 2단계에서 이미 넣었다), `AGENTS.md`와 `autobattler.md` 갱신.
    여기서 한 번 멈추고 A를 직접 해 본다. B의 범위는 그 결과로 다시 본다.
    **프로젝트 파일 (끝남, 2026-10-05):** 두 정의 파일과 규칙 상수를 `default.abproj` 하나로(`docs/specs/abproj.md`).
-4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 분대, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
+   **분대 (끝남, 2026-10-11):** B의 분대를 A로 당겨 옴(`squad`, `footprint`, 형식 버전 2; "분대" 절).
+4. **B:** "B 규칙"의 나머지(유닛 5종, 공중, 무기 여러 개, 총탄과 미사일, 범위 피해와 아군 피해, 지형지물, 엄폐, 흐름장,
    Jump, 공간 격자), 더한 글자의 한국어 행, B 테스트.
 
 ### 열린 질문
@@ -521,7 +550,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 2. **공간 격자와 흐름장의 위치 (B):** `autobattler.md`대로 엔진(`engine/spatial.h`, `engine/flow.h`)인가, 아니면
    `autobattler/`에서 먼저 쓰고 두 번째 쓰임이 생길 때 옮길까?
 3. ~~**시간 제한 판정**~~: 해결됨(2026-10-03). 60초가 되면 남은 가치(`비용 × 체력 / 최대 체력`의 합)로 정한다.
-4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가?
+4. **분대:** 시작 뒤 유닛이 각자 행동하는 것(제안)이 맞는가, 대형을 유지해야 하는가? 지금은 제안대로 각자 행동한다(2026-10-11 구현).
 5. **대형 유닛의 통로 (B):** 흐름장은 칸 하나 너비를 기준으로 하므로 Fortress가 1칸 틈에 낄 수 있다. B는 스테이지에
    1칸 틈을 두지 않고, 크기별 흐름장은 나중으로 미룬다. 괜찮은가?
 6. ~~**수치**~~: 해결됨(2026-10-03). 표와 정의 파일의 값은 출발점으로 두고, A를 해 본 뒤 `default.abproj`에서 조정한다.
@@ -531,7 +560,7 @@ Playwright(Release, Debug, 데스크톱과 폰 크기, A와 B 끝마다; 손으�
 
 ## English
 
-Status: A's phases 1 to 3 (the simulation and the definition files, the executable, checks and docs) built (2026-10-03), the rest a draft. Split into two stages, A and B. The definition files and the rule constants merged into one project file (2026-10-05, `abproj.md`).
+Status: A's phases 1 to 3 (the simulation and the definition files, the executable, checks and docs) built (2026-10-03), the rest a draft. Split into two stages, A and B. The definition files and the rule constants merged into one project file (2026-10-05, `abproj.md`). B's squads were brought forward into A (2026-10-11, "Squads").
 
 ### Goal
 
@@ -549,7 +578,7 @@ How the rules interact is hard to check fully before building, so the prototype 
 
 | A (first) | B (next) | Out (later) |
 |---|---|---|
-| A cell-based deployment grid (one unit per cell) | Deployment by squad | Heightmap terrain (the ground is flat at y = 0) |
+| A cell-based deployment grid, deployment by squad (brought forward from B; "Squads") | | Heightmap terrain (the ground is flat at y = 0) |
 | Real height: the shell's ballistic arc | Air units and altitude, 3D area damage | Multiple rounds, base health |
 | One unit type (Crawler), ground only, no size classes | Five unit types, three size classes | Upgrades, tech, cards, specialists |
 | One weapon per unit, one ability (Shield) | Several weapons, Jump | An AI opponent (the enemy deployment is fixed in the stage data) |
@@ -568,9 +597,9 @@ round length, gravity, the retarget interval, the stop fraction and the minimum 
 | Topic | A |
 |---|---|
 | Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0. Cell (x, row) is centered at ((x + 0.5) · 2, 0, (row + 0.5) · 2) m: the player's side is −Z, the enemy's +Z |
-| Deployment | One Crawler per cell. Each side has 1000 supply and a Crawler costs 100 (at most 10 per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
-| Units | One type, the Crawler, ground only. No size classes and no squads |
-| Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `cost × health / max health`) wins; equal is a draw. Both sides wiped out on the same tick is a draw too |
+| Deployment | By squad ("Squads"): a Crawler squad is four on 2 × 2 cells. Each side has 1000 supply and a Crawler squad costs 100 (at most 10 squads, 40 Crawlers, per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
+| Units | One type, the Crawler, ground only. No size classes |
+| Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `squad cost / squad size × health / max health`) wins; equal is a draw. Both sides wiped out on the same tick is a draw too |
 | Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index. Distance (for targeting and range alike) is between centers on the ground (XZ) |
 | Movement | Steer straight at the target and stop once it is within 90% of the range. Overlapping units push each other apart (separation, all with the same weight), and stay inside the field. Finding nearby units and separating compare every pair directly (no spatial grid). Turning is instant: a moving unit faces its velocity, a stopped one its target |
 | Weapon | One. It fires when its cooldown is over and its target is in range, moving or not; cooldowns start at 0. The one projectile kind is the shell: it flies a ballistic arc under 9.8 m/s² of gravity, with the launch velocity found from the launch angle and the aim point. The aim point is on the ground: **lead aiming** (the target's position at impact, predicted from its current velocity; flight time and prediction are solved in turn three times) plus spread (uniformly random within a circle of radius `spread`) |
@@ -580,6 +609,7 @@ round length, gravity, the retarget interval, the stop fraction and the minimum 
 
 | Crawler (A) | Value |
 |---|---|
+| Squad | Four, on 2 × 2 cells (the cost of 100 is the whole squad's) |
 | Health, armor | 120, 5 |
 | Speed | 5 m/s |
 | Radius / height | 0.5 / 0.8 m |
@@ -590,7 +620,8 @@ A's tick order: record previous positions, pick targets again, movement and sepa
 (integration; the first of shield, unit or ground they touch), deaths, shield refill, end conditions.
 
 Details settled in the build (phase 1):
-- **Slot order:** the player's units come first (by row, then cell), then the enemy's (in file order). Every change to the placement
+- **Slot order:** the units of the player's squads come first (by the squad's corner: row, then cell), then those of the enemy's squads (in
+  file order); within a squad, row by row. Every change to the placement
   (place, remove, Reset, Retry) rebuilds the unit array from scratch. Start only starts, so Retry gives the same placement back.
 - **Time in ticks:** cooldowns and the shield's wait are counted in ticks (seconds × 30, rounded up). 1.5 s is exactly 45 ticks. A
   shield counts the tick it was hit in as the first of its wait (refill starts after 3 s = 90 ticks).
@@ -607,6 +638,30 @@ Details settled in the build (phase 1):
   overrun is reported at the first `place` that takes the total over. A key that was given with a bad value counts as given, so it
   does not add a "missing" error.
 
+### Squads
+
+Added (2026-10-11). B's squads (the unit of deployment) were brought forward into A. A unit definition's `squad` and `footprint` set
+them (`abproj.md`, format version 2).
+
+- **A squad** is what one placement puts down: `squad` units on `footprint` × `footprint` cells. The cost (`cost`) and the supply are
+  per squad. Without the two keys it is one unit on one cell (as before).
+- **Where its units stand:** on the footprint in a grid as near square as it gets: `ceil(sqrt(squad))` columns, and the units over
+  that, rounded up, rows. Each unit stands in the middle of its share, and a last row that is not full is centered. Rows run toward
+  +Z and the units are made row by row (four on 2 × 2 cells stand on the four cells' centers; one on one cell on the cell's center).
+- **Fighting:** once the round starts each unit picks its target, moves and fights on its own (no formation; open question 4). There
+  is no squad during the fight (no `Squad` array).
+- **Remaining value:** per unit, `squad cost / squad size × health / max health`.
+- **Placing:** a squad is placed by its footprint's corner nearest the origin (`battle_place(battle, def, x, row)`; `Battle.placed`
+  marks only that cell). The whole footprint must be in the player's zone and free of other squads, within the supply and the units
+  one side may have (`BATTLE_MAX_TEAM_UNITS`, 2048). `battle_remove` and `battle_squad_at` find a squad by any cell of its footprint.
+  The enemy's squads (the stage's `place`s) follow the same rules.
+- **Taps:** "Deployment input" under "Executable".
+- **Editing the rules:** a squad whose footprint leaves the zone under the new rules drops out. A change that makes `zone_rows`
+  smaller than a unit's footprint is refused.
+- **Capacities:** a squad is at most 64 units (`BATTLE_MAX_SQUAD_SIZE`), a footprint at most 4 cells (`BATTLE_MAX_FOOTPRINT`), a side
+  at most 2048 units (`BATTLE_MAX_TEAM_UNITS`; `BATTLE_MAX_UNITS` is `1 + 2 × 2048`, as before). Separation and finding the nearest
+  enemy still compare every pair (the spatial grid is B's), so many units are slow.
+
 ### Definition files
 
 Decided (2026-10-03): unit definitions and the stage live in text files, not in code. The format is line-based text, and we write
@@ -617,8 +672,8 @@ Changed (2026-10-05): the two files (`units.txt`, `stage.txt`) and the rule cons
 round length, gravity, the retarget interval, the stop fraction, the minimum damage fraction) merged into **one project file**,
 `autobattler/data/default.abproj`. The syntax, the key tables of `rules`, `unit` and `stage`, the versions, reading and errors, and
 the tests are in `docs/specs/abproj.md`. The function that reads it is `defs_read_project` (`autobattler/defs.c`). The keys B adds
-(`layer`, `size`, `squad`, `footprint`, `altitude`, several `weapon`s, `ability jump`, `prop` and so on) are listed there too, under
-"Later".
+(`layer`, `size`, `altitude`, several `weapon`s, `ability jump`, `prop` and so on) are listed there too, under "Later". A squad's
+`squad` and `footprint` came with format version 2 (2026-10-11).
 
 The values in the "Stage A rules" tables and in the Crawler table below are what `default.abproj` holds now.
 
@@ -651,7 +706,7 @@ weapon and Shield take the values of B's tables.
 
 A squad is the unit of deployment: it takes its definition's footprint in cells, and when the battle starts its units are
 placed on a grid inside those cells. From then on each unit moves and fights on its own (no formation). The squad only counts
-its living units.
+its living units. This paragraph is built in A ("Squads").
 
 The values are a starting point for balancing.
 
@@ -890,8 +945,8 @@ typedef struct Battle {
 ```
 
 The code above is the shape with B added. A's structs hold only what A uses (the coding standard's "nothing before it is used"):
-- `UnitDef`: name, cost, health, armor, speed, radius, height, one weapon (`WeaponDef`), the ability (`AbilityDef`: `ABILITY_NONE` or
-  `ABILITY_SHIELD`). No `layer`, `size`, `squad_size`, `footprint`, `altitude` or `weapon_count`.
+- `UnitDef`: name, cost (of the whole squad), squad size (`squad_size`), footprint, health, armor, speed, radius, height, one weapon
+  (`WeaponDef`), the ability (`AbilityDef`: `ABILITY_NONE` or `ABILITY_SHIELD`). No `layer`, `size`, `altitude` or `weapon_count`.
 - `WeaponDef`: range, damage, cooldown, launch angle, spread, muzzle. No projectile kind, targets, minimum range, splash, speed or
   turn rate.
 - `Unit`: flags, team, definition, position and previous position, velocity, yaw and previous yaw, health, this tick's damage,
@@ -900,9 +955,10 @@ The code above is the shape with B added. A's structs hold only what A uses (the
   values in seconds ("Naming" in `docs/CODING_STANDARD.md`).
 - `Projectile`: team, shooter, position and previous position, velocity, damage (before armor; what a shield leaves when it takes only
   part). No kind and no missile data.
-- `Battle`: the definitions, phase, outcome, tick, random numbers, the player's placement (a unit type per cell) and the supply used, units,
+- `Battle`: the definitions, phase, outcome, tick, random numbers, the player's placement (a unit type on each squad's footprint corner), the supply used and the units the placement makes
+  (`player_units`), units,
   shells, events (fire, hit, shield hit, death; each with the team and unit type it is about), a scratch array for separation. No props,
-  `blocked`, squads, flow fields or spatial grid.
+  `blocked`, squad array (`Squad`), flow fields or spatial grid (a unit does not know its squad).
 
 ### Tick order (B; A's is at the end of "Stage A rules")
 
@@ -967,7 +1023,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
     rounded lump). Nodes are made when first needed; a dead unit's and a gone shell's mesh is taken off to hide it. Interpolated
     between ticks (angles the short way round).
   - The ground and the zones' colors (the zones are thin planes just above the ground) are meshes; the deployment grid (while
-    deploying), the green or red box on the cell under the mouse pointer, and health bars (while fighting; a few lines level with
+    deploying), the green or red box on the footprint under the mouse pointer, and health bars (while fighting; a few lines level with
     the screen) are debug lines. Props are gray boxes (B).
   - Each shell leaves `nv_vfx_trail` for the stretch it moved each tick. Events become effects: a shot is a small flash at the
     muzzle, a hit a small explosion and a scorch (`nv_vfx_decal`), a shield hit blue sparks, a death a big explosion (`nv_vfx_burst`).
@@ -991,20 +1047,22 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
     had then (the same hash). Effects, which cannot run backward, are cleared. While paused the view draws the last tick as it is, with
     no interpolation. Replaying from the start costs time in proportion to the tick, which is small for A's armies (a few dozen units);
     for B's large ones, keep a snapshot every second and replay from the nearest (`// TODO:`).
-- **Deployment input:** pick a unit type in the panel, then tap a cell in the viewport to place it. Cells that can take it
-  preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
-  The same on desktop and phone. Only while deploying.
+- **Deployment input:** pick a unit type in the panel, then tap the player's zone in the viewport to place a squad of it: where its
+  footprint's middle is nearest the tapped point, moved in to fit at the zone's edges. A tap on any cell of a placed squad removes the
+  squad. The footprint a tap would fill (or empty) previews green when it can, red when it cannot (only under the mouse pointer; a
+  touch screen has no preview). The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, the project (its file name, Open..., Reload, Save, Save as...; "Loading and
   saving" in `abproj.md`), an open Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
-  button per unit type (name and cost; the chosen one is lit), Start,
+  button per unit type (name, the squad's size when it is more than one (`Crawler x4 (100)`), and cost; the chosen one is
+  lit), Start,
   Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
   definition files could not be read the panel shows only the first error. Start is on when the player has a unit, Retry when not
   deploying; Reset clears the placement in any phase.
 - **Debug exports (Debug builds):** `_battle_debug(n)` (0 phase, 1 tick, 2 outcome, 3 player units alive, 4 enemy units alive, 5 hash,
   6 units, 7 shells, 8 supply left, 9 definitions loaded, 10 chosen unit type, 11 the speed × 100, 0 while paused, 12 the shadow
-  map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)`,
-  `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
+  map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)` (the squad's
+  footprint corner), `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
 
@@ -1049,6 +1107,9 @@ A:
   refills when not hit; short of energy, only the damage left goes through (energy 10, damage 30 → the unit takes
   `max(20 - 5, 20 × 0.25)` = 15); a shield stops shells aimed at a neighbor; both sides wiped out on one tick is a draw; two overlapping units separate; the battle ends when a side is
   wiped out; it ends at 60 seconds and is judged by remaining value.
+- Squads: placed on their footprint and removed by any of its cells; where a squad's units stand (four on 2 × 2 cells, three on one
+  cell); overlap and the zone's edges; remaining value is the squad's cost over its size; each unit picks its own target; 2048 units a
+  side; a round of squads ends and gives the same hash twice.
 
 B:
 - Spatial grid: queries return the same units, in the same order, as a brute-force check.
@@ -1060,8 +1121,8 @@ From A on, `tests/strings_test.mjs` checks `autobattler/`'s strings too (the cte
 
 Playwright (Release and Debug, desktop and phone sizes, at the end of A and of B; run by hand, the script is not in the repository): open the
 `autobattler/` page and check: the definition files are read and the enemy is placed; the panel is right of the viewport on desktop and
-under it on a phone; taps place and remove units; taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
-runs out (10 units) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
+under it on a phone; taps place squads and remove them (a tap on any cell of the footprint); taps outside the player's zone (the enemy's zone, the middle) do nothing; when the supply
+runs out (10 squads) an eleventh is refused; a drag moves the view, the wheel zooms and a right drag turns it (taps still land on the right cell
 after); Start in the panel starts the fight, ticks advance in real time and nothing can be placed during it; the speed buttons set the speed and Start un-pauses; a pause stops the ticks, 4x runs more
 than 2.5 times as many as 1x and 0.5x less than 0.75 times; `Tick >` goes one tick at a time and `< Tick` comes back to the same hash, and holding it
 goes back several ticks; the round ends in a result (run at changing speeds, it gives the same hash
@@ -1083,7 +1144,8 @@ to count as a tap, so the checks wait about two seconds.
    `autobattler.md`. Stop here and play A. B's scope is looked at again with what that shows.
    **The project file (done, 2026-10-05):** the two definition files and the rule constants into one `default.abproj`
    (`docs/specs/abproj.md`).
-4. **B:** the rest of "Stage B rules" (five unit types, air, squads, several weapons, bullets and missiles, area damage and
+   **Squads (done, 2026-10-11):** B's squads brought forward into A (`squad`, `footprint`, format version 2; "Squads").
+4. **B:** the rest of "Stage B rules" (five unit types, air, several weapons, bullets and missiles, area damage and
    friendly fire, props, cover, flow fields, Jump, the spatial grid), Korean rows for the added text, B's tests.
 
 ### Open questions
@@ -1092,7 +1154,8 @@ to count as a tap, so the checks wait about two seconds.
 2. **Where the spatial grid and flow field go (B):** the engine (`engine/spatial.h`, `engine/flow.h`), as `autobattler.md`
    says, or `autobattler/` first, moving them when a second use appears?
 3. ~~**Time-limit judgment**~~: resolved (2026-10-03). At 60 seconds, remaining value (the sum of `cost × health / max health`) decides.
-4. **Squads:** units act on their own after the start (proposed), or keep a formation?
+4. **Squads:** units act on their own after the start (proposed), or keep a formation? For now they act on their own, as proposed
+   (built 2026-10-11).
 5. **Passages for large units (B):** the flow field assumes a one-cell width, so a Fortress can get stuck in a one-cell gap. B
    keeps one-cell gaps out of the stage and leaves per-size flow fields for later. Is that acceptable?
 6. ~~**Numbers**~~: resolved (2026-10-03). The values in the tables and definition files are a starting point, adjusted in

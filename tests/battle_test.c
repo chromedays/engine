@@ -290,6 +290,7 @@ internal void test_project_file(void)
     const UnitDef* crawler = &defs.units[0];
     CHECK(strcmp(crawler->name, "Crawler") == 0);
     CHECK(crawler->cost == 100 && crawler->health == 120.0f && crawler->armor == 5.0f && crawler->speed == 5.0f);
+    CHECK(crawler->squad_size == 1 && crawler->footprint == 1); // a file of version 1: a squad of one on one cell
     CHECK(crawler->radius == 0.5f && crawler->height == 0.8f);
     CHECK(strcmp(crawler->weapon.name, "Lobber") == 0);
     CHECK(crawler->weapon.range == 20.0f && crawler->weapon.damage == 30.0f && crawler->weapon.cooldown == 1.5f);
@@ -463,7 +464,7 @@ internal void test_definition_syntax(void)
 internal void test_project_structure(void)
 {
     // The version: the first statement, an integer from 1 to ABPROJ_VERSION.
-    CHECK(ABPROJ_VERSION == 1);
+    CHECK(ABPROJ_VERSION == 2);
     char text[4096];
     snprintf(text, sizeof(text), "%s%sstage\n    supply 1000\n    place Crawler 12 36\n", good_header, good_units);
     CHECK(read_project(text));
@@ -478,12 +479,12 @@ internal void test_project_structure(void)
              strstr(good_header, "rules"), good_units);
     expect_error_file(text, 1, 2, "'abproj_version' must be the first statement");
     snprintf(text, sizeof(text), "abproj_version 0\n%s%sstage\n    supply 1000\n    place Crawler 12 36\n", strstr(good_header, "rules"), good_units);
-    expect_error_file(text, 1, 1, "'abproj_version' must be 1 to 1");
+    expect_error_file(text, 1, 1, "'abproj_version' must be 1 to 2");
     snprintf(text, sizeof(text), "abproj_version 1.5\n%s%sstage\n    supply 1000\n    place Crawler 12 36\n", strstr(good_header, "rules"), good_units);
     expect_error_file(text, 1, 1, "not an integer");
     expect_error_file("abproj_version\n", 1, 1, "'abproj_version' takes one integer");
     // A newer format is one error and the rest is not read (it may mean anything by it).
-    expect_error_file("abproj_version 2\nrules\n    bogus 1\nunit\n", 1, 1, "format 2 is newer than this build reads (1)");
+    expect_error_file("abproj_version 3\nrules\n    bogus 1\nunit\n", 1, 1, "format 3 is newer than this build reads (2)");
 
     // The order: version, rules, units, stage. A statement out of place is one error and its block is skipped.
     char swapped[4096];
@@ -699,6 +700,8 @@ internal void scene_defs(void)
         UnitDef* def = &defs.units[i];
         snprintf(def->name, sizeof(def->name), "%s", names[i]);
         def->cost = 100;
+        def->squad_size = 1;
+        def->footprint = 1;
         def->health = 100.0f;
         def->radius = 0.5f;
         def->height = 0.8f;
@@ -1393,6 +1396,205 @@ internal void test_rules_in_use(void)
     }
 }
 
+// Squads (docs/specs/battle.md, "Squads"; abproj.md, "unit <name>"): the project file's `squad` and `footprint`, a squad placed
+// on its footprint, where its units stand, the limits, and a round of squads.
+
+// A project of version 2: `units` as given, then a stage of `stage`'s lines (indented here). The units start on line 11.
+internal b32 read_version_2(const char* units, const char* stage)
+{
+    project_text[0] = 0;
+    append_indented("abproj_version 2\n", 0);
+    append_indented(strstr(good_header, "rules"), 0);
+    append_indented(units, 0);
+    append_indented("stage\n", 0);
+    append_indented(stage, 4);
+    return read_project(project_text);
+}
+
+// `text` with its first `from` replaced by `to`.
+internal const char* replaced(const char* text, const char* from, const char* to)
+{
+    static char out[8192];
+    const char* at = strstr(text, from);
+    NV_ASSERT(at && strlen(text) - strlen(from) + strlen(to) < sizeof(out));
+    snprintf(out, sizeof(out), "%.*s%s%s", (int)(at - text), text, to, at + strlen(from));
+    return out;
+}
+
+global const char squad_unit[] =
+    "unit Crawler\n"           // 11
+    "    cost 100\n"           // 12
+    "    squad 4\n"            // 13
+    "    footprint 2\n"        // 14
+    "    health 120\n"         // 15
+    "    speed 5\n"            // 16
+    "    radius 0.5\n"         // 17
+    "    height 0.8\n"         // 18
+    "    weapon Lobber\n"      // 19
+    "        range 20\n"       // 20
+    "        damage 30\n"      // 21
+    "        cooldown 1.5\n"   // 22
+    "        launch_angle 45\n"; // 23; the stage is 24, its first line 25
+#define SQUAD_STAGE "supply 1000\nplace Crawler 12 36\n"
+
+internal b32 first_error_at(u32 line, const char* message)
+{
+    char prefix[48];
+    snprintf(prefix, sizeof(prefix), "%s:%u:", FILE_NAME, line);
+    b32 ok = strncmp(defs.first_error, prefix, strlen(prefix)) == 0 && first_error_has(message);
+    if (!ok)
+        printf("wanted \"%s ... %s\", got \"%s\" (%u error(s))\n", prefix, message, defs.first_error, defs.error_count);
+    return ok;
+}
+
+internal void test_squad_file(void)
+{
+    // Read, and a unit without them is a squad of one on one cell.
+    CHECK(read_version_2(squad_unit, SQUAD_STAGE));
+    CHECK(defs.units[0].squad_size == 4 && defs.units[0].footprint == 2 && defs.units[0].cost == 100);
+    CHECK(read_version_2(good_units, SQUAD_STAGE));
+    CHECK(defs.units[0].squad_size == 1 && defs.units[0].footprint == 1);
+    // The keys are version 2's: a file of version 1 that has them is wrong at each.
+    CHECK(!read_units(squad_unit, "Crawler") && defs.error_count == 2);
+    CHECK(first_error_at(13, "'squad' needs abproj_version 2 or newer") && log_has(FILE_NAME ":14: 'footprint' needs"));
+
+    // Their ranges.
+    const struct { const char* from; const char* to; u32 line; const char* message; } bad[] = {
+        {"squad 4", "squad 0", 13, "'squad' must be >= 1 and <= 64"},
+        {"squad 4", "squad 65", 13, "<= 64"},
+        {"squad 4", "squad 1.5", 13, "not an integer"},
+        {"squad 4", "squad 4\n    squad 4", 14, "'squad' is given twice"},
+        {"footprint 2", "footprint 0", 14, "'footprint' must be >= 1 and <= 4"},
+        {"footprint 2", "footprint 5", 14, "<= 4"},
+    };
+    for (u32 i = 0; i < NV_ARRAY_COUNT(bad); ++i) {
+        CHECK(!read_version_2(replaced(squad_unit, bad[i].from, bad[i].to), SQUAD_STAGE) && defs.error_count == 1);
+        CHECK(first_error_at(bad[i].line, bad[i].message));
+    }
+    // A footprint must fit in a zone: 4 cells is too many for zones of 3 rows (its places are then not judged).
+    char text[4096];
+    snprintf(text, sizeof(text), "%s", replaced(squad_unit, "footprint 2", "footprint 4"));
+    CHECK(read_version_2(text, SQUAD_STAGE)); // 4 fits zones of 14 rows
+    snprintf(text, sizeof(text), "%s", replaced(project_text, "zone_rows 14", "zone_rows 3"));
+    CHECK(!read_project(text) && defs.error_count == 1 && first_error_at(14, "'footprint' must be at most 3"));
+    // The rules editor cannot shrink the zone under a footprint either: the edited text does not read.
+    CHECK(read_version_2(squad_unit, SQUAD_STAGE));
+    char edited[8192];
+    f64 one = 1;
+    umm size = defs_rule_set(project_text, strlen(project_text), "zone_rows", &one, 1, edited, sizeof(edited) - 1);
+    edited[size] = 0;
+    CHECK(size && !read_project(edited) && defs.error_count == 1 && first_error_has("'footprint' must be at most 1"));
+
+    // The stage: a place is the footprint's corner nearest the origin, and the whole footprint is in the enemy zone, free.
+    CHECK(read_version_2(squad_unit, "supply 1000\nplace Crawler 30 34\nplace Crawler 0 46\nplace Crawler 12 36\nplace Crawler 14 36\n"));
+    CHECK(defs.enemy_count == 4 && defs.enemy[1].cell_x == 0 && defs.enemy[1].cell_row == 46);
+    CHECK(!read_version_2(squad_unit, "supply 1000\nplace Crawler 31 36\n") && first_error_at(26, "cell x must be 0 to 30"));
+    CHECK(!read_version_2(squad_unit, "supply 1000\nplace Crawler 12 47\n") && first_error_at(26, "cell row must be 34 to 46"));
+    CHECK(!read_version_2(squad_unit, "supply 1000\nplace Crawler 12 36\nplace Crawler 13 37\n") && defs.error_count == 1 &&
+          first_error_at(27, "cell (13, 37) already has a unit"));
+    // An unknown unit's cell is judged as one cell.
+    CHECK(!read_version_2(squad_unit, "supply 1000\nplace Nobody 31 47\n") && defs.error_count == 1);
+    // The supply buys squads.
+    CHECK(!read_version_2(squad_unit, "supply 150\nplace Crawler 12 36\nplace Crawler 14 36\n") && first_error_at(27, "over the supply"));
+    // At most BATTLE_MAX_TEAM_UNITS enemy units: 32 squads of 64 are 2048, a 33rd is one too many.
+    snprintf(text, sizeof(text), "%s", replaced(squad_unit, "squad 4", "squad 64"));
+    snprintf(text, sizeof(text), "%s", replaced(text, "footprint 2", "footprint 1"));
+    char places[2048] = "supply 100000\n";
+    for (u32 i = 0; i < 33; ++i) {
+        char place[48];
+        snprintf(place, sizeof(place), "place Crawler %u %u\n", i % 32, 34 + i / 32);
+        strcat(places, place);
+    }
+    CHECK(!read_version_2(text, places) && defs.error_count == 1 && first_error_at(25 + 33, "the enemy has more than 2048 units"));
+}
+
+internal void test_squad_deployment(void)
+{
+    // 0 "Shooter": squads of 4 on 2 x 2 cells; 1 "Dummy": squads of 3 on one cell. The enemy has one squad of Dummies.
+    scene_defs();
+    defs.units[0].squad_size = 4;
+    defs.units[0].footprint = 2;
+    defs.units[1].squad_size = 3;
+    defs.enemy_count = 1;
+    defs.enemy[0] = (StagePlace){1, 5, 40};
+    battle_init(&battle, &defs);
+    CHECK(battle.unit_count == 3 && battle.player_units == 0);
+
+    // The units of a squad of 4 on 2 x 2 cells of 2 m stand on the middles of the four cells, row by row.
+    CHECK(battle_place(&battle, 0, 0, 0) && battle.unit_count == 7 && battle.player_units == 4);
+    const f32 four[4][2] = {{1.0f, 1.0f}, {3.0f, 1.0f}, {1.0f, 3.0f}, {3.0f, 3.0f}};
+    for (u32 i = 0; i < 4; ++i)
+        CHECK(battle.units[1 + i].team == TEAM_PLAYER && battle.units[1 + i].position.x == four[i][0] && battle.units[1 + i].position.z == four[i][1]);
+    // A squad of 3 on one cell: two in the first row and one centered in the second.
+    const f32 three[3][2] = {{10.5f, 80.5f}, {11.5f, 80.5f}, {11.0f, 81.5f}};
+    for (u32 i = 0; i < 3; ++i)
+        CHECK(battle.units[5 + i].team == TEAM_ENEMY && battle.units[5 + i].position.x == three[i][0] && battle.units[5 + i].position.z == three[i][1]);
+
+    // A footprint must be free and inside the zone; any of its cells finds the squad.
+    CHECK(!battle_can_place(&battle, 0, 1, 1) && !battle_place(&battle, 1, 1, 1)); // on the first squad
+    CHECK(battle_place(&battle, 0, 2, 0));                                          // beside it
+    CHECK(!battle_place(&battle, 0, 31, 0) && !battle_place(&battle, 0, 0, 13));   // over the zone's edge
+    CHECK(battle_place(&battle, 0, 30, 12));                                        // the last corner that fits
+    BattleCell at = battle_squad_at(&battle, 31, 13);
+    CHECK(at.ok && at.x == 30 && at.row == 12);
+    CHECK(!battle_squad_at(&battle, 4, 0).ok && !battle_squad_at(&battle, -1, 0).ok && !battle_squad_at(&battle, 0, 14).ok);
+    CHECK(battle_supply_left(&battle) == 700 && battle.player_units == 12);
+    // Removing by any cell of its footprint gives the whole squad's supply back.
+    CHECK(battle_remove(&battle, 3, 1) && battle_supply_left(&battle) == 800 && battle.player_units == 8 && battle.unit_count == 11);
+    CHECK(!battle_remove(&battle, 3, 1));
+    CHECK(battle.units[5].position.x == 61.0f && battle.units[5].position.z == 25.0f); // the squad at (30, 12) is next in row order
+
+    // The remaining value: a unit is worth its squad's cost over the squad's size.
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_PLAYER), 200.0f, 1e-3f));
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_ENEMY), 100.0f, 1e-3f));
+    battle.units[1].health = 50.0f;
+    CHECK(near_value(battle_remaining_value(&battle, TEAM_PLAYER), 187.5f, 1e-3f));
+
+    // Each unit of a squad fights on its own: it picks the enemy nearest to it.
+    CHECK(battle_start(&battle));
+    run(1);
+    CHECK(battle.units[1].target.index == 9 && battle.units[2].target.index == 9 && battle.units[5].target.index == 10);
+
+    // At most BATTLE_MAX_TEAM_UNITS on a side: 32 squads of 64 fill it.
+    scene_defs();
+    defs.units[0].squad_size = 64;
+    defs.units[0].cost = 1;
+    defs.units[1].cost = 1;
+    battle_init(&battle, &defs);
+    for (s32 x = 0; x < 32; ++x)
+        CHECK(battle_place(&battle, 0, x, 0));
+    CHECK(battle.player_units == BATTLE_MAX_TEAM_UNITS && battle.unit_count == BATTLE_MAX_TEAM_UNITS);
+    CHECK(!battle_place(&battle, 0, 0, 1) && !battle_place(&battle, 1, 0, 1));
+}
+
+// A round of squads plays to its end, the same every time.
+internal void test_squad_round(void)
+{
+    char units[1024];
+    snprintf(units, sizeof(units), "%s    armor 5\n    ability shield\n        radius 1.2\n        capacity 60\n        regen 10\n        regen_delay 3\n",
+             squad_unit);
+    CHECK(read_version_2(units, "supply 1000\nseed 1\nplace Crawler 12 36\nplace Crawler 14 36\nplace Crawler 16 36\nplace Crawler 18 36\n"
+                                "place Crawler 13 38\nplace Crawler 15 38\nplace Crawler 17 38\nplace Crawler 14 40\nplace Crawler 16 40\n"
+                                "place Crawler 15 42\n"));
+    u32 hashes[2] = {0, 0};
+    for (u32 pass = 0; pass < 2; ++pass) {
+        battle_init(&battle, &defs);
+        const s32 corners[10][2] = {{12, 10}, {14, 10}, {16, 10}, {18, 10}, {13, 8}, {15, 8}, {17, 8}, {14, 6}, {16, 6}, {15, 4}};
+        for (u32 i = 0; i < 10; ++i)
+            CHECK(battle_place(&battle, 0, corners[i][0], corners[i][1]));
+        CHECK(battle.unit_count == 80 && battle_supply_left(&battle) == 0);
+        CHECK(battle_start(&battle));
+        while (battle.phase == BATTLE_FIGHT) {
+            battle_tick(&battle);
+            battle.event_count = 0;
+        }
+        CHECK(battle.phase == BATTLE_RESULT && battle.outcome != OUTCOME_NONE && battle.tick <= defs.rules.round_ticks);
+        CHECK(battle_alive_count(&battle, TEAM_PLAYER) + battle_alive_count(&battle, TEAM_ENEMY) < 80); // the shells do hurt
+        hashes[pass] = battle_hash(&battle);
+    }
+    CHECK(hashes[0] == hashes[1]);
+}
+
 // Whole rounds on a copy of the repository's project (full_project).
 
 internal void load_full_project(void)
@@ -1524,6 +1726,9 @@ int main(void)
     test_shield();
     test_round_end();
     test_rules_in_use();
+    test_squad_file();
+    test_squad_deployment();
+    test_squad_round();
     test_whole_round();
     test_golden_rounds();
     test_seek();

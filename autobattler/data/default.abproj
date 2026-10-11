@@ -1,5 +1,5 @@
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj_version 1
+abproj_version 2
 
 rules
     cell_size 2              # m
@@ -12,7 +12,9 @@ rules
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
 unit Crawler
-    cost 100
+    cost 100           # the whole squad
+    squad 4            # units
+    footprint 2        # cells on a side
     health 120
     armor 5
     speed 5            # m/s

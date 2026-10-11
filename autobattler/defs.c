@@ -32,7 +32,8 @@ typedef struct Line {
 typedef struct Reader {
     BattleDefs* defs;
     const char* file_name;
-    u32 errors; // found by this read
+    u32 errors;  // found by this read
+    u32 version; // the file's format (its abproj_version line; ABPROJ_VERSION while it has none)
 } Reader;
 
 // `reader` is NULL in a scan of text already read without errors (the rules editor's), which reports nothing.
@@ -214,11 +215,23 @@ typedef struct Field {
     b32 required;
 } Field;
 
+// Keys added after the first format, with the version that added each: a file of an older version that has one is wrong.
+global const struct {
+    const char* key;
+    u32 version;
+} newer_keys[] = {
+    {"squad", 2},
+    {"footprint", 2},
+};
+
 #define UNIT_FIELD(key, kind, member, min, min_open, required) \
     {key, kind, offsetof(UnitDef, member), min, NO_LIMIT, min_open, false, required}
 
+// A unit's `squad` and `footprint` default to 1 (read_unit_header).
 global const Field unit_fields[] = {
     {"cost", FIELD_INTEGER, offsetof(UnitDef, cost), 1, 10000, false, false, true},
+    {"squad", FIELD_INTEGER, offsetof(UnitDef, squad_size), 1, BATTLE_MAX_SQUAD_SIZE, false, false, false},
+    {"footprint", FIELD_INTEGER, offsetof(UnitDef, footprint), 1, BATTLE_MAX_FOOTPRINT, false, false, false},
     UNIT_FIELD("health", FIELD_NUMBER, health, 0, true, true),
     UNIT_FIELD("armor", FIELD_NUMBER, armor, 0, false, false),
     UNIT_FIELD("speed", FIELD_NUMBER, speed, 0, false, true),
@@ -299,6 +312,12 @@ internal void read_field(Reader* reader, const Line* line, const Field* field, u
         return;
     }
     *seen |= 1u << index; // a bad value is not "missing" on top of that
+    for (u32 i = 0; i < NV_ARRAY_COUNT(newer_keys); ++i) {
+        if (strcmp(field->key, newer_keys[i].key) == 0 && reader->version < newer_keys[i].version) {
+            report(reader, line->number, "'%s' needs abproj_version %u or newer", field->key, newer_keys[i].version);
+            return;
+        }
+    }
     u32 values = field_values(field);
     if (line->token_count != 1 + values) {
         report(reader, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
@@ -400,7 +419,7 @@ internal LineText next_line(Lines* lines)
 
 typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
-enum { SEEN_WEAPON = 1 << 8, SEEN_ABILITY = 1 << 9 }; // beyond the unit's own fields in Block.seen
+enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17 }; // beyond the unit's own fields in Block.seen
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
 typedef struct Block {
@@ -425,11 +444,13 @@ typedef struct ProjectReader {
     UnitDef unit;   // the unit being read
     b32 unit_named; // its name is a good one, so what it lacks can be reported by name
     b32 unit_kept;  // there was room for it
+    u32 footprint_line; // of the unit being read; 0 when it has none
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
     u32 stage_errors_start, places_seen; // `place` lines, also those that could not be judged against a wrong grid
-    u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells with a unit, by row in the zone
+    u32 enemy_units;                     // the units the enemy's places make
+    u8 taken[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // enemy cells under a squad, by row in the zone
     u32 place_lines[BATTLE_MAX_PLACES];                   // the line of each enemy place
 } ProjectReader;
 
@@ -451,6 +472,13 @@ internal void close_block(ProjectReader* reader)
             check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
             if (!(block->seen & SEEN_WEAPON))
                 report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
+        }
+        // A squad must fit in a zone (judged only against rules that were read right).
+        if (reader->rules_ok && reader->footprint_line) {
+            const BattleRules* rules = &defs->rules;
+            u32 most = rules->zone_rows < rules->grid_width ? rules->zone_rows : rules->grid_width;
+            if (reader->unit.footprint > most)
+                report(base, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
         }
         if (reader->unit_kept)
             defs->units[defs->unit_count++] = reader->unit;
@@ -512,6 +540,8 @@ internal void read_version(ProjectReader* reader, const Line* line)
         // A newer format may mean anything by what follows, so the rest is not read.
         report(base, line->number, "format %.0f is newer than this build reads (%d)", number.value, ABPROJ_VERSION);
         reader->stop = true;
+    } else {
+        base->version = (u32)number.value;
     }
 }
 
@@ -519,9 +549,10 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    reader->unit = (UnitDef){0};
+    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1}; // a file of version 1 has neither: a unit is a squad of one
     reader->unit_named = false;
     reader->unit_kept = false;
+    reader->footprint_line = 0;
     open_block(reader, BLOCK_UNIT, line);
     if (line->token_count != 2) {
         report(base, line->number, "'unit' takes a name");
@@ -629,10 +660,14 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
         return;
     }
     const Field* field = find_field(unit_fields, FIELD_COUNT(unit_fields), key);
-    if (!field)
+    if (!field) {
         report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
-    else
-        read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
+        return;
+    }
+    u32 errors = base->errors;
+    read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
+    if (token_is(key, "footprint") && base->errors == errors)
+        reader->footprint_line = line->number;
 }
 
 typedef struct UnitIndex {
@@ -673,24 +708,42 @@ internal void read_place(ProjectReader* reader, const Line* line)
         return;
     if (!reader->rules_ok)
         return; // the grid is not known, so a cell cannot be judged (and no cell is reported against a wrong grid)
+    // The cell is the corner of the squad's footprint nearest the grid's origin; the whole footprint is in the enemy zone (a
+    // footprint larger than the zone was reported with its unit). An unknown unit's cell is judged as a single cell.
+    u32 footprint = unit.ok ? defs->units[unit.index].footprint : 1;
+    if (footprint > rules->zone_rows || footprint > rules->grid_width)
+        return;
     f64 x = x_number.value, row = row_number.value;
     u32 first_row = battle_enemy_first_row(rules);
-    if (x < 0 || x >= rules->grid_width) {
-        report(base, line->number, "cell x must be 0 to %u", rules->grid_width - 1);
+    u32 last_x = rules->grid_width - footprint, last_row = rules->grid_length - footprint;
+    if (x < 0 || x > last_x) {
+        report(base, line->number, "cell x must be 0 to %u", last_x);
         ok = false;
     }
-    if (row < first_row || row >= rules->grid_length) {
-        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, rules->grid_length - 1);
+    if (row < first_row || row > last_row) {
+        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, last_row);
         ok = false;
     }
     if (!ok)
         return;
+    const UnitDef* def = &defs->units[unit.index];
     u32 cell_x = (u32)x, cell_row = (u32)row - first_row;
-    if (reader->taken[cell_row][cell_x]) {
-        report(base, line->number, "cell (%u, %u) already has a unit", cell_x, (u32)row);
+    for (u32 r = cell_row; r < cell_row + footprint; ++r) {
+        for (u32 c = cell_x; c < cell_x + footprint; ++c) {
+            if (reader->taken[r][c]) {
+                report(base, line->number, "cell (%u, %u) already has a unit", c, r + first_row);
+                return;
+            }
+        }
+    }
+    if (reader->enemy_units + def->squad_size > BATTLE_MAX_TEAM_UNITS) {
+        report(base, line->number, "the enemy has more than %d units", BATTLE_MAX_TEAM_UNITS);
         return;
     }
-    reader->taken[cell_row][cell_x] = 1;
+    for (u32 r = cell_row; r < cell_row + footprint; ++r)
+        for (u32 c = cell_x; c < cell_x + footprint; ++c)
+            reader->taken[r][c] = 1;
+    reader->enemy_units += def->squad_size;
     reader->place_lines[defs->enemy_count] = line->number;
     defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
 }
@@ -757,7 +810,7 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
 
 b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size)
 {
-    ProjectReader reader = {.base = {defs, file_name, 0}, .first_statement = true};
+    ProjectReader reader = {.base = {defs, file_name, 0, ABPROJ_VERSION}, .first_statement = true};
     reader.stack[0] = (Block){.kind = BLOCK_ROOT, .header_indent = -1, .child_indent = 0};
     reader.depth = 1;
     defs->seed = 1;

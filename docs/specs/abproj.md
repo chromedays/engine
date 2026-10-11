@@ -5,7 +5,7 @@
 
 ## 한국어
 
-상태: 구현됨 (2026-10-05). 이 스펙의 변경은 먼저 합의한다.
+상태: 구현됨 (2026-10-05). 분대(`squad`, `footprint`)를 더한 버전 2 (2026-10-11). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
 
@@ -51,7 +51,7 @@
 
 | 최상위 문장 | 개수 | 내용 |
 |---|---|---|
-| `abproj_version <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `1` |
+| `abproj_version <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `2` |
 | `rules` | 블록, 정확히 하나 | 규칙 상수 |
 | `unit <이름>` | 블록, 하나 이상, 최대 16 | 유닛 정의 |
 | `stage` | 블록, 정확히 하나 | 공급, 시드, 적 배치 |
@@ -83,14 +83,17 @@
 - **용량:** 배열 크기를 정하는 값(`BATTLE_MAX_UNIT_DEFS`, `BATTLE_MAX_PROJECTILES`, `BATTLE_MAX_EVENTS`, 이름 길이)은 매크로로
   남는다. 격자 크기가 데이터가 되었으므로 그 상한도 매크로다: `BATTLE_MAX_GRID_WIDTH 64`, `BATTLE_MAX_GRID_LENGTH 128`,
   `BATTLE_MAX_ZONE_ROWS 32`, `BATTLE_MAX_PLACES (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH)`. 위 표의 범위는 이 상한에서
-  나온다.
+  나온다. 분대의 상한도 매크로다: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, 그리고 한 편의 유닛 수
+  `BATTLE_MAX_TEAM_UNITS 2048`.
 
 #### `unit <이름>`
 
 | 키 | 값 | 필수 | 범위, 기본값 |
 |---|---|---|---|
 | `unit <이름>` | 블록 | 하나 이상, 최대 16 | 이름은 파일 안에서 하나뿐 |
-| ├ `cost` | 정수 | 예 | 1–10000 |
+| ├ `cost` | 정수, 분대 전체 | 예 | 1–10000 |
+| ├ `squad` | 정수, 분대의 유닛 수 (버전 2부터) | 아니오 | 1–64, 기본 1 |
+| ├ `footprint` | 정수, 분대가 차지하는 정사각형의 한 변(칸) (버전 2부터) | 아니오 | 1–4, 기본 1. 구역의 행 수와 너비 이하 |
 | ├ `health` | 수 | 예 | > 0 |
 | ├ `armor` | 수 | 아니오 | ≥ 0, 기본 0 |
 | ├ `speed` | 수, m/s | 예 | ≥ 0 |
@@ -109,24 +112,29 @@
 | &nbsp;&nbsp; ├ `regen` | 수, 초당 | 예 | ≥ 0 |
 | &nbsp;&nbsp; └ `regen_delay` | 수, 초 | 예 | ≥ 0 |
 
+- 유닛 정의는 **분대**로 놓인다(`battle.md`의 "분대"): 한 번 놓으면 `footprint` × `footprint` 칸에 `squad`개의 유닛이 서고, 값은
+  `cost`다. 체력, 무기, 능력 같은 나머지 키는 분대의 유닛 하나하나의 것이다. 두 키가 없으면 한 칸에 유닛 하나다(버전 1과 같다).
+- `footprint`가 구역의 행 수나 격자 너비보다 크면 `footprint` 줄에 `'footprint' must be at most 14 (a zone's rows and width)`. 규칙에
+  오류가 있으면 따지지 않는다.
+
 #### `stage`
 
 | 키 | 값 | 필수 | 범위 |
 |---|---|---|---|
 | `supply <정수>` | 양쪽의 공급 | 예, 한 번 | 1–100000 |
 | `seed <정수>` | 난수 시드(퍼짐). 같은 배치는 같은 결과 | 아니요, 한 번 | 0–4294967295, 기본 1 |
-| `place <유닛 이름> <칸 x> <칸 행>` | 적 유닛 하나 | 하나 이상 | 이름은 위의 `unit` 중 하나. x 0–(너비 − 1), 행은 적 구역. 칸마다 하나. 비용 합 ≤ `supply` |
+| `place <유닛 이름> <칸 x> <칸 행>` | 적 분대 하나. 칸은 footprint에서 원점에 가장 가까운 모서리 칸 | 하나 이상 | 이름은 위의 `unit` 중 하나. footprint 전체가 적 구역 안(x 0–(너비 − footprint), 행은 적 구역의 첫 행부터 (길이 − footprint)까지). footprint끼리 겹치지 않는다. 비용 합 ≤ `supply`, 유닛 수 합 ≤ 2048 |
 
 `place`의 행은 전장 전체의 행 번호다(`grid 32 48`, `zone_rows 14`이면 34–47). 범위는 `rules`에서 계산한다. `rules`에 오류가 있으면
 칸을 따질 격자를 모르므로 `place`의 칸 검사는 하지 않는다(틀린 격자 때문에 맞는 줄이 오류가 되지 않게). 이름과 수의 검사는 한다.
 
 ### 예
 
-`autobattler/data/default.abproj`. 규칙은 전에 코드에 있던 값이라 읽은 결과가 전과 같다(같은 배치와 시드는 같은 해시).
+`autobattler/data/default.abproj`. 규칙은 전에 코드에 있던 값이다. 버전 2부터 Crawler는 2 × 2칸에 넷인 분대다.
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj_version 1
+abproj_version 2
 
 rules
     cell_size 2              # m
@@ -139,7 +147,9 @@ rules
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
 unit Crawler
-    cost 100
+    cost 100           # the whole squad
+    squad 4            # units
+    footprint 2        # cells on a side
     health 120
     armor 5
     speed 5            # m/s
@@ -188,6 +198,7 @@ stage
 | 버전 | 바뀐 것 | 옛 파일 읽기 |
 |---|---|---|
 | 1 | 첫 형식 | — |
+| 2 | 유닛의 `squad`, `footprint`(분대). `place`의 칸은 footprint의 모서리 | 둘 다 1: 한 칸에 유닛 하나. 버전 1 파일에 이 키가 있으면 오류(`'squad' needs abproj_version 2 or newer`) |
 
 ### 읽기와 오류
 
@@ -262,10 +273,10 @@ stage
   값이 길어지거나 짧아지면 주석 앞의 공백이 줄거나 늘어 주석이 제 열에 남는다(적어도 한 칸). 값은 정수거나 소수점 아래 넷째 자리까지
   쓰고 끝의 0은 뺀다("9.8", "60"). 지수 표기는 쓰지 않는다(형식에 없다).
 - **좋으면 바로 놓인다(`game_set_rule`):** 새 defs와 글이 자리에 들어가고, 플레이어의 배치는 새 규칙에서도 되는 칸에 그대로 남는다
-  (구역 밖이나 공급을 넘는 유닛은 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
+  (footprint가 구역 밖이거나 공급을 넘는 분대는 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
   유닛 메시는 그대로다. 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
 - **나쁘면 아무것도 바꾸지 않는다:** "Not changed: <첫 오류>"를 빨강으로 보인다. 예: `zone_rows`가 격자 길이의 반을 넘음, 격자를 줄여
-  스테이지의 `place`가 적 구역 밖으로 나감. 다음에 받아들여진 고침이 이 알림을 지운다.
+  스테이지의 `place`가 적 구역 밖으로 나감, `zone_rows`를 어느 유닛의 `footprint`보다 작게 함. 다음에 받아들여진 고침이 이 알림을 지운다.
 - **배치 단계에서만:** 라운드가 시작되면 위젯이 꺼진다("Rules change only in deployment"). 되감기(`battle_seek`)는 라운드를 처음부터 다시
   돌리므로, 규칙이 라운드 중에 바뀌면 그 라운드를 재현할 수 없다. 로컬 파일을 읽거나 쓰는 중에도 꺼진다(저장이 보낸 글과 "저장됨"
   표시가 맞도록).
@@ -288,6 +299,9 @@ stage
   아닌 `unit`, `stage`, `rules`, 두 번째 `stage`), 파일 전체의 모자람, 시간의 틱 변환(0.25 → 8, 60 → 1800, 0.01 → 1).
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
   `stop_fraction`, `gravity`(포탄이 어느 중력에서도 목표점에 떨어지고 약하면 오래 난다), `min_damage_fraction` 0과 1.
+- 분대(버전 2): `squad`와 `footprint`를 읽고 없으면 1, 버전 1 파일의 두 키는 오류, 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 큰
+  footprint와 그렇게 줄이는 규칙 고치기의 거절, `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
+  유닛 2048 초과.
 - **황금 해시:** `full_project`로 시드 1–4의 라운드를 돌린 틱 수, 결과, 300틱의 해시, 끝의 해시, 남은 적 수가 규칙을 코드에서 파일로 옮기기
   전의 값과 같다. 규칙의 계산을 바꿔서 라운드가 달라졌다면 이 값이 바뀌는 것이 맞고, 그때 일부러 고친다.
 
@@ -304,7 +318,7 @@ stage
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
   옮긴다. 버전을 올린다.
-- **B의 키:** 유닛의 `layer`, `size`, `squad`, `footprint`, `altitude`, 여러 `weapon` 블록과 무기의 `projectile`, `targets`,
+- **B의 키:** 유닛의 `layer`, `size`, `altitude`, 여러 `weapon` 블록과 무기의 `projectile`, `targets`,
   `min_range`, `splash`, `speed`, `turn_rate`, `ability jump`, 스테이지의 `prop`이 같은 문법으로 더해진다. 모르는 키는 여전히 오류다.
   더할 때마다 버전을 올린다.
 - **이펙트, 유닛 외형:** 지금은 `battle_view.c`의 코드다. 디자이너가 다뤄야 하면 블록으로 더한다.
@@ -318,7 +332,7 @@ stage
 
 ## English
 
-Status: built (2026-10-05). Changes to this spec are agreed first.
+Status: built (2026-10-05). Version 2 adds squads (`squad`, `footprint`) (2026-10-11). Changes to this spec are agreed first.
 
 ### Goal
 
@@ -366,7 +380,7 @@ outside this spec; see "Later").
 
 | Top-level statement | Count | Contents |
 |---|---|---|
-| `abproj_version <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `1` |
+| `abproj_version <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `2` |
 | `rules` | Block, exactly one | Rule constants |
 | `unit <name>` | Block, one or more, at most 16 | A unit definition |
 | `stage` | Block, exactly one | Supply, seed, the enemy deployment |
@@ -398,14 +412,17 @@ Every key is required. No defaults live in code, so the rules' values are only i
 - **Capacities:** the values that size arrays (`BATTLE_MAX_UNIT_DEFS`, `BATTLE_MAX_PROJECTILES`, `BATTLE_MAX_EVENTS`, the name
   length) stay macros. Since the grid's size is data, its upper limits are macros too: `BATTLE_MAX_GRID_WIDTH 64`,
   `BATTLE_MAX_GRID_LENGTH 128`, `BATTLE_MAX_ZONE_ROWS 32`, `BATTLE_MAX_PLACES (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH)`. The
-  ranges in the table above come from them.
+  ranges in the table above come from them. So do a squad's: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, and the units a
+  side may have, `BATTLE_MAX_TEAM_UNITS 2048`.
 
 #### `unit <name>`
 
 | Key | Value | Required | Range, default |
 |---|---|---|---|
 | `unit <name>` | Block | One or more, at most 16 | The name is unique in the file |
-| ├ `cost` | Integer | Yes | 1–10000 |
+| ├ `cost` | Integer, of the whole squad | Yes | 1–10000 |
+| ├ `squad` | Integer, the squad's units (from version 2) | No | 1–64, default 1 |
+| ├ `footprint` | Integer, the side of the square the squad stands on, in cells (from version 2) | No | 1–4, default 1. At most a zone's rows and its width |
 | ├ `health` | Number | Yes | > 0 |
 | ├ `armor` | Number | No | ≥ 0, default 0 |
 | ├ `speed` | Number, m/s | Yes | ≥ 0 |
@@ -424,13 +441,19 @@ Every key is required. No defaults live in code, so the rules' values are only i
 | &nbsp;&nbsp; ├ `regen` | Number, per second | Yes | ≥ 0 |
 | &nbsp;&nbsp; └ `regen_delay` | Number, s | Yes | ≥ 0 |
 
+- A unit def is placed as a **squad** (`battle.md`, "Squads"): one placement puts `squad` units on `footprint` × `footprint` cells,
+  for `cost`. The other keys (health, the weapon, the ability) are each unit's own. Without the two keys a unit is one on one cell (as
+  in version 1).
+- A `footprint` larger than a zone's rows or the grid's width is reported at the `footprint` line: `'footprint' must be at most 14 (a
+  zone's rows and width)`. It is not judged when the rules have an error.
+
 #### `stage`
 
 | Key | Value | Required | Range |
 |---|---|---|---|
 | `supply <integer>` | Each side's supply | Yes, once | 1–100000 |
 | `seed <integer>` | The random seed (spread); the same deployment gives the same result | No, once | 0–4294967295, default 1 |
-| `place <unit name> <cell x> <cell row>` | One enemy unit | One or more | The name is one of the `unit`s above. x 0 to (width − 1), the row in the enemy zone. One per cell. Total cost ≤ `supply` |
+| `place <unit name> <cell x> <cell row>` | One enemy squad. The cell is its footprint's corner nearest the origin | One or more | The name is one of the `unit`s above. The whole footprint in the enemy zone (x 0 to (width − footprint), the row from the enemy zone's first to (length − footprint)). Footprints do not overlap. Total cost ≤ `supply`, total units ≤ 2048 |
 
 A `place` row is the row on the whole field (34–47 with `grid 32 48` and `zone_rows 14`). Its range is computed from `rules`. When
 `rules` has an error, the grid the cell would be judged against is not known, so `place` has no cell checks (so a wrong grid does not
@@ -438,12 +461,12 @@ make right lines errors). Its unit name and numbers are still checked.
 
 ### Example
 
-`autobattler/data/default.abproj`. The rules are the values that were in code, so what it reads equals what was read before (the
-same deployment and seed give the same hash).
+`autobattler/data/default.abproj`. The rules are the values that were in code. From version 2 the Crawler is a squad of four on
+2 × 2 cells.
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
-abproj_version 1
+abproj_version 2
 
 rules
     cell_size 2              # m
@@ -456,7 +479,9 @@ rules
     min_damage_fraction 0.25 # armor never takes more than 75% of a hit
 
 unit Crawler
-    cost 100
+    cost 100           # the whole squad
+    squad 4            # units
+    footprint 2        # cells on a side
     health 120
     armor 5
     speed 5            # m/s
@@ -505,6 +530,7 @@ stage
 | Version | What changed | Reading older files |
 |---|---|---|
 | 1 | The first format | — |
+| 2 | A unit's `squad` and `footprint` (squads). A `place`'s cell is the footprint's corner | Both 1: one unit on one cell. A version 1 file with these keys is wrong (`'squad' needs abproj_version 2 or newer`) |
 
 ### Reading and errors
 
@@ -585,11 +611,11 @@ once, without a text editor, and Save writes it to the file.
   spaces before the comment shrink or grow, so the comment keeps its column (one space at the least). A value is written as an
   integer or with at most four decimals, without trailing zeros ("9.8", "60"); never with an exponent, which the format does not have.
 - **A good change is put in place at once (`game_set_rule`):** the new defs and text take over, and the player's deployment stays on
-  the cells the new rules still allow (units outside the zone or over the supply drop out). The field's planes are fitted again, and
+  the cells the new rules still allow (squads whose footprint leaves the zone, or over the supply, drop out). The field's planes are fitted again, and
   the camera starts over only when the field's size changed (`view_apply_rules`). The unit meshes stay. It does not count as a
   project put in place (`project_loads`).
 - **A bad change changes nothing:** the panel says "Not changed: <the first error>" in red; for example, `zone_rows` over half the
-  grid's length, or a smaller grid that leaves a stage `place` outside the enemy zone. The next change made clears that message.
+  grid's length, a smaller grid that leaves a stage `place` outside the enemy zone, or `zone_rows` under a unit's `footprint`. The next change made clears that message.
 - **Only in deployment:** once a round starts the widgets are disabled ("Rules change only in deployment"). Stepping back
   (`battle_seek`) plays the round again from its start, so a rule changed during a round would make that round impossible to
   replay. They are also disabled while a local file is read or written (so the text a save sends matches what it marks as saved).
@@ -616,6 +642,9 @@ once, without a text editor, and Save writes it to the file.
 - Scenes on changed rules: another grid and cell size (cell centers, outside the zone, the field's edge), a short `round_time` ends at
   that tick, `retarget_interval`, `stop_fraction`, `gravity` (a shell lands on its aim point under any pull, and flies longer under
   less), `min_damage_fraction` 0 and 1.
+- Squads (version 2): `squad` and `footprint` read, 1 without them, the two keys wrong in a version 1 file, their ranges (0, over the
+  limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a `place`'s footprint
+  inside the enemy zone (the last x and row), overlap, an unknown unit's cell, supply by squad, and over 2048 enemy units.
 - **Golden hashes:** rounds of seeds 1 to 4 on `full_project` give the tick count, the outcome, the hash at tick 300, the hash at the
   end and the enemies left that they gave before the rules moved from code to the file. If a change to the rules' arithmetic changes
   a round, these are meant to change, and are changed on purpose.
@@ -634,7 +663,7 @@ once, without a text editor, and Save writes it to the file.
   version line checks that the two fit.
 - **Several stages:** `stage` gets a name (`stage <name>`) and there can be several. If stages come to have fields of different
   sizes, `grid` moves to `stage`. Raises the version.
-- **B's keys:** a unit's `layer`, `size`, `squad`, `footprint` and `altitude`, several `weapon` blocks with a weapon's `projectile`,
+- **B's keys:** a unit's `layer`, `size` and `altitude`, several `weapon` blocks with a weapon's `projectile`,
   `targets`, `min_range`, `splash`, `speed` and `turn_rate`, `ability jump`, and the stage's `prop` join with the same syntax. An
   unknown key is still an error. Each raises the version.
 - **Effects and unit looks:** code in `battle_view.c` for now. They become blocks if designers need to work on them.

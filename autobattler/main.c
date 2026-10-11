@@ -114,7 +114,7 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
     umm size = defs_rule_set(game->project_text, game->project_size, key, values, count, text, PROJECT_MAX_SIZE);
     b32 ok = size && defs_read_project(next, game->project_name, text, size);
     if (ok) {
-        // The player's units stay where the new rules still allow them (in the zone, within the supply), row by row.
+        // The player's squads stay where the new rules still allow them (in the zone, within the supply), row by row.
         Battle* battle = &game->battle;
         u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
         memcpy(placed, battle->placed, sizeof(battle->placed));
@@ -374,7 +374,8 @@ EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_text(void)
     return game_state.project_text;
 }
 
-// Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
+// Places a player squad of unit type `def` with its footprint's corner nearest the grid's origin on cell (x, row), as a tap
+// would; 1 when it was placed.
 EMSCRIPTEN_KEEPALIVE int battle_debug_deploy(int def, int x, int row)
 {
     return game_state.defs_ok && battle_place(&game_state.battle, (u32)def, x, row);
