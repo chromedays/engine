@@ -216,6 +216,11 @@ typedef struct PaletteDesc {
     u32 wheel; // colors 1 to wheel - 1
 } PaletteDesc;
 
+// The scene's light besides its lights: ambient is added to every surface, shadowed or not. Without a `lighting` block it is 0.15 each.
+typedef struct LightingDesc {
+    f32 ambient[3]; // linear RGB
+} LightingDesc;
+
 typedef struct ViewDesc {
     char camera[SCENE_ID_SIZE];
     f32 yaw, pitch, distance;
@@ -263,6 +268,7 @@ typedef struct StepDesc {
 typedef struct SceneDesc {
     char title[SCENE_ID_SIZE];
     ViewDesc view;
+    LightingDesc lighting;
     PaletteDesc palettes[SCENE_MAX_PALETTES];
     u32 palette_count;
     ModelDesc models[SCENE_MAX_MODELS];

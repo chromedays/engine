@@ -346,6 +346,22 @@ static void test_cameras_and_lights(void)
     EXPECT_ERROR(HEAD CAM "node l\n    light\n        type sun\n", "unknown type 'sun'");
 }
 
+// `lighting` is optional, its ambient is 0.15 each without it, and it comes after the view and before the palettes.
+static void test_lighting(void)
+{
+    SceneRead read = read_text(HEAD CAM);
+    CHECK(read.ok && desc.lighting.ambient[0] == 0.15f && desc.lighting.ambient[1] == 0.15f && desc.lighting.ambient[2] == 0.15f);
+    read = read_text(HEAD "lighting\n    ambient 0.3 0.25 0.2\n" CAM);
+    CHECK(read.ok && desc.lighting.ambient[0] == 0.3f && desc.lighting.ambient[1] == 0.25f && desc.lighting.ambient[2] == 0.2f);
+    EXPECT_OK(HEAD "lighting\n    ambient 0 0 0\n" PALETTE CAM);
+    EXPECT_ERROR(HEAD PALETTE "lighting\n    ambient 0.3 0.3 0.3\n" CAM, "'lighting' must come before 'palette'");
+    EXPECT_ERROR(HEAD "lighting\n    ambient 0.3 0.3 0.3\n" "lighting\n    ambient 0 0 0\n" CAM, "'lighting' is given twice");
+    EXPECT_ERROR(HEAD "lighting\n    ambient 1.5 0 0\n" CAM, "'ambient' must be");
+    EXPECT_ERROR(HEAD "lighting\n    ambient 0.3 0.3\n" CAM, "'ambient' takes 3 values");
+    EXPECT_ERROR(HEAD "lighting\n    ambient 0.3 0.3 0.3\n    sun 1\n" CAM, "unknown key 'sun'");
+    EXPECT_ERROR(HEAD "lighting 1\n" CAM, "'lighting' takes no value");
+}
+
 static void test_models(void)
 {
     EXPECT_ERROR(HEAD CUBE CUBE CAM, "model 'cube' is defined twice");
@@ -532,6 +548,7 @@ int main(void)
     test_top_level();
     test_nodes();
     test_cameras_and_lights();
+    test_lighting();
     test_models();
     test_behaviors();
     test_benchmark();
