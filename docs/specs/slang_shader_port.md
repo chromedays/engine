@@ -5,17 +5,22 @@
 ### 목표
 
 엔진의 모든 셰이더(지금 C 문자열 안의 WGSL, 약 970줄)를 Slang 소스로 옮긴다. 빌드 시점에 `slangc`가 Slang에서 WGSL을 만들고,
-엔진은 그 WGSL을 지금처럼 `wgpuDeviceCreateShaderModule`에 넘긴다. **런타임 동작과 화면은 바뀌지 않는다.** 이것은 나중의 D3D12
-백엔드(직접 작성)로 가는 첫 단계다: 같은 소스가 HLSL로도 컴파일되도록 지금부터 지킨다.
+`tint`가 그 WGSL을 검사한다. 엔진은 그 WGSL을 지금처럼 `wgpuDeviceCreateShaderModule`에 넘긴다. **런타임 동작과 화면은 바뀌지
+않는다.** 이것은 나중의 D3D12 백엔드(직접 작성)로 가는 첫 단계다: 같은 소스가 HLSL로도 컴파일되도록 지금부터 지킨다.
 
 범위 밖:
 
 - D3D12 백엔드, RHI(Rendering Hardware Interface, 렌더링 하드웨어 인터페이스) 설계, 네이티브 빌드. 각자 따로 스펙을 쓴다.
-- 런타임 셰이더 컴파일, 핫 리로드. `slangc`는 실행 파일에 들어가지 않는다.
+- 런타임 셰이더 컴파일, 핫 리로드. `slangc`와 `tint`는 실행 파일에 들어가지 않는다.
 - 셰이더의 기능 변경과 버그 수정. 포팅은 1:1이다. 포팅하다가 찾은 버그는 따로 커밋하고 여기 "찾은 것"에 적는다.
 - DXIL(DirectX Intermediate Language) 컴파일과 검증. 이 단계는 HLSL 텍스트까지 만든다(아래 "열린 질문").
 
 ### 의존성 (승인됨, 2026-10-11)
+
+두 도구 모두 같은 조건이다: **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다. 공식 릴리스의 미리 컴파일된 바이너리만 쓰고,
+소스에서 빌드하지 않는다.** 버전과 SHA-256을 고정한다. 둘 다 `docs/CODING_STANDARD.md`의 의존성 절에 기록한다.
+
+#### Slang (`slangc`)
 
 | 항목 | 결정 |
 |---|---|
@@ -40,6 +45,26 @@
 검증 상태: 다섯 묶음 모두 `v2026.19` 릴리스에 있음을 확인했다(묶음 존재 확인). 내려받아 푼 것은 `linux-x86_64` 하나뿐이고, 나머지
 넷의 내용(실행 여부, 호환성)은 아직 확인하지 않았다. 각 호스트에서 `slangc -v`와 시험 컴파일이 통과하는 것을 단계 1에서 확인한다.
 
+#### Tint (`tint`)
+
+`slangc`는 자기가 쓴 WGSL을 검사하지 않는다(아래 "확인한 것"). 잘못된 WGSL이 빌드를 통과하고 브라우저에서야 거절되므로, 빌드에서
+Chrome과 같은 WGSL 컴파일러로 검사한다.
+
+| 항목 | 결정 |
+|---|---|
+| 무엇 | Dawn(google/dawn)의 WGSL 컴파일러 `tint`. BSD 3-Clause. Chrome과 Edge의 WebGPU가 쓰는 바로 그 컴파일러라서, 브라우저가 거절하는 WGSL을 똑같이 거절한다 |
+| 쓰는 방식 | 생성된 WGSL을 읽어 검사만 한다. 출력은 엔진에 쓰지 않고 "검사를 통과했다"는 표시로만 남긴다(아래 "빌드"). 링크하지 않는다 |
+| 받는 방식 | Dawn 공식 GitHub 릴리스의 묶음(`Dawn-<commit>-<host>-Release.tar.gz`)에서 `bin/tint` 하나만 꺼내 쓴다. **미리 컴파일된 바이너리만 쓰고 소스에서 빌드하지 않는다** |
+| 버전 | `v20261009.190412` (commit `c943ea32b614ff53e4fe410fc8f4968b6b8fe46d`, 2026-10-11 기준 최신). 올리는 것은 의도적인 변경이다 |
+| naga를 쓰지 않는 이유 | naga는 Firefox와 wgpu의 컴파일러라서 Chrome과 판정이 다를 수 있고, 공식 미리 컴파일된 바이너리를 확인하지 못했다(보통 `cargo install naga-cli`, 즉 소스 빌드). Firefox를 지원하게 되면 그때 함께 쓰는 것을 다시 본다 |
+
+| 호스트 | 묶음 | 상태 |
+|---|---|---|
+| Linux x86_64 | `ubuntu-latest-Release` (약 35 MB, `bin/tint`는 약 15 MB) | 내려받아 돌려 봄. 시스템 라이브러리 밖의 공유 라이브러리가 필요 없다. SHA-256 `8530b52e5ef5abeb788ab5c3552b261882d9b4d400d7c85c9dc45255b74d48ea` |
+| macOS arm64 / x86_64 | `macos-latest-Release` / `macos-15-intel-Release` | 릴리스에 있음. 내용은 확인하지 않음 |
+| Windows x64 | `windows-latest-Release` | 릴리스에 있음. 내용은 확인하지 않음 |
+| Linux arm64, Windows arm64 | 없음 | 검사를 건너뛰고 구성 시점에 경고한다. 브라우저 검증(아래 "검증")이 그 호스트에서도 잡는다 |
+
 ### 빌드
 
 - `cmake/slang.cmake`가 구성(configure) 시점에 호스트(`CMAKE_HOST_SYSTEM_NAME`, `CMAKE_HOST_SYSTEM_PROCESSOR`)에 맞는 묶음을
@@ -47,13 +72,20 @@
   호스트 도구로 실행된다.
 - 캐시 변수 `NV_SLANGC`에 경로를 주면 내려받지 않고 그 `slangc`를 쓴다(오프라인 개발). 그 버전이 고정 버전과 다르면 경고한다
   (`slangc -v`).
+- `tint`도 같은 방식이다: `cmake/tint.cmake`가 Dawn 묶음을 받아 `bin/tint`를 쓰고, `NV_TINT`로 대신할 수 있다. 묶음이 없는 호스트에서는
+  위 2단계를 건너뛴다.
 - CI(`build.yml`)는 내려받은 묶음을 `actions/cache`에 버전 키로 둔다. Release와 Debug 두 빌드 디렉터리가 한 번만 받도록
   `FETCHCONTENT_BASE_DIR`을 공유한다.
 - 소스 하나(`engine/shaders/<name>.slang`)에서 WGSL 모듈 하나가 나온다. 그 파일의 `[shader(...)]` 엔트리 포인트가 모두 한 모듈에
   들어간다(지금 모듈 하나에 엔트리 포인트가 여럿인 것과 같다).
-- 출력은 빌드 디렉터리의 C 헤더 `shaders/<name>_wgsl.h`다. `slangc`의 `-source-embed-style text -source-embed-name <name>_wgsl`이
-  `const char <name>_wgsl[]`를 만든다. C 쪽은 지금의 문자열 자리를 `#include "shaders/<name>_wgsl.h"`로 바꾼다. `create_shader`와
-  `create_module`의 모양은 그대로다. vfx의 이어 붙이기(`create_module`의 `snprintf`, 32 KB 버퍼)는 없어진다.
+- 셰이더마다 명령 세 개가 차례로 돈다. 앞의 것이 실패하면 뒤의 것은 돌지 않고 빌드가 실패한다:
+  1. `slangc` → 빌드 디렉터리의 `shaders/<name>.wgsl`. 이 파일은 남긴다: 브라우저나 Tint의 오류는 이 파일의 줄과 열을 가리킨다.
+  2. `tint --format=wgsl -o shaders/<name>.tint.wgsl shaders/<name>.wgsl` → 검사. 0이 아닌 종료 코드면 빌드가 실패하고 Tint의 메시지가
+     빌드 로그에 나온다. 출력 파일은 "검사를 통과했다"는 표시로만 쓴다(`tint`의 `--format=none`은 이 버전에서 받지 않는다).
+  3. `cmake -P cmake/embed_text.cmake` → C 헤더 `shaders/<name>_wgsl.h`(`const char <name>_wgsl[]`). 검사를 통과한 WGSL만 헤더가
+     된다. (`slangc`의 `-source-embed-style text`도 헤더를 쓸 수 있지만, 그러면 Tint가 읽을 `.wgsl`이 따로 없다.)
+- C 쪽은 지금의 문자열 자리를 `#include "shaders/<name>_wgsl.h"`로 바꾼다. `create_shader`와 `create_module`의 모양은 그대로다.
+  vfx의 이어 붙이기(`create_module`의 `snprintf`, 32 KB 버퍼)는 없어진다.
 - 명령은 `add_custom_command`로 만들고 `-depfile`의 의존성 목록을 `DEPFILE`로 넘긴다. 그래서 `import`한 공용 모듈이 바뀌어도 다시
   만든다.
 - 옵션: `-target wgsl -matrix-layout-column-major -warnings-as-errors all`.
@@ -134,10 +166,11 @@ SwiftShader(AGENTS.md "Testing without a display")에서 한다.
 
 공통 (모든 모듈):
 
-1. 빌드: WGSL과 HLSL이 경고 없이 컴파일된다(`-warnings-as-errors all`).
+1. 빌드: WGSL과 HLSL이 경고 없이 컴파일되고(`-warnings-as-errors all`), 모든 WGSL이 Tint 검사를 통과한다.
 2. `shader_layout_test` 통과.
-3. 시작부터 각 씬을 보이고 Play를 하는 동안 WebGPU 오류가 0개(`_sandbox_debug_wgpu_error`). 모든 파이프라인이 만들어진다.
-   오토배틀러도 한 라운드 돈다.
+3. **필수 관문:** 시작부터 각 씬을 보이고 Play를 하는 동안 WebGPU 오류가 0개(`_sandbox_debug_wgpu_error`). 모든 파이프라인이 만들어진다.
+   오토배틀러도 한 라운드 돈다. Tint는 셰이더 하나만 보므로 셰이더와 바인드 그룹 레이아웃의 불일치는 여기서만 잡힌다. 어느 단계도
+   이것 없이 끝나지 않는다.
 4. 화면 비교: Edit 모드(아무것도 움직이지 않음)에서 각 씬(showcase, stress, chess)의 스크린샷을 기준선과 비교한다. 조합: MSAA 1과 4,
    톤 매핑 3개(Clamp, PBR Neutral, ACES), bloom 켜고 끄기, 그림자 켜고 끄기, 해상도 Scale과 Fixed. Textures 탭의 미리보기(컬러, 깊이,
    멀티샘플 깊이)와 ImGui 자체도 찍는다. 허용 오차: 채널 차이 최대 2/255, 그 넘는 픽셀은 0.1% 이하. 그보다 크면 원인을 찾을 때까지
@@ -174,7 +207,8 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
 
 0. **기준선** (셰이더 변경 없음): 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)와 Playwright 스크립트를
    더하고, 지금의 WGSL로 스크린샷과 덤프를 저장한다. 이 커밋이 이후 모든 비교의 기준이다.
-1. **빌드 통합 + 가장 쉬운 것**: `cmake/slang.cmake`, CI 캐시, `shader_layout_test`의 틀, `imgui.slang`. 공통 검증 1–4.
+1. **빌드 통합 + 가장 쉬운 것**: `cmake/slang.cmake`, `cmake/tint.cmake`, `cmake/embed_text.cmake`, CI 캐시, `shader_layout_test`의 틀,
+   `imgui.slang`. 공통 검증 1–4. 일부러 잘못 쓴 셰이더(깊이 텍스처를 `Texture2D<float>`로)가 Tint 단계에서 빌드를 멈추는지도 본다.
 2. **가장 어려운 것**: `vfx_common.slang`, `vfx_compute.slang`. VFX 검증 1–6. **여기서 계속할지 정한다.** Slang의 WGSL 출력으로 같은
    결과가 안 나오면 멈추고 무엇이 막혔는지 보고한다.
 3. `vfx_shapes.slang`, `vfx_particles.slang`, `vfx_marks.slang`. VFX 검증 7.
@@ -186,20 +220,32 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
 
 단계마다 한 커밋 이상이고, 각 커밋은 그 단계의 검증을 통과한 뒤 올린다.
 
-### 확인한 것 (2026-10-11, slangc 2026.19, linux-x86_64)
+### 확인한 것 (2026-10-11, slangc 2026.19, Dawn v20261009.190412, linux-x86_64)
 
 - 묶음은 `bin/slangc`와 그것이 쓰는 `lib/libslang-compiler.so` 등이다. DXC(`dxcompiler`)는 들어 있지 않다. 그래서 DXIL은 따로 DXC가
   있어야 한다.
 - 위 "대응 규칙"의 "확인함" 행들: 작은 시험 소스를 WGSL과 HLSL로 컴파일해 출력을 읽었다. 브라우저에서 돌려 보지는 않았다(단계 1, 2).
 - HLSL 출력에서 `vk::binding`은 무시되고 레지스터가 차례로(`u0`, `u1`) 붙는다. D3D12 바인딩은 RHI 스펙에서 정한다.
 - `-source-embed-style text`는 C 헤더를, `-depfile`은 Makefile 형식의 의존성 목록을 쓴다.
+- **`slangc`는 잘못된 WGSL을 오류도 경고도 없이 쓴다.** `Texture2D<float>`를 `SampleCmpLevelZero`로 쓴 시험 소스가 그랬다. Slang의 설계
+  문서(`target-pipelines/wgsl.md`)도 "bare `WGSL` target은 텍스트에서 멈추고 Slang 안에서 검사하지 않는다"고 한다. Slang이 Tint를
+  부르는 것은 `wgsl-spirv` 타깃뿐이고, 그것도 릴리스 묶음에 Tint(`slang-tint`)가 없어 돌지 않는다(`failed to load dynamic library
+  'slang-tint'`).
+- 그 WGSL을 헤드리스 Chromium에 넣으면 `createShaderModule`에서 `:28:116 error: no matching call to 'textureSampleCompareLevel(...)'`로
+  거절된다. Dawn 릴리스의 `tint`도 같은 메시지를 내고 종료 코드 1로 끝난다. 올바른 WGSL에서는 0이다.
+- 파이프라인 검증 오류(셰이더와 레이아웃의 바인딩 타입 불일치)는 `@group(0) @binding(6)`과 엔트리 포인트 이름으로 나온다. `_0`이 붙은
+  이름은 나오지 않는다.
+- Slang의 WGSL 성숙도 (2026-10-11): 제목에 WGSL이 있는 이슈가 열림 40, 닫힘 128. 최근 열린 것 다수가 잘못된 WGSL 출력이다(#13571 행렬
+  부정, #13566 `f(a < b, a > b)`가 템플릿 목록으로 읽힘 등). 지금 우리 셰이더에는 그 두 패턴이 없다. Slang CI에서 WebGPU로 도는 테스트
+  파일은 143개(Vulkan 1,361, D3D12 463)이고, CI가 실패를 예상하는 19개 중 9개가 WebGPU이며 그중 4개가 `groupshared`다. VFX `emit`이
+  워크그룹 아토믹을 쓰므로 단계 2를 계속할지 정하는 지점으로 두는 이유가 이것이다.
 
 ### 열린 질문
 
 - DXIL: 언제 DXC로 컴파일과 검증을 시작할지(DXC도 빌드 도구 의존성이므로 따로 승인). RHI 스펙에서 정하자는 것이 제안이다.
 - D3D12의 `register`/`space` 규칙: RHI 스펙.
-- 생성된 WGSL이 브라우저 오류 메시지에서 읽을 만한지. 오류가 생성된 줄을 가리키므로, 디버그를 위해 빌드 디렉터리에 `.wgsl` 파일도
-  남길지는 단계 1에서 보고 정한다.
+- 우리가 고정한 Tint와 사용자의 Chrome 안의 Tint는 버전이 다를 수 있다. 판정이 갈리면 브라우저가 기준이다. Tint를 올릴 때는 그때의
+  Chrome stable에 가까운 Dawn 릴리스를 고른다.
 
 ### 찾은 것
 

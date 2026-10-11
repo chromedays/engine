@@ -129,6 +129,9 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   WGSL과 나중의 D3D12용 HLSL을 만든다. 변환기로 WGSL을 옮기면 최소 공통분모에 묶이지만, Slang은 D3D12의 기능을 그대로 쓸 수 있다.
   **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.** 공식 릴리스의 미리 빌드된 바이너리를 버전과 SHA-256을 고정해 내려받으며,
   소스에서 빌드하지 않는다.
+- 생성된 WGSL의 검사에는 Dawn의 `tint`(BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc`는 자기가 쓴 WGSL을 검사하지
+  않으므로, Chrome과 Edge가 쓰는 바로 그 WGSL 컴파일러로 빌드에서 검사한다. **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.**
+  Dawn 공식 릴리스의 미리 컴파일된 바이너리(`bin/tint`)만 버전과 SHA-256을 고정해 쓰며, 소스에서 빌드하지 않는다.
 - 그 밖의 것은 (단일 헤더 라이브러리라도) 이유를 글로 쓰고 먼저 합의해야 한다. 수학, 컨테이너, 문자열은
   여기서 작성한다.
 
@@ -273,6 +276,10 @@ The table sets the shape of names. What a name has to say:
   WGSL for the web and, later, HLSL for D3D12. Translating WGSL with a converter ties us to the lowest common subset; Slang lets
   D3D12's features be used as they are. **It runs only as a build-time tool and is linked into nothing.** The official release's
   prebuilt binaries are downloaded with the version and SHA-256 pinned; it is not built from source.
+- Dawn's `tint` for checking the generated WGSL (BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc` does not check the
+  WGSL it writes, so the build checks it with the same WGSL compiler Chrome and Edge use. **It runs only as a build-time tool and is
+  linked into nothing.** Only the prebuilt binary from Dawn's official releases (`bin/tint`) is used, with the version and SHA-256
+  pinned; it is not built from source.
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 
