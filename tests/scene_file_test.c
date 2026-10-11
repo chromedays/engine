@@ -193,6 +193,29 @@ static void test_stress(void)
     CHECK(strcmp(desc.steps[15].name, "Beams 500") == 0 && desc.steps[15].lines[0].value == 500);
 }
 
+// The chess scene: its one model is a file, the board is scaled by 10, and it has the lighting its file names.
+static void test_chess(void)
+{
+    size_t size;
+    char* text = read_file(SCENE_DATA_DIR "/chess.nvscene", &size);
+    CHECK(text != NULL);
+    if (!text)
+        return;
+    SceneRead read = scene_read(&desc, "chess.nvscene", text, size);
+    if (!read.ok)
+        printf("%s\n", read.first_error);
+    CHECK(read.ok);
+    free(text);
+    if (!read.ok)
+        return;
+    CHECK(strcmp(desc.title, "Chess") == 0);
+    CHECK(desc.lighting.ambient[0] == 0.25f && desc.lighting.ambient[2] == 0.27f);
+    s32 board = scene_find_node(&desc, "board");
+    CHECK(board >= 0 && desc.nodes[board].model_index == 0 && desc.models[0].is_file);
+    CHECK(board >= 0 && desc.nodes[board].scale.x == 10.0f && desc.nodes[board].scale.z == 10.0f);
+    CHECK(scene_find_node(&desc, "camera") >= 0 && desc.view.camera_index == scene_find_node(&desc, "camera"));
+}
+
 static void test_good_files(void)
 {
     EXPECT_OK(HEAD CAM);
@@ -543,6 +566,7 @@ static void test_benchmark(void)
 int main(void)
 {
     test_showcase();
+    test_chess();
     test_stress();
     test_good_files();
     test_top_level();

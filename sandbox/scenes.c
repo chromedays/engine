@@ -13,7 +13,7 @@
 #include <string.h>
 
 // The scenes of the sandbox, in the order the pickers list them. The first is the one shown at start.
-global const char* const scene_files[] = {"/data/showcase.nvscene", "/data/stress.nvscene"};
+global const char* const scene_files[] = {"/data/showcase.nvscene", "/data/stress.nvscene", "/data/chess.nvscene"};
 
 //
 // Assets

@@ -37,7 +37,7 @@ engine/                    each module's header and source side by side, include
 sandbox/                   the sandbox (the engine's test ground): main.c (window, frame, debug exports), scene_file.c/.h (reads a
                            .nvscene file into plain data; no GPU), scenes.c (builds each scene of the list from its file), behaviors.c
                            (the behaviors a scene's objects have, and their Inspector rows), data/*.nvscene (the scenes: showcase,
-                           stress; docs/specs/scene_file.md), stress.c (the Stress tab: statistics, the benchmark), ui.c (editor
+                           stress, chess; docs/specs/scene_file.md, chess_scene.md), stress.c (the Stress tab: statistics, the benchmark), ui.c (editor
                            panel), save.c (autosave), undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures
                            tab), effects.c (the effect definitions and the View tab's test effects),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
@@ -81,7 +81,8 @@ python3 -m http.server -d build/sandbox 8000   # then open http://localhost:8000
 Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
 - `wgpuSurfacePresent` must not be called; the browser presents the canvas.
-- Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify.
+- Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
+  (`ASYNCIFY_IGNORE_INDIRECT` is off), so a frame may wait through Asyncify: a scene built on first show awaits its image decodes.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
 - ImGui input reads page client coordinates, which match canvas coordinates only because the page
   pins the canvas to the top-left corner. Keep that true in `web/index.html.in`.
@@ -119,7 +120,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
   stays behind the panel.
 - The sandbox's scenes are files (`sandbox/data/*.nvscene`, `docs/specs/scene_file.md`), listed in `sandbox/scenes.c`, read by
-  `sandbox/scene_file.c` (line-based text, `engine/text.c`, shared with the auto-battler) and all built at start, each into a
+  `sandbox/scene_file.c` (line-based text, `engine/text.c`, shared with the auto-battler); the first is built at start and the others when first shown, each into a
   `SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
   (Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
   and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of

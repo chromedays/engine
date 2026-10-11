@@ -1,0 +1,38 @@
+# sandbox/data/chess.nvscene: the chess set, A Beautiful Game (docs/specs/chess_scene.md). A reference for lighting and shadows: the
+# pieces cast shadows on each other and on the board. The model is one glb; its node tree (pieces, tops and bodies) is the file's.
+nvscene_version 1
+title "Chess"
+
+view
+    camera camera
+    yaw 35
+    pitch 30
+    distance 9
+    target 0 0.4 0
+    focus board
+
+# The ambient light is raised over the constant of the other scenes: the shadowed sides of the pieces would be nearly black otherwise.
+lighting
+    ambient 0.25 0.25 0.27
+
+model chess
+    file "/assets/chess/chess.glb"
+
+node camera
+    camera
+        projection perspective
+        fov 45
+        near 0.05
+        far 100
+
+node sun
+    euler -50 30 0
+    light
+        type directional
+        color 1 0.96 0.9
+        intensity 2
+
+# The board is 0.7 m; scaled by 10 it is 7 m, so the orbit camera's distances fit it.
+node board
+    scale 10 10 10
+    model chess
