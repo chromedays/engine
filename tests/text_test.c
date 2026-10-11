@@ -59,9 +59,19 @@ int main(void)
         t = tokenize_text(NULL, "a    b     c");
         CHECK(t.ok && t.line.token_count == 3);
 
-        t = tokenize_text(NULL, "a b c d e f g h");
+        // As many words as the limit allows, and one more.
+        char words[2 * NV_TEXT_MAX_TOKENS + 2];
+        for (u32 i = 0; i < NV_TEXT_MAX_TOKENS; ++i) {
+            words[i * 2] = 'a';
+            words[i * 2 + 1] = ' ';
+        }
+        words[NV_TEXT_MAX_TOKENS * 2 - 1] = 0;
+        t = tokenize_text(NULL, words);
         CHECK(t.ok && t.line.token_count == NV_TEXT_MAX_TOKENS);
-        t = tokenize_text(NULL, "a b c d e f g h i");
+        words[NV_TEXT_MAX_TOKENS * 2 - 1] = ' ';
+        words[NV_TEXT_MAX_TOKENS * 2] = 'a';
+        words[NV_TEXT_MAX_TOKENS * 2 + 1] = 0;
+        t = tokenize_text(NULL, words);
         CHECK(!t.ok);
         t = tokenize_text(NULL, "a\tb");
         CHECK(!t.ok);

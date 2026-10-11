@@ -50,8 +50,14 @@ global const NvStringPair entries[] = {
     {"Pause", "일시정지"},
     {"< Tick", "< 틱"},
     {"Tick >", "틱 >"},
-    {"Tap a cell of your zone (blue) to place the chosen unit; tap a placed unit to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom.",
-     "내 구역(파란색)의 칸을 탭하면 고른 유닛을 놓고, 놓인 유닛을 탭하면 지웁니다. 드래그로 화면을 옮기고, 오른쪽 버튼 드래그나 두 손가락으로 돌리고, 휠이나 핀치로 확대합니다."},
+    {"Roles:", "역할:"},
+    {"Roles: %s", "역할: %s"},
+    {"none", "없음"},
+    {"Ground", "지상"},
+    {"Air", "공중"},
+    {"Layer: %s, targets: %s", "레이어: %s, 목표: %s"},
+    {"Tap your zone (blue) to place a squad of the chosen unit; tap a placed squad to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom.",
+     "내 구역(파란색)을 탭하면 고른 유닛의 분대를 놓고, 놓인 분대를 탭하면 지웁니다. 드래그로 화면을 옮기고, 오른쪽 버튼 드래그나 두 손가락으로 돌리고, 휠이나 핀치로 확대합니다."},
 };
 // clang-format on
 

@@ -17,10 +17,14 @@
 #define BATTLE_MAX_GRID_WIDTH  64
 #define BATTLE_MAX_GRID_LENGTH 128
 #define BATTLE_MAX_ZONE_ROWS   32
-#define BATTLE_MAX_PLACES      (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH) // one unit per cell of a zone
+#define BATTLE_MAX_PLACES      (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH) // one squad per cell of a zone, at the most
 #define BATTLE_MAX_UNIT_DEFS   16
+#define BATTLE_MAX_ROLES       32 // the roles a file may declare: one bit each in a unit's mask
 #define BATTLE_NAME_SIZE       32 // a name is at most 31 bytes
-#define BATTLE_MAX_UNITS       (1 + 2 * BATTLE_MAX_PLACES) // slot 0 is "none"
+#define BATTLE_MAX_SQUAD_SIZE  64 // units in a squad
+#define BATTLE_MAX_FOOTPRINT   4  // cells on a side of the square a squad stands on
+#define BATTLE_MAX_TEAM_UNITS  2048
+#define BATTLE_MAX_UNITS       (1 + 2 * BATTLE_MAX_TEAM_UNITS) // slot 0 is "none"
 #define BATTLE_MAX_PROJECTILES 4096
 #define BATTLE_MAX_EVENTS      4096
 
@@ -41,12 +45,18 @@ typedef struct BattleRules {
     f32 min_damage_fraction;     // armor never takes more than 1 minus this off a hit
 } BattleRules;
 
+// A unit's layer: ground units walk on the ground, air units fly at their `altitude`. A weapon's targets are the layers it can hit: one
+// TARGET_* bit per layer (TARGET_GROUND for UNIT_LAYER_GROUND, TARGET_AIR for UNIT_LAYER_AIR).
+typedef enum UnitLayer { UNIT_LAYER_GROUND, UNIT_LAYER_AIR } UnitLayer;
+enum { TARGET_GROUND = 1 << UNIT_LAYER_GROUND, TARGET_AIR = 1 << UNIT_LAYER_AIR };
+
 typedef struct WeaponDef {
     char name[BATTLE_NAME_SIZE];
     f32 range, damage, cooldown; // meters, damage, seconds
     f32 launch_angle;            // radians
     f32 spread;                  // meters: the shell lands within this radius of its aim point
     NvVec3 muzzle;               // in the unit's space: x to its right, y up, z forward (facing +Z, its right is -X)
+    u32 targets;                 // the layers it can hit (TARGET_*); a shell passes the units of the others
 } WeaponDef;
 
 typedef enum AbilityKind { ABILITY_NONE, ABILITY_SHIELD } AbilityKind;
@@ -58,18 +68,24 @@ typedef struct AbilityDef {
     };
 } AbilityDef;
 
+// A unit def is placed as a squad (docs/specs/battle.md, "Squads"): `squad_size` units on a square of `footprint` cells a side,
+// for `cost` in all. Once the round starts each unit moves and fights on its own.
 typedef struct UnitDef {
     char name[BATTLE_NAME_SIZE];
-    u32 cost;
+    u32 cost;       // of the whole squad
+    u32 squad_size; // at least 1
+    u32 footprint;  // cells on a side, at least 1
     f32 health, armor, speed; // speed in m/s
     f32 radius, height;       // meters
+    f32 altitude;             // an air unit's height in the air, meters; its body is above it
+    UnitLayer layer;
     WeaponDef weapon;
     AbilityDef ability;
 } UnitDef;
 
 typedef struct StagePlace {
-    u8 def; // index into BattleDefs.units
-    u8 cell_x, cell_row;
+    u8 def;              // index into BattleDefs.units
+    u8 cell_x, cell_row; // the footprint's corner nearest the grid's origin
 } StagePlace;
 
 typedef struct BattleDefs {
@@ -80,6 +96,11 @@ typedef struct BattleDefs {
     u32 seed;   // for the random numbers of the whole round
     StagePlace enemy[BATTLE_MAX_PLACES];
     u32 enemy_count;
+    // The roles of the `roles` block, for sorting units. The rules never read them, so they cannot change a round. unit_roles[i]
+    // is a bit mask over `roles`: bit r is set when unit def i has role r.
+    char roles[BATTLE_MAX_ROLES][BATTLE_NAME_SIZE];
+    u32 role_count;
+    u32 unit_roles[BATTLE_MAX_UNIT_DEFS];
     u32 error_count;        // errors found by the reads, all of them (only the first 20 are logged)
     char first_error[160];  // "default.abproj:12: unknown key 'healt'", for the panel
 } BattleDefs;
@@ -106,6 +127,11 @@ u32 battle_seconds_to_ticks(f32 seconds);
 
 // The first row of the enemy's zone.
 u32 battle_enemy_first_row(const BattleRules* rules);
+
+// The columns of the grid a squad of `squad_size` units stands in on its footprint: the fewest whose square holds them all (so
+// there are never more rows than columns, and units side by side in a row are the nearest). They are footprint * cell_size /
+// columns meters apart.
+u32 battle_squad_columns(u32 squad_size);
 
 // The simulation.
 
@@ -136,6 +162,7 @@ typedef struct Projectile { // a shell
     UnitId shooter;
     NvVec3 position, previous_position, velocity;
     f32 damage; // before armor; a shield that takes only part of it leaves the rest
+    u32 targets; // the layers the shooter's weapon can hit: the shell passes the units and shields of the others
 } Projectile;
 
 typedef enum BattleEventKind {
@@ -161,8 +188,11 @@ typedef struct Battle {
     BattleOutcome outcome;
     u32 tick;
     NvRandom rng; // seeded at Start from the stage's seed
-    u8 placed[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH]; // the player's deployment: unit def + 1, 0 = empty
+    // The player's deployment, by the corner of each squad's footprint nearest the grid's origin: unit def + 1, 0 = none (the
+    // footprint's other cells are 0 too).
+    u8 placed[BATTLE_MAX_ZONE_ROWS][BATTLE_MAX_GRID_WIDTH];
     u32 supply_used;
+    u32 player_units; // the units the deployment makes
     Unit units[BATTLE_MAX_UNITS]; // [0] is unused; slots 1 to unit_count are the units, the player's first
     u32 unit_count;
     Projectile projectiles[BATTLE_MAX_PROJECTILES];
@@ -180,13 +210,21 @@ void battle_init(Battle* battle, const BattleDefs* defs);
 // The center of a cell on the ground. The player's side is -Z, the enemy's +Z.
 NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row);
 
-// Deployment (only in the BATTLE_DEPLOY phase; the others return false). A unit def can be placed on an empty cell of the
-// player's zone while the supply lasts. Each change rebuilds `units`.
+// Deployment (only in the BATTLE_DEPLOY phase; the others return false). A squad of a unit def is placed with its footprint's
+// corner nearest the grid's origin on (cell_x, cell_row); the whole footprint must be in the player's zone and free, within the
+// supply and BATTLE_MAX_TEAM_UNITS. Each change rebuilds `units`.
 u32 battle_supply_left(const Battle* battle);
 b32 battle_can_place(const Battle* battle, u32 def, s32 cell_x, s32 cell_row);
 b32 battle_place(Battle* battle, u32 def, s32 cell_x, s32 cell_row);
-b32 battle_remove(Battle* battle, s32 cell_x, s32 cell_row); // false when the cell is empty
+b32 battle_remove(Battle* battle, s32 cell_x, s32 cell_row); // the squad on that cell (any of its footprint's); false when none
 void battle_clear_placement(Battle* battle);                 // Reset
+
+// The player's squad whose footprint covers a cell: its corner (as battle_place takes it). Fails (zeroed) when none does.
+typedef struct BattleCell {
+    b32 ok;
+    s32 x, row;
+} BattleCell;
+BattleCell battle_squad_at(const Battle* battle, s32 cell_x, s32 cell_row);
 
 // Start needs at least one player unit. Retry goes back to deployment with the same placement, from any phase.
 b32 battle_start(Battle* battle);
@@ -201,7 +239,7 @@ void battle_tick(Battle* battle);
 void battle_seek(Battle* battle, u32 tick);
 
 u32 battle_alive_count(const Battle* battle, u32 team);
-// The sum over a team's living units of cost * health / max health.
+// The sum over a team's living units of cost / squad size * health / max health.
 f32 battle_remaining_value(const Battle* battle, u32 team);
 // FNV-1a over the state a round's outcome depends on, so two runs can be compared.
 u32 battle_hash(const Battle* battle);

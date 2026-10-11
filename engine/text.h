@@ -9,7 +9,7 @@
 // A bad line never stops a read: every error is reported (nv_log, with the file name and line), counted, and the read fails at
 // its end. A reader that is NULL reports nothing, for scans of text already read without errors.
 
-#define NV_TEXT_MAX_TOKENS 8
+#define NV_TEXT_MAX_TOKENS 33 // a key and up to 32 values (a .abproj line may list every role)
 #define NV_TEXT_LOGGED_ERRORS 20 // errors of a read that are logged by default; the rest are counted
 
 typedef struct NvTextToken {

@@ -114,7 +114,7 @@ b32 game_set_rule(Game* game, const char* key, const f64* values, u32 count)
     umm size = defs_rule_set(game->project_text, game->project_size, key, values, count, text, PROJECT_MAX_SIZE);
     b32 ok = size && defs_read_project(next, game->project_name, text, size);
     if (ok) {
-        // The player's units stay where the new rules still allow them (in the zone, within the supply), row by row.
+        // The player's squads stay where the new rules still allow them (in the zone, within the supply), row by row.
         Battle* battle = &game->battle;
         u8* placed = nv_arena_push(&game->scratch, sizeof(battle->placed), 1);
         memcpy(placed, battle->placed, sizeof(battle->placed));
@@ -298,7 +298,8 @@ internal void frame(void* userdata)
 // in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
-// length in ticks.
+// length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
+// units alive.
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -323,6 +324,15 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 17: return (int)game->local_file.status;
     case 18: return game->project_edited;
     case 19: return (int)game->defs.rules.round_ticks;
+    case 20: return (int)game->defs.role_count;
+    case 21: return (int)game->role_filter;
+    case 22: return (int)game->unit_buttons_shown;
+    case 23: {
+        u32 air = 0;
+        for (u32 i = 1; i <= battle->unit_count; ++i)
+            air += !(battle->units[i].flags & UNIT_DEAD) && battle->defs->units[battle->units[i].def].layer == UNIT_LAYER_AIR;
+        return (int)air;
+    }
     default: return (int)game->selected_def;
     }
 }
@@ -348,6 +358,17 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_load(const char* name, const char* text)
     return game_load_project(&game_state, name, text, strlen(text));
 }
 
+// Loads /test.abproj from the page's file system as a local file would be (a test writes it with FS.writeFile, since a string
+// cannot be passed in); 1 when it was good.
+EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
+{
+    umm mark = game_state.scratch.used;
+    NvFileData data = nv_file_read(&game_state.scratch, "/test.abproj");
+    int ok = data.ok && game_load_project(&game_state, "test.abproj", (const char*)data.bytes, data.size);
+    game_state.scratch.used = mark;
+    return ok;
+}
+
 // Presses a project button of the panel (ProjectAction: 0 Open..., 1 Reload, 2 Save, 3 Save as...); 1 when it started, 0 when
 // the button is disabled.
 EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
@@ -368,13 +389,26 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double
     return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
 }
 
+// The roles of unit type `def` as a bit mask (bit r is the r-th declared role), for tests.
+EMSCRIPTEN_KEEPALIVE int battle_debug_unit_roles(int def)
+{
+    return (u32)def < BATTLE_MAX_UNIT_DEFS ? (int)game_state.defs.unit_roles[def] : 0;
+}
+
+// Sets the Battle panel's role filter as its toggles do, for tests.
+EMSCRIPTEN_KEEPALIVE void battle_debug_set_role_filter(int mask)
+{
+    game_state.role_filter = (u32)mask;
+}
+
 // The project's text as Save would write it, for tests.
 EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_text(void)
 {
     return game_state.project_text;
 }
 
-// Places player unit type `def` on cell (x, row) as a tap would; 1 when it was placed.
+// Places a player squad of unit type `def` with its footprint's corner nearest the grid's origin on cell (x, row), as a tap
+// would; 1 when it was placed.
 EMSCRIPTEN_KEEPALIVE int battle_debug_deploy(int def, int x, int row)
 {
     return game_state.defs_ok && battle_place(&game_state.battle, (u32)def, x, row);
