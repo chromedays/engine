@@ -451,6 +451,12 @@ void ui_inspector_tab(Sandbox* sandbox)
         igSetItemTooltip("%s", T("Keep only the node shown here selected"));
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
+    // What a generator made is shown but not edited: the generator makes and removes it (docs/specs/scene_file.md).
+    SceneDoc* doc = sandbox_doc(sandbox);
+    Behavior* made_by = doc_generator_of(doc, view->selected.index);
+    if (made_by && search_plain(sandbox))
+        igTextDisabled(T("Made by %s"), nv_scene_get(view->scene, made_by->node)->name);
+    igBeginDisabled(made_by != NULL);
     if (search_row(sandbox, "Name", "node rename"))
         igInputText(TL("Name"), node->name, sizeof(node->name), 0, NULL, NULL);
     if (view->selected.index != view->scene->active_camera.index) {
@@ -489,7 +495,6 @@ void ui_inspector_tab(Sandbox* sandbox)
         igDragFloat3(TL("Scale"), &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
     // A node with a mesh of its own can be hidden, and then has none for the scene: its runtime remembers it.
-    SceneDoc* doc = sandbox_doc(sandbox);
     NodeRuntime* runtime = doc_node(doc, view->selected);
     if (node->mesh.index || (runtime && runtime->mesh.index)) {
         search_section(sandbox, "Mesh");
@@ -529,6 +534,12 @@ void ui_inspector_tab(Sandbox* sandbox)
     Behavior* spin = behavior_find(doc, BEHAVIOR_SPIN, view->selected);
     if (spin)
         spin_section(sandbox, spin);
+    for (u32 i = 0; i < doc->behavior_count; ++i) {
+        Behavior* generator = &doc->behaviors[i];
+        if (scene_behavior_def(generator->desc.kind)->generator && generator->node.index == view->selected.index &&
+            generator->node.gen == view->selected.gen)
+            generator_section(sandbox, generator, i);
+    }
     NvAnimatorId animator = sandbox_node_animator(view->scene, view->selected);
     Behavior* character = animator.index ? behavior_character_of(doc, animator) : NULL;
     if (character) {
@@ -539,6 +550,7 @@ void ui_inspector_tab(Sandbox* sandbox)
         if (layer->clip.index && search_group(sandbox, "Playing", "animation clip"))
             igText("%s  %.2f / %.2f s", nv_anim_clip_name(layer->clip), layer->time, nv_anim_clip_duration(layer->clip));
     }
+    igEndDisabled();
     search_panel_end(sandbox);
 }
 
@@ -551,11 +563,21 @@ void ui_view_tab(Sandbox* sandbox)
     ImGuiIO* io = igGetIO_Nil();
     SceneView* view = sandbox_view(sandbox);
     search_panel_begin(sandbox, SEARCH_VIEW);
-    const char* scenes[SCENE_COUNT] = {T("Showcase"), T("Stress")};
+    const char* scenes[SANDBOX_MAX_SCENES];
+    for (u32 i = 0; i < sandbox->scene_count; ++i)
+        scenes[i] = T(sandbox->docs[i].desc ? sandbox->docs[i].desc->title : sandbox->docs[i].file);
     int shown = (int)sandbox->shown;
-    if (search_row(sandbox, "Scene", "showcase stress switch")) {
-        if (igCombo_Str_arr(TL("Scene"), &shown, scenes, SCENE_COUNT, -1))
-            sandbox_show_scene(sandbox, (SceneKind)shown);
+    if (search_row(sandbox, "Scene", "switch")) {
+        if (igCombo_Str_arr(TL("Scene"), &shown, scenes, (int)sandbox->scene_count, -1))
+            sandbox_show_scene(sandbox, (u32)shown);
+    }
+    // A scene that could not be built cannot be shown: the first error says why.
+    for (u32 i = 0; i < sandbox->scene_count; ++i) {
+        if (!sandbox->docs[i].built && search_plain(sandbox)) {
+            igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.45f, 0.4f, 1.0f});
+            igTextWrapped("%s", sandbox->docs[i].error);
+            igPopStyleColor(1);
+        }
     }
     if (search_row(sandbox, "Language", "english korean 한국어 언어")) {
         const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
@@ -578,10 +600,8 @@ void ui_view_tab(Sandbox* sandbox)
         igSliderFloat(TL("Distance"), &view->orbit.distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
     if (search_row(sandbox, "Camera follows selection", "orbit follow"))
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
-    if (sandbox->shown == SCENE_SHOWCASE) {
-        if (search_row(sandbox, "Show bones", "skeleton debug lines"))
-            igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
-    }
+    if (search_row(sandbox, "Show bones", "skeleton debug lines"))
+        igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
     msaa_ui(sandbox);
     post_ui(sandbox);
     effects_ui(sandbox);
@@ -613,7 +633,7 @@ void ui_draw_build_label(Sandbox* sandbox)
     }
     char text[160];
     snprintf(text, sizeof(text), "%s build %s%s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, sandbox->download_text[0] ? " \xC2\xB7 " : "",
-             sandbox->download_text, sandbox->playing && sandbox->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
+             sandbox->download_text, sandbox->playing ? " \xC2\xB7 Playing" : "");
     NvLogLevel worst;
     u32 unseen = console_unseen(sandbox, &worst);
     char count[8];
@@ -654,9 +674,6 @@ void ui_play_button(Sandbox* sandbox, ImVec2_c size)
 {
     f32* box = sandbox->play_box;
     box[0] = box[1] = box[2] = box[3] = 0.0f;
-    // Play and Stop belong to the showcase; the stress scene always runs.
-    if (sandbox->shown != SCENE_SHOWCASE)
-        return;
     char play_label[64];
     snprintf(play_label, sizeof(play_label), "%s###play", T(sandbox->playing ? "Stop" : "Play"));
     if (igButton(play_label, size)) {
@@ -674,7 +691,7 @@ void ui_play_button(Sandbox* sandbox, ImVec2_c size)
 
 void ui_playing_note(Sandbox* sandbox)
 {
-    if (!sandbox->playing || sandbox->shown != SCENE_SHOWCASE)
+    if (!sandbox->playing)
         return;
     igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f});
     igTextWrapped(T("Playing: edits are lost on Stop."));
@@ -683,9 +700,9 @@ void ui_playing_note(Sandbox* sandbox)
 
 b32 ui_push_play_tint(Sandbox* sandbox)
 {
-    // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
+    // A tinted panel while the scene plays, so edits that will be lost are not mistaken for
     // edits that stay.
-    if (!sandbox->playing || sandbox->shown != SCENE_SHOWCASE)
+    if (!sandbox->playing)
         return 0;
     igPushStyleColor_Vec4(ImGuiCol_WindowBg, (ImVec4_c){0.05f, 0.12f, 0.20f, 1.0f});
     return 1;

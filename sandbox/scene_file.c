@@ -123,13 +123,16 @@ global const SceneField grid_fields[] = {
     ROW("spacing", FIELD_NUMBER, GridDesc, spacing, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
     ROW("height", FIELD_NUMBER, GridDesc, height, .count = 1, ANY, .required = 1),
     ROW("scale", FIELD_NUMBER, GridDesc, scale, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("on", FIELD_BOOL, GridDesc, on, .count = 1, .parameter = 1, .fallback = 1),
-    ROW("count", FIELD_INTEGER, GridDesc, count, .count = 1, .min = 0, .max = 16000, .required = 1, .parameter = 1),
-    ROW("colors_on", FIELD_BOOL, GridDesc, colors_on, .count = 1, .parameter = 1),
+    ROW("on", FIELD_BOOL, GridDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Cube grid", .keywords = "workload cubes"),
+    ROW("count", FIELD_INTEGER, GridDesc, count, .count = 1, .min = 0, .max = 16000, .required = 1, .parameter = 1, .label = "Cubes",
+        .keywords = "workload grid count", .format = "%d", .logarithmic = 1),
+    ROW("colors_on", FIELD_BOOL, GridDesc, colors_on, .count = 1, .parameter = 1, .label = "Many colors",
+        .keywords = "workload materials"),
     ROW("colors", FIELD_INTEGER, GridDesc, colors, .count = 1, .min = 2, .max = SCENE_MAX_PALETTE_COLORS - 1, .parameter = 1,
-        .fallback = 16),
-    ROW("churn_on", FIELD_BOOL, GridDesc, churn_on, .count = 1, .parameter = 1),
-    ROW("churn", FIELD_INTEGER, GridDesc, churn, .count = 1, .min = 1, .max = 256, .parameter = 1, .fallback = 32),
+        .fallback = 16, .label = "Colors", .keywords = "workload materials count", .format = "%d"),
+    ROW("churn_on", FIELD_BOOL, GridDesc, churn_on, .count = 1, .parameter = 1, .label = "Churn", .keywords = "workload add remove nodes"),
+    ROW("churn", FIELD_INTEGER, GridDesc, churn, .count = 1, .min = 1, .max = 256, .parameter = 1, .fallback = 32,
+        .label = "Cubes / frame", .keywords = "workload churn count", .format = "%d"),
 };
 
 global const SceneField chain_fields[] = {
@@ -140,8 +143,9 @@ global const SceneField chain_fields[] = {
     ROW("link", FIELD_NUMBER, ChainDesc, link, .count = 3, ANY, .required = 1),
     ROW("twist", FIELD_DEGREES, ChainDesc, twist, .count = 1, .min = -360, .max = 360, .required = 1),
     ROW("wobble", FIELD_DEGREES, ChainDesc, wobble, .count = 1, .min = -360, .max = 360, .required = 1),
-    ROW("on", FIELD_BOOL, ChainDesc, on, .count = 1, .parameter = 1, .fallback = 1),
-    ROW("count", FIELD_INTEGER, ChainDesc, count, .count = 1, .min = 1, .max = 1000, .required = 1, .parameter = 1),
+    ROW("on", FIELD_BOOL, ChainDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Deep chain", .keywords = "workload hierarchy"),
+    ROW("count", FIELD_INTEGER, ChainDesc, count, .count = 1, .min = 1, .max = 1000, .required = 1, .parameter = 1, .label = "Links",
+        .keywords = "workload chain count", .format = "%d"),
 };
 
 global const SceneField crowd_fields[] = {
@@ -150,18 +154,26 @@ global const SceneField crowd_fields[] = {
     ROW("columns", FIELD_INTEGER, CrowdDesc, columns, .count = 1, .min = 1, .max = 4096, .required = 1),
     ROW("spacing", FIELD_NUMBER, CrowdDesc, spacing, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
     ROW("offset", FIELD_NUMBER, CrowdDesc, offset, .count = 1, .min = 0, .max = NO_LIMIT),
-    ROW("on", FIELD_BOOL, CrowdDesc, on, .count = 1, .parameter = 1, .fallback = 1),
-    ROW("count", FIELD_INTEGER, CrowdDesc, count, .count = 1, .min = 1, .max = 200, .required = 1, .parameter = 1),
+    ROW("on", FIELD_BOOL, CrowdDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Crowd",
+        .keywords = "workload characters animation"),
+    ROW("count", FIELD_INTEGER, CrowdDesc, count, .count = 1, .min = 1, .max = 200, .required = 1, .parameter = 1, .label = "Characters",
+        .keywords = "workload crowd count", .format = "%d"),
 };
 
 global const SceneField effects_fields[] = {
     ROW("area", FIELD_NUMBER, EffectsDesc, area, .count = 2, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("on", FIELD_BOOL, EffectsDesc, on, .count = 1, .parameter = 1, .fallback = 1),
-    ROW("particles", FIELD_INTEGER, EffectsDesc, particles, .count = 1, .min = 0, .max = 4000000, .parameter = 1),
-    ROW("explosions", FIELD_INTEGER, EffectsDesc, explosions, .count = 1, .min = 0, .max = 200, .parameter = 1),
-    ROW("missiles", FIELD_INTEGER, EffectsDesc, missiles, .count = 1, .min = 0, .max = 2000, .parameter = 1),
-    ROW("beams", FIELD_INTEGER, EffectsDesc, beams, .count = 1, .min = 0, .max = 500, .parameter = 1),
-    ROW("decals", FIELD_INTEGER, EffectsDesc, decals, .count = 1, .min = 0, .max = 2000, .parameter = 1),
+    ROW("on", FIELD_BOOL, EffectsDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Fire effects",
+        .keywords = "workload particles vfx"),
+    ROW("particles", FIELD_INTEGER, EffectsDesc, particles, .count = 1, .min = 0, .max = 4000000, .parameter = 1,
+        .label = "Live particles", .keywords = "workload effects vfx count", .format = "%d", .logarithmic = 1),
+    ROW("explosions", FIELD_INTEGER, EffectsDesc, explosions, .count = 1, .min = 0, .max = 200, .parameter = 1,
+        .label = "Explosions / s", .keywords = "workload effects vfx", .format = "%d"),
+    ROW("missiles", FIELD_INTEGER, EffectsDesc, missiles, .count = 1, .min = 0, .max = 2000, .parameter = 1,
+        .label = "Missiles in flight", .keywords = "workload effects vfx trails", .format = "%d"),
+    ROW("beams", FIELD_INTEGER, EffectsDesc, beams, .count = 1, .min = 0, .max = 500, .parameter = 1, .label = "Beams",
+        .keywords = "workload effects vfx laser", .format = "%d"),
+    ROW("decals", FIELD_INTEGER, EffectsDesc, decals, .count = 1, .min = 0, .max = 2000, .parameter = 1,
+        .label = "Decals / s", .keywords = "workload effects vfx scorch", .format = "%d"),
 };
 
 #define TABLE(fields) fields, (u32)NV_ARRAY_COUNT(fields)

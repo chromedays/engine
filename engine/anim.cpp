@@ -366,6 +366,11 @@ NvAnimator* nv_anim_get(NvAnimatorId id)
     return &g_animators[id.index].pub;
 }
 
+u32 nv_anim_free_animators(void)
+{
+    return NV_MAX_ANIMATORS - g_animator_count;
+}
+
 void nv_anim_play(NvAnimator* animator, NvClipId clip, f32 fade_seconds, b32 loop)
 {
     NvAnimLayer* current = &animator->layers[0];

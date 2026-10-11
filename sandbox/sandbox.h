@@ -37,17 +37,8 @@ void sandbox_strings_init(void);
 #define SELECTION_MAX 256 // selected nodes at once, the primary included (docs/specs/selection.md)
 #define TREE_ROWS_MAX 4096 // Scene tab rows a Shift+click range can reach
 
-#define STRESS_MAX_GRID     16000
-#define STRESS_MAX_CHAIN    1000
-#define STRESS_MAX_CROWD    200
-#define STRESS_MAX_COLORS   200
-#define STRESS_MAX_CHURN    256
-#define STRESS_MAX_STEPS    16
-#define STRESS_MAX_PARTICLES 4000000 // the Effects workload's targets
-#define STRESS_MAX_EXPLOSIONS 200
-#define STRESS_MAX_MISSILES 2000
-#define STRESS_MAX_BEAMS    500
-#define STRESS_MAX_DECALS   2000
+#define SANDBOX_MAX_SCENES 4 // scenes in the list (scenes.c)
+#define EFFECTS_MAX_MISSILES 2000 // the most missiles an `effects` behavior holds in flight
 
 // Which editor UI runs: chosen once at start from the primary pointer (docs/specs/layout.md).
 typedef enum UiMode {
@@ -106,18 +97,11 @@ typedef enum ShortcutId {
     // Palette only: no keys (docs/specs/search.md).
     SC_SHOW_SAVE,
     SC_RESET,
-    SC_SCENE_SHOWCASE,
-    SC_SCENE_STRESS,
-    SC_TEXTURES,
+    SC_SCENE_FIRST, // one row for each scene of the list: SANDBOX_MAX_SCENES of them
+    SC_TEXTURES = SC_SCENE_FIRST + SANDBOX_MAX_SCENES,
     SC_CLEAR_CONSOLE,
     SHORTCUT_COUNT,
 } ShortcutId;
-
-typedef enum SceneKind {
-    SCENE_SHOWCASE,
-    SCENE_STRESS,
-    SCENE_COUNT,
-} SceneKind;
 
 // The orbit camera's limits, as the fields of an NvOrbitCamera: `.orbit = {..., ORBIT_LIMITS}`.
 #define CAMERA_MIN_PITCH (-10.0f * NV_PI / 180.0f)
@@ -154,6 +138,7 @@ typedef enum SaveScope {
 } SaveScope;
 
 typedef struct UndoStep {
+    u32 scene; // the scene it belongs to (an index of the scene list)
     SaveScope scope;
     NvNodeId nodes[SELECTION_MAX]; // SAVE_SCOPE_NODE, in selection order (the primary first)
     u32 node_count;
@@ -169,6 +154,7 @@ typedef struct Undo {
     u32 first;       // the oldest step's slot
     u32 count;       // steps held
     u32 done;        // how many of them are applied: undo takes step done - 1, redo step done
+    u32 scene;       // the scene `committed` is of: a switch to another one commits again without a step
     s32 request;     // -1 undo, +1 redo, asked by the buttons; done at the frame's end
     // Each scope as last committed; an idle frame that finds it changed takes a step.
     u8 committed[SAVE_SCOPE_COUNT][UNDO_MAX_BYTES];
@@ -302,15 +288,6 @@ typedef struct FrameTimes {
     f64 gpu_particles; // the particle compute passes on the GPU; 0 without timestamps or effects
 } FrameTimes;
 
-typedef struct BenchmarkStep {
-    const char* name;
-    s32 grid;
-    s32 crowd;
-    s32 particles; // the Effects workload: live particles kept, missiles flying, beams held
-    s32 missiles;
-    s32 beams;
-} BenchmarkStep;
-
 typedef struct BenchmarkResult {
     u32 frames;
     FrameTimes average;
@@ -322,63 +299,22 @@ typedef struct BenchmarkResult {
 // time. Unlike the frame time it keeps rising while vsync holds the frame rate at the display's.
 f64 sandbox_load(const FrameTimes* t);
 
-// What the stress scene is asked to hold. bools because ImGui writes them through bool*.
-typedef struct StressWorkloads {
-    bool grid_on;
-    s32 grid_count;
-    bool colors_on;
-    s32 color_count;
-    bool chain_on;
-    s32 chain_count;
-    bool crowd_on;
-    s32 crowd_count;
-    bool churn_on;
-    s32 churn_count;
-    bool show_bones;
-    bool effects_on;
-    s32 effect_particles;  // live particles kept (swarm bursts fired to hold the number)
-    s32 effect_explosions; // explosions per second
-    s32 effect_missiles;   // missiles in flight, each with a trail and smoke
-    s32 effect_beams;      // beams held
-    s32 effect_decals;     // decals per second
-} StressWorkloads;
-
-typedef struct Stress {
-    b32 built;
-    NvScene* scene;
-    NvMeshId cube;
-    NvMeshId small_cube;
-    NvMaterialId colors[STRESS_MAX_COLORS]; // [0] is the grid's color while colors are off
-
-    StressWorkloads want;
-
-    // What is built. Crowd characters are never removed, since animators cannot be; the ones not
-    // asked for are hidden and paused.
-    NvNodeId grid_group, chain_group, crowd_group;
-    NvNodeId grid[STRESS_MAX_GRID];
-    u32 grid_built;
-    u32 grid_colors; // colors the grid was last painted with; 0 = one material
-    NvNodeId chain[STRESS_MAX_CHAIN];
-    u32 chain_built;
-    NvGltfModel crowd[STRESS_MAX_CROWD];
-    u32 crowd_created;
-    u32 crowd_active;
-    u32 churn_cursor;
-    f32 chain_angle;
-
-    // Benchmark
-    b32 benchmark_running;
-    u32 benchmark_step;
-    f64 benchmark_step_start; // seconds
-    StressWorkloads before_benchmark; // put back when a run finishes
-    NvShadowSettings benchmark_shadows; // the shadow settings the last run measured with
-    u32 benchmark_msaa;                 // the sample count it measured with
-    char benchmark_resolution[64];      // the scene's resolution it measured at ("585 x 497, scale 1/2")
-    BenchmarkStep steps[STRESS_MAX_STEPS];
-    BenchmarkResult results[STRESS_MAX_STEPS];
-    u32 step_count;
+// The benchmark of the shown scene (docs/specs/scene_file.md, "Benchmark"): steps come from the scene file.
+typedef struct Benchmark {
+    b32 running;
+    u32 scene;                          // the scene the run (and the results) are of
+    b32 started_play;                   // the run began the Play it ends with Stop
+    u32 step;
+    f64 step_start;                     // seconds
+    BehaviorDesc before[SCENE_MAX_BEHAVIORS]; // the generators' parameters before the run, put back when it ends without Stop
+    BehaviorDesc applied[SCENE_MAX_BEHAVIORS]; // ... and as the current step set them: a change means the user touched one
+    NvShadowSettings shadows;           // the shadow settings the last run measured with
+    u32 msaa;                           // the sample count it measured with
+    char resolution[64];                // the scene's resolution it measured at ("585 x 497, scale 1/2")
+    char step_names[SCENE_MAX_STEPS][SCENE_ID_SIZE]; // the steps of the scene it measured
+    BenchmarkResult results[SCENE_MAX_STEPS];
     u32 result_count;
-} Stress;
+} Benchmark;
 
 // Search (docs/specs/search.md): the boxes at the top of the panels and the command palette.
 typedef enum SearchPanel {
@@ -486,6 +422,7 @@ typedef struct Asset {
     char path[SCENE_PATH_SIZE];
     b32 loaded;
     NvGltfModel model; // the first instance, which the others copy
+    NvMeshId meshes[NV_GLTF_MAX_MESH_NODES]; // the meshes of its mesh nodes, as loaded (an instance may hide its own)
     NvClipId clips[SANDBOX_MAX_CLIPS]; // in place
     u32 clip_count;
     NvClipId root_motion_clips[SANDBOX_MAX_CLIPS]; // same names, root motion taken out
@@ -515,6 +452,46 @@ typedef struct CharacterState {
     NvNodeId look_target;
 } CharacterState;
 
+// The generators' run state. The arrays are made when the scene is built, as large as the file's `max`.
+typedef struct GridState {
+    NvMeshId mesh;
+    const NvMaterialId* materials; // the palette's
+    u32 material_count;
+    NvNodeId* nodes;               // the cubes built, in order
+    u32 built;
+    u32 painted;                   // colors the cubes were last painted with; 0 = one material
+    u32 churn_cursor;
+} GridState;
+
+typedef struct ChainState {
+    NvMeshId mesh;
+    const NvMaterialId* materials; // the palette's
+    u32 material_count;
+    NvNodeId* nodes;
+    u32 built;
+    f32 time; // seconds of Play
+} ChainState;
+
+typedef struct CrowdState {
+    Asset* asset;
+    NvGltfModel* models; // the characters made; they are never removed, since animators cannot be
+    u32 created;
+    u32 active;          // the ones asked for, drawn and animating
+    b32 failed;          // the model did not load: no more characters are tried
+} CrowdState;
+
+// A test missile in flight: it leaves a trail and explodes where its life ends.
+typedef struct Flight {
+    NvVec3 pos, vel;
+    f32 life;
+} Flight;
+
+typedef struct EffectsState {
+    Flight* flights; // [EFFECTS_MAX_MISSILES]
+    u32 flight_count;
+    f32 swarm_carry, explosion_carry, decal_carry; // fractions of a burst not yet fired
+} EffectsState;
+
 // A behavior as it runs: `desc` holds its structure and its parameters as they are now.
 typedef struct Behavior {
     BehaviorDesc desc;
@@ -522,25 +499,32 @@ typedef struct Behavior {
     union {
         SpinState spin;
         CharacterState character;
+        GridState grid;
+        ChainState chain;
+        CrowdState crowd;
+        EffectsState effects;
     };
 } Behavior;
 
+// One scene of the list: built from its file when the sandbox starts, and shown when it is picked.
 typedef struct SceneDoc {
+    const char* file; // the scene list's path
     b32 built;
+    char error[160];  // why it was not built (the first error)
     const SceneDesc* desc;
+    NvScene* scene;
+    SceneView view;
     NodeRuntime nodes[SCENE_MAX_NODES]; // the file's nodes, in the file's order
     u32 node_count;
-    Behavior behaviors[SCENE_MAX_BEHAVIORS];
+    u8* authored;     // [NV_MAX_NODES] 1 for a node the file made (and a model's nodes under it); the others are a generator's
+    u32 authored_count;
+    Behavior behaviors[SCENE_MAX_BEHAVIORS]; // in the file's order, so an index is the SceneDesc's
     u32 behavior_count;
+    NvMeshId model_meshes[SCENE_MAX_MODELS]; // the shape models'
+    NvMaterialId palette_materials[SCENE_MAX_PALETTES][SCENE_MAX_PALETTE_COLORS];
     u32 layout; // save_scene_layout of the tree as built (before any generator)
     bool show_bones;
 } SceneDoc;
-
-// A test missile in flight: it leaves a trail and explodes where its life ends.
-typedef struct Flight {
-    NvVec3 pos, vel;
-    f32 life;
-} Flight;
 
 // The effects the sandbox fires (effects.c).
 typedef struct Effects {
@@ -549,10 +533,6 @@ typedef struct Effects {
     NvVfxDecalStyle scorch;
     Flight flights[8];
     u32 flight_count;
-    // The stress scene's Effects workload (effects_stress_update).
-    Flight stress_flights[STRESS_MAX_MISSILES];
-    u32 stress_flight_count;
-    f32 swarm_carry, explosion_carry, decal_carry; // fractions of a burst not yet fired
     NvRandom rng;
 } Effects;
 
@@ -562,14 +542,12 @@ typedef struct Sandbox {
     NvArena permanent;
     NvArena scratch;
     NvArena anim_memory;
-    NvScene* scene;
     NvRenderer renderer;
     NvImgui imgui;
     f64 time;
     f64 last_time;
 
-    SceneKind shown;
-    SceneView views[SCENE_COUNT];
+    u32 shown; // the scene on screen: an index of docs
 
     // Frame timing: the last frame, and averages and worst case over about a second.
     FrameTimes times;
@@ -580,10 +558,11 @@ typedef struct Sandbox {
     u32 window_frames;
     f64 window_start;
 
-    Stress stress;
+    Benchmark benchmark;
 
-    // The scenes (scenes.c): one document for each, built from its file.
-    SceneDoc docs[SCENE_COUNT];
+    // The scenes (scenes.c): one document for each scene of the list, built from its file.
+    SceneDoc docs[SANDBOX_MAX_SCENES];
+    u32 scene_count;
     Asset assets[SANDBOX_MAX_ASSETS];
     u32 asset_count;
 
@@ -592,11 +571,11 @@ typedef struct Sandbox {
     TextureViewer textures;
     NvRect logged_viewport; // the scene viewport last logged
 
-    // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the showcase by itself;
-    // Play runs it, and Stop restores it from the snapshot taken at Play.
+    // Edit and Play modes (docs/specs/play.md). In Edit mode nothing moves the shown scene by itself;
+    // Play runs it, and Stop restores it from the snapshot taken at Play. A scene switch stops Play first.
     b32 playing;
     f32 play_time;          // seconds since Play
-    u8* play_snapshot;      // save bytes of the showcase at Play [SAVE_MAX_SIZE]
+    u8* play_snapshot;      // save bytes of the sandbox at Play [SAVE_MAX_SIZE]
     u32 play_snapshot_size;
 
     // Autosave (save.c)
@@ -664,21 +643,29 @@ void sandbox_start_playing(Sandbox* sandbox); // Play: snapshot the scene and ru
 void sandbox_stop_playing(Sandbox* sandbox);  // Stop: restore the scene from the snapshot
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
 NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id);
-void sandbox_show_scene(Sandbox* sandbox, SceneKind kind);
+// Shows scene `index` of the list, stopping Play first. Refused (logged) when that scene could not be built.
+void sandbox_show_scene(Sandbox* sandbox, u32 index);
 void sandbox_focus_selection(Sandbox* sandbox); // F: the orbit point moves to the selected node
 void sandbox_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
 NvMeshId sandbox_box_mesh(Sandbox* sandbox, NvVec3 half);
 SceneView* sandbox_view(Sandbox* sandbox); // the shown scene's view
 
 // scenes.c (docs/specs/scene_file.md)
-#define SHOWCASE_FILE "/data/showcase.nvscene"
-// Reads the scene file and builds the scene into `scene`, `docs[kind]` and `views[kind]`. Fails (logged) if the file is bad.
-b32 scenes_build(Sandbox* sandbox, SceneKind kind, NvScene* scene, const char* path);
+// Builds every scene of the list from its file (the first must build, or the sandbox stops).
+b32 scenes_init(Sandbox* sandbox);
 SceneDoc* sandbox_doc(Sandbox* sandbox); // the shown scene's
 NodeRuntime* doc_node(SceneDoc* doc, NvNodeId id); // the runtime of a node of the file, or NULL
+// Whether the file made this node, as opposed to a generator (docs/specs/scene_file.md, "Node budget"): the save, undo and the gizmo
+// leave the others alone.
+b32 doc_authored(const SceneDoc* doc, u32 index);
+// The generator whose nodes include this one, or NULL for a node of the file.
+Behavior* doc_generator_of(SceneDoc* doc, u32 index);
 Asset* sandbox_character_asset(Sandbox* sandbox);   // the first glb with a skeleton, whose clips the crowd plays
 // The materials of an asset's meshes, each once, in the order its mesh nodes use them: what the save keeps for the asset.
 u32 asset_materials(const Asset* asset, NvMaterialId* out, u32 capacity);
+// One instance of a file model: a new root under `parent` in `scene`. The first loads the glb with its clips; the others copy it.
+b32 asset_instance(Sandbox* sandbox, const ModelDesc* model, Asset* asset, NvScene* scene, NvNodeId parent, NvGltfModel* out);
+Asset* asset_of(Sandbox* sandbox, const ModelDesc* model);
 
 // behaviors.c
 NvClipId character_find_clip(const CharacterState* state, const char* name);
@@ -696,6 +683,16 @@ void behavior_apply(Sandbox* sandbox, Behavior* behavior); // after its paramete
 void behaviors_draw_bones(Sandbox* sandbox, SceneDoc* doc);
 void spin_section(Sandbox* sandbox, Behavior* behavior);      // Inspector sections
 void character_section(Sandbox* sandbox, Behavior* behavior);
+// A generator's parameters as rows (the Inspector's section for its node and the Stress tab's Workloads share them). `index` is its
+// place among the scene's behaviors, which keeps the widgets of two generators apart.
+void generator_rows(Sandbox* sandbox, Behavior* behavior, u32 index);
+void generator_section(Sandbox* sandbox, Behavior* behavior, u32 index); // the Inspector's, with its own heading
+// The generator's "Built: ..." line.
+void generator_status(Behavior* behavior, char* out, umm capacity);
+// The generator's parameter `key` (a SceneField key), for the benchmark and tests; NULL when it has none.
+const SceneField* behavior_parameter(const Behavior* behavior, const char* key);
+void* behavior_field(Behavior* behavior, const SceneField* field);
+b32 behavior_parameters_equal(const BehaviorDesc* a, const BehaviorDesc* b);
 
 // effects.c
 void effects_init(Sandbox* sandbox);               // makes the particle system and registers the effects
@@ -704,9 +701,7 @@ void effects_clear(Sandbox* sandbox);              // Play and Stop: every live 
 void effects_fire(Sandbox* sandbox, u32 which);    // 0 explosion, 1 sparks, 2 smoke, 3 missile, beside the orbit point
 NvVec3 effects_test_point(Sandbox* sandbox);
 void effects_ui(Sandbox* sandbox);
-// The Effects workload of the stress scene: keeps the asked numbers of particles, explosions,
-// missiles, beams and decals going. Call each frame while the stress scene is shown.
-void effects_stress_update(Sandbox* sandbox, const StressWorkloads* want, f32 dt);
+void effects_scorch(Sandbox* sandbox, NvVec3 point, f32 size); // a scorch mark on the ground below `point`
 
 // selection.c (docs/specs/selection.md)
 u32 selection_count(SceneView* view);
@@ -718,11 +713,11 @@ void selection_toggle(Sandbox* sandbox, SceneView* view, NvNodeId id); // adds i
 void selection_keep_primary(SceneView* view);
 void selection_prune(SceneView* view); // drops nodes that no longer exist
 
-// stress.c
-void stress_build(Sandbox* sandbox);
-void stress_update(Sandbox* sandbox, f32 dt);  // before nv_anim_update_scene
-void stress_after_frame(Sandbox* sandbox);     // after the frame's times are known: runs the benchmark
-void stress_draw_bones(Sandbox* sandbox);
+// stress.c: the Stress tab (statistics, the generators' rows, the benchmark)
+b32 stress_tab_shown(Sandbox* sandbox);       // the shown scene has a generator or a benchmark
+void stress_after_frame(Sandbox* sandbox);    // after the frame's times are known: runs the benchmark
+void benchmark_start(Sandbox* sandbox);       // "Run benchmark": the shown scene's steps, in Play
+void benchmark_end(Sandbox* sandbox);         // Play ended: a run in progress is over (Stop put the parameters back)
 u32 stress_live_nodes(NvScene* scene);
 void stress_ui(Sandbox* sandbox);
 
@@ -732,10 +727,9 @@ void sandbox_build_ui(Sandbox* sandbox);
 void ui_scene_tab(Sandbox* sandbox);
 void ui_inspector_tab(Sandbox* sandbox);
 void ui_view_tab(Sandbox* sandbox);
-// The Play / Stop button, `size` wide and high (0 = natural), at the cursor; nothing in the stress
-// scene. Records its box in sandbox->play_box.
+// The Play / Stop button, `size` wide and high (0 = natural), at the cursor. Records its box in sandbox->play_box.
 void ui_play_button(Sandbox* sandbox, ImVec2_c size);
-// The line telling that edits are lost on Stop, while the showcase plays.
+// The line telling that edits are lost on Stop, while the scene plays.
 void ui_playing_note(Sandbox* sandbox);
 // Begins the Console tab item with its unseen count and color; if true, draw console_tab and
 // igEndTabItem.
@@ -743,7 +737,7 @@ b32 ui_begin_console_tab(Sandbox* sandbox);
 b32 ui_begin_textures_tab(Sandbox* sandbox); // the Textures tab item; jumps to it on sandbox->open_textures
 // The build label in the viewport's top-left corner, with its badge.
 void ui_draw_build_label(Sandbox* sandbox);
-// A tint for the panels while the showcase plays: push before igBegin, pop after.
+// A tint for the panels while the scene plays: push before igBegin, pop after.
 b32 ui_push_play_tint(Sandbox* sandbox);
 void ui_pop_play_tint(b32 pushed);
 
@@ -773,8 +767,8 @@ void search_open_palette(Sandbox* sandbox);
 void search_focus_box(Sandbox* sandbox); // Ctrl+F
 
 // shortcuts.c: the table's rows are the palette's actions.
-b32 command_listed(u32 id);
-const char* command_name(u32 id);
+b32 command_listed(Sandbox* sandbox, u32 id);
+const char* command_name(Sandbox* sandbox, u32 id);
 const char* command_group(u32 id);
 b32 command_enabled(Sandbox* sandbox, u32 id);
 void command_run(Sandbox* sandbox, u32 id);
@@ -817,6 +811,7 @@ SaveLoad save_load(Sandbox* sandbox, const void* bytes, u32 size);
 #define SAVE_PART_VIEW   (1u << 1) // the showcase's camera view and selection
 #define SAVE_PART_SCENE  (1u << 2) // nodes, character and scene settings
 #define SAVE_PART_ALL    (SAVE_PART_EDITOR | SAVE_PART_VIEW | SAVE_PART_SCENE)
+#define SAVE_PART_SHOWN  (1u << 3) // only the shown scene's SCNE (Stop: the others did not run)
 SaveLoad save_load_parts(Sandbox* sandbox, const void* bytes, u32 size, u32 parts);
 // Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
 // (docs/specs/undo.md). Values the sandbox drives every frame are left out.
@@ -839,7 +834,7 @@ void undo_button(Sandbox* sandbox, s32 direction, b32 labels, ImVec2_c size);
 // Undo and Redo as menu items with their shortcuts.
 void undo_menu_items(Sandbox* sandbox);
 
-// Mounts browser storage and loads the save, if there is one. Call once the showcase is built.
+// Mounts browser storage and loads the save, if there is one. Call once the scenes are built.
 void save_init(Sandbox* sandbox);
 // Autosaves every AUTOSAVE_SECONDS while autosave is on. Call every frame.
 void save_update(Sandbox* sandbox);

@@ -37,6 +37,7 @@
 #define TAG_BLMI NV_TAG('B', 'L', 'M', 'I') // bloom intensity, 0 to 0.2
 #define TAG_LANG NV_TAG('L', 'A', 'N', 'G') // the UI's language: 0 English, 1 Korean (docs/specs/korean.md)
 // SCNE
+#define TAG_FILE NV_TAG('F', 'I', 'L', 'E') // the scene file the SCNE is of (a path of the scene list)
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
 #define TAG_PLNT NV_TAG('P', 'L', 'N', 'T')
@@ -46,8 +47,7 @@
 #define TAG_BHVR NV_TAG('B', 'H', 'V', 'R') // a behavior's parameters (docs/specs/scene_file.md)
 // Top level, after SCNE
 #define TAG_ASET NV_TAG('A', 'S', 'E', 'T') // one glb's materials: edits belong to the asset, not to a scene
-// ASET
-#define TAG_FILE NV_TAG('F', 'I', 'L', 'E') // the glb's path
+// ASET (FILE is the glb's path)
 #define TAG_MATL NV_TAG('M', 'A', 'T', 'L') // one material: INDX, COLR
 #define TAG_INDX NV_TAG('I', 'N', 'D', 'X') // the material's place among the asset's (in the order its mesh nodes use them)
 // BHVR
@@ -172,8 +172,10 @@ u32 save_scene_layout(NvScene* scene)
 // Writing
 //
 
-internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view)
+internal void write_view(NvChunkWriter* w, SceneDoc* doc)
 {
+    NvScene* scene = doc->scene;
+    SceneView* view = &doc->view;
     nv_chunk_begin(w, TAG_VIEW);
     nv_chunk_f32(w, TAG_YAW, view->orbit.yaw);
     nv_chunk_f32(w, TAG_PTCH, view->orbit.pitch);
@@ -181,27 +183,31 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     nv_chunk_u32(w, TAG_FOLW, view->follow_selection);
     nv_chunk_f32s(w, TAG_ORBT, &view->orbit.target.x, 3);
     nv_chunk_f32s(w, TAG_PAN, &view->pan.x, 3);
+    // What a generator made is not saved, so it is not in the selection either: the first node of the file the selection holds is the
+    // primary, the rest follow.
     u32 path[SAVE_MAX_PATH];
-    NodePath selected = view->selected.index ? path_of(scene, view->selected.index, path) : (NodePath){0};
-    nv_chunk_u32s(w, TAG_SELN, path, selected.length);
-    // The others: each path as its length, then its indices.
+    u32 selected_length = 0;
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
     u32 count = 0;
-    for (u32 i = 0; i < view->other_count; ++i) {
-        NodePath other = path_of(scene, view->others[i].index, &others[count + 1]);
+    for (u32 i = 0; i < selection_count(view); ++i) {
+        NvNodeId id = selection_get(view, i);
+        if (!doc_authored(doc, id.index))
+            continue;
+        if (!selected_length) {
+            NodePath primary = path_of(scene, id.index, path);
+            selected_length = primary.length; // 0 when it is too deep to save
+            continue;
+        }
+        NodePath other = path_of(scene, id.index, &others[count + 1]);
         if (!other.ok)
             continue;
         others[count] = other.length;
         count += 1 + other.length;
     }
+    nv_chunk_u32s(w, TAG_SELN, path, selected_length);
     if (count)
         nv_chunk_u32s(w, TAG_SELO, others, count);
     nv_chunk_end(w);
-}
-
-internal SceneDoc* showcase(Sandbox* sandbox)
-{
-    return &sandbox->docs[SCENE_SHOWCASE];
 }
 
 internal Behavior* first_behavior(SceneDoc* doc, BehaviorKind kind)
@@ -213,10 +219,10 @@ internal Behavior* first_behavior(SceneDoc* doc, BehaviorKind kind)
 }
 
 // The runtime of the node with this slot, if it is one of the file's nodes.
-internal NodeRuntime* node_runtime(Sandbox* sandbox, u32 index)
+internal NodeRuntime* node_runtime(SceneDoc* doc, u32 index)
 {
-    NvNodeId id = {index, sandbox->scene->nodes[index].gen};
-    return doc_node(showcase(sandbox), id);
+    NvNodeId id = {index, doc->scene->nodes[index].gen};
+    return doc_node(doc, id);
 }
 
 // The first node under a character's that follows a joint (the sword): an old save's SWRD is its visibility.
@@ -249,10 +255,10 @@ internal u32 param_values(const SceneField* field, const Behavior* behavior, f32
 
 // A behavior: where it is (its node's path and its kind), then each parameter it has as PARM {NAME, VALU or TEXT}. Parameters are
 // all that is saved of it; its structure comes from the scene file.
-internal void write_behavior(NvChunkWriter* w, Sandbox* sandbox, const Behavior* behavior)
+internal void write_behavior(NvChunkWriter* w, const SceneDoc* doc, const Behavior* behavior)
 {
     u32 path[SAVE_MAX_PATH];
-    NodePath node_path = path_of(sandbox->scene, behavior->node.index, path);
+    NodePath node_path = path_of(doc->scene, behavior->node.index, path);
     if (!node_path.ok)
         return;
     const BehaviorDef* def = scene_behavior_def(behavior->desc.kind);
@@ -283,16 +289,17 @@ internal void write_behavior(NvChunkWriter* w, Sandbox* sandbox, const Behavior*
     nv_chunk_end(w);
 }
 
-// The tags an older build kept the showcase's spin and character in. Still written, so that build reads this save: PLNT is the
-// first spin's speed, CHAR the first character's controls.
-internal void write_old_tags(NvChunkWriter* w, Sandbox* sandbox)
+// The tags an older build kept the first scene's spin and character in. Still written for a scene that has the types, so that build
+// reads this save: PLNT is the first spin's speed, CHAR the first character's controls. BONE is every scene's.
+internal void write_old_tags(NvChunkWriter* w, SceneDoc* doc)
 {
-    SceneDoc* doc = showcase(sandbox);
     Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
     Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
-    // The orbit angle is written as 0: like the clip time, it only runs while playing.
-    f32 planet[2] = {spin ? spin->desc.spin.speed : 0.0f, 0.0f};
-    nv_chunk_f32s(w, TAG_PLNT, planet, 2);
+    if (spin) {
+        // The orbit angle is written as 0: like the clip time, it only runs while playing.
+        f32 planet[2] = {spin->desc.spin.speed, 0.0f};
+        nv_chunk_f32s(w, TAG_PLNT, planet, 2);
+    }
     nv_chunk_u32(w, TAG_BONE, doc->show_bones);
     if (!character)
         return;
@@ -319,22 +326,22 @@ internal void write_old_tags(NvChunkWriter* w, Sandbox* sandbox)
 #define DRIVEN_POSITION (1u << 0)
 #define DRIVEN_ROTATION (1u << 1)
 
-// Which of a showcase node's transform the sandbox rewrites every frame in Edit mode. Undo leaves these
+// Which of a node's transform the sandbox rewrites every frame in Edit mode. Undo leaves these
 // out, or every frame would look like an edit. Only the orbit camera is left: everything else that
 // moves by itself (spins, the walk, the look target's sweep) only moves while playing
 // (docs/specs/play.md), and undo is off then.
-internal u32 driven_fields(Sandbox* sandbox, u32 index)
+internal u32 driven_fields(const SceneDoc* doc, u32 index)
 {
-    if (index == sandbox->views[SCENE_SHOWCASE].camera.index)
+    if (index == doc->view.camera.index)
         return DRIVEN_POSITION | DRIVEN_ROTATION;
     return 0;
 }
 
 // A node's fields. `undo` leaves out what the sandbox drives.
-internal void write_node_fields(NvChunkWriter* w, Sandbox* sandbox, u32 index, b32 undo)
+internal void write_node_fields(NvChunkWriter* w, Sandbox* sandbox, SceneDoc* doc, u32 index, b32 undo)
 {
-    NvNode* node = &sandbox->scene->nodes[index];
-    u32 driven = undo ? driven_fields(sandbox, index) : 0;
+    NvNode* node = &doc->scene->nodes[index];
+    u32 driven = undo ? driven_fields(doc, index) : 0;
     nv_chunk_string(w, TAG_NAME, node->name);
     if (!(driven & DRIVEN_POSITION))
         nv_chunk_f32s(w, TAG_POS, &node->position.x, 3);
@@ -353,7 +360,7 @@ internal void write_node_fields(NvChunkWriter* w, Sandbox* sandbox, u32 index, b
         nv_chunk_f32s(w, TAG_LCOL, &node->light.color.x, 3);
         nv_chunk_f32(w, TAG_LINT, node->light.intensity);
     }
-    NodeRuntime* runtime = node_runtime(sandbox, index);
+    NodeRuntime* runtime = node_runtime(doc, index);
     if (runtime && runtime->mesh.index)
         nv_chunk_u32(w, TAG_VISI, runtime->visible);
 }
@@ -377,15 +384,32 @@ internal void write_asset(NvChunkWriter* w, Sandbox* sandbox, const Asset* asset
     nv_chunk_end(w);
 }
 
-internal void write_node(NvChunkWriter* w, Sandbox* sandbox, u32 index)
+internal void write_node(NvChunkWriter* w, Sandbox* sandbox, SceneDoc* doc, u32 index)
 {
     u32 path[SAVE_MAX_PATH];
-    NodePath node_path = path_of(sandbox->scene, index, path);
+    NodePath node_path = path_of(doc->scene, index, path);
     if (!node_path.ok)
         return;
     nv_chunk_begin(w, TAG_NODE);
     nv_chunk_u32s(w, TAG_PATH, path, node_path.length);
-    write_node_fields(w, sandbox, index, 0);
+    write_node_fields(w, sandbox, doc, index, 0);
+    nv_chunk_end(w);
+}
+
+// A scene: the file it is of, then its tree's layout, view, behaviors and the nodes the file made.
+internal void write_scene(NvChunkWriter* w, Sandbox* sandbox, SceneDoc* doc)
+{
+    nv_chunk_begin(w, TAG_SCNE);
+    nv_chunk_string(w, TAG_FILE, doc->file);
+    nv_chunk_u32(w, TAG_LAYT, doc->layout);
+    write_view(w, doc);
+    write_old_tags(w, doc);
+    for (u32 index = doc->scene->first_root; index; index = next_in_tree(doc->scene, index)) {
+        if (doc_authored(doc, index)) // what a generator made is the generator's, not saved
+            write_node(w, sandbox, doc, index);
+    }
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        write_behavior(w, doc, &doc->behaviors[i]);
     nv_chunk_end(w);
 }
 
@@ -423,15 +447,11 @@ NvChunkWritten save_write(Sandbox* sandbox, void* buffer, u32 capacity)
     nv_chunk_u32(&w, TAG_LANG, (u32)nv_strings_language());
     nv_chunk_end(&w);
 
-    nv_chunk_begin(&w, TAG_SCNE);
-    nv_chunk_u32(&w, TAG_LAYT, showcase(sandbox)->layout);
-    write_view(&w, sandbox->scene, &sandbox->views[SCENE_SHOWCASE]);
-    write_old_tags(&w, sandbox);
-    for (u32 index = sandbox->scene->first_root; index; index = next_in_tree(sandbox->scene, index))
-        write_node(&w, sandbox, index);
-    for (u32 i = 0; i < showcase(sandbox)->behavior_count; ++i)
-        write_behavior(&w, sandbox, &showcase(sandbox)->behaviors[i]);
-    nv_chunk_end(&w);
+    // Scenes in the order of the list, the first first: an older build reads only the first SCNE. A scene that could not be built has
+    // nothing to save.
+    for (u32 i = 0; i < sandbox->scene_count; ++i)
+        if (sandbox->docs[i].built)
+            write_scene(&w, sandbox, &sandbox->docs[i]);
 
     for (u32 i = 0; i < sandbox->asset_count; ++i)
         write_asset(&w, sandbox, &sandbox->assets[i]);
@@ -537,8 +557,10 @@ internal void read_edit(NvChunkReader* r, NvChunk edit, Sandbox* sandbox, b32 ap
     nv_strings_set_language(language == NV_LANGUAGE_KO ? NV_LANGUAGE_KO : NV_LANGUAGE_EN);
 }
 
-internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneView* view, b32 apply, b32 nodes_match)
+internal void read_view(NvChunkReader* r, NvChunk parent, SceneDoc* doc, b32 apply, b32 nodes_match)
 {
+    NvScene* scene = doc->scene;
+    SceneView* view = &doc->view;
     NvChunk chunk = nv_chunk_find(r, parent, TAG_VIEW);
     if (!chunk.data)
         return;
@@ -618,9 +640,8 @@ internal void set_param(Behavior* behavior, const char* key, const f32* values)
 
 // A behavior of the save (BHVR): its node's path, its kind, and the parameters it has. Read even when they will not be applied,
 // so a damaged one still fails the load. A name this build does not have is skipped.
-internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
+internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, SceneDoc* doc, b32 apply)
 {
-    SceneDoc* doc = showcase(sandbox);
     u32 path[SAVE_MAX_PATH];
     NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
     char kind_name[SCENE_ID_SIZE] = "";
@@ -635,9 +656,9 @@ internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b
     }
     Behavior* behavior = NULL;
     if (apply && def && node_path.ok && node_path.count) {
-        u32 index = node_at(sandbox->scene, path, node_path.count);
+        u32 index = node_at(doc->scene, path, node_path.count);
         if (index)
-            behavior = behavior_find(doc, kind, (NvNodeId){index, sandbox->scene->nodes[index].gen});
+            behavior = behavior_find(doc, kind, (NvNodeId){index, doc->scene->nodes[index].gen});
     }
     NvChunk child = {0};
     while (nv_chunk_next(r, chunk, &child)) {
@@ -664,9 +685,8 @@ internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b
 
 // An older save keeps the showcase's spin and character in PLNT and CHAR (and SWRD, the sword's visibility): their values belong
 // to the scene's first spin and first character, and to the node that follows the character's joint.
-internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 apply)
+internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, SceneDoc* doc, b32 apply)
 {
-    SceneDoc* doc = showcase(sandbox);
     Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
     Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
     f32 planet[2] = {spin ? spin->desc.spin.speed : 0.0f, 0.0f};
@@ -722,9 +742,9 @@ internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b
 }
 
 // Applies only the fields present to node `index` (0: only checks them).
-internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, u32 index, b32 apply)
+internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, SceneDoc* doc, u32 index, b32 apply)
 {
-    NvScene* scene = sandbox->scene;
+    NvScene* scene = doc->scene;
     NvNode none = {.rotation = nv_quat_identity(), .scale = nv_vec3(1, 1, 1)};
     NvNode* node = index ? &scene->nodes[index] : &none; // a missing node is still read, to check it
     NvNode n = *node;
@@ -739,7 +759,7 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox
     nv_chunk_read_f32s(r, chunk, TAG_CFOV, &n.camera.fov_y, 1);
     nv_chunk_read_f32s(r, chunk, TAG_LCOL, &n.light.color.x, 3);
     nv_chunk_read_f32s(r, chunk, TAG_LINT, &n.light.intensity, 1);
-    NodeRuntime* runtime = index ? node_runtime(sandbox, index) : NULL;
+    NodeRuntime* runtime = index ? node_runtime(doc, index) : NULL;
     u32 visible = runtime ? runtime->visible : 1;
     nv_chunk_read_u32s(r, chunk, TAG_VISI, &visible, 1);
     if (!apply || !index)
@@ -775,21 +795,43 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox
         runtime->visible = visible != 0;
 }
 
-internal void read_node(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
+internal void read_node(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, SceneDoc* doc, b32 apply)
 {
     u32 path[SAVE_MAX_PATH];
     NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
     if (!node_path.ok || !node_path.count)
         return;
-    read_node_fields(r, chunk, sandbox, node_at(sandbox->scene, path, node_path.count), apply);
+    u32 index = node_at(doc->scene, path, node_path.count);
+    // Only the file's nodes are saved: a path that now leads to a generator's means the tree is not the saved one.
+    read_node_fields(r, chunk, sandbox, doc, index && doc_authored(doc, index) ? index : 0, apply);
+}
+
+// The scene a SCNE is of: the one whose file its FILE names; without one, the first's (older saves have a single SCNE).
+internal SceneDoc* scene_of(Sandbox* sandbox, NvChunkReader* r, NvChunk chunk)
+{
+    char file[SCENE_PATH_SIZE] = "";
+    if (!nv_chunk_read_string(r, chunk, TAG_FILE, file, sizeof(file)))
+        return sandbox->docs[0].built ? &sandbox->docs[0] : NULL;
+    for (u32 i = 0; i < sandbox->scene_count; ++i)
+        if (sandbox->docs[i].built && strcmp(sandbox->docs[i].file, file) == 0)
+            return &sandbox->docs[i];
+    return NULL;
 }
 
 internal void read_scene(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 apply, u32 parts)
 {
-    b32 apply_scene = apply && (parts & SAVE_PART_SCENE);
+    SceneDoc* doc = scene_of(sandbox, r, scene);
+    if (!doc) {
+        // A scene this build does not have: skipped, but whole.
+        NvChunk skipped = {0};
+        while (nv_chunk_next(r, scene, &skipped)) {
+        }
+        return;
+    }
+    b32 shown_only = (parts & SAVE_PART_SHOWN) != 0;
+    b32 apply_scene = apply && (parts & SAVE_PART_SCENE) && (!shown_only || doc == sandbox_doc(sandbox));
     u32 layout = 0;
     nv_chunk_read_u32s(r, scene, TAG_LAYT, &layout, 1);
-    SceneDoc* doc = showcase(sandbox);
     b32 nodes_match = layout == doc->layout;
 
     b32 has_behaviors = nv_chunk_find(r, scene, TAG_BHVR).data != NULL;
@@ -798,17 +840,17 @@ internal void read_scene(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 
     if (apply_scene)
         doc->show_bones = bones;
     // The older tags are read only without the behaviors that replace them.
-    read_old_tags(r, scene, sandbox, apply_scene && !has_behaviors);
+    read_old_tags(r, scene, sandbox, doc, apply_scene && !has_behaviors);
     // Nodes are read even when they will not be applied, so a damaged one still fails the load.
     NvChunk child = {0};
     while (nv_chunk_next(r, scene, &child)) {
         if (child.tag == TAG_NODE)
-            read_node(r, child, sandbox, apply_scene && nodes_match);
+            read_node(r, child, sandbox, doc, apply_scene && nodes_match);
         else if (child.tag == TAG_BHVR)
-            read_behavior(r, child, sandbox, apply_scene && nodes_match);
+            read_behavior(r, child, sandbox, doc, apply_scene && nodes_match);
     }
     // After the nodes, so a selection's path finds the tree as saved.
-    read_view(r, scene, sandbox->scene, &sandbox->views[SCENE_SHOWCASE], apply && (parts & SAVE_PART_VIEW), nodes_match);
+    read_view(r, scene, doc, apply && (parts & SAVE_PART_VIEW) && (!shown_only || doc == sandbox_doc(sandbox)), nodes_match);
 }
 
 // An asset's materials. A glb that is not loaded is skipped.
@@ -843,12 +885,14 @@ internal b32 read_state(NvChunk root, Sandbox* sandbox, b32 apply, u32 parts)
     NvChunk edit = nv_chunk_find(&r, root, TAG_EDIT);
     if (edit.data)
         read_edit(&r, edit, sandbox, apply && (parts & SAVE_PART_EDITOR));
-    NvChunk scene = nv_chunk_find(&r, root, TAG_SCNE);
-    if (scene.data)
-        read_scene(&r, scene, sandbox, apply, parts);
-    // The assets (read after the scene, so the glb's materials are the ones the saved colors belong to), and the whole top level,
-    // so that a malformed chunk after the known ones is caught.
+    // The scenes in file order, then the assets (read after the scenes, so the glb's materials are the ones the saved colors belong
+    // to); the whole top level, so that a malformed chunk after the known ones is caught.
     NvChunk child = {0};
+    while (nv_chunk_next(&r, root, &child)) {
+        if (child.tag == TAG_SCNE)
+            read_scene(&r, child, sandbox, apply, parts);
+    }
+    child = (NvChunk){0};
     while (nv_chunk_next(&r, root, &child)) {
         if (child.tag == TAG_ASET)
             read_asset(&r, child, sandbox, apply && (parts & SAVE_PART_SCENE));
@@ -894,28 +938,29 @@ b32 save_round_trip_matches(Sandbox* sandbox)
 
 u32 save_driven_fields(Sandbox* sandbox, u32 node)
 {
-    return driven_fields(sandbox, node);
+    return driven_fields(sandbox_doc(sandbox), node);
 }
 
 NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeId* nodes, u32 node_count, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
     nv_chunk_writer_init(&w, buffer, capacity);
+    SceneDoc* doc = sandbox_doc(sandbox);
     switch (scope) {
     case SAVE_SCOPE_NODE:
         // Each node's fields in a container of its own, in the order given.
         for (u32 i = 0; i < node_count; ++i) {
             nv_chunk_begin(&w, TAG_NODE);
-            write_node_fields(&w, sandbox, nodes[i].index, 1);
+            write_node_fields(&w, sandbox, doc, nodes[i].index, 1);
             nv_chunk_end(&w);
         }
         break;
     case SAVE_SCOPE_BEHAVIORS:
-        for (u32 i = 0; i < showcase(sandbox)->behavior_count; ++i)
-            write_behavior(&w, sandbox, &showcase(sandbox)->behaviors[i]);
+        for (u32 i = 0; i < doc->behavior_count; ++i)
+            write_behavior(&w, doc, &doc->behaviors[i]);
         break;
     case SAVE_SCOPE_SCENE:
-        nv_chunk_u32(&w, TAG_BONE, showcase(sandbox)->show_bones);
+        nv_chunk_u32(&w, TAG_BONE, doc->show_bones);
         break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -927,6 +972,7 @@ NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeI
 internal b32 read_scope(NvChunk chunk, Sandbox* sandbox, SaveScope scope, const NvNodeId* nodes, u32 node_count, b32 apply)
 {
     NvChunkReader r = {0};
+    SceneDoc* doc = sandbox_doc(sandbox);
     switch (scope) {
     case SAVE_SCOPE_NODE: {
         // One container per node, in the order the nodes are given.
@@ -935,7 +981,7 @@ internal b32 read_scope(NvChunk chunk, Sandbox* sandbox, SaveScope scope, const 
         while (nv_chunk_next(&r, chunk, &child)) {
             if (child.tag != TAG_NODE || read == node_count)
                 return 0;
-            read_node_fields(&r, child, sandbox, nodes[read++].index, apply);
+            read_node_fields(&r, child, sandbox, doc, nodes[read++].index, apply);
         }
         if (read != node_count)
             return 0;
@@ -944,13 +990,13 @@ internal b32 read_scope(NvChunk chunk, Sandbox* sandbox, SaveScope scope, const 
         NvChunk child = {0};
         while (nv_chunk_next(&r, chunk, &child))
             if (child.tag == TAG_BHVR)
-                read_behavior(&r, child, sandbox, apply);
+                read_behavior(&r, child, sandbox, doc, apply);
     } break;
     case SAVE_SCOPE_SCENE: {
-        bool bones = showcase(sandbox)->show_bones;
+        bool bones = doc->show_bones;
         read_bool(&r, chunk, TAG_BONE, &bones);
         if (apply)
-            showcase(sandbox)->show_bones = bones;
+            doc->show_bones = bones;
     } break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -994,7 +1040,7 @@ const char* save_field_label(u32 tag)
 // different value. The snapshots hold the same behaviors in the same order (the scene's).
 void save_behavior_label(Sandbox* sandbox, const void* before, u32 before_size, const void* after, u32 after_size, char* out, umm capacity)
 {
-    SceneDoc* doc = showcase(sandbox);
+    SceneDoc* doc = sandbox_doc(sandbox);
     NvChunk a = {.size = before_size, .data = before};
     NvChunk b = {.size = after_size, .data = after};
     NvChunkReader ra = {0}, rb = {0};
@@ -1022,7 +1068,7 @@ void save_behavior_label(Sandbox* sandbox, const void* before, u32 before_size, 
             if (previous.data && previous.size == param.size && memcmp(previous.data, param.data, param.size) == 0)
                 continue;
             const SceneField* field = find_parameter(def, name);
-            snprintf(out, capacity, "%s %s", sandbox->scene->nodes[behavior->node.index].name, field ? field->label : name);
+            snprintf(out, capacity, "%s %s", doc->scene->nodes[behavior->node.index].name, field ? field->label : name);
             return;
         }
     }

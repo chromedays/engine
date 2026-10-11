@@ -42,16 +42,26 @@ NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id)
 
 SceneView* sandbox_view(Sandbox* sandbox)
 {
-    return &sandbox->views[sandbox->shown];
+    return &sandbox->docs[sandbox->shown].view;
 }
 
-void sandbox_show_scene(Sandbox* sandbox, SceneKind kind)
+void sandbox_show_scene(Sandbox* sandbox, u32 index)
 {
-    if (kind == SCENE_STRESS && !sandbox->stress.built)
-        stress_build(sandbox);
-    if (kind == SCENE_STRESS && sandbox->shown != SCENE_STRESS)
+    if (index >= sandbox->scene_count)
+        return;
+    SceneDoc* doc = &sandbox->docs[index];
+    if (!doc->built) {
+        nv_log(NV_LOG_ERROR, "scene", "cannot show %s: %s", doc->file, doc->error);
+        return;
+    }
+    if (index == sandbox->shown)
+        return;
+    // Play belongs to the scene on screen: switching ends it, so a scene that is not shown is always in Edit mode.
+    sandbox_stop_playing(sandbox);
+    sandbox->shown = index;
+    effects_clear(sandbox); // what the other scene fired does not carry over
+    if (stress_tab_shown(sandbox))
         sandbox->open_stress = 1;
-    sandbox->shown = kind;
 }
 
 //
@@ -249,14 +259,15 @@ internal void set_node_world(NvScene* scene, NvNode* node, NvMat4 world)
 }
 
 // The nodes the gizmo moves: the selected ones, without the active camera (the orbit camera's to
-// move) and without those under a selected node, which already move with it.
-internal u32 gizmo_targets(SceneView* view, NvNodeId* out)
+// move), without those under a selected node, which already move with it, and without what a generator made.
+internal u32 gizmo_targets(Sandbox* sandbox, SceneView* view, NvNodeId* out)
 {
     NvScene* scene = view->scene;
+    SceneDoc* doc = sandbox_doc(sandbox);
     u32 count = 0;
     for (u32 i = 0; i < selection_count(view); ++i) {
         NvNodeId id = selection_get(view, i);
-        if (id.index == scene->active_camera.index)
+        if (id.index == scene->active_camera.index || !doc_authored(doc, id.index))
             continue;
         b32 under_selected = 0;
         for (u32 p = scene->nodes[id.index].parent; p && !under_selected; p = scene->nodes[p].parent)
@@ -297,7 +308,7 @@ internal void draw_gizmo(Sandbox* sandbox, const NvSceneOutput* scene_output)
     sandbox->gizmo_shown = 0;
     // While a drag runs, the nodes it started with stay its nodes; otherwise the selection's.
     if (!ImGuizmo_IsUsingAny()) {
-        sandbox->gizmo_node_count = gizmo_targets(view, sandbox->gizmo_nodes);
+        sandbox->gizmo_node_count = gizmo_targets(sandbox, view, sandbox->gizmo_nodes);
         if (!sandbox->gizmo_node_count)
             return;
         for (u32 i = 0; i < sandbox->gizmo_node_count; ++i)
@@ -420,9 +431,10 @@ void sandbox_stop_playing(Sandbox* sandbox)
     if (!sandbox->playing)
         return;
     sandbox->playing = 0;
+    benchmark_end(sandbox); // a run ends with the Play it ran in
     // The scene as it was at Play: nodes, behaviors, scene settings. The view, the selection and the editor settings stay as they
     // are now.
-    SaveLoad load = save_load_parts(sandbox, sandbox->play_snapshot, sandbox->play_snapshot_size, SAVE_PART_SCENE);
+    SaveLoad load = save_load_parts(sandbox, sandbox->play_snapshot, sandbox->play_snapshot_size, SAVE_PART_SCENE | SAVE_PART_SHOWN);
     NV_ASSERT(load.ok); // written by save_write at Play
     (void)load;
     effects_clear(sandbox);
@@ -467,12 +479,10 @@ internal void frame(void* userdata)
     sandbox_build_ui(sandbox);
     times->ui = now_ms() - t;
 
-    NvScene* scene = sandbox_view(sandbox)->scene;
-    if (sandbox->shown == SCENE_SHOWCASE)
-        behaviors_update(sandbox, sandbox_doc(sandbox), dt);
-    else
-        stress_update(sandbox, dt);
-    selection_prune(sandbox_view(sandbox)); // the stress scene may have removed selected nodes
+    SceneDoc* doc = sandbox_doc(sandbox);
+    NvScene* scene = doc->scene;
+    behaviors_update(sandbox, doc, dt);
+    selection_prune(sandbox_view(sandbox)); // a generator may have removed selected nodes
 
     effects_update(sandbox, dt);
     t = now_ms();
@@ -486,10 +496,8 @@ internal void frame(void* userdata)
     draw_gizmo(sandbox, &layout->scene);
     undo_update(sandbox);
     draw_selection(sandbox);
-    if (sandbox->shown == SCENE_SHOWCASE && sandbox_doc(sandbox)->show_bones)
-        behaviors_draw_bones(sandbox, sandbox_doc(sandbox));
-    if (sandbox->shown == SCENE_STRESS && sandbox->stress.want.show_bones)
-        stress_draw_bones(sandbox);
+    if (doc->show_bones)
+        behaviors_draw_bones(sandbox, doc);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(sandbox->gpu.device, NULL);
     t = now_ms();
@@ -636,16 +644,29 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_vfx(int which)
     return values[which];
 }
 
-// Sets the stress scene's Effects workload: particles kept, explosions a second, missiles, beams, decals a second.
+// The first behavior of a kind in the shown scene, or NULL.
+internal Behavior* first_generator(BehaviorKind kind)
+{
+    SceneDoc* doc = sandbox_doc(&sandbox_state);
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (doc->behaviors[i].desc.kind == kind)
+            return &doc->behaviors[i];
+    return NULL;
+}
+
+// Sets the shown scene's first `effects` behavior: particles kept, explosions a second, missiles, beams, decals a second.
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
 {
-    StressWorkloads* want = &sandbox_state.stress.want;
-    want->effects_on = particles || explosions || missiles || beams || decals;
-    want->effect_particles = particles;
-    want->effect_explosions = explosions;
-    want->effect_missiles = missiles;
-    want->effect_beams = beams;
-    want->effect_decals = decals;
+    Behavior* behavior = first_generator(BEHAVIOR_EFFECTS);
+    if (!behavior)
+        return;
+    EffectsDesc* effects = &behavior->desc.effects;
+    effects->on = particles || explosions || missiles || beams || decals;
+    effects->particles = (u32)particles;
+    effects->explosions = (u32)explosions;
+    effects->missiles = (u32)missiles;
+    effects->beams = (u32)beams;
+    effects->decals = (u32)decals;
 }
 
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire(int effect)
@@ -864,10 +885,10 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_shadows(int size, int format)
     sandbox_state.renderer.shadows.format = (NvShadowFormat)format;
 }
 
-// Shows a scene (0 showcase, 1 stress), as the View tab's picker does.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_show_scene(int kind)
+// Shows scene `index` of the list (0 is the first), as the View tab's picker does.
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_show_scene(int index)
 {
-    sandbox_show_scene(&sandbox_state, (SceneKind)kind);
+    sandbox_show_scene(&sandbox_state, (u32)index);
 }
 
 // Renderer textures: how many, and the i-th's width, height and mip count (component 0, 1, 2).
@@ -955,9 +976,9 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_result(int i, int k)
     const PaletteResult* r = &s->results[i];
     if (k < 0)
         return r->kind;
-    const char* name = r->kind == PALETTE_ACTION ? command_name(r->index)
+    const char* name = r->kind == PALETTE_ACTION ? command_name(&sandbox_state, r->index)
                        : r->kind == PALETTE_SETTING ? s->settings[r->index].label
-                       : r->kind == PALETTE_NODE ? sandbox_state.views[sandbox_state.shown].scene->nodes[r->index].name
+                       : r->kind == PALETTE_NODE ? sandbox_view(&sandbox_state)->scene->nodes[r->index].name
                                                  : "";
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
@@ -996,20 +1017,72 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_rename_selected(void)
     node->name[length] = 0;
 }
 
-// Turns the stress scene's deep chain on with `links` links (0 = off).
+// Turns the shown scene's first `chain` on with `links` links (0 = off).
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_chain(int links)
 {
-    sandbox_state.stress.want.chain_on = links > 0;
+    Behavior* behavior = first_generator(BEHAVIOR_CHAIN);
+    if (!behavior)
+        return;
+    behavior->desc.chain.on = links > 0;
     if (links > 0)
-        sandbox_state.stress.want.chain_count = links;
+        behavior->desc.chain.count = (u32)links;
 }
 
-// Sets the stress scene's grid to `cubes` cubes (0 = off).
+// Sets the shown scene's first `grid` to `cubes` cubes (0 = off).
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_grid(int cubes)
 {
-    sandbox_state.stress.want.grid_on = cubes > 0;
+    Behavior* behavior = first_generator(BEHAVIOR_GRID);
+    if (!behavior)
+        return;
+    behavior->desc.grid.on = cubes > 0;
     if (cubes > 0)
-        sandbox_state.stress.want.grid_count = cubes;
+        behavior->desc.grid.count = (u32)cubes;
+}
+
+// Sets the shown scene's first `crowd` to `characters` characters (0 = off).
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_crowd(int characters)
+{
+    Behavior* behavior = first_generator(BEHAVIOR_CROWD);
+    if (!behavior)
+        return;
+    behavior->desc.crowd.on = characters > 0;
+    if (characters > 0)
+        behavior->desc.crowd.count = (u32)characters;
+}
+
+// What the shown scene's generators have made: 0 cubes, 1 links, 2 characters in use, 3 characters made.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_built(int which)
+{
+    Behavior* grid = first_generator(BEHAVIOR_GRID);
+    Behavior* chain = first_generator(BEHAVIOR_CHAIN);
+    Behavior* crowd = first_generator(BEHAVIOR_CROWD);
+    int values[4] = {grid ? (int)grid->grid.built : 0, chain ? (int)chain->chain.built : 0, crowd ? (int)crowd->crowd.active : 0,
+                     crowd ? (int)crowd->crowd.created : 0};
+    return values[which];
+}
+
+// The benchmark: 0 running, 1 the step, 2 results held, 3 the run started Play. _sandbox_debug_benchmark_start runs it, as the
+// button does.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_benchmark(int which)
+{
+    const Benchmark* benchmark = &sandbox_state.benchmark;
+    int values[4] = {benchmark->running, (int)benchmark->step, (int)benchmark->result_count, benchmark->started_play};
+    return values[which];
+}
+
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_benchmark_start(void)
+{
+    benchmark_start(&sandbox_state);
+}
+
+// The scenes: 0 the shown scene's index, 1 how many there are, 2 whether scene `a` was built.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_scenes(int which, int a)
+{
+    switch (which) {
+    case 0: return (int)sandbox_state.shown;
+    case 1: return (int)sandbox_state.scene_count;
+    default: return a >= 0 && a < (int)sandbox_state.scene_count && sandbox_state.docs[a].built;
+    }
 }
 
 // The selected node's index in the shown scene; 0 = none.
@@ -1094,7 +1167,6 @@ int main(void)
     nv_arena_init(&sandbox->scratch, scratch_memory, sizeof(scratch_memory));
     nv_arena_init(&sandbox->anim_memory, anim_memory, sizeof(anim_memory));
     sandbox_strings_init();
-    sandbox->scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
 
     nv_window_create(&sandbox->window, "nv");
     if (!nv_gpu_create(&sandbox->gpu, &sandbox->window)) {
@@ -1149,9 +1221,9 @@ int main(void)
     gizmo_style->CenterCircleSize *= ui_scale;
     nv_anim_init(&sandbox->anim_memory);
 
-    // The showcase is built from its file; the stress scene is built from its own when it is first shown.
-    if (!scenes_build(sandbox, SCENE_SHOWCASE, sandbox->scene, SHOWCASE_FILE)) {
-        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to build the showcase from " SHOWCASE_FILE);
+    // Every scene is built from its file. One that cannot be built cannot be shown, but the first is where the sandbox starts.
+    if (!scenes_init(sandbox)) {
+        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to build the first scene: %s", sandbox->docs[0].error);
         return 1;
     }
 
@@ -1160,7 +1232,6 @@ int main(void)
     sandbox->console.auto_scroll = true;
     sandbox->play_snapshot = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
     sandbox->window_start = nv_time_seconds();
-    sandbox_show_scene(sandbox, SCENE_SHOWCASE);
     NV_ASSERT(save_round_trip_matches(sandbox));
     save_init(sandbox);
     undo_init(sandbox);

@@ -116,10 +116,12 @@ internal void view_menu(Sandbox* sandbox)
     igMenuItem_BoolPtr(TL("Inspector dock"), shortcut_label(SC_DOCK_RIGHT), (bool*)&docks->show_right, true);
     igMenuItem_BoolPtr(TL("Console dock"), shortcut_label(SC_DOCK_BOTTOM), (bool*)&docks->show_bottom, true);
     igSeparator();
-    const char* scenes[SCENE_COUNT] = {T("Showcase scene"), T("Stress scene")};
-    for (u32 scene = 0; scene < SCENE_COUNT; ++scene) {
-        if (igMenuItem_Bool(scenes[scene], NULL, sandbox->shown == (SceneKind)scene, true))
-            sandbox_show_scene(sandbox, (SceneKind)scene);
+    for (u32 scene = 0; scene < sandbox->scene_count; ++scene) {
+        const SceneDoc* doc = &sandbox->docs[scene];
+        char name[64];
+        snprintf(name, sizeof(name), "%s scene", doc->desc ? doc->desc->title : doc->file); // "Showcase scene": a row of the table
+        if (igMenuItem_Bool(T(name), NULL, sandbox->shown == scene, doc->built))
+            sandbox_show_scene(sandbox, scene);
     }
     igEndMenu();
 }
@@ -162,8 +164,7 @@ internal void top_bar(Sandbox* sandbox)
         }
 
         char status[64];
-        snprintf(status, sizeof(status), "%.1f ms  %s", 1000.0f / igGetIO_Nil()->Framerate,
-                 sandbox->shown == SCENE_SHOWCASE ? T("Showcase") : T("Stress"));
+        snprintf(status, sizeof(status), "%.1f ms  %s", 1000.0f / igGetIO_Nil()->Framerate, T(sandbox_doc(sandbox)->desc->title));
         igSetCursorPosX(width - igCalcTextSize(status, NULL, false, -1.0f).x - 12.0f);
         igTextDisabled("%s", status);
         igEndMenuBar();
@@ -267,7 +268,7 @@ internal void bottom_dock(Sandbox* sandbox)
                 console_tab(sandbox);
                 igEndTabItem();
             }
-            if (sandbox->shown == SCENE_STRESS) {
+            if (stress_tab_shown(sandbox)) {
                 ImGuiTabItemFlags stress_flags = sandbox->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
                 sandbox->open_stress = 0;
                 if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {

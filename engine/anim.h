@@ -106,6 +106,8 @@ NvSkeletonId nv_anim_clip_skeleton(NvClipId clip);
 
 NvAnimatorId nv_anim_create_animator(NvSkeletonId skeleton, NvScene* scene, NvNodeId owner);
 NvAnimator* nv_anim_get(NvAnimatorId id);
+// How many more animators can be created: they are never destroyed.
+u32 nv_anim_free_animators(void);
 
 // Plays `clip` on layer 0, crossfading from what layer 0 played over `fade_seconds` (0 = cut).
 void nv_anim_play(NvAnimator* animator, NvClipId clip, f32 fade_seconds, b32 loop);

@@ -1,4 +1,4 @@
-// Undo and redo for the showcase (docs/specs/undo.md). Nothing records edits as they happen:
+// Undo and redo for the scenes (docs/specs/undo.md). Nothing records edits as they happen:
 // whenever the editor is idle, each scope's undoable fields are written with the save code and
 // compared with what was last committed. A difference is one step, however many frames the edit
 // took (a whole gizmo drag, a slider drag, a name typed).
@@ -15,14 +15,18 @@ internal UndoStep* step_at(Undo* undo, u32 i)
     return &undo->steps[(undo->first + i) % UNDO_MAX_STEPS];
 }
 
-// The nodes the Node scope follows: the showcase's selection, the primary first
-// (docs/specs/selection.md).
+// The nodes the Node scope follows: the shown scene's selection, the primary first (docs/specs/selection.md). What a generator made
+// is not saved, so it is not undoable either.
 internal u32 selected_nodes(Sandbox* sandbox, NvNodeId* out)
 {
-    SceneView* view = &sandbox->views[SCENE_SHOWCASE];
-    u32 count = selection_count(view);
-    for (u32 i = 0; i < count; ++i)
-        out[i] = selection_get(view, i);
+    SceneView* view = sandbox_view(sandbox);
+    SceneDoc* doc = sandbox_doc(sandbox);
+    u32 count = 0;
+    for (u32 i = 0; i < selection_count(view); ++i) {
+        NvNodeId id = selection_get(view, i);
+        if (doc_authored(doc, id.index))
+            out[count++] = id;
+    }
     return count;
 }
 
@@ -105,7 +109,7 @@ internal void node_step_label(Sandbox* sandbox, UndoStep* step)
     if (changed > 1)
         snprintf(step->label, sizeof(step->label), "%u nodes %s", changed, label);
     else
-        snprintf(step->label, sizeof(step->label), "%s %s", sandbox->scene->nodes[step->nodes[first].index].name, label);
+        snprintf(step->label, sizeof(step->label), "%s %s", sandbox_doc(sandbox)->scene->nodes[step->nodes[first].index].name, label);
 }
 
 internal void push_step(Sandbox* sandbox, SaveScope scope, const u8* before, u32 before_size, const u8* after, u32 after_size)
@@ -117,6 +121,7 @@ internal void push_step(Sandbox* sandbox, SaveScope scope, const u8* before, u32
         --undo->count;
     }
     UndoStep* step = step_at(undo, undo->count);
+    step->scene = sandbox->shown;
     step->scope = scope;
     step->node_count = scope == SAVE_SCOPE_NODE ? undo->committed_node_count : 0;
     memcpy(step->nodes, undo->committed_nodes, step->node_count * sizeof(NvNodeId));
@@ -163,15 +168,21 @@ internal void take_steps(Sandbox* sandbox)
 
 internal void apply(Sandbox* sandbox, UndoStep* step, b32 redo)
 {
+    Undo* undo = &sandbox->undo;
     const u8* bytes = redo ? step->after : step->before;
     u32 size = redo ? step->after_size : step->before_size;
+    // A step of another scene shows that scene first (Play is off here, so the switch stops nothing).
+    sandbox_show_scene(sandbox, step->scene);
+    if (sandbox->shown != step->scene)
+        return;
+    undo->scene = sandbox->shown;
     if (step->scope == SAVE_SCOPE_NODE) {
         for (u32 i = 0; i < step->node_count; ++i) {
-            if (!nv_scene_alive(sandbox->scene, step->nodes[i]))
+            if (!nv_scene_alive(sandbox_doc(sandbox)->scene, step->nodes[i]))
                 return;
         }
         // Show what changed: the step's nodes become the selection, the first the primary.
-        SceneView* view = &sandbox->views[SCENE_SHOWCASE];
+        SceneView* view = sandbox_view(sandbox);
         selection_set(view, step->nodes[0]);
         view->other_count = step->node_count - 1;
         memcpy(view->others, &step->nodes[1], view->other_count * sizeof(NvNodeId));
@@ -204,6 +215,7 @@ internal void redo_step(Sandbox* sandbox)
 void undo_init(Sandbox* sandbox)
 {
     sandbox->undo.steps = NV_PUSH_ARRAY(&sandbox->permanent, UNDO_MAX_STEPS, UndoStep);
+    sandbox->undo.scene = sandbox->shown;
     commit_all(sandbox);
 }
 
@@ -213,8 +225,14 @@ void undo_update(Sandbox* sandbox)
     s32 request = undo->request;
     undo->request = 0;
     // Undo's history is the edit state's; while playing, edits are lost on Stop anyway.
-    if (sandbox->shown != SCENE_SHOWCASE || sandbox->playing)
+    if (sandbox->playing)
         return;
+    // Another scene is on screen: its bytes as they are become the starting point, without a step.
+    if (undo->scene != sandbox->shown) {
+        undo->scene = sandbox->shown;
+        commit_all(sandbox);
+        return;
+    }
     // Idle: nothing is being dragged, typed or picked from a popup, so an edit in progress is done.
     b32 idle = !igIsAnyItemActive() && !ImGuizmo_IsUsingAny() &&
                !igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
@@ -233,8 +251,8 @@ void undo_update(Sandbox* sandbox)
 internal void undo_state(Sandbox* sandbox, b32* can_undo, b32* can_redo, char* undo_label, char* redo_label, umm capacity)
 {
     Undo* undo = &sandbox->undo;
-    // Undo's history is the showcase's edit state: not in the stress scene, not while playing.
-    b32 on = sandbox->shown == SCENE_SHOWCASE && !sandbox->playing;
+    // Undo's history is the edit state's: not while playing.
+    b32 on = !sandbox->playing;
     *can_undo = on && undo->done > 0;
     *can_redo = on && undo->done < undo->count;
     snprintf(undo_label, capacity, "%s", *can_undo ? step_at(undo, undo->done - 1)->label : "");

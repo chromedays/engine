@@ -109,8 +109,8 @@ internal void make_styles(Effects* effects)
         .life = 12.0f, .fade = 0.4f, .color = RGBA(0.02f, 0.015f, 0.01f, 0.8f), .shape = NV_VFX_SHAPE_PUFF};
 }
 
-// Embers thrown up and falling back: what the stress scene's Effects workload fires in bursts to hold a
-// number of live particles. Small, additive, bouncing on the ground.
+// Embers thrown up and falling back: what an `effects` behavior fires in bursts to hold a number of live
+// particles. Small, additive, bouncing on the ground.
 internal NvVfxEffectId make_swarm(NvVfx* vfx)
 {
     NvVfxEffectDesc effect = {.name = "Swarm", .emitter_count = 1};
@@ -152,7 +152,7 @@ NvVec3 effects_test_point(Sandbox* sandbox)
 }
 
 // A scorch mark on the ground below `point`, turned at random.
-internal void scorch_at(Sandbox* sandbox, NvVec3 point, f32 size)
+void effects_scorch(Sandbox* sandbox, NvVec3 point, f32 size)
 {
     f32 angle = (f32)(sandbox->vfx.random & 1023u) * (6.2831853f / 1024.0f);
     nv_vfx_decal(&sandbox->vfx, &sandbox->effects.scorch, nv_vec3(point.x, 0.02f, point.z), angle, size);
@@ -180,10 +180,10 @@ void effects_fire(Sandbox* sandbox, u32 which)
         NvVec3 from = nv_vec3_add(point, nv_vec3(-3.0f, 3.0f, -1.5f));
         nv_vfx_beam(&sandbox->vfx, &effects->laser, from, point, effects->laser.life);
         nv_vfx_burst(&sandbox->vfx, effects->sparks, point, up, 0.6f);
-        scorch_at(sandbox, point, 0.9f);
+        effects_scorch(sandbox, point, 0.9f);
         break;
     }
-    case 5: scorch_at(sandbox, point, 2.0f); break;
+    case 5: effects_scorch(sandbox, point, 2.0f); break;
     }
 }
 
@@ -191,106 +191,16 @@ void effects_clear(Sandbox* sandbox)
 {
     nv_vfx_clear(&sandbox->vfx);
     sandbox->effects.flight_count = 0;
-    sandbox->effects.stress_flight_count = 0;
-    sandbox->effects.swarm_carry = sandbox->effects.explosion_carry = sandbox->effects.decal_carry = 0.0f;
-}
-
-//
-// The stress scene's Effects workload
-//
-
-// A point on the ground in the field around the orbit point.
-internal NvVec3 field_point(Sandbox* sandbox, f32 height)
-{
-    Effects* effects = &sandbox->effects;
-    NvVec3 orbit = sandbox_view(sandbox)->orbit.target;
-    return nv_vec3(orbit.x + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 16.0f, height, orbit.z + (nv_random_f32(&effects->rng) * 2.0f - 1.0f) * 12.0f);
-}
-
-internal void new_flight(Sandbox* sandbox, Flight* flight)
-{
-    Effects* effects = &sandbox->effects;
-    f32 angle = nv_random_f32(&effects->rng) * 6.2831853f;
-    f32 speed = 6.0f + nv_random_f32(&effects->rng) * 4.0f;
-    flight->pos = field_point(sandbox, 0.3f);
-    flight->vel = nv_vec3(cosf(angle) * speed, 3.0f + nv_random_f32(&effects->rng) * 2.0f, sinf(angle) * speed);
-    flight->life = 1.2f + nv_random_f32(&effects->rng) * 0.8f;
-}
-
-void effects_stress_update(Sandbox* sandbox, const StressWorkloads* want, f32 dt)
-{
-    Effects* effects = &sandbox->effects;
-    NvVfx* vfx = &sandbox->vfx;
-    if (dt > 0.1f)
-        dt = 0.1f;
-    b32 on = want->effects_on;
-    u32 missiles = on ? (u32)want->effect_missiles : 0;
-    if (missiles > STRESS_MAX_MISSILES)
-        missiles = STRESS_MAX_MISSILES;
-    u32 beams = on ? (u32)want->effect_beams : 0;
-    if (beams > STRESS_MAX_BEAMS)
-        beams = STRESS_MAX_BEAMS;
-
-    // Missiles that fly, leave a trail and smoke, and start again from another point when their time is up.
-    if (effects->stress_flight_count > missiles)
-        effects->stress_flight_count = missiles;
-    while (effects->stress_flight_count < missiles) {
-        Flight* flight = &effects->stress_flights[effects->stress_flight_count++];
-        new_flight(sandbox, flight);
-        flight->life *= nv_random_f32(&effects->rng); // out of step with each other
-    }
-    for (u32 i = 0; i < effects->stress_flight_count; ++i) {
-        Flight* flight = &effects->stress_flights[i];
-        NvVec3 before = flight->pos;
-        flight->vel.y -= 4.0f * dt;
-        flight->pos = nv_vec3_add(flight->pos, nv_vec3_scale(flight->vel, dt));
-        flight->life -= dt;
-        if (dt > 0.0f) {
-            NvVec3 step = nv_vec3_sub(flight->pos, before);
-            // A thinner smoke than the Missile button's: 2,000 of them would fill the particle buffer.
-            nv_vfx_emit(vfx, effects->missile, before, flight->pos, (u32)(sqrtf(nv_vec3_dot(step, step)) * 12.0f) + 1);
-            nv_vfx_trail(vfx, &effects->missile_trail, before, flight->pos);
+    // What the `effects` behaviors had in flight goes too.
+    for (u32 s = 0; s < sandbox->scene_count; ++s) {
+        SceneDoc* doc = &sandbox->docs[s];
+        for (u32 i = 0; i < doc->behavior_count; ++i) {
+            if (doc->behaviors[i].desc.kind != BEHAVIOR_EFFECTS)
+                continue;
+            EffectsState* state = &doc->behaviors[i].effects;
+            state->flight_count = 0;
+            state->swarm_carry = state->explosion_carry = state->decal_carry = 0.0f;
         }
-        if (flight->life <= 0.0f || flight->pos.y < 0.05f)
-            new_flight(sandbox, flight);
-    }
-
-    // Beams: each is held by calling again every frame with a short life, between fixed points of its own.
-    for (u32 i = 0; i < beams; ++i) {
-        u32 h = i * 2654435761u + 12345u;
-        NvVec3 orbit = sandbox_view(sandbox)->orbit.target;
-        f32 ax = (f32)(h & 1023u) / 1023.0f, az = (f32)((h >> 10) & 1023u) / 1023.0f;
-        f32 bx = (f32)((h >> 20) & 1023u) / 1023.0f, bz = (f32)((h * 40503u >> 8) & 1023u) / 1023.0f;
-        NvVec3 from = nv_vec3(orbit.x + (ax * 2.0f - 1.0f) * 16.0f, 7.0f, orbit.z + (az * 2.0f - 1.0f) * 12.0f);
-        NvVec3 to = nv_vec3(orbit.x + (bx * 2.0f - 1.0f) * 16.0f, 0.05f, orbit.z + (bz * 2.0f - 1.0f) * 12.0f);
-        nv_vfx_beam(vfx, &effects->laser, from, to, dt * 1.5f + 0.02f);
-    }
-
-    if (!on)
-        return;
-
-    // Particles: embers in bursts of 512, at the rate that replaces what dies (they live about 2.5 s).
-    f32 rate = (f32)want->effect_particles / 2.5f;
-    effects->swarm_carry += rate * dt / 512.0f;
-    u32 limit = 4000; // bursts a frame
-    while (effects->swarm_carry >= 1.0f) {
-        effects->swarm_carry -= 1.0f;
-        if (limit) {
-            nv_vfx_burst(vfx, effects->swarm, field_point(sandbox, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
-            --limit;
-        }
-    }
-    effects->explosion_carry += (f32)want->effect_explosions * dt;
-    for (u32 n = 0; effects->explosion_carry >= 1.0f && n < 300; ++n) {
-        effects->explosion_carry -= 1.0f;
-        nv_vfx_burst(vfx, effects->explosion, field_point(sandbox, 0.05f), nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
-    }
-    if (effects->explosion_carry > 1.0f)
-        effects->explosion_carry = 0.0f;
-    effects->decal_carry += (f32)want->effect_decals * dt;
-    for (u32 n = 0; effects->decal_carry >= 1.0f && n < 2000; ++n) {
-        effects->decal_carry -= 1.0f;
-        scorch_at(sandbox, field_point(sandbox, 0.0f), 0.6f + nv_random_f32(&effects->rng) * 1.2f);
     }
 }
 
@@ -313,7 +223,7 @@ void effects_update(Sandbox* sandbox, f32 dt)
         }
         if (flight->life <= 0.0f) {
             nv_vfx_burst(&sandbox->vfx, effects->explosion, flight->pos, nv_vec3(0.0f, 1.0f, 0.0f), 0.8f);
-            scorch_at(sandbox, flight->pos, 1.8f);
+            effects_scorch(sandbox, flight->pos, 1.8f);
             *flight = effects->flights[--effects->flight_count];
         } else {
             ++i;
