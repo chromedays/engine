@@ -183,8 +183,8 @@ SwiftShader(AGENTS.md "Testing without a display")에서 한다.
   - 기준선을 두 번 만들어 자기와의 비교를 통과한 쪽을 커밋한다. 기준선을 다시 만드는 것은 의도적인 변경이고, 커밋 메시지에 까닭을 쓴다.
 - CI는 기준선 PNG를 받지 않는다: `build.yml`의 `git lfs pull`과 LFS 캐시 키(`.lfs-objects`)에서 `tools/shader_port/baseline/`을
   뺀다(`--exclude`). CI는 브라우저 검사를 돌리지 않으므로 필요 없다.
-- 단계 6에서 `tools/shader_port/`(스크립트와 기준선)와 이 검증만을 위한 디버그 내보내기(`_sandbox_debug_fixed_dt`,
-  `_sandbox_debug_vfx_dump`)를 지운다. 기준선은 Git 기록에 남는다.
+- 포팅이 끝나면(단계 6) `tools/shader_port/`(스크립트와 기준선)와 이 검증만을 위한 디버그 내보내기(`_sandbox_debug_fixed_dt`,
+  `_sandbox_debug_vfx_dump`)를 지우고, `build.yml`의 LFS 제외도 되돌린다 (2026-10-11 합의). 기준선은 Git 기록에 남는다.
 
 #### 공통 검사 (모든 단계)
 
@@ -276,8 +276,8 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
 3. `vfx_shapes.slang`, `vfx_particles.slang`, `vfx_marks.slang`. V-화면, V11.
 4. renderer: `frame.slang`, `mesh.slang`, `shadow.slang`, `debug_lines.slang`, `upscale.slang`, `bloom.slang`. S1–S8.
 5. imgui 미리보기: `preview_*.slang`. S9.
-6. 정리: 마지막으로 S1–S10, V1–V12를 모두 다시 돌린다. C에 WGSL 문자열이 남지 않는다. `tools/shader_port/`와 두 디버그 내보내기를
-   지운다. AGENTS.md(셰이더가 `engine/shaders/*.slang`이라는 것, "a matching entry point in
+6. 정리: 마지막으로 S1–S10, V1–V12를 모두 다시 돌린다. C에 WGSL 문자열이 남지 않는다. `tools/shader_port/`(기준선 포함)와 두 디버그
+   내보내기를 지우고, `build.yml`의 LFS 제외를 되돌린다. AGENTS.md(셰이더가 `engine/shaders/*.slang`이라는 것, "a matching entry point in
    `shadow_shader`"는 `shadow.slang`으로), 이 스펙의 "만든 결과", 셰이더를 가리키는 다른 스펙(`vfx.md`, `shadows.md`, `msaa.md`,
    `textures.md`)을 고친다.
 
