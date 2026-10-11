@@ -35,7 +35,7 @@
 |---|---|---|
 | **노드** (선택된 노드) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | 공전 카메라의 트랜스폼. (Edit와 Play 모드, `play.md` 전까지는 look 타깃의 트랜스폼, 행성과 달의 회전, 걷는 캐릭터의 트랜스폼도; Edit 모드에서는 그것들이 더 이상 스스로 움직이지 않으므로 다른 노드처럼 undo 가능하다) |
 | **캐릭터** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | 클립의 시간, 저장도 더 이상 쓰지 않는다 |
-| **씬 설정** | 공전 속도 (`ORBS`, undo만 쓰는 태그: 저장의 `PLNT`는 각도도 담는다), 뼈 표시 | 공전 각도 (재생 중에만 돈다) |
+| **씬 설정** | 공전 속도 (`ORBS`, undo만 쓰는 태그: 저장의 `PLNT`는 각도도 담는다), 뼈 표시, 주변광 (`AMBI`) | 공전 각도 (재생 중에만 돈다) |
 | 재생 중 | 없음: undo는 꺼지고, Stop이 씬을 마지막 커밋으로 되돌린다 | |
 
 undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), 선택, 에디터 설정 (기즈모 모드, 자동 저장), 생성기가 만든 노드. 텍스트 필드는 입력하는 동안 자체 undo를 유지한다 (Dear ImGui의 것); 끝난 편집은 그다음 한 단계다.
@@ -110,7 +110,7 @@ bytes as they are, without a step. Undoing a step of another scene shows that sc
 |---|---|---|
 | **Node** (the selected nodes, each in a container, in selection order: `selection.md`) | `NAME`, `POS`, `ROT`, `SCL`, `COLR`, `ATCH`, `CFOV`, `LCOL`, `LINT` | the orbit camera's transform. (Until Edit and Play modes, `play.md`, also the look target's transform, the planet's and the moon's spin, and a walking character's transform; in Edit mode those no longer move by themselves, so they are undoable like any node) |
 | **Character** | `CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`, `SWRD` | the clip's time, which the save no longer writes either |
-| **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones | the orbit angle (it only runs while playing) |
+| **Scene settings** | orbit speed (`ORBS`, a tag only undo uses: the save's `PLNT` holds the angle too), show bones, ambient light (`AMBI`) | the orbit angle (it only runs while playing) |
 | While playing | Nothing: undo is off, and Stop puts the scene back to the last commit | |
 
 Not undoable: the camera view (yaw, pitch, distance, pan, follow), the selection, the editor

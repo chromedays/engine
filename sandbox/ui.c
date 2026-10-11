@@ -573,7 +573,7 @@ void ui_view_tab(Sandbox* sandbox)
     }
     // A scene that could not be built cannot be shown: the first error says why.
     for (u32 i = 0; i < sandbox->scene_count; ++i) {
-        if (!sandbox->docs[i].built && search_plain(sandbox)) {
+        if (sandbox->docs[i].error[0] && search_plain(sandbox)) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.45f, 0.4f, 1.0f});
             igTextWrapped("%s", sandbox->docs[i].error);
             igPopStyleColor(1);
@@ -602,6 +602,8 @@ void ui_view_tab(Sandbox* sandbox)
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
     if (search_row(sandbox, "Show bones", "skeleton debug lines"))
         igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
+    if (search_row(sandbox, "Ambient", "lighting light fill"))
+        igColorEdit3(TL("Ambient"), sandbox_doc(sandbox)->ambient, ImGuiColorEditFlags_Float);
     msaa_ui(sandbox);
     post_ui(sandbox);
     effects_ui(sandbox);

@@ -120,7 +120,7 @@ internal void view_menu(Sandbox* sandbox)
         const SceneDoc* doc = &sandbox->docs[scene];
         char name[64];
         snprintf(name, sizeof(name), "%s scene", doc->desc ? doc->desc->title : doc->file); // "Showcase scene": a row of the table
-        if (igMenuItem_Bool(T(name), NULL, sandbox->shown == scene, doc->built))
+        if (igMenuItem_Bool(T(name), NULL, sandbox->shown == scene, doc->desc != NULL))
             sandbox_show_scene(sandbox, scene);
     }
     igEndMenu();

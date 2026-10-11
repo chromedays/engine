@@ -525,6 +525,7 @@ typedef struct SceneDoc {
     NvMaterialId palette_materials[SCENE_MAX_PALETTES][SCENE_MAX_PALETTE_COLORS];
     u32 layout; // save_scene_layout of the tree as built (before any generator)
     bool show_bones;
+    f32 ambient[3]; // the ambient light the scene is drawn with (chess_scene.md): from its file, then the save and the View tab
 } SceneDoc;
 
 // The effects the sandbox fires (effects.c).
@@ -560,6 +561,11 @@ typedef struct Sandbox {
     f64 window_start;
 
     Benchmark benchmark;
+
+    // The save as it was loaded at start: a scene not built yet keeps its saved bytes in it, and writes them back unchanged.
+    u8* loaded_save;
+    u32 loaded_save_size;
+    u32 loading_scene; // a scene to build at the frame's end, as its index + 1; 0 = none
 
     // The scenes (scenes.c): one document for each scene of the list, built from its file.
     SceneDoc docs[SANDBOX_MAX_SCENES];
@@ -644,7 +650,8 @@ void sandbox_start_playing(Sandbox* sandbox); // Play: snapshot the scene and ru
 void sandbox_stop_playing(Sandbox* sandbox);  // Stop: restore the scene from the snapshot
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
 NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id);
-// Shows scene `index` of the list, stopping Play first. Refused (logged) when that scene could not be built.
+// Shows scene `index` of the list, stopping Play first. A scene not built yet is built in the next frame, while the viewport says it
+// loads; the switch happens after that. Refused (logged) when the scene cannot be read or built.
 void sandbox_show_scene(Sandbox* sandbox, u32 index);
 void sandbox_focus_selection(Sandbox* sandbox); // F: the orbit point moves to the selected node
 void sandbox_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
@@ -654,6 +661,8 @@ SceneView* sandbox_view(Sandbox* sandbox); // the shown scene's view
 // scenes.c (docs/specs/scene_file.md)
 // Builds every scene of the list from its file (the first must build, or the sandbox stops).
 b32 scenes_init(Sandbox* sandbox);
+// Builds scene `index` if it is not built yet (its saved state is applied). Fails (logged) when it cannot be built.
+b32 scenes_ensure(Sandbox* sandbox, u32 index);
 SceneDoc* sandbox_doc(Sandbox* sandbox); // the shown scene's
 NodeRuntime* doc_node(SceneDoc* doc, NvNodeId id); // the runtime of a node of the file, or NULL
 // Whether the file made this node, as opposed to a generator (docs/specs/scene_file.md, "Node budget"): the save, undo and the gizmo
@@ -837,6 +846,9 @@ void undo_button(Sandbox* sandbox, s32 direction, b32 labels, ImVec2_c size);
 // Undo and Redo as menu items with their shortcuts.
 void undo_menu_items(Sandbox* sandbox);
 
+// Applies the loaded save to scene `index` once it is built, and to the glbs it loaded for the first time (assets from index
+// `assets_before` on). Scenes and assets that are already there keep what the user changed.
+void save_apply_loaded(Sandbox* sandbox, u32 index, u32 assets_before);
 // Mounts browser storage and loads the save, if there is one. Call once the scenes are built.
 void save_init(Sandbox* sandbox);
 // Autosaves every AUTOSAVE_SECONDS while autosave is on. Call every frame.

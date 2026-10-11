@@ -10,7 +10,7 @@
 // IMPORTANT: Global rather than on main's stack: main returns before the first frame runs.
 global Sandbox sandbox_state;
 global u8 permanent_memory[NV_MEGABYTES(48)];
-global u8 scratch_memory[NV_MEGABYTES(32)];
+global u8 scratch_memory[NV_MEGABYTES(128)]; // holds a whole glb while it loads (chess.glb is 43 MB)
 global u8 anim_memory[NV_MEGABYTES(48)];
 
 //
@@ -45,15 +45,9 @@ SceneView* sandbox_view(Sandbox* sandbox)
     return &sandbox->docs[sandbox->shown].view;
 }
 
-void sandbox_show_scene(Sandbox* sandbox, u32 index)
+// The switch itself, for a scene that is built.
+internal void show_built(Sandbox* sandbox, u32 index)
 {
-    if (index >= sandbox->scene_count)
-        return;
-    SceneDoc* doc = &sandbox->docs[index];
-    if (!doc->built) {
-        nv_log(NV_LOG_ERROR, "scene", "cannot show %s: %s", doc->file, doc->error);
-        return;
-    }
     if (index == sandbox->shown)
         return;
     // Play belongs to the scene on screen: switching ends it, so a scene that is not shown is always in Edit mode.
@@ -62,6 +56,44 @@ void sandbox_show_scene(Sandbox* sandbox, u32 index)
     effects_clear(sandbox); // what the other scene fired does not carry over
     if (stress_tab_shown(sandbox))
         sandbox->open_stress = 1;
+}
+
+// A scene not built yet is built at the frame's end, after one frame that says it loads (draw_loading, finish_loading).
+void sandbox_show_scene(Sandbox* sandbox, u32 index)
+{
+    if (index >= sandbox->scene_count || index == sandbox->shown)
+        return;
+    SceneDoc* doc = &sandbox->docs[index];
+    if (!doc->desc) {
+        nv_log(NV_LOG_ERROR, "scene", "cannot show %s: %s", doc->file, doc->error);
+        return;
+    }
+    if (doc->built)
+        show_built(sandbox, index);
+    else
+        sandbox->loading_scene = index + 1;
+}
+
+// The line in the viewport while a scene loads: the one frame before its build.
+internal void draw_loading(Sandbox* sandbox)
+{
+    const SceneDoc* doc = &sandbox->docs[sandbox->loading_scene - 1];
+    char text[160];
+    snprintf(text, sizeof(text), T("Loading %s..."), doc->desc->title);
+    f32 ratio = nv_window_pixel_ratio(&sandbox->window);
+    ImVec2_c size = igCalcTextSize(text, NULL, false, -1.0f);
+    f32 x = (f32)(sandbox->layout.viewport.x + sandbox->layout.viewport.width / 2) / ratio - size.x * 0.5f;
+    f32 y = (f32)(sandbox->layout.viewport.y + sandbox->layout.viewport.height / 2) / ratio - size.y * 0.5f;
+    ImDrawList_AddText_Vec2(igGetBackgroundDrawList(NULL), (ImVec2_c){x, y}, 0xFFFFFFFFu, text, NULL);
+}
+
+// Builds the scene asked for last frame, then shows it.
+internal void finish_loading(Sandbox* sandbox)
+{
+    u32 index = sandbox->loading_scene - 1;
+    sandbox->loading_scene = 0;
+    if (scenes_ensure(sandbox, index))
+        show_built(sandbox, index);
 }
 
 //
@@ -479,6 +511,8 @@ internal void frame(void* userdata)
     sandbox_build_ui(sandbox);
     times->ui = now_ms() - t;
 
+    if (sandbox->loading_scene)
+        draw_loading(sandbox);
     SceneDoc* doc = sandbox_doc(sandbox);
     NvScene* scene = doc->scene;
     behaviors_update(sandbox, doc, dt);
@@ -503,6 +537,8 @@ internal void frame(void* userdata)
     t = now_ms();
     // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
     sandbox->renderer.depth_sampled = sandbox->textures.shown_now;
+    // The shown scene's ambient light (chess_scene.md): the renderer takes it from the renderer, which the scene does not know.
+    memcpy(sandbox->renderer.ambient, sandbox_doc(sandbox)->ambient, sizeof(sandbox->renderer.ambient));
     nv_renderer_draw(&sandbox->renderer, scene, nv_anim_skins(), layout->scene, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = sandbox->renderer.gpu_ms;
@@ -522,6 +558,8 @@ internal void frame(void* userdata)
 
     accumulate_times(sandbox, now);
     stress_after_frame(sandbox);
+    if (sandbox->loading_scene)
+        finish_loading(sandbox);
     save_update(sandbox);
 }
 

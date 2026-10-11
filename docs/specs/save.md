@@ -7,7 +7,7 @@
 
 > 2026-10 (`scene_file.md`): 씬은 이제 씬 파일의 목록이고 저장은 모두를 담는다. 이 안내가 아래의 쇼케이스 중심 서술보다 우선한다.
 >
-> - **씬마다 `SCNE` 하나** (반복): `FILE`(문자열, 씬 목록의 파일 경로) 다음에 `LAYT`, `VIEW`, `BONE`, `NODE`, `BHVR`. 씬 목록의 순서로 쓰고,
+> - **씬마다 `SCNE` 하나** (반복): `FILE`(문자열, 씬 목록의 파일 경로) 다음에 `LAYT`, `VIEW`, `BONE`, `AMBI`, `NODE`, `BHVR`. 씬 목록의 순서로 쓰고,
 >   첫 씬이 맨 앞이다. `FILE`이 없는 `SCNE`(옛 저장)는 첫 씬의 것이다. 옛 빌드는 첫 `SCNE`만 읽고 모르는 태그는 건너뛴다.
 > - **`BHVR`**(씬 안, 반복): 동작 하나의 파라미터. `PATH`(노드 경로), `KIND`(문자열), 파라미터마다 `PARM` {`NAME`, `VALU` f32[] 또는 `TEXT`}.
 >   값은 실행 중의 단위(라디안)다. 모르는 이름은 건너뛰고, 없는 이름은 지금 값을 지닌다. 읽은 뒤 그 동작의 "적용"을 부른다.
@@ -17,7 +17,7 @@
 > - **생성기가 만든 노드**(그리드의 큐브 등)는 `NODE`로 쓰지 않고, 선택 (`SELN`, `SELO`)에서도 빠진다. 생성기의 수는 `BHVR`의 파라미터다.
 > - 스트레스 씬도 저장된다 (설정, 카메라, 선택, 노드 편집). 벤치마크 결과는 저장하지 않는다. 샌드박스는 씬 목록의 첫 씬에서 시작한다.
 > - `LAYT`는 파일의 노드를 만든 직후, 생성기가 돌기 전의 트리에서 잰다.
-> - 모든 씬은 시작할 때 만들어지므로 저장의 모든 `SCNE`가 바로 적용된다.
+> - 첫 씬은 시작할 때 만들어진다. 아직 만들지 않은 씬의 `SCNE`는 불러온 바이트를 그대로 다시 쓰고, 만들 때 적용한다(`chess_scene.md`).
 
 참고 (2026-10-02, `shared.md`): 카메라 필드는 `SceneView.orbit`(`NvOrbitCamera`, `engine/camera.h`)에 있다: `camera_yaw`는
 `orbit.yaw`, `camera_pitch`는 `orbit.pitch`, `camera_distance`는 `orbit.distance`, `orbit_point`는 `orbit.target`이다. 태그와
@@ -167,6 +167,7 @@ Chunks
 | `VIEW` | container | 쇼케이스의 뷰 | 시작 뷰 |
 | `PLNT` | f32[2] | `orbit_speed` (rad/s)와 `orbit_angle` (rad). Edit와 Play 모드 (`play.md`) 이후로 각도는 0으로 쓴다: 회전은 재생 중에만, 0부터, 행성의 지정한 회전 위에서 돈다 | 0.7, 0 |
 | `BONE` | u32 | `sandbox->show_bones` | 0 |
+| `AMBI` | f32[3] | 씬의 주변광 (`SceneDoc.ambient`: 파일의 `lighting`, View 탭의 Ambient) | 파일의 `lighting` 값 |
 | `CHAR` | container | 캐릭터 (아래) | 만든 그대로 |
 | `NODE` | container, 반복 | 노드마다 하나, 트리 순서로 (아래) | 만든 그대로 |
 
@@ -291,7 +292,7 @@ Chunks
 > 2026-10 (`scene_file.md`): The scenes are now a list of scene files, and the save holds all of them. This note wins over the
 > showcase-centered text below.
 >
-> - **One `SCNE` per scene** (repeated): `FILE` (a string, the scene list's file path), then `LAYT`, `VIEW`, `BONE`, `NODE`, `BHVR`. Written in the scene
+> - **One `SCNE` per scene** (repeated): `FILE` (a string, the scene list's file path), then `LAYT`, `VIEW`, `BONE`, `AMBI`, `NODE`, `BHVR`. Written in the scene
 >   list's order, the first scene first. A `SCNE` without `FILE` (an old save) is the first scene's. An older build reads only the first
 >   `SCNE` and skips tags it does not know.
 > - **`BHVR`** (inside a scene, repeated): the parameters of one behavior. `PATH` (the node's path), `KIND` (a string), and a `PARM` {`NAME`,
@@ -306,7 +307,7 @@ Chunks
 > - The stress scene is saved too (settings, camera, selection, node edits). Benchmark results are not. The sandbox starts on the scene
 >   list's first scene.
 > - `LAYT` is taken from the tree right after the file's nodes are made, before any generator runs.
-> - Every scene is built at start, so every `SCNE` of the save is applied at once.
+> - The first scene is built at start. A scene not built yet writes its `SCNE` bytes from the load back unchanged, and applies them when it is built (`chess_scene.md`).
 
 Note (2026-10-02, `shared.md`): the camera fields are in `SceneView.orbit` (`NvOrbitCamera`, `engine/camera.h`): `camera_yaw`
 is `orbit.yaw`, `camera_pitch` is `orbit.pitch`, `camera_distance` is `orbit.distance` and `orbit_point` is `orbit.target`. The tags
@@ -469,6 +470,7 @@ The save calls the showcase simply "the scene": it is the one scene the save hol
 | `VIEW` | container | the showcase's view | start view |
 | `PLNT` | f32[2] | `orbit_speed` (rad/s) and `orbit_angle` (rad). Since Edit and Play modes (`play.md`) the angle is written as 0: the spin only runs while playing, from 0, on top of the planet's authored rotation | 0.7, 0 |
 | `BONE` | u32 | `sandbox->show_bones` | 0 |
+| `AMBI` | f32[3] | the scene's ambient light (`SceneDoc.ambient`: the file's `lighting`, the View tab's Ambient) | the file's `lighting` values |
 | `CHAR` | container | the character (below) | as built |
 | `NODE` | container, repeated | one per node, in tree order (below) | as built |
 

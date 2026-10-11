@@ -120,6 +120,13 @@ void nv_chunk_f32s(NvChunkWriter* writer, u32 tag, const f32* values, u32 count)
     }
 }
 
+void nv_chunk_copy(NvChunkWriter* writer, NvChunk chunk)
+{
+    Room payload = field(writer, chunk.tag, chunk.size);
+    if (payload.ok && chunk.size)
+        memcpy(payload.at, chunk.data, chunk.size);
+}
+
 void nv_chunk_u32(NvChunkWriter* writer, u32 tag, u32 value)
 {
     nv_chunk_u32s(writer, tag, &value, 1);
