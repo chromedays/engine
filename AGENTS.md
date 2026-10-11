@@ -102,7 +102,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   device; they share only the section functions in `sandbox/ui.c` (`ui_scene_tab`, `ui_inspector_tab`,
   `ui_view_tab`, `console_tab`, `stress_ui`). The viewport is any rectangle, not the top-left corner:
   pass `Sandbox.layout.viewport` to the renderer, picking and the gizmo. Play / Stop is at the top center
-  in both UIs, its center on the canvas's. Each dock is a window from `nv_imgui_begin_panel`, which
+  in both UIs, its center on the canvas's; it is a pixel icon (a 16 x 16 text bitmap in `sandbox/ui.c`, `draw_pixel_icon`: a new icon is a new table, no image or font), not text. Each dock is a window from `nv_imgui_begin_panel`, which
   scrolls on a vertical touch drag. Keep editor UI inside the docks and panel. The exceptions are the
   build label (with its badge) in the viewport's top-left corner and the transform gizmo on the
   selection. A splitter must not use `nv_imgui_begin_panel`: its NoBringToFrontOnFocus puts a new

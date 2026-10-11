@@ -667,19 +667,90 @@ void ui_draw_build_label(Sandbox* sandbox)
     }
 }
 
+//
+// Pixel icons
+//
+
+// An icon is a 16 x 16 bitmap written as text, '#' a pixel: drawn as squares of whole framebuffer pixels, in the text color, centered
+// in an item. A new icon is a new table; there is no image file or font.
+#define PIXEL_ICON_SIZE 16
+global const char* const icon_play[PIXEL_ICON_SIZE] = {
+    "................",
+    "..#.............",
+    "..###...........",
+    "..#####.........",
+    "..######........",
+    "..########......",
+    "..##########....",
+    "..############..",
+    "..############..",
+    "..##########....",
+    "..########......",
+    "..######........",
+    "..#####.........",
+    "..###...........",
+    "..#.............",
+    "................",
+};
+global const char* const icon_stop[PIXEL_ICON_SIZE] = {
+    "................",
+    "................",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "................",
+    "................",
+};
+
+internal void draw_pixel_icon(Sandbox* sandbox, const char* const* rows, ImVec2_c min, ImVec2_c max, ImU32 color)
+{
+    f32 ratio = nv_window_pixel_ratio(&sandbox->window);
+    // The largest whole number of framebuffer pixels a cell can have while the icon takes about three quarters of the height.
+    u32 cell = (u32)((max.y - min.y) * ratio * 0.75f / (f32)PIXEL_ICON_SIZE);
+    if (cell < 1)
+        cell = 1;
+    f32 side = (f32)(cell * PIXEL_ICON_SIZE);
+    f32 x0 = floorf(((min.x + max.x) * 0.5f * ratio) - side * 0.5f); // framebuffer pixels, so the squares have no gaps
+    f32 y0 = floorf(((min.y + max.y) * 0.5f * ratio) - side * 0.5f);
+    ImDrawList* draw = igGetWindowDrawList();
+    for (u32 y = 0; y < PIXEL_ICON_SIZE; ++y) {
+        for (u32 x = 0; x < PIXEL_ICON_SIZE;) {
+            if (rows[y][x] != '#') {
+                ++x;
+                continue;
+            }
+            u32 end = x;
+            while (end < PIXEL_ICON_SIZE && rows[y][end] == '#')
+                ++end;
+            ImDrawList_AddRectFilled(draw, (ImVec2_c){(x0 + (f32)(x * cell)) / ratio, (y0 + (f32)(y * cell)) / ratio},
+                                     (ImVec2_c){(x0 + (f32)(end * cell)) / ratio, (y0 + (f32)((y + 1) * cell)) / ratio}, color, 0.0f, 0);
+            x = end;
+        }
+    }
+}
+
 void ui_play_button(Sandbox* sandbox, ImVec2_c size)
 {
     f32* box = sandbox->play_box;
     box[0] = box[1] = box[2] = box[3] = 0.0f;
-    char play_label[64];
-    snprintf(play_label, sizeof(play_label), "%s###play", T(sandbox->playing ? "Stop" : "Play"));
-    if (igButton(play_label, size)) {
+    // An icon, no text: the triangle plays, the square stops. The button keeps its id (###play).
+    if (igButton("###play", size)) {
         if (sandbox->playing)
             sandbox_stop_playing(sandbox);
         else
             sandbox_start_playing(sandbox);
     }
     ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
+    draw_pixel_icon(sandbox, sandbox->playing ? icon_stop : icon_play, min, max, igGetColorU32_Col(ImGuiCol_Text, 1.0f));
     box[0] = min.x;
     box[1] = min.y;
     box[2] = max.x;
