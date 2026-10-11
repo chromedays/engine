@@ -106,8 +106,10 @@ internal void copy_name(char* dst, const char* src)
     dst[i] = 0;
 }
 
-internal NvMeshId load_primitive(const cgltf_primitive* prim, const cgltf_node* node, NvRenderer* renderer,
-                                 NvArena* scratch)
+// One primitive as a mesh. `node` is the mesh node of a skinned primitive (NULL for a static one), and `transform` (NULL: none) is
+// baked into a static primitive's vertices. The static tree passes neither: its vertices stay as the file has them.
+internal NvMeshId load_primitive(const cgltf_primitive* prim, const cgltf_node* node, const NvMat4* transform_or_null,
+                                 NvRenderer* renderer, NvArena* scratch)
 {
     const cgltf_accessor* positions = NULL;
     const cgltf_accessor* normals = NULL;
@@ -128,14 +130,10 @@ internal NvMeshId load_primitive(const cgltf_primitive* prim, const cgltf_node* 
         }
     }
     NV_ASSERT(positions && prim->type == cgltf_primitive_type_triangles);
-    b32 skinned = node->skin && joints && weights;
+    b32 skinned = node && node->skin && joints && weights;
 
-    // Static meshes have their node's world transform baked in; skinned meshes are posed by their
-    // joints, which glTF defines to ignore the mesh node's own transform.
-    f32 world[16];
-    cgltf_node_transform_world(node, world);
-    NvMat4 transform;
-    memcpy(transform.e, world, sizeof(world));
+    // Skinned meshes are posed by their joints, which glTF defines to ignore the mesh node's own transform.
+    NvMat4 transform = transform_or_null ? *transform_or_null : nv_mat4_identity();
 
     u32 count = (u32)positions->count;
     NvMeshData data = {.vertex_count = count};
@@ -205,6 +203,114 @@ internal NvMaterialId load_material(const cgltf_material* material, NvRenderer* 
     return nv_renderer_add_material(renderer, &desc);
 }
 
+// The static tree: one scene node per glTF node, parents first, with the file's local transforms and nothing baked. A primitive is
+// loaded once, however many nodes use it; a node with several primitives gets one child per primitive.
+typedef struct StaticTree {
+    NvGltfModel* out;
+    NvScene* scene;
+    const cgltf_data* data;
+    const NvMaterialId* materials;
+    NvMeshId* primitive_meshes; // every primitive's mesh, mesh by mesh
+    u32* first_primitive;       // per mesh: its first primitive's place in primitive_meshes
+    b32 failed;
+} StaticTree;
+
+// Adds a model node under `parent` (-1 in `parents`: under the root). Returns its place in the model, or -1 when the model is full.
+internal s32 add_tree_node(StaticTree* t, NvNodeId parent, s32 parent_index, const char* name, NvVec3 position, NvQuat rotation,
+                           NvVec3 scale)
+{
+    NvGltfModel* out = t->out;
+    if (out->node_count == NV_GLTF_MAX_NODES) {
+        if (!t->failed)
+            nv_log(NV_LOG_ERROR, "nv", "a model has more than %d nodes", NV_GLTF_MAX_NODES);
+        t->failed = 1;
+        return -1;
+    }
+    s32 index = (s32)out->node_count++;
+    out->nodes[index] = nv_scene_add_node(t->scene, parent, name ? name : "");
+    out->parents[index] = parent_index;
+    out->local_position[index] = position;
+    out->local_rotation[index] = rotation;
+    out->local_scale[index] = scale;
+    NvNode* node = nv_scene_get(t->scene, out->nodes[index]);
+    node->position = position;
+    node->rotation = rotation;
+    node->scale = scale;
+    return index;
+}
+
+internal void attach_primitive(StaticTree* t, s32 index, const cgltf_primitive* prim, NvMeshId mesh)
+{
+    NvGltfModel* out = t->out;
+    if (out->mesh_node_count == NV_GLTF_MAX_MESH_NODES) {
+        t->failed = 1;
+        nv_log(NV_LOG_ERROR, "nv", "a model has more than %d mesh nodes", NV_GLTF_MAX_MESH_NODES);
+        return;
+    }
+    NvNode* node = nv_scene_get(t->scene, out->nodes[index]);
+    node->mesh = mesh;
+    node->material = prim->material ? t->materials[prim->material - t->data->materials] : (NvMaterialId){0};
+    out->mesh_nodes[out->mesh_node_count++] = out->nodes[index];
+}
+
+internal void add_tree(StaticTree* t, const cgltf_node* node, NvNodeId parent, s32 parent_index)
+{
+    if (t->failed)
+        return;
+    f32 local[16];
+    cgltf_node_transform_local(node, local);
+    NvMat4 matrix;
+    memcpy(matrix.e, local, sizeof(local));
+    NvVec3 position, scale;
+    NvQuat rotation;
+    nv_mat4_decompose(matrix, &position, &rotation, &scale);
+    s32 index = add_tree_node(t, parent, parent_index, node->name, position, rotation, scale);
+    if (index < 0)
+        return;
+    NvNodeId id = t->out->nodes[index];
+
+    if (node->mesh) {
+        const cgltf_mesh* mesh = node->mesh;
+        u32 first = t->first_primitive[mesh - t->data->meshes];
+        if (mesh->primitives_count == 1) {
+            attach_primitive(t, index, &mesh->primitives[0], t->primitive_meshes[first]);
+        } else {
+            for (cgltf_size p = 0; p < mesh->primitives_count && !t->failed; ++p) {
+                s32 child = add_tree_node(t, id, index, mesh->name, nv_vec3(0, 0, 0), nv_quat_identity(), nv_vec3(1, 1, 1));
+                if (child < 0)
+                    return;
+                attach_primitive(t, child, &mesh->primitives[p], t->primitive_meshes[first + p]);
+            }
+        }
+    }
+    for (cgltf_size c = 0; c < node->children_count && !t->failed; ++c)
+        add_tree(t, node->children[c], id, index);
+}
+
+internal b32 build_static_tree(const cgltf_data* data, NvGltfModel* out, NvScene* scene, NvRenderer* renderer,
+                               const NvMaterialId* materials, NvArena* scratch)
+{
+    u32* first = NV_PUSH_ARRAY(scratch, data->meshes_count + 1, u32);
+    u32 total = 0;
+    for (cgltf_size m = 0; m < data->meshes_count; ++m) {
+        first[m] = total;
+        total += (u32)data->meshes[m].primitives_count;
+    }
+    NvMeshId* primitive_meshes = NV_PUSH_ARRAY(scratch, total + 1, NvMeshId);
+    for (cgltf_size m = 0; m < data->meshes_count; ++m) {
+        for (cgltf_size p = 0; p < data->meshes[m].primitives_count; ++p)
+            primitive_meshes[first[m] + p] = load_primitive(&data->meshes[m].primitives[p], NULL, NULL, renderer, scratch);
+    }
+
+    StaticTree tree = {.out = out, .scene = scene, .data = data, .materials = materials, .primitive_meshes = primitive_meshes,
+                       .first_primitive = first};
+    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+        if (!data->nodes[n].parent)
+            add_tree(&tree, &data->nodes[n], out->root, -1);
+    }
+    return !tree.failed;
+}
+
 NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvNodeId parent, NvRenderer* renderer, NvArena* permanent,
                               NvArena* scratch)
 {
@@ -227,18 +333,30 @@ NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvNodeId parent,
     out->scene = scene;
     out->root = nv_scene_add_node(scene, parent, name);
 
-    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
-        const cgltf_node* node = &data->nodes[n];
-        if (!node->mesh)
-            continue;
-        for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-            const cgltf_primitive* prim = &node->mesh->primitives[p];
-            NV_ASSERT(out->mesh_node_count < NV_GLTF_MAX_MESH_NODES);
-            NvNodeId id = nv_scene_add_node(scene, out->root, node->name ? node->name : node->mesh->name);
-            NvNode* scene_node = nv_scene_get(scene, id);
-            scene_node->mesh = load_primitive(prim, node, renderer, scratch);
-            scene_node->material = prim->material ? materials[prim->material - data->materials] : (NvMaterialId){0};
-            out->mesh_nodes[out->mesh_node_count++] = id;
+    if (!data->skins_count) {
+        if (!build_static_tree(data, out, scene, renderer, materials, scratch)) {
+            scratch->used = mark;
+            return (NvGltfLoad){0};
+        }
+    } else {
+        // Skinned: every mesh node is a child of the root, posed by the skin (below), with its meshes loaded in its world space.
+        for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+            const cgltf_node* node = &data->nodes[n];
+            if (!node->mesh)
+                continue;
+            f32 world[16];
+            cgltf_node_transform_world(node, world);
+            NvMat4 transform;
+            memcpy(transform.e, world, sizeof(world));
+            for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
+                const cgltf_primitive* prim = &node->mesh->primitives[p];
+                NV_ASSERT(out->mesh_node_count < NV_GLTF_MAX_MESH_NODES);
+                NvNodeId id = nv_scene_add_node(scene, out->root, node->name ? node->name : node->mesh->name);
+                NvNode* scene_node = nv_scene_get(scene, id);
+                scene_node->mesh = load_primitive(prim, node, &transform, renderer, scratch);
+                scene_node->material = prim->material ? materials[prim->material - data->materials] : (NvMaterialId){0};
+                out->mesh_nodes[out->mesh_node_count++] = id;
+            }
         }
     }
 
@@ -286,6 +404,24 @@ void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId pare
     out->root = nv_scene_add_node(scene, parent, nv_scene_get(model->scene, model->root)->name);
     if (model->skeleton.index)
         out->animator = nv_anim_create_animator(model->skeleton, scene, out->root);
+    out->mesh_node_count = 0;
+    if (model->node_count) {
+        // The file's tree again, from the model's own transforms: an edit of the first instance does not reach the copies.
+        for (u32 i = 0; i < model->node_count; ++i) {
+            NvNodeId under = model->parents[i] >= 0 ? out->nodes[model->parents[i]] : out->root;
+            NvNode* source = nv_scene_get(model->scene, model->nodes[i]);
+            out->nodes[i] = nv_scene_add_node(scene, under, source->name);
+            NvNode* node = nv_scene_get(scene, out->nodes[i]);
+            node->position = model->local_position[i];
+            node->rotation = model->local_rotation[i];
+            node->scale = model->local_scale[i];
+            node->mesh = source->mesh;
+            node->material = source->material;
+            if (source->mesh.index)
+                out->mesh_nodes[out->mesh_node_count++] = out->nodes[i];
+        }
+        return;
+    }
     for (u32 i = 0; i < model->mesh_node_count; ++i) {
         NvNode* source = nv_scene_get(model->scene, model->mesh_nodes[i]);
         out->mesh_nodes[i] = nv_scene_add_node(scene, out->root, source->name);
@@ -294,6 +430,7 @@ void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId pare
         node->material = source->material;
         node->animator = source->animator.index ? out->animator : (NvAnimatorId){0};
     }
+    out->mesh_node_count = model->mesh_node_count;
 }
 
 //

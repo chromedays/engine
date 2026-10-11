@@ -7,13 +7,25 @@
 #include "engine/renderer.h"
 #include "engine/scene.h"
 
-#define NV_GLTF_MAX_MESH_NODES 32
+#define NV_GLTF_MAX_MESH_NODES 64 // mesh nodes a model may have (a static model has one per primitive)
+#define NV_GLTF_MAX_NODES      64 // nodes of a static model's tree
 
 typedef struct NvGltfModel {
     NvScene* scene; // the scene the nodes below live in
     NvNodeId root;                               // parent of every node the model created
     NvNodeId mesh_nodes[NV_GLTF_MAX_MESH_NODES]; // one per mesh primitive
     u32 mesh_node_count;
+
+    // A static model (no skin) keeps the file's node tree: node i is nodes[i], under nodes[parents[i]] (-1: under `root`), parents
+    // first. Its local transforms are the file's and are not baked into the vertices. local_* are kept apart from the scene's nodes,
+    // which an edit of this instance may change; the copies start from them. A skinned model has node_count 0: its meshes stay flat
+    // under `root`.
+    u32 node_count;
+    NvNodeId nodes[NV_GLTF_MAX_NODES];
+    s32 parents[NV_GLTF_MAX_NODES];
+    NvVec3 local_position[NV_GLTF_MAX_NODES];
+    NvQuat local_rotation[NV_GLTF_MAX_NODES];
+    NvVec3 local_scale[NV_GLTF_MAX_NODES];
 
     // The first skin, if any. Joint order is the skin's joint order, which is also the joint order
     // the meshes' JOINTS_0 attributes index.
@@ -39,8 +51,8 @@ NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvNodeId parent,
                               NvArena* scratch);
 
 // Adds another copy of a loaded model to `scene` (any scene), under `parent` (a zeroed id adds it
-// at the top level): a new root with the same node names, meshes and materials, and a new animator
-// on the same skeleton. Nothing is loaded again.
+// at the top level): a new root with the same node names, meshes and materials, the file's node tree
+// (static models) and a new animator on the same skeleton. Nothing is loaded again.
 void nv_gltf_instantiate(const NvGltfModel* model, NvScene* scene, NvNodeId parent, NvGltfModel* out);
 
 // Creates a clip on `skeleton` for every animation in the file, matching animated nodes to joints
