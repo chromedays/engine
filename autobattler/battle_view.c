@@ -542,7 +542,7 @@ internal void rule_integers(Game* game, const char* key, const char* label, u32 
 // The rules of the project in place, editable before a round. A change is put in place at once; Save writes it to the file.
 internal void rules_section(Game* game)
 {
-    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), 0))
+    if (!game->project_size || !igCollapsingHeader_TreeNodeFlags(TL("Rules"), ImGuiTreeNodeFlags_DefaultOpen))
         return;
     igBeginDisabled(!game_rules_editable(game));
     igPushItemWidth(igGetFontSize() * 8.0f);

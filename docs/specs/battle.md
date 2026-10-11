@@ -995,7 +995,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   preview green, others red (only the cell under the mouse pointer; a touch screen has no preview). Tapping a placed unit removes it.
   The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, the project (its file name, Open..., Reload, Save, Save as...; "Loading and
-  saving" in `abproj.md`), a closed Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
+  saving" in `abproj.md`), an open Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
   button per unit type (name and cost; the chosen one is lit), Start,
   Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
