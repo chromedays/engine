@@ -176,7 +176,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 - **배울 것**: 산란 적분, Rayleigh 위상 함수, 중점 규칙과 걸음 수, 곧은 구현의 비용(픽셀 × N × M).
 - **이론**: 4(Rayleigh), 5.
 - **만드는 것**:
-  - C: 같은 적분의 CPU 판(`nv_atmosphere_sky_radiance`, 한 방향의 radiance와 성분).
+  - C: 같은 적분의 CPU 판(`nv_atmosphere_sky`, 한 방향의 radiance와 성분).
   - 하늘 패스: 화면 삼각형, 픽셀마다 시선을 N걸음, 걸음마다 해 방향을 M걸음 적분한다(LUT 없음). 행성에 닿는 시선은 거기서 멈춘다(지면은 아직 검다).
   - Study 섹션: 걸음 수 슬라이더, 성분 보기(`FINAL`, `TRANSMITTANCE`, `SINGLE`), 프로브, 높이 오프셋, GPU 시간.
 - **볼 것**: 파란 하늘, 천정보다 밝고 흰 지평선. 해를 낮추면 해 쪽 지평선이 붉어진다. 해 주변은 아직 특별히 밝지 않다.
@@ -190,7 +190,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
   2. 지평선이 천정보다 밝고 흰 이유는?
   3. 왜 `T(x, 해)`가 적분 안에 있나? 빼면 무엇이 틀리나?
   4. 1080p에서 N = 32, M = 16이면 프레임당 지수 함수를 몇 번 계산하나?
-- **읽기 순서**: C의 `nv_atmosphere_sky_radiance` → WGSL의 같은 이름의 함수(나란히) → 하늘 패스의 정점/프래그먼트 → 렌더러 연결.
+- **읽기 순서**: C의 `nv_atmosphere_sky` → WGSL의 같은 이름의 함수(나란히) → 하늘 패스의 정점/프래그먼트 → 렌더러 연결.
 - **다음의 동기**: 해 주변의 후광, 연무, 지평선 아래가 없다. 그리고 비싸다(실험 d).
 
 ### 2단계: Mie, 오존, 해 원반, 지면
@@ -281,7 +281,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
   1. 하늘과 대기 원근이 "같은 적분"이라는 것은 무슨 뜻인가?
   2. 볼륨이 투과율을 RGB가 아니라 회색 하나로 담는 근사는 무엇을 잃나?
   3. 거리 칸을 제곱 분포로 나누는 이유는?
-- **다음의 동기**: 그늘 속이 여전히 고정된 회색이다.
+- **다음의 동기**: 그늘 속이 여전히 씬의 고정된 주변광(`lighting`의 `ambient`)이다. 해의 높이와 상관없이 같은 색이다.
 
 ### 7단계: 하늘의 주변광
 
@@ -337,7 +337,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 
 | 후보 | 무엇인가 | 언어, 라이선스 | 장단점 |
 |---|---|---|---|
-| **직접 작성, Hillaire 2020** (권장) | 이 스펙 | C17, WGSL | 공부가 목적이므로 가장 맞다: 모든 식을 우리가 쓴다. 렌더러의 패스, MSAA, 자체 해상도, reverse Z, HDR에 그대로 들어간다 |
+| **직접 작성, Hillaire 2020** (결정 1) | 이 스펙 | C17, WGSL | 공부가 목적이므로 가장 맞다: 모든 식을 우리가 쓴다. 렌더러의 패스, MSAA, 자체 해상도, reverse Z, HDR에 그대로 들어간다 |
 | sebh/UnrealEngineSkyAtmosphere | 저자의 참조 구현 | C++/HLSL(D3D11), MIT | 직접 쓰지는 못한다. 식, 상수, 매개화를 확인하는 자료. 코드를 옮기면 MIT 고지를 남긴다(기본은 옮기지 않고 식으로 쓴다) |
 | webgpu-sky-atmosphere (JolifantoBambla) | Hillaire 기법의 WebGPU 포팅 | TypeScript/WGSL, MIT | 장치와 패스가 wasm 밖 JS에 생기고, 후처리 방식이라 파티클의 대기 원근이 틀린다. 무엇보다 공부가 되지 않는다. WGSL은 참고 자료 |
 | Bruneton 2017, precomputed_atmospheric_scattering | 4D 산란 LUT를 미리 계산 | C++/GLSL, BSD | 값을 바꿀 때마다 무거운 재계산. 해설이 아주 좋은 코드라 읽을거리로 쓴다 |
@@ -513,7 +513,10 @@ Debug 빌드가 내보낸다: `_sandbox_debug_set_atmosphere(rayleigh, mie, anis
 sun_steps, altitude)`, `_sandbox_debug_atmosphere(n)`(0 켜짐, 1~3 LUT를 만든 횟수), `_sandbox_debug_set_probe(x, y)`,
 `_sandbox_debug_probe(i)`(0 준비됨, 1~3 GPU 값, 4~6 C 값).
 
-**ctest** (`tests/atmosphere_test.c`, `engine/atmosphere.c`만):
+**ctest** (`tests/atmosphere_test.c`, `engine/atmosphere.c`만; 씬 파일은 `tests/scene_file_test.c`):
+
+- 씬 파일: `lighting` 안의 `atmosphere`를 읽는다. 키를 빼면 기본값, 범위 밖의 값, 모르는 키, `atmosphere`를 두 번 쓰면 줄 번호와 함께 오류.
+  `atmosphere`가 없으면 대기가 없다. (0단계)
 
 - 천정 투과율이 손 계산(약 0.940, 0.868, 0.762)과 1% 안. 고도가 낮을수록 줄고 파랑이 먼저 준다. 행성을 맞히면 0, 대기 밖은 1. (0단계)
 - 하늘: 천정이 파랗고(b > r), 해가 2°일 때 해 쪽 지평선이 붉고(r > b), 걸음 수를 늘리면 값이 수렴한다(64와 128의 차이 < 0.5%). (1단계)
