@@ -8,6 +8,7 @@ Guidance for AI coding agents working in this repository.
   Korean version with the same content.
 - Commit messages and code comments stay in English.
 - Commit messages have no `Co-Authored-By` trailer and name no model.
+- Branch names have no `claude` prefix.
 - Feature specs (`docs/specs/`) are written in Korean only. Every other document is written in both
   Korean and English in one file: the Korean version first, then the English version with the same
   content.
