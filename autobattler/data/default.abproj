@@ -13,7 +13,7 @@ rules
 
 unit Crawler
     cost 100           # the whole squad
-    squad 4            # units
+    squad 6            # units
     footprint 2        # cells on a side
     health 120
     armor 5

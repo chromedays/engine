@@ -640,7 +640,7 @@ void view_panel(Game* game)
         }
 
         igSeparator();
-        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x4 (100)").
+        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)").
         igBeginDisabled(battle->phase != BATTLE_DEPLOY);
         for (u32 i = 0; i < battle->defs->unit_count; ++i) {
             const UnitDef* def = &battle->defs->units[i];

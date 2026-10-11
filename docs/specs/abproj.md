@@ -130,7 +130,7 @@
 
 ### 예
 
-`autobattler/data/default.abproj`. 규칙은 전에 코드에 있던 값이다. 버전 2부터 Crawler는 2 × 2칸에 넷인 분대다.
+`autobattler/data/default.abproj`. 규칙은 전에 코드에 있던 값이다. 버전 2부터 Crawler는 2 × 2칸에 여섯인 분대다(분대의 유닛 수가 칸 수와 같을 필요는 없다).
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
@@ -148,7 +148,7 @@ rules
 
 unit Crawler
     cost 100           # the whole squad
-    squad 4            # units
+    squad 6            # units
     footprint 2        # cells on a side
     health 120
     armor 5
@@ -461,8 +461,8 @@ make right lines errors). Its unit name and numbers are still checked.
 
 ### Example
 
-`autobattler/data/default.abproj`. The rules are the values that were in code. From version 2 the Crawler is a squad of four on
-2 × 2 cells.
+`autobattler/data/default.abproj`. The rules are the values that were in code. From version 2 the Crawler is a squad of six on
+2 × 2 cells (a squad's units need not match its cells).
 
 ```
 # autobattler/data/default.abproj: the auto-battler's rules, units and stage (docs/specs/abproj.md)
@@ -480,7 +480,7 @@ rules
 
 unit Crawler
     cost 100           # the whole squad
-    squad 4            # units
+    squad 6            # units
     footprint 2        # cells on a side
     health 120
     armor 5

@@ -41,7 +41,7 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다. 
 | 항목 | A |
 |---|---|
 | 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0. 칸 (x, 행)의 중심은 ((x + 0.5) · 2, 0, (행 + 0.5) · 2) m: 플레이어 쪽이 −Z, 적 쪽이 +Z |
-| 배치 | 분대 단위("분대" 절): Crawler 분대는 2 × 2칸에 넷. 양쪽 공급 1000, Crawler 분대 비용 100(편마다 최대 10분대, 40기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
+| 배치 | 분대 단위("분대" 절): Crawler 분대는 2 × 2칸에 여섯(3열 2행). 양쪽 공급 1000, Crawler 분대 비용 100(편마다 최대 10분대, 60기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
 | 유닛 | Crawler 한 종류, 지상만. 크기 등급이 없다 |
 | 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`분대 비용 / 분대 크기 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부. 같은 틱에 양쪽이 전멸해도 무승부 |
 | 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽. 거리(타게팅과 사거리 모두)는 지면(XZ) 위 중심 사이 거리 |
@@ -53,7 +53,7 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다. 
 
 | Crawler (A) | 값 |
 |---|---|
-| 분대 | 넷, 2 × 2칸 (비용 100은 분대 전체) |
+| 분대 | 여섯, 2 × 2칸에 3열 2행 (비용 100은 분대 전체) |
 | 체력, 방어력 | 120, 5 |
 | 속도 | 5 m/s |
 | 반지름 / 높이 | 0.5 / 0.8 m |
@@ -86,7 +86,7 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
   단위다. 두 키가 없으면 한 칸에 하나다(전과 같다).
 - **자리:** 분대의 유닛은 footprint 위에 될 수 있는 대로 정사각형인 격자로 선다: 열은 `ceil(sqrt(squad))`, 행은 유닛 수를 열로 나눈
   올림. 유닛마다 자기 몫의 가운데에 서고, 다 차지 않은 마지막 행은 가운데로 모은다. 행은 +Z 쪽으로 늘고 유닛은 행 순으로 만든다
-  (2 × 2칸에 넷이면 네 칸의 중심, 한 칸에 하나면 칸의 중심).
+  (2 × 2칸에 넷이면 네 칸의 중심, 여섯이면 3열 2행, 한 칸에 하나면 칸의 중심). 유닛 수는 칸 수와 같을 필요가 없다.
 - **전투:** 시작한 뒤 유닛은 각자 대상을 고르고 움직이고 싸운다(대형 없음, 열린 질문 4). 전투 중에는 분대가 따로 없다(`Squad` 배열 없음).
 - **남은 가치:** 유닛마다 `분대 비용 / 분대 크기 × 체력 / 최대 체력`.
 - **배치:** 분대는 footprint에서 원점에 가장 가까운 모서리 칸으로 놓인다(`battle_place(battle, def, x, row)`; `Battle.placed`에는 그
@@ -464,7 +464,7 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   가까운 자리, 구역 가장자리에서는 안으로 밀어 맞춘 자리다. 놓인 분대의 아무 칸이나 탭하면 그 분대를 지운다. 탭이 채울(또는 비울)
   footprint를 된다면 초록, 안 되면 빨강으로 미리 보여 준다(마우스가 가리키는 곳만; 터치 화면에는 없다). 데스크톱과 폰 모두 같다. 배치
   단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x4 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x6 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
@@ -512,7 +512,7 @@ A:
   실드가 적 포탄을 막다가 에너지가 다하면 통과시키고, 맞지 않으면 다시 찬다; 에너지가 모자라면 남은 피해만 지나간다
   (에너지 10, 피해 30 → 유닛은 `max(20 - 5, 20 × 0.25)` = 15); 실드가 이웃을 노린 포탄도 막는다; 같은 틱에 양쪽이 전멸하면 무승부; 겹친 두 유닛이
   분리로 떨어진다; 한쪽이 전멸하면 끝난다; 60초에 끝나고 남은 가치로 판정한다.
-- 분대: footprint에 놓고 아무 칸으로나 지운다, 분대 안 유닛의 자리(2 × 2칸에 넷, 한 칸에 셋), 겹침과 구역 가장자리, 남은 가치는 분대 비용
+- 분대: footprint에 놓고 아무 칸으로나 지운다, 분대 안 유닛의 자리(2 × 2칸에 넷과 여섯, 한 칸에 셋), 겹침과 구역 가장자리, 남은 가치는 분대 비용
   ÷ 크기, 유닛마다 자기 대상, 한 편 2048기, 분대끼리의 라운드가 끝나고 두 번 돌려도 해시가 같다.
 
 B:
@@ -597,7 +597,7 @@ round length, gravity, the retarget interval, the stop fraction and the minimum 
 | Topic | A |
 |---|---|
 | Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0. Cell (x, row) is centered at ((x + 0.5) · 2, 0, (row + 0.5) · 2) m: the player's side is −Z, the enemy's +Z |
-| Deployment | By squad ("Squads"): a Crawler squad is four on 2 × 2 cells. Each side has 1000 supply and a Crawler squad costs 100 (at most 10 squads, 40 Crawlers, per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
+| Deployment | By squad ("Squads"): a Crawler squad is six on 2 × 2 cells (3 columns, 2 rows). Each side has 1000 supply and a Crawler squad costs 100 (at most 10 squads, 60 Crawlers, per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
 | Units | One type, the Crawler, ground only. No size classes |
 | Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `squad cost / squad size × health / max health`) wins; equal is a draw. Both sides wiped out on the same tick is a draw too |
 | Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index. Distance (for targeting and range alike) is between centers on the ground (XZ) |
@@ -609,7 +609,7 @@ round length, gravity, the retarget interval, the stop fraction and the minimum 
 
 | Crawler (A) | Value |
 |---|---|
-| Squad | Four, on 2 × 2 cells (the cost of 100 is the whole squad's) |
+| Squad | Six, on 2 × 2 cells in 3 columns and 2 rows (the cost of 100 is the whole squad's) |
 | Health, armor | 120, 5 |
 | Speed | 5 m/s |
 | Radius / height | 0.5 / 0.8 m |
@@ -647,7 +647,8 @@ them (`abproj.md`, format version 2).
   per squad. Without the two keys it is one unit on one cell (as before).
 - **Where its units stand:** on the footprint in a grid as near square as it gets: `ceil(sqrt(squad))` columns, and the units over
   that, rounded up, rows. Each unit stands in the middle of its share, and a last row that is not full is centered. Rows run toward
-  +Z and the units are made row by row (four on 2 × 2 cells stand on the four cells' centers; one on one cell on the cell's center).
+  +Z and the units are made row by row (four on 2 × 2 cells stand on the four cells' centers, six in 3 columns and 2 rows; one on one cell on the cell's center). A
+  squad's units need not match its cells.
 - **Fighting:** once the round starts each unit picks its target, moves and fights on its own (no formation; open question 4). There
   is no squad during the fight (no `Squad` array).
 - **Remaining value:** per unit, `squad cost / squad size × health / max health`.
@@ -1053,7 +1054,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   touch screen has no preview). The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, the project (its file name, Open..., Reload, Save, Save as...; "Loading and
   saving" in `abproj.md`), an open Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
-  button per unit type (name, the squad's size when it is more than one (`Crawler x4 (100)`), and cost; the chosen one is
+  button per unit type (name, the squad's size when it is more than one (`Crawler x6 (100)`), and cost; the chosen one is
   lit), Start,
   Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
@@ -1107,8 +1108,8 @@ A:
   refills when not hit; short of energy, only the damage left goes through (energy 10, damage 30 → the unit takes
   `max(20 - 5, 20 × 0.25)` = 15); a shield stops shells aimed at a neighbor; both sides wiped out on one tick is a draw; two overlapping units separate; the battle ends when a side is
   wiped out; it ends at 60 seconds and is judged by remaining value.
-- Squads: placed on their footprint and removed by any of its cells; where a squad's units stand (four on 2 × 2 cells, three on one
-  cell); overlap and the zone's edges; remaining value is the squad's cost over its size; each unit picks its own target; 2048 units a
+- Squads: placed on their footprint and removed by any of its cells; where a squad's units stand (four and six on 2 × 2 cells, three
+  on one cell); overlap and the zone's edges; remaining value is the squad's cost over its size; each unit picks its own target; 2048 units a
   side; a round of squads ends and gives the same hash twice.
 
 B:

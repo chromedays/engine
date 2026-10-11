@@ -1525,6 +1525,16 @@ internal void test_squad_deployment(void)
     const f32 four[4][2] = {{1.0f, 1.0f}, {3.0f, 1.0f}, {1.0f, 3.0f}, {3.0f, 3.0f}};
     for (u32 i = 0; i < 4; ++i)
         CHECK(battle.units[1 + i].team == TEAM_PLAYER && battle.units[1 + i].position.x == four[i][0] && battle.units[1 + i].position.z == four[i][1]);
+    // A squad need not have as many units as cells: 6 on 2 x 2 cells stand in 3 columns of 4/3 m and 2 rows of 2 m.
+    defs.units[0].squad_size = 6;
+    battle_init(&battle, &defs);
+    CHECK(battle_place(&battle, 0, 0, 0) && battle.player_units == 6);
+    const f32 six[6][2] = {{2.0f / 3.0f, 1.0f}, {2.0f, 1.0f}, {10.0f / 3.0f, 1.0f}, {2.0f / 3.0f, 3.0f}, {2.0f, 3.0f}, {10.0f / 3.0f, 3.0f}};
+    for (u32 i = 0; i < 6; ++i)
+        CHECK(near_value(battle.units[1 + i].position.x, six[i][0], 1e-5f) && near_value(battle.units[1 + i].position.z, six[i][1], 1e-5f));
+    defs.units[0].squad_size = 4;
+    battle_init(&battle, &defs);
+    CHECK(battle_place(&battle, 0, 0, 0));
     // A squad of 3 on one cell: two in the first row and one centered in the second.
     const f32 three[3][2] = {{10.5f, 80.5f}, {11.5f, 80.5f}, {11.0f, 81.5f}};
     for (u32 i = 0; i < 3; ++i)
