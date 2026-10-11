@@ -26,7 +26,7 @@
 
 ## 바뀐 뒤
 
-- `sandbox/data/showcase.nvscene`과 `sandbox/data/stress.nvscene`이 각 씬을 기술한다. 노드, 메시, 팔레트, 모델, 뷰, 그리고 노드
+- `sandbox/data/showcase.nvscene`과 `sandbox/data/stress.nvscene`이 각 씬을 기술한다. 노드, 모델, 팔레트, 뷰, 그리고 노드
   위에서 도는 **동작**(behavior)이 들어 있다.
 - 동작은 C로 쓴 고정된 타입(`spin`, `character`, `grid`, `chain`, `crowd`, `effects`)이고, 값은 파일에서 온다.
   - 각 타입의 파라미터는 표 하나로 정의된다. 그 표가 파일 읽기, UI, 검색, 저장, undo 이름표를 모두 만든다.
@@ -84,7 +84,25 @@
   기준이다(UI의 "rad/s" 슬라이더는 그대로).
 - **회전:** `rotation x y z w`(쿼터니언, 정확) 또는 `euler pitch yaw roll`(도).
 - **계산으로 나온 값**(태양의 회전, 칼의 오프셋)은 유효숫자 9자리로 써서 같은 float로 읽힌다.
-- **최상위 문장의 순서:** `nvscene_version` → `title` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
+- **최상위 문장의 순서:** `nvscene_version` → `title` → `view` → `palette`* → `model`* → `node`+ → `benchmark`?. 순서는 파일이 언제나
+  같은 모양이 되게 한다. id 참조는 파일을 다 읽은 뒤 푼다(`view`가 뒤에 오는 노드를 가리킨다).
+
+### id
+
+`<id>`는 씬 파일 안에서만 쓰는 이름표다. 한 곳에서 선언하고 다른 곳에서 그 이름으로 가리킨다.
+
+| 선언 | 가리키는 곳 |
+|---|---|
+| `model <id>` | 노드의 `model <id>`, 생성기의 `model` |
+| `palette <id>` | 생성기의 `palette` |
+| `node <id>` | `view`의 `camera`/`focus`/`select`, `look_target <관절> <노드 id>`, 벤치마크 줄 `<노드 id> <키> <값>` |
+
+- 형식은 `[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지.
+- **이름 공간은 종류마다 따로다.** 모델, 팔레트, 노드 각각 안에서 유일하다. 가리키는 키가 종류를 정하므로(`model <id>`는 모델에서만
+  찾는다) 모델 `cube`와 노드 `cube`가 함께 있어도 된다.
+- id는 **파일을 읽는 동안에만** 쓰인다. 만든 뒤에는 남기지 않는다. 저장은 id를 쓰지 않는다(노드는 경로로, 동작은 타입으로 찾는다).
+- `NvNodeId`(실행 중의 슬롯과 세대)도, 노드의 이름(`NvNode.name`, Inspector가 바꾸고 공백이 들어간다)도 아니다. `name`이 없으면 이름의
+  기본값이 id다.
 
 ## 구조
 
@@ -117,23 +135,6 @@
 | focus | `character` | `grid` |
 | select | `character` | 없음 |
 
-### `mesh <id>`
-
-블록 안의 프리미티브 문장 하나 이상을 메시 하나에 이어 붙인다. 값 순서는 `engine/mesh.h`의 함수를 따른다.
-
-| 키 | 값 |
-|---|---|
-| `box` | cx cy cz hx hy hz |
-| `plane` | hx hz |
-| `sphere` | cx cy cz radius segments rings |
-| `cylinder`, `cone` | cx cy cz radius half_height segments |
-| `capsule` | cx cy cz radius half_height segments rings |
-| `torus` | cx cy cz major minor segments tube_segments |
-
-지금 코드의 메시: 쇼케이스 `cube`(box 반경 0.5), `ground`(plane 30×30), `sword`(box 세 개: 중심 (0,0,0) 반경 (0.018,0.09,0.018),
-중심 (0,0.1,0) 반경 (0.09,0.012,0.025), 중심 (0,0.52,0) 반경 (0.025,0.41,0.006)), `target`(box 반경 0.06). 스트레스 `cube`(반경 0.5),
-`small_cube`(반경 0.06).
-
 ### `palette <id>`
 
 생성기가 쓰는 머티리얼 묶음. 지금 `stress.c`의 `colors[]`다.
@@ -146,14 +147,79 @@
 색상환(`color_wheel`): 색 `i`의 h = i / count × 6, x = 1 − |h mod 2 − 1|, `floor(h) mod 6`에 따라 (r,g,b)가 (1,x,0), (x,1,0), (0,1,x),
 (0,x,1), (x,0,1), (1,0,x). 결과는 0.15 + 0.8 × 채널. 스트레스: `base 0.6 0.62 0.66`, `wheel 200`.
 
-### `model <id> <텍스트: 경로>`
+### `model <id>`
+
+모델은 노드에 붙이는 모양(과 애니메이션)의 단위다. **파트**(`NvMeshId` + 머티리얼)의 목록이고, 스켈레톤과 클립을 가질 수 있다. 소스는
+둘 중 하나다. 한 블록에 둘을 함께 쓰면 오류다.
+
+**도형 모델:** 블록 안의 도형 줄 하나 이상을 합쳐 **파트 하나**(GPU 메시 하나)를 만든다. 머티리얼은 없다(노드나 팔레트가 준다).
+값 순서는 `engine/mesh.h`의 함수를 따른다. `c`는 중심, `h`는 각 축의 반 길이다.
+
+| 키 | 값 |
+|---|---|
+| `box` | cx cy cz hx hy hz |
+| `plane` | hx hz |
+| `sphere` | cx cy cz radius segments rings |
+| `cylinder`, `cone` | cx cy cz radius half_height segments |
+| `capsule` | cx cy cz radius half_height segments rings |
+| `torus` | cx cy cz major minor segments tube_segments |
+
+**파일 모델:** glTF를 읽는다. glTF 프리미티브마다 파트 하나(그 머티리얼과 텍스처와 함께), 스킨이 있으면 스켈레톤.
 
 | 키 | 값 | |
 |---|---|---|
-| `clips <텍스트: 경로>` | 제자리 클립 파일(`SANDBOX_MAX_CLIPS` 16개까지) | 선택 |
-| `root_motion_clips <텍스트: 경로> <관절>` | 루트 모션 사본과 그 루트 관절 | 선택 |
+| `file <텍스트: 경로>` | glb 파일 | 필수 |
+| `clips <텍스트: 경로>` | 제자리 클립 파일(`SANDBOX_MAX_CLIPS` 16개까지) | 선택; 스켈레톤이 있을 때만 |
+| `root_motion_clips <텍스트: 경로> <관절>` | 루트 모션 사본과 그 루트 관절 | 선택; 스켈레톤이 있을 때만 |
 
-지금: `/assets/quaternius/character.glb`, `clips.glb`, `clips_rm.glb`(관절 `root`). 모델을 어디에 읽어 두는지는 열린 질문 1이다.
+같은 경로의 glb는 샌드박스 전체에서 한 번만 읽는다. 어디에 읽어 두는지는 열린 질문 1이다.
+
+**파트를 노드에 붙이는 규칙** (모든 모델에 같다)
+
+- **파트 하나, 스켈레톤 없음:** 메시를 노드 자신에 붙인다. 자식 노드는 생기지 않는다.
+- **그 밖(파트가 여럿이거나 스켈레톤이 있음):** 노드가 루트가 되고 파트마다 자식 메시 노드가 생긴다(이름은 glTF 노드나 메시의 이름).
+  파일의 자식 노드는 그 뒤에 온다. 스켈레톤이 있으면 루트가 애니메이터의 소유 노드다.
+- 모델이 만드는 노드 수는 앞의 경우 1, 뒤의 경우 1 + 파트 수다. 생성기의 노드 예산이 이 수를 쓴다.
+
+**머티리얼**
+
+- 도형 파트: 노드의 `color`(와 `double_sided`)가 그 노드만의 머티리얼을 만든다(Inspector가 노드마다 색을 바꾸므로). 없으면 기본
+  머티리얼. 생성기에서는 팔레트가 준다.
+- 파일 파트: 그 파트의 glTF 머티리얼. 파일 모델을 단 노드에 `color`를 쓰거나 생성기에 `palette`를 주면 오류다.
+
+**GPU 메시:** 모델의 파트는 한 번만 올라간다. 같은 모델을 쓰는 노드는 같은 `NvMeshId`를 함께 쓴다(지금 행성과 달이 `cube` 하나를 함께
+쓰듯).
+
+**지금 코드의 모델**
+
+| 씬 | id | 소스 |
+|---|---|---|
+| 쇼케이스 | `cube` | `box 0 0 0 0.5 0.5 0.5` |
+| 쇼케이스 | `ground` | `plane 30 30` |
+| 쇼케이스 | `sword` | `box 0 0 0 0.018 0.09 0.018`, `box 0 0.1 0 0.09 0.012 0.025`, `box 0 0.52 0 0.025 0.41 0.006` |
+| 쇼케이스 | `target` | `box 0 0 0 0.06 0.06 0.06` |
+| 쇼케이스, 스트레스 | `character` | `file "/assets/quaternius/character.glb"`, `clips ".../clips.glb"`, `root_motion_clips ".../clips_rm.glb" root` |
+| 스트레스 | `cube` | `box 0 0 0 0.5 0.5 0.5` |
+| 스트레스 | `small_cube` | `box 0 0 0 0.06 0.06 0.06` |
+
+예:
+
+```
+model sword
+    box 0 0    0   0.018 0.09  0.018   # 손잡이
+    box 0 0.1  0   0.09  0.012 0.025   # 가드
+    box 0 0.52 0   0.025 0.41  0.006   # 날
+
+model character
+    file "/assets/quaternius/character.glb"
+    clips "/assets/quaternius/clips.glb"
+    root_motion_clips "/assets/quaternius/clips_rm.glb" root
+
+node planet
+    position -4.5 1.6 -4
+    model cube
+    color 0.95 0.55 0.25
+```
 
 ### `node <id>`
 
@@ -163,20 +229,18 @@
 |---|---|---|
 | `name <텍스트>` | 보이는 이름 | 기본: id |
 | `position x y z`, `rotation`/`euler`, `scale x y z` | | 0, 단위, 1 |
-| `mesh <id>` | | |
-| `color r g b` | 노드 자신의 머티리얼 | 기본 머티리얼 |
+| `color r g b` | 도형 모델의 노드만의 머티리얼("`model <id>`"의 머티리얼 규칙) | 기본 머티리얼 |
 | `double_sided <0/1>` | | 0 |
-| `visible <0/1>` | 메시를 그리는지 | 1 |
+| `visible <0/1>` | 노드 자신의 메시를 그리는지 | 1 |
 | `camera perspective <fov> <near> <far>` | fov는 도 | |
 | `light directional`, `light_color r g b`, `light_intensity x` | | |
-| `model <id>` | 노드가 모델의 루트가 된다. 모델의 메시 노드(glTF의 이름)가 첫 자식으로 만들어지고 파일의 자식이 뒤따른다 | |
+| `model <id>` | 노드에 모델을 붙인다("`model <id>`"의 파트 규칙) | |
 | `attach <관절>` | 가장 가까운 조상 모델의 애니메이터에서 그 관절을 따라간다 | |
 | 동작 블록 | 아래 | |
 
-- id는 파일 안에서 유일한 이름이다. 동작, 뷰, 벤치마크, 저장의 매핑이 id로 노드를 가리킨다. 이름과 다르다(Inspector가 이름을
-  바꾼다).
-- 쇼케이스 트리는 지금과 같다: `camera`, `sun`, `ground`, `planet` > `moon`, `character`(모델 메시 노드들, `sword`), `look target`.
-- 스트레스 트리: `camera`, `sun`, `ground`(cube를 (260, 0.1, 260)로 키워 (0, −0.05, −50)에 둔다, 색 0.28 0.3 0.34), `grid`,
+- 쇼케이스 트리는 지금과 같다: `camera`, `sun`, `ground`, `planet` > `moon`, `character`(모델의 메시 노드 셋, `sword`), `look target`.
+  행성, 달, 바닥, 칼, 타깃은 파트 하나인 도형 모델이라 자식이 생기지 않는다.
+- 스트레스 트리: `camera`, `sun`, `ground`(모델 `cube`를 (260, 0.1, 260)로 키워 (0, −0.05, −50)에 둔다, 색 0.28 0.3 0.34), `grid`,
   `chain`(14, 0.5, 8), `crowd`(0, 0, 4).
 
 ### `benchmark`
@@ -374,7 +438,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 |---|---|---|---|---|
 | `max` | 구조 | | | 16000 |
 | `columns`, `spacing`, `height`, `scale` | 구조 | | | 128, 0.9, 0.25, 0.5 |
-| `mesh`, `palette` | 구조 | | | `cube`, `wheel` |
+| `model`, `palette` | 구조 | | | `cube`, `wheel` |
 | `on` | 파라미터 | bool | "Cube grid" | 1 |
 | `count` | 파라미터 | 0–max, 로그 슬라이더 | "Cubes" | 1000 |
 | `colors_on` | 파라미터 | bool | "Many colors" | 0 |
@@ -383,7 +447,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 | `churn` | 파라미터 | 1–256 | "Cubes / frame" | 32 |
 
 - 큐브 i: 이름 "cube", 그리드 노드의 자식, 위치 ((i mod columns − (columns − 1)/2) × spacing, height, −floor(i / columns) × spacing),
-  scale (s, s, s), 메시, 머티리얼 = 색이 켜졌으면 팔레트 색 1 + (i mod colors), 아니면 팔레트 색 0.
+  scale (s, s, s), 모델, 머티리얼 = 색이 켜졌으면 팔레트 색 1 + (i mod colors), 아니면 팔레트 색 0.
 - 프레임(Edit과 Play): 목표 = on ? count : 0(예산으로 자름). 칠한 색 수(colors_on ? colors : 0)가 바뀌면 만든 큐브를 모두 다시 칠한다.
   목표보다 많으면 끝에서부터 지우고, 적으면 끝에 더한다.
 - churn (Play만, churn_on): n = min(churn, 만든 수). n번: i = 커서 mod 만든 수, 커서 += 1. 큐브 i를 지우고 같은 자리에 새로 만든다.
@@ -396,13 +460,13 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 | 키 | 종류 | 형, 범위 | UI | 스트레스 값 |
 |---|---|---|---|---|
 | `max` | 구조 | | | 1000 |
-| `mesh`, `palette`, `stride` | 구조 | | | `small_cube`, `wheel`, 7 |
+| `model`, `palette`, `stride` | 구조 | | | `small_cube`, `wheel`, 7 |
 | `link x y z` | 구조 | | | 0.12 0.03 0 |
 | `twist`, `wobble` | 구조 | 도 | | 14.324 (0.25 rad), 2.292 (0.04 rad) |
 | `on` | 파라미터 | bool | "Deep chain" | 0 |
 | `count` | 파라미터 | 1–max | "Links" | 300 |
 
-- 고리 i: 이름 "link", 부모는 고리 i − 1(첫 고리는 체인 노드), 위치는 첫 고리 (0,0,0), 그 뒤 `link`. 메시, 머티리얼 = 팔레트 색
+- 고리 i: 이름 "link", 부모는 고리 i − 1(첫 고리는 체인 노드), 위치는 첫 고리 (0,0,0), 그 뒤 `link`. 모델, 머티리얼 = 팔레트 색
   1 + (i × stride) mod (팔레트 색 수 − 1).
 - 프레임: 목표 = on ? count : 0(예산으로 자름). 끝에서 지우거나 끝에 더한다(고리를 지우면 그 아래도 지워진다).
 - 흔들림: 각 = twist + wobble × sin(체인 시간). 모든 고리의 회전 = axis_angle(Y, 각). 체인 시간은 Play에서만 dt만큼 늘고, Play 시작과
@@ -467,7 +531,7 @@ Play에서만 돈다. dt는 0.1 s로 자른다. 들판의 점 = 궤도 중심 ±
   max(군중, 만든 캐릭터) × 4, 예산 = `NV_MAX_NODES` − 1 − 6 − 군중 노드, 체인 = min(원하는 수, 예산), 그리드 = min(원하는 수, max,
   예산 − 체인).
 - 바뀐 뒤: 상수 대신 센다. 애니메이터 여유 = `NV_MAX_ANIMATORS` − 쓰는 애니메이터, 노드 여유 = `NV_MAX_NODES` − 1 − 생성되지 않은 산
-  노드. 캐릭터 하나의 노드 수 = 1 + 모델의 메시 노드 수. 나누는 순서는 그대로 crowd, chain, grid.
+  노드. 큐브, 고리, 캐릭터 하나의 노드 수 = 그 모델이 만드는 노드 수(파트 규칙; 지금은 큐브와 고리 1, 캐릭터 4). 나누는 순서는 그대로 crowd, chain, grid.
 - 한 프레임의 순서도 그대로다: 그리드 줄이기, 체인 줄이기, 군중, 체인 늘리기(흔들림 포함), 그리드 늘리기(색 포함), churn, effects.
   줄이기가 먼저라 노드 수가 한도를 넘지 않는다.
 - 생성기가 만든 노드: 저장하지 않고, undo하지 않는다. 선택하고 Inspector로 볼 수 있지만, 편집은 남지 않는다는 줄
@@ -540,8 +604,6 @@ typedef struct SceneDoc {
     b32 built;
     NvScene* scene;
     SceneView view;
-    FileNode nodes[SCENE_MAX_FILE_NODES]; // the file's nodes: id and NvNodeId
-    u32 node_count;
     Behavior behaviors[SCENE_MAX_BEHAVIORS];
     u32 behavior_count;
     BenchmarkStep steps[STRESS_MAX_STEPS];
@@ -636,9 +698,9 @@ typedef struct SceneDoc {
 | 항목 | 한계 |
 |---|---|
 | 파일 노드 | 파일당 256 |
-| 메시 | 파일당 32, 각 4096 정점 이하 |
+| 모델 | 파일당 32. 도형 모델은 4096 정점 이하 |
 | 팔레트 | 파일당 4, 각 256색 이하 (`NV_MAX_MATERIALS` 256 안에서) |
-| 모델 | 샌드박스 전체 8 |
+| glb 파일 | 샌드박스 전체 8 |
 | 동작 | 씬당 64 |
 | 벤치마크 단계 | 16 |
 | id, 이름 | 31바이트 |
@@ -680,14 +742,14 @@ typedef struct SceneDoc {
 
 ## 나중
 
-- **노드 추가와 제거:** 지금 저장은 파일이 만든 노드에 값을 덮어쓴다. 노드를 더하거나 지우려면 저장이 노드의 구조(어떤 메시, 모델,
+- **노드 추가와 제거:** 지금 저장은 파일이 만든 노드에 값을 덮어쓴다. 노드를 더하거나 지우려면 저장이 노드의 구조(어떤 모델,
   동작인지와 부모)까지 담아 읽을 때 노드를 만들어야 한다(`SAVE_VERSION` 2). 그러면 `LAYT`와 경로 맞추기가 필요 없어진다.
 - `.nvscene` 열기와 저장(`local_file.h`).
 - 오토배틀러가 스테이지를 씬 파일로 만들 때 리더와 빌더를 엔진으로 옮긴다.
 
 ## 열린 질문
 
-1. **모델을 어디에 읽어 두는가.** 같은 캐릭터 glb를 두 씬이 쓴다. `nv_gltf_load_model`은 모델을 읽으면서 노드와 애니메이터를 어떤
+1. **파일 모델을 어디에 읽어 두는가.** 같은 캐릭터 glb를 두 씬이 쓴다. `nv_gltf_load_model`은 모델을 읽으면서 노드와 애니메이터를 어떤
    씬에 하나 만든다.
    - (가) 그리지 않는 **라이브러리 씬**에 한 번 읽어 두고, 두 씬 모두 거기서 복제한다. 대칭이지만, 라이브러리 씬의 애니메이터 하나가
      쓰이지 않은 채 남는다(256개 중 1개, 메모리 조금).
