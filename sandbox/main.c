@@ -10,7 +10,7 @@
 // IMPORTANT: Global rather than on main's stack: main returns before the first frame runs.
 global Sandbox sandbox_state;
 global u8 permanent_memory[NV_MEGABYTES(48)];
-global u8 scratch_memory[NV_MEGABYTES(32)];
+global u8 scratch_memory[NV_MEGABYTES(128)]; // holds a whole glb while it loads (chess.glb is 43 MB)
 global u8 anim_memory[NV_MEGABYTES(48)];
 
 //
