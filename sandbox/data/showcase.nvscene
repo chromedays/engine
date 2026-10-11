@@ -1,0 +1,90 @@
+# sandbox/data/showcase.nvscene: the showcase scene (docs/specs/scene_file.md)
+nvscene_version 1
+title "Showcase"
+
+view
+    camera camera
+    target 0 0.92 0     # the character's head height, where following would look
+    yaw 20.0535225      # 0.35 rad
+    pitch 6.87549339    # 0.12 rad
+    distance 5
+    focus character
+    select character
+
+model cube
+    box 0 0 0 0.5 0.5 0.5
+
+model ground
+    plane 30 30         # half sizes, m
+
+# A sword along +Y: the grip is centered on the origin so it sits in the fist.
+model sword
+    box 0 0    0 0.018 0.09  0.018    # grip
+    box 0 0.1  0 0.09  0.012 0.025    # guard
+    box 0 0.52 0 0.025 0.41  0.006    # blade
+
+model target
+    box 0 0 0 0.06 0.06 0.06
+
+model character
+    file "/assets/quaternius/character.glb"
+    clips "/assets/quaternius/clips.glb"
+    root_motion_clips "/assets/quaternius/clips_rm.glb" root
+
+node camera
+    camera
+        projection perspective
+        fov 45
+        near 0.05
+        far 100
+
+node sun
+    rotation -0.377312273 0.227874145 0.0963436365 0.892427444    # 0.5 rad about Y, then -0.8 rad about X
+    light
+        type directional
+        color 1 0.96 0.9
+        intensity 1.1
+
+node ground
+    model ground
+        color 0.32 0.34 0.38
+
+# The planet floats beside the character, far enough that the moon's orbit misses it.
+node planet
+    position -4.5 1.6 -4
+    model cube
+        color 0.95 0.55 0.25
+    spin
+        axis 0 1 0
+        speed 40.107045     # 0.7 rad/s
+    node moon
+        position 2.4 0 0
+        scale 0.45 0.45 0.45
+        model cube
+            color 0.55 0.7 0.95
+        spin
+            axis 1 1 0
+            speed 114.591559    # 2 rad/s
+
+node character
+    model character
+    character
+        look_target Head look_target
+        jump Jump_Start Jump_Loop Jump_Land 0.35
+        clip Idle_Loop
+    # The sword follows the right hand. Its place is the rest pose's: the grip a little past the wrist, pointing +Z.
+    node sword
+        position -0.0199999809 0.0799999237 0.0000000149011612
+        rotation -0.50000006 0.50000006 0.50000006 -0.49999994
+        scale 0.999999881 0.999999702 0.999999702
+        model sword
+            color 0.75 0.77 0.8
+            double_sided 1
+        attach hand_r
+
+# In Edit mode it stays where it is put, so it starts in front of the head.
+node look_target
+    name "look target"
+    position 0 1.75 1.2
+    model target
+        color 1 0.75 0.2

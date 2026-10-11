@@ -72,6 +72,14 @@ target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE
 target_link_options(battle_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
 add_test(NAME battle_test COMMAND battle_test)
 
+# The scene file reader (sandbox/scene_file.c): no GPU. NODERAWFS reads the sandbox's own .nvscene files.
+add_executable(scene_file_test scene_file_test.c ${PROJECT_SOURCE_DIR}/sandbox/scene_file.c ${PROJECT_SOURCE_DIR}/engine/text.c
+    ${PROJECT_SOURCE_DIR}/engine/log.c)
+target_include_directories(scene_file_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(scene_file_test PRIVATE SCENE_DATA_DIR="${PROJECT_SOURCE_DIR}/sandbox/data")
+target_link_options(scene_file_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
+add_test(NAME scene_file_test COMMAND scene_file_test)
+
 # Reading a whole file into an arena (engine/file.c). NODERAWFS reads this test's own source.
 add_executable(file_test file_test.c ${PROJECT_SOURCE_DIR}/engine/file.c)
 target_include_directories(file_test PRIVATE ${PROJECT_SOURCE_DIR})

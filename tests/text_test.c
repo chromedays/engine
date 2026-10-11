@@ -15,7 +15,7 @@ static int failures;
 
 static NvTextToken token_of(const char* text)
 {
-    return (NvTextToken){text, (u32)strlen(text)};
+    return (NvTextToken){text, (u32)strlen(text), 0};
 }
 
 static NvTextTokenized tokenize_text(NvTextReader* reader, const char* text)
@@ -69,6 +69,39 @@ int main(void)
         CHECK(!t.ok);
         t = tokenize_text(NULL, "key # a tab in a comment is fine\t");
         CHECK(t.ok && t.line.token_count == 1);
+    }
+
+    // Quotes: only in a read that asks for them; then a quoted token holds spaces and '#', and is never a key, number or name.
+    {
+        NvTextReader quoting = {.file_name = "q.txt", .log_source = "test", .quotes = 1};
+        NvTextTokenized t = tokenize_text(&quoting, "  step \"Cubes #250\"  # a comment");
+        CHECK(t.ok && t.line.indent == 2 && t.line.token_count == 2);
+        CHECK(t.line.tokens[1].quoted && t.line.tokens[1].length == 10 && memcmp(t.line.tokens[1].text, "Cubes #250", 10) == 0);
+        CHECK(!nv_text_token_is(t.line.tokens[1], "Cubes #250")); // a quoted token is not a key
+        t = tokenize_text(&quoting, "name \"\"");
+        CHECK(t.ok && t.line.token_count == 2 && t.line.tokens[1].quoted && t.line.tokens[1].length == 0);
+        t = tokenize_text(&quoting, "a \"x y\" b");
+        CHECK(t.ok && t.line.token_count == 3 && nv_text_token_is(t.line.tokens[2], "b"));
+        CHECK(!tokenize_text(&quoting, "name \"open").ok);
+        CHECK(!tokenize_text(&quoting, "name \"x\"y").ok);
+        CHECK(!tokenize_text(&quoting, "name \"open # not a comment").ok); // the comment hides nothing: the quote is open
+        CHECK(quoting.errors == 3);
+
+        // Quoted text as a value.
+        char text[8];
+        CHECK(nv_text_parse_text(NULL, 1, t.line.tokens[1], text, sizeof(text)) && strcmp(text, "x y") == 0);
+        CHECK(!nv_text_parse_text(NULL, 1, token_of("bare"), text, sizeof(text)));
+        NvTextToken long_text = {"12345678", 8, 1};
+        CHECK(!nv_text_parse_text(NULL, 1, long_text, text, sizeof(text))); // 8 bytes and the NUL do not fit in 8
+        CHECK(nv_text_parse_text(NULL, 1, (NvTextToken){"1234567", 7, 1}, text, sizeof(text)));
+        // A quoted "12" is text, not a number, and a quoted word is not a name.
+        CHECK(!nv_text_parse_number(NULL, 1, (NvTextToken){"12", 2, 1}, 0).ok);
+        CHECK(!nv_text_parse_name(NULL, 1, (NvTextToken){"abc", 3, 1}, text, sizeof(text)));
+
+        // Without `quotes` a quote is an ordinary character, as it was in .abproj.
+        NvTextReader plain = {.file_name = "p.txt"};
+        t = tokenize_text(&plain, "a \"x y\" # c");
+        CHECK(t.ok && t.line.token_count == 3 && !t.line.tokens[1].quoted && t.line.tokens[1].length == 2);
     }
 
     // Numbers.

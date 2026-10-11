@@ -50,7 +50,7 @@ int nv_text_shown(NvTextToken token)
 
 b32 nv_text_token_is(NvTextToken token, const char* word)
 {
-    return token.length == strlen(word) && memcmp(token.text, word, token.length) == 0;
+    return !token.quoted && token.length == strlen(word) && memcmp(token.text, word, token.length) == 0;
 }
 
 NvTextLineRange nv_text_next_line(NvTextLines* lines)
@@ -69,10 +69,15 @@ NvTextLineRange nv_text_next_line(NvTextLines* lines)
 
 NvTextTokenized nv_text_tokenize(NvTextReader* reader, const char* begin, const char* end, u32 number)
 {
+    b32 quotes = reader && reader->quotes;
     const char* stop = end;
-    for (const char* p = begin; p < stop; ++p)
-        if (*p == '#')
+    b32 inside = 0;
+    for (const char* p = begin; p < stop; ++p) {
+        if (quotes && *p == '"')
+            inside = !inside;
+        else if (*p == '#' && !inside)
             stop = p;
+    }
     while (stop > begin && (stop[-1] == ' ' || stop[-1] == '\r')) // trailing spaces and the CR of a CRLF
         --stop;
     for (const char* p = begin; p < stop; ++p) {
@@ -97,13 +102,31 @@ NvTextTokenized nv_text_tokenize(NvTextReader* reader, const char* begin, const 
         if (p == stop)
             break;
         const char* word = p;
-        while (p < stop && *p != ' ')
-            ++p;
+        NvTextToken token;
+        if (quotes && *p == '"') {
+            const char* close = p + 1;
+            while (close < stop && *close != '"')
+                ++close;
+            if (close == stop) {
+                nv_text_report(reader, number, "text is not closed (the second '\"' is missing)");
+                return (NvTextTokenized){0};
+            }
+            token = (NvTextToken){word + 1, (u32)(close - word - 1), 1};
+            p = close + 1;
+            if (p < stop && *p != ' ') {
+                nv_text_report(reader, number, "text must be followed by a space");
+                return (NvTextTokenized){0};
+            }
+        } else {
+            while (p < stop && *p != ' ')
+                ++p;
+            token = (NvTextToken){word, (u32)(p - word), 0};
+        }
         if (line->token_count == NV_TEXT_MAX_TOKENS) {
             nv_text_report(reader, number, "too many values");
             return (NvTextTokenized){0};
         }
-        line->tokens[line->token_count++] = (NvTextToken){word, (u32)(p - word)};
+        line->tokens[line->token_count++] = token;
     }
     return result;
 }
@@ -117,7 +140,7 @@ NvTextNumber nv_text_parse_number(NvTextReader* reader, u32 line, NvTextToken to
 {
     char buffer[40];
     u32 i = 0, digits = 0;
-    b32 valid = token.length < sizeof(buffer);
+    b32 valid = !token.quoted && token.length < sizeof(buffer);
     if (valid && i < token.length && (token.text[i] == '+' || token.text[i] == '-'))
         ++i;
     while (valid && i < token.length && is_digit(token.text[i])) {
@@ -148,7 +171,7 @@ NvTextNumber nv_text_parse_number(NvTextReader* reader, u32 line, NvTextToken to
 
 b32 nv_text_parse_name(NvTextReader* reader, u32 line, NvTextToken token, char* destination, umm capacity)
 {
-    b32 valid = token.length > 0 && token.length < capacity;
+    b32 valid = !token.quoted && token.length > 0 && token.length < capacity;
     for (u32 i = 0; valid && i < token.length; ++i) {
         char c = token.text[i];
         b32 letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
@@ -157,6 +180,21 @@ b32 nv_text_parse_name(NvTextReader* reader, u32 line, NvTextToken token, char* 
     if (!valid) {
         nv_text_report(reader, line, "'%.*s' is not a name (letters, digits and _; at most %u bytes; not starting with a digit)",
                        nv_text_shown(token), token.text, (u32)(capacity - 1));
+        return 0;
+    }
+    memcpy(destination, token.text, token.length);
+    destination[token.length] = 0;
+    return 1;
+}
+
+b32 nv_text_parse_text(NvTextReader* reader, u32 line, NvTextToken token, char* destination, umm capacity)
+{
+    if (!token.quoted) {
+        nv_text_report(reader, line, "'%.*s' is not text (put it in double quotes)", nv_text_shown(token), token.text);
+        return 0;
+    }
+    if (token.length >= capacity) {
+        nv_text_report(reader, line, "text is longer than %u bytes", (u32)(capacity - 1));
         return 0;
     }
     memcpy(destination, token.text, token.length);

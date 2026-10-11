@@ -13,8 +13,9 @@
 #define NV_TEXT_LOGGED_ERRORS 20 // errors of a read that are logged by default; the rest are counted
 
 typedef struct NvTextToken {
-    const char* text; // points into the file's text
+    const char* text; // points into the file's text; for a quoted token, inside the quotes
     u32 length;
+    b32 quoted; // written "like this" (only in a read with `quotes`); a quoted token is never a key, a number or a name
 } NvTextToken;
 
 typedef struct NvTextLine {
@@ -29,6 +30,7 @@ typedef struct NvTextLine {
 typedef struct NvTextReader {
     const char* file_name;
     const char* log_source; // nv_log's source, at most NV_LOG_SOURCE_SIZE - 1 bytes
+    b32 quotes;             // a token that starts with '"' runs to the next '"' and may hold spaces and '#'; no escapes
     u32 errors;             // found by this read
     u32* total;
     char* first_error;
@@ -61,8 +63,8 @@ typedef struct NvTextLineRange {
 
 NvTextLineRange nv_text_next_line(NvTextLines* lines);
 
-// Splitting a line. A comment runs from '#' to the end of the line; a line with nothing else is blank (no tokens). A tab is an
-// error, since indentation is spaces only. Fails on an error, which it reports.
+// Splitting a line. A comment runs from '#' to the end of the line (a '#' inside quotes is text); a line with nothing else is
+// blank (no tokens). A tab is an error, since indentation is spaces only. Fails on an error, which it reports.
 typedef struct NvTextTokenized {
     b32 ok;
     NvTextLine line;
@@ -82,3 +84,7 @@ NvTextNumber nv_text_parse_number(NvTextReader* reader, u32 line, NvTextToken to
 // A name: a letter or '_', then letters, digits and '_'; at most `capacity` - 1 bytes. Copies it into `destination`. Fails on
 // an error, which it reports.
 b32 nv_text_parse_name(NvTextReader* reader, u32 line, NvTextToken token, char* destination, umm capacity);
+
+// Quoted text ("look target"): copies it into `destination` (`capacity` bytes with the NUL). A token that is not quoted, or does
+// not fit, is an error, which it reports.
+b32 nv_text_parse_text(NvTextReader* reader, u32 line, NvTextToken token, char* destination, umm capacity);
