@@ -164,57 +164,112 @@ C 구조체와 셰이더 구조체의 바이트 배치가 한 바이트라도 �
 포팅 전의 WGSL 결과를 **기준선**으로 먼저 저장하고, 포팅한 것을 그것과 비교한다. Release와 Debug 두 빌드 모두, 헤드리스 Chromium
 SwiftShader(AGENTS.md "Testing without a display")에서 한다.
 
-공통 (모든 모듈):
+**이 회귀 테스트는 포팅이 끝날 때까지만 쓴다** (2026-10-11 합의). 상시 CI 작업은 만들지 않는다: CI는 지금처럼 ctest만 돌리고, 그 안의
+빌드 검사(Slang, HLSL, Tint)와 `shader_layout_test`는 포팅 뒤에도 남는다. 브라우저 검사는 단계마다 손으로(또는 에이전트가) 돌린다.
+
+#### 스크립트와 기준선
+
+- 스크립트는 `tools/shader_port/`의 Node 스크립트(`.mjs`)다. Playwright는 저장소에 설치하지 않고 npx로 버전을 고정해 쓴다
+  (`npx -y -p playwright@1.56.1 ...`, AGENTS.md의 tools 규칙). Chromium은 Playwright의 것을 쓴다. `tests/`는 "브라우저가 필요 없는
+  테스트"라서 거기 두지 않는다.
+- 이미지 비교는 별도 라이브러리 없이 Chromium 안에서 한다: 두 PNG를 `<canvas>`에 그려 `getImageData`로 픽셀을 비교한다.
+- 기준선은 **커밋하지 않는다.** 단계 0의 커밋을 저장소 밖의 `git worktree`에 체크아웃해 빌드하고, 거기서 만든 결과를
+  `<build>/shader_port/baseline/`에, 포팅한 빌드의 결과를 `<build>/shader_port/current/`에 쓴다. 기준선은 언제든 같은 커밋에서 다시
+  만들 수 있으므로 이미지를 Git LFS에 넣지 않는다.
+- 단계 6에서 `tools/shader_port/`와 이 검증만을 위한 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)를 지운다.
+
+#### 공통 검사 (모든 단계)
 
 1. 빌드: WGSL과 HLSL이 경고 없이 컴파일되고(`-warnings-as-errors all`), 모든 WGSL이 Tint 검사를 통과한다.
 2. `shader_layout_test` 통과.
 3. **필수 관문:** 시작부터 각 씬을 보이고 Play를 하는 동안 WebGPU 오류가 0개(`_sandbox_debug_wgpu_error`). 모든 파이프라인이 만들어진다.
    오토배틀러도 한 라운드 돈다. Tint는 셰이더 하나만 보므로 셰이더와 바인드 그룹 레이아웃의 불일치는 여기서만 잡힌다. 어느 단계도
    이것 없이 끝나지 않는다.
-4. 화면 비교: Edit 모드(아무것도 움직이지 않음)에서 각 씬(showcase, stress, chess)의 스크린샷을 기준선과 비교한다. 조합: MSAA 1과 4,
-   톤 매핑 3개(Clamp, PBR Neutral, ACES), bloom 켜고 끄기, 그림자 켜고 끄기, 해상도 Scale과 Fixed. Textures 탭의 미리보기(컬러, 깊이,
-   멀티샘플 깊이)와 ImGui 자체도 찍는다. 허용 오차: 채널 차이 최대 2/255, 그 넘는 픽셀은 0.1% 이하. 그보다 크면 원인을 찾을 때까지
-   다음 단계로 가지 않는다.
+4. 화면 비교: Edit 모드(아무것도 움직이지 않음)에서 아래 경우마다 스크린샷을 기준선과 비교한다. 허용 오차: 채널 차이 최대 2/255, 그
+   넘는 픽셀은 0.1% 이하. 그보다 크면 원인을 찾을 때까지 다음 단계로 가지 않는다.
 
-VFX (철저히):
+| 경우 | 씬 | 설정 |
+|---|---|---|
+| S1 | showcase, stress, chess | 기본값 |
+| S2 | 세 씬 | MSAA 1 |
+| S3 | 세 씬 | 톤 매핑 Clamp |
+| S4 | 세 씬 | 톤 매핑 ACES (기본값 PBR Neutral은 S1이 본다) |
+| S5 | 세 씬 | bloom 끔 |
+| S6 | 세 씬 | 그림자 끔 |
+| S7 | showcase | 해상도 Scale 2 |
+| S8 | showcase | 해상도 Fixed 320x180, 맞춤 방식 셋(정수 배, Fit, Stretch) |
+| S9 | showcase | Textures 탭: 컬러 미리보기, 깊이 미리보기(MSAA 1), 멀티샘플 깊이 미리보기(MSAA 4) |
+| S10 | showcase | ImGui만: 데스크톱 UI의 패널과 메뉴, 폰 UI(터치 에뮬레이션) |
+
+S2–S6은 한 번에 하나만 바꾼다(조합 전부는 너무 많고, 셰이더 경로는 하나씩 바꿔도 다 지난다).
+
+#### VFX 검사 (철저히)
 
 VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순서에 따라 파티클이 놓이는 슬롯이 바뀐다. 그래서 버퍼를 바이트로 비교하지 않고,
 **순서와 상관없는 값**과 **불변식**으로 비교한다.
 
-1. 결정적 실행: 새 디버그 내보내기 `_sandbox_debug_fixed_dt(dt)`(0이면 끔)로 게임 클럭을 고정 dt로 돌린다. 같은 씬, 같은 발사
-   (`_sandbox_debug_vfx_fire`), 같은 프레임 수.
-2. 덤프: 새 디버그 내보내기 `_sandbox_debug_vfx_dump()`가 파티클 버퍼, free 리스트, 두 alive 리스트, visible 리스트, counters,
-   `sim_args`, `draw_args`를 읽어 돌려준다(맵 읽기는 Asyncify로 기다린다).
-3. 불변식 (프레임마다, 기준선과 새 것 모두):
-   - free 수 + alive 수 = 용량.
-   - free 리스트와 alive 리스트에 같은 인덱스가 두 번 나오지 않고, 둘을 합치면 0..용량-1 전부다.
-   - visible(additive + alpha) ≤ alive. 살아 있는 파티클은 모두 `age < life`.
-   - `sim_args`, `draw_args`가 counters와 맞는다(`prepare_b`: 정점 수 = additive × 6, alpha × 6, 인스턴스 1; `prepare_a`의 워크그룹 수).
-   - dropped는 줄지 않는다.
-4. 기준선과 비교: 살아 있는 파티클을 (emitter, seed)로 정렬해 위치, 속도, 나이, 크기, 회전을 비교한다(상대 오차 1e-4, half float로
-   담긴 값은 half의 1 ulp). 개수(alive, visible, dropped)는 정확히 같아야 한다.
-5. 경계 조건: 용량을 넘는 발사(dropped가 늘어야 함), 64개를 넘는 한 번의 버스트(워크그룹 여럿, `emit`의 워크그룹 아토믹), 한 프레임에
-   버스트 여럿, 파티클이 모두 죽어 alive가 0이 되는 프레임, 바닥 충돌(`ground`, `restitution`, `friction`), 난류(curl noise).
-6. 부하: stress 씬의 `effects` 행동을 최대로(`_sandbox_debug_set_effects`) 두고 벤치마크를 한 번 돌린다. 오류 0, 불변식 유지.
-7. 화면: 고정 dt로 N 프레임 뒤 dt 0(멈춤)에서 additive, alpha 파티클, 궤적, 빔, 데칼의 스크린샷을 기준선과 비교한다(위와 같은 허용
-   오차, 단 alpha 파티클은 일부러 정렬하지 않으므로(`sandbox/effects.c`의 `// TODO:`) 겹치는 부분의 순서 차이가 나올 수 있다. 그런
-   차이가 보이면 alpha 효과는 하나씩 따로 찍는다).
+- **결정적 실행:** 새 디버그 내보내기 `_sandbox_debug_fixed_dt(dt)`(0이면 끔)로 게임 클럭을 고정 dt로 돌린다. 경우마다 페이지를 새로
+  열어(빈 저장소, 같은 시작 상태) showcase 씬에서 Play를 누르고, 프레임 0에 `_sandbox_debug_vfx_fire`로 발사한다. showcase에는
+  `effects` 행동이 없어서 발사한 것 말고는 파티클이 없다(V9의 정확한 수가 이것에 기댄다).
+- **덤프:** 새 디버그 내보내기 `_sandbox_debug_vfx_dump()`가 파티클 버퍼, free 리스트, 두 alive 리스트, visible 리스트, counters,
+  `sim_args`, `draw_args`를 읽어 돌려준다(맵 읽기는 Asyncify로 기다린다).
+- **불변식** (덤프할 때마다):
+  - free 수 + alive 수 = 용량.
+  - free 리스트와 alive 리스트에 같은 인덱스가 두 번 나오지 않고, 둘을 합치면 0..용량-1 전부다.
+  - visible(additive + alpha) ≤ alive. 살아 있는 파티클은 모두 `age < life`.
+  - `sim_args`, `draw_args`가 counters와 맞는다(`prepare_b`: 정점 수 = additive × 6, alpha × 6, 인스턴스 1; `prepare_a`의 워크그룹 수).
+  - dropped는 줄지 않는다.
+- **기준선과 비교** (덤프할 때마다): 살아 있는 파티클을 (emitter, seed)로 정렬해 위치, 속도, 나이, 크기, 회전을 비교한다(상대 오차 1e-4,
+  half float로 담긴 값은 half의 1 ulp). 개수(alive, visible, dropped, segments, decals)는 정확히 같아야 한다.
 
-먼저 기준선을 같은 빌드로 두 번 돌려 4의 비교가 스스로와 일치하는지 본다. 일치하지 않으면(SwiftShader에서도 결정적이지 않으면) 4는
-개수와 분포(평균, 최소, 최대)의 비교로 낮추고, 그 사실을 여기 적는다.
+경우 (수명은 `sandbox/effects.c`의 값: Sparks 0.3–0.9 s, Explosion 최대 3.2 s + 지연 0.05 s, Swarm 2.0–3.0 s, Smoke 3.0–5.0 s; 기본
+용량 `NV_VFX_DEFAULT_PARTICLES` = 2,097,152):
+
+| 경우 | 프레임 0에 발사 | dt | 덤프하는 프레임 | 보는 것 |
+|---|---|---|---|---|
+| V1 | Sparks 1 | 1/60 | 0–60 매 프레임 | 워크그룹 하나(70개). 첫 emit, 첫 simulate, alive 리스트 교대, 마지막 하나가 죽어 alive 0 (54프레임 무렵) |
+| V2 | Explosion 1 | 1/60 | 1, 2, 3, 4, 5, 30, 120, 200 | 이미터 다섯, 지연된 버스트(0.05 s, 3프레임째), 바닥 충돌(`ground`, `restitution`, `friction`), 200에 alive 0 |
+| V3 | Swarm 1 | 1/60 | 1, 2, 3, 60, 120, 200 | 한 버스트가 워크그룹 여럿(512개 = 8)으로: `emit`의 워크그룹 아토믹(`groupshared`). 200에 alive 0 |
+| V4 | Smoke 1 | 1/60 | 1, 60, 180, 300, 320 | 긴 수명, 난류(curl noise), 크기와 회전의 변화. 320에 alive 0 |
+| V5 | Sparks 1 + Explosion 1 | 1/30 | 1, 2, 15, 50, 100 | 큰 dt |
+| V6 | Sparks 1 + Explosion 1 | 1/240 | 1, 2, 60, 240, 800 | 작은 dt, 많은 프레임 |
+| V7 | Sparks 10 + Explosion 5 + Swarm 3 | 1/60 | 1, 2, 3, 60, 200 | 한 프레임에 버스트 여럿(작업 분할, 서로 다른 이미터) |
+| V8 | Sparks 1을 5프레임마다, 60프레임 동안 (13번) | 1/60 | 30, 60, 61, 120 | emit과 죽음이 섞인 프레임, free 리스트 재사용 |
+| V9 | Swarm 4,200 | 1/60 | 1, 2, 200 | **넘침.** counters만 본다(전체 덤프는 너무 크다). 1, 2에서 alive = 2,097,152, free = 0, dropped = 4,200 × 512 − 2,097,152 = **53,248** (정확히). 200에서 alive 0, free = 용량, dropped 그대로 |
+| V10 | V9 뒤 같은 페이지에서 Sparks 1 | 1/60 | 1, 60 | 한 번 가득 찼다가 빈 free 리스트에서 다시 emit |
+| V11 | Missile 3 | 1/60 | 30, 90, 200 | 궤적, 빔, 데칼(링 버퍼). segments, decals 개수가 정확히 같다 |
+| V12 | stress 씬의 `effects` 행동을 파일의 값 셋(particles 250,000, 1,000,000, 2,000,000)으로 (`_sandbox_debug_set_effects`) | 1/60 | 10, 60, 120 | 부하. counters만 보고 불변식은 개수로(free + alive = 용량, visible ≤ alive). 마지막에 벤치마크를 한 번 돌려 오류 0 |
+
+화면 (V-화면): 아래 프레임에서 dt를 0으로 멈추고 스크린샷을 기준선과 비교한다(공통 검사 4와 같은 허용 오차). alpha 파티클은 일부러
+정렬하지 않으므로(`sandbox/effects.c`의 `// TODO:`) 겹치는 부분의 순서가 다를 수 있다. 그런 차이가 보이면 alpha 효과는 하나씩 따로
+찍는다.
+
+| 경우 | 프레임 |
+|---|---|
+| V1 | 10, 40 |
+| V2 | 4, 30, 120 |
+| V3 | 60 |
+| V4 | 180 |
+| V11 | 30, 90 (궤적, 빔, 데칼) |
+
+**먼저 자기와의 비교:** 단계 0에서 기준선을 같은 빌드로 두 번 만들어 V1–V11의 비교가 스스로와 일치하는지 본다. 일치하지 않으면
+(SwiftShader에서도 결정적이지 않으면) 그 경우의 "기준선과 비교"는 개수와 분포(평균, 최소, 최대)의 비교로 낮추고, 어느 경우가 그런지
+여기 적는다. V9의 53,248은 결정성과 상관없이 정확해야 한다.
 
 ### 단계
 
-0. **기준선** (셰이더 변경 없음): 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)와 Playwright 스크립트를
-   더하고, 지금의 WGSL로 스크린샷과 덤프를 저장한다. 이 커밋이 이후 모든 비교의 기준이다.
+0. **기준선** (셰이더 변경 없음): 디버그 내보내기(`_sandbox_debug_fixed_dt`, `_sandbox_debug_vfx_dump`)와 `tools/shader_port/`의
+   스크립트를 더하고, 지금의 WGSL로 S1–S10, V1–V12를 두 번 돌려 자기와의 비교를 확인한다. 이 커밋이 이후 모든 비교의 기준이다
+   (결과 파일은 커밋하지 않는다).
 1. **빌드 통합 + 가장 쉬운 것**: `cmake/slang.cmake`, `cmake/tint.cmake`, `cmake/embed_text.cmake`, CI 캐시, `shader_layout_test`의 틀,
-   `imgui.slang`. 공통 검증 1–4. 일부러 잘못 쓴 셰이더(깊이 텍스처를 `Texture2D<float>`로)가 Tint 단계에서 빌드를 멈추는지도 본다.
-2. **가장 어려운 것**: `vfx_common.slang`, `vfx_compute.slang`. VFX 검증 1–6. **여기서 계속할지 정한다.** Slang의 WGSL 출력으로 같은
+   `imgui.slang`. 공통 검사 1–4 (S10 중심). 일부러 잘못 쓴 셰이더(깊이 텍스처를 `Texture2D<float>`로)가 Tint 단계에서 빌드를 멈추는지도 본다.
+2. **가장 어려운 것**: `vfx_common.slang`, `vfx_compute.slang`. V1–V12의 덤프와 불변식(화면은 단계 3). **여기서 계속할지 정한다.** Slang의 WGSL 출력으로 같은
    결과가 안 나오면 멈추고 무엇이 막혔는지 보고한다.
-3. `vfx_shapes.slang`, `vfx_particles.slang`, `vfx_marks.slang`. VFX 검증 7.
-4. renderer: `frame.slang`, `mesh.slang`, `shadow.slang`, `debug_lines.slang`, `upscale.slang`, `bloom.slang`.
-5. imgui 미리보기: `preview_*.slang`.
-6. 정리: C에 WGSL 문자열이 남지 않는다. AGENTS.md(셰이더가 `engine/shaders/*.slang`이라는 것, "a matching entry point in
+3. `vfx_shapes.slang`, `vfx_particles.slang`, `vfx_marks.slang`. V-화면, V11.
+4. renderer: `frame.slang`, `mesh.slang`, `shadow.slang`, `debug_lines.slang`, `upscale.slang`, `bloom.slang`. S1–S8.
+5. imgui 미리보기: `preview_*.slang`. S9.
+6. 정리: 마지막으로 S1–S10, V1–V12를 모두 다시 돌린다. C에 WGSL 문자열이 남지 않는다. `tools/shader_port/`와 두 디버그 내보내기를
+   지운다. AGENTS.md(셰이더가 `engine/shaders/*.slang`이라는 것, "a matching entry point in
    `shadow_shader`"는 `shadow.slang`으로), 이 스펙의 "만든 결과", 셰이더를 가리키는 다른 스펙(`vfx.md`, `shadows.md`, `msaa.md`,
    `textures.md`)을 고친다.
 
