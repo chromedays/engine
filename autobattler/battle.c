@@ -69,6 +69,7 @@ internal void make_squad(Battle* battle, u32 def_index, u32 team, u32 cell_x, u3
     u32 rows = (def->squad_size + columns - 1) / columns;
     f32 footprint = (f32)def->footprint;
     NvVec3 corner = battle_cell_center(rules, cell_x, cell_row);
+    f32 altitude = def->layer == UNIT_LAYER_AIR ? def->altitude : 0.0f;
     for (u32 i = 0; i < def->squad_size; ++i) {
         u32 row = i / columns, column = i % columns;
         u32 left = def->squad_size - row * columns, in_row = left < columns ? left : columns;
@@ -79,7 +80,7 @@ internal void make_squad(Battle* battle, u32 def_index, u32 team, u32 cell_x, u3
         *unit = (Unit){0};
         unit->team = (u8)team;
         unit->def = (u8)def_index;
-        unit->position = nv_vec3_add(corner, nv_vec3(x * rules->cell_size, 0.0f, z * rules->cell_size));
+        unit->position = nv_vec3_add(corner, nv_vec3(x * rules->cell_size, altitude, z * rules->cell_size));
         unit->previous_position = unit->position;
         unit->yaw = unit->previous_yaw = team == TEAM_PLAYER ? 0.0f : NV_PI; // the sides face each other
         unit->health = def->health;
@@ -246,10 +247,11 @@ void battle_seek(Battle* battle, u32 tick)
 internal u32 nearest_enemy(const Battle* battle, const Unit* unit)
 {
     u32 best = 0;
+    u32 targets = battle->defs->units[unit->def].weapon.targets;
     f32 best_distance = FLT_MAX;
     for (u32 j = 1; j <= battle->unit_count; ++j) {
         const Unit* other = &battle->units[j];
-        if (other->team == unit->team || !is_alive(other))
+        if (other->team == unit->team || !is_alive(other) || !(targets & (1u << battle->defs->units[other->def].layer)))
             continue;
         f32 distance = distance_xz_squared(unit->position, other->position);
         if (distance < best_distance) {
@@ -310,6 +312,8 @@ internal void move_units(Battle* battle)
             const Unit* b = &battle->units[j];
             if (!is_alive(b))
                 continue;
+            if (battle->defs->units[a->def].layer != battle->defs->units[b->def].layer)
+                continue; // a layer pushes only its own: a flier over a walker is not pushed
             f32 reach = battle->defs->units[a->def].radius + battle->defs->units[b->def].radius;
             f32 dx = b->position.x - a->position.x, dz = b->position.z - a->position.z;
             f32 distance_squared = dx * dx + dz * dz;
@@ -361,7 +365,10 @@ internal void fire_shell(Battle* battle, u32 unit_index)
     // flight time and the flight time on the landing spot, so they are solved in turn.
     f32 tan_angle = tanf(weapon->launch_angle);
     f32 gravity = battle->defs->rules.gravity;
-    NvVec3 aim = nv_vec3(target->position.x, 0.0f, target->position.z);
+    // An air target is aimed at the middle of its body, a ground target at its point on the ground.
+    const UnitDef* target_def = &battle->defs->units[target->def];
+    f32 aim_height = target_def->layer == UNIT_LAYER_AIR ? target->position.y + target_def->height * 0.5f : 0.0f;
+    NvVec3 aim = nv_vec3(target->position.x, aim_height, target->position.z);
     for (u32 pass = 0; pass < 3; ++pass) {
         f32 time = flight_time(muzzle, aim, tan_angle, gravity);
         aim.x = target->position.x + target->velocity.x * time;
@@ -384,7 +391,7 @@ internal void fire_shell(Battle* battle, u32 unit_index)
 
     Projectile* shell = &battle->projectiles[battle->projectile_count++];
     *shell = (Projectile){.team = unit->team, .shooter = {unit_index}, .position = muzzle, .previous_position = muzzle,
-                          .velocity = velocity, .damage = weapon->damage};
+                          .velocity = velocity, .damage = weapon->damage, .targets = weapon->targets};
     // No flight time (a muzzle at or below the ground right over its aim) leaves the shell still: it falls, and lands at once.
     NvVec3 direction = time > 0.0f ? nv_vec3_normalize(velocity) : nv_vec3(0.0f, -1.0f, 0.0f);
     add_event(battle, BATTLE_EVENT_FIRE, unit, muzzle, direction, weapon->damage);
@@ -469,13 +476,14 @@ typedef struct Hit {
 
 // The first thing the shell's segment touches among enemy shields, enemy units and the ground; on a tie the earlier of
 // those kinds and the lower slot.
-internal Hit find_hit(const Battle* battle, u8 team, NvVec3 start, NvVec3 end)
+internal Hit find_hit(const Battle* battle, u8 team, u32 targets, NvVec3 start, NvVec3 end)
 {
     Hit hit = {HIT_NONE, 0, 2.0f};
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         const Unit* unit = &battle->units[i];
         const UnitDef* def = &battle->defs->units[unit->def];
-        if (unit->team == team || !is_alive(unit) || def->ability.kind != ABILITY_SHIELD || unit->ability.shield.energy <= 0.0f)
+        if (unit->team == team || !is_alive(unit) || def->ability.kind != ABILITY_SHIELD || unit->ability.shield.energy <= 0.0f ||
+            !(targets & (1u << def->layer)))
             continue;
         NvVec3 center = unit->position;
         center.y += def->height * 0.5f;
@@ -485,9 +493,9 @@ internal Hit find_hit(const Battle* battle, u8 team, NvVec3 start, NvVec3 end)
     }
     for (u32 i = 1; i <= battle->unit_count; ++i) {
         const Unit* unit = &battle->units[i];
-        if (unit->team == team || !is_alive(unit))
-            continue;
         const UnitDef* def = &battle->defs->units[unit->def];
+        if (unit->team == team || !is_alive(unit) || !(targets & (1u << def->layer)))
+            continue;
         f32 t = segment_cylinder(start, end, unit->position, def->radius, def->height);
         if (t < hit.t)
             hit = (Hit){HIT_UNIT, i, t};
@@ -522,7 +530,7 @@ internal void step_projectiles(Battle* battle)
         NvVec3 start = shell->previous_position;
         b32 gone = false;
         for (;;) {
-            Hit hit = find_hit(battle, shell->team, start, shell->position);
+            Hit hit = find_hit(battle, shell->team, shell->targets, start, shell->position);
             if (hit.kind == HIT_NONE)
                 break;
             NvVec3 point = nv_vec3_add(start, nv_vec3_scale(nv_vec3_sub(shell->position, start), hit.t));

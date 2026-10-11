@@ -24,7 +24,7 @@
 | A (먼저) | B (다음) | 빠짐 (나중) |
 |---|---|---|
 | 칸 단위 배치 그리드, 분대 단위 배치(B에서 당겨 옴, "분대" 절) | | 높이맵 지형 (지면은 평평한 y = 0) |
-| 실제 높이: 포탄의 탄도 | 공중 유닛과 고도, 3D 범위 피해 | 여러 라운드, 본부 체력 |
+| 실제 높이: 포탄의 탄도, 공중 유닛의 고도 | 3D 범위 피해 | 여러 라운드, 본부 체력 |
 | 유닛 1종(Crawler), 지상만, 크기 등급 없음 | 유닛 5종, 크기 등급 3개 | 업그레이드, 테크, 카드, 전문가 |
 | 유닛당 무기 하나, 능력 하나(Shield) | 무기 여러 개, Jump | AI 상대 (적 배치는 스테이지 데이터에 고정) |
 | 투사체 한 종류(포탄), 방어력, 단일 피해 | 총탄과 미사일, 범위 피해, 아군 피해 | |
@@ -42,7 +42,7 @@ A는 아래 규칙만으로 끝까지 돈다. 값은 밸런스 출발점이다. 
 |---|---|
 | 전장 | 2 m 칸, 32칸 × 48행. 배치 구역은 B와 같다(플레이어 행 0–13, 적 행 34–47). 지형지물 없음, 지면은 y = 0. 칸 (x, 행)의 중심은 ((x + 0.5) · 2, 0, (행 + 0.5) · 2) m: 플레이어 쪽이 −Z, 적 쪽이 +Z |
 | 배치 | 분대 단위("분대" 절): Crawler 분대는 2 × 2칸에 여섯(3열 2행). 양쪽 공급 1000, Crawler 분대 비용 100(편마다 최대 10분대, 60기). 적 배치는 스테이지에 고정. 플레이어 유닛이 하나 이상이어야 Start를 누를 수 있다. Retry는 같은 배치로 배치 단계에 돌아가고, Reset은 플레이어 배치를 지운다 |
-| 유닛 | Crawler 한 종류, 지상만. 크기 등급이 없다 |
+| 유닛 | Crawler 한 종류(지상)와 공중 유닛("레이어" 절). 크기 등급이 없다 |
 | 라운드 | 30 Hz 고정 틱. 한쪽이 전멸하거나 60초(1800틱)가 되면 끝난다. 시간이 다 되면 남은 가치(`분대 비용 / 분대 크기 × 체력 / 최대 체력`의 합)가 큰 쪽이 이기고, 같으면 무승부. 같은 틱에 양쪽이 전멸해도 무승부 |
 | 타게팅 | 가장 가까운 적. 0.25초(8틱)마다, 대상이 죽으면 바로 다시 고른다. 같은 거리면 슬롯 번호가 작은 쪽. 거리(타게팅과 사거리 모두)는 지면(XZ) 위 중심 사이 거리 |
 | 이동 | 대상으로 곧장 다가가고, 대상이 사거리의 90% 안이면 멈춘다. 겹친 유닛끼리 서로 밀어낸다(분리, 무게는 모두 같다). 전장 밖으로 나가지 않는다. 가까운 유닛 찾기와 분리는 모든 쌍을 직접 비교한다(공간 격자 없음). 회전은 즉시: 움직일 때는 속도 방향, 멈췄을 때는 대상 쪽을 본다 |
@@ -77,6 +77,18 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
 - **정의 오류:** `BattleDefs`가 `error_count`와 첫 오류 문장(`first_error`)을 들고 있어 패널이 보여 줄 수 있다. 빠진 키는 블록 헤더의
   줄 번호로, 파일 전체의 오류(빠진 `supply`, 유닛이나 `place`가 하나도 없음)는 줄 번호 없이 알린다. 공급 초과는 합이 처음 넘는 `place`의
   줄로 알린다. 오류가 있는 줄은 빠진 키 오류를 더 만들지 않도록 해당 키를 "받은 것"으로 센다.
+
+### 레이어
+
+추가(2026-10-11). 공중 유닛을 A로 당겨 왔다(B의 "공중"). 유닛의 `layer`와 무기의 `targets`가 정한다(`abproj.md`, "레이어").
+
+- **레이어:** 지상(`ground`)이나 공중(`air`)이다. 공중 유닛은 정의의 `altitude` 높이로 나고, 몸은 그 높이에서 위로 `height`만큼이다.
+- **타게팅:** 무기의 `targets`에 든 레이어의 적만 고른다. 칠 수 있는 적이 없으면 대상이 없고 멈춰 선다(시간이 다 되면 남은 가치로 판정).
+- **이동과 분리:** 공중 유닛은 높이를 지키며 지면 거리로 움직인다. 분리는 같은 레이어끼리만 한다.
+- **조준:** 공중 대상은 몸의 가운데를 겨눈다(리드 조준은 지면에서, 탄도 풀이는 그 높이로). 지상 대상은 지면의 점이다. 아주 가까운 공중 대상은
+  포탄이 그 높이까지 오르지 못해 맞지 않는다.
+- **명중:** 포탄은 자기 무기의 `targets`에 든 레이어의 유닛과 그 실드만 맞힌다. 다른 레이어는 지나간다. 지면 명중은 그대로다.
+- 레이어는 라운드를 바꾼다(역할과 다르다). 지상 유닛끼리의 계산은 전과 같아서 황금 해시는 그대로다.
 
 ### 분대
 
@@ -582,7 +594,7 @@ How the rules interact is hard to check fully before building, so the prototype 
 | A (first) | B (next) | Out (later) |
 |---|---|---|
 | A cell-based deployment grid, deployment by squad (brought forward from B; "Squads") | | Heightmap terrain (the ground is flat at y = 0) |
-| Real height: the shell's ballistic arc | Air units and altitude, 3D area damage | Multiple rounds, base health |
+| Real height: the shell's ballistic arc, air units' altitude | 3D area damage | Multiple rounds, base health |
 | One unit type (Crawler), ground only, no size classes | Five unit types, three size classes | Upgrades, tech, cards, specialists |
 | One weapon per unit, one ability (Shield) | Several weapons, Jump | An AI opponent (the enemy deployment is fixed in the stage data) |
 | One projectile kind (shells), armor, single-target damage | Bullets and missiles, area damage, friendly fire | |
@@ -601,7 +613,7 @@ round length, gravity, the retarget interval, the stop fraction and the minimum 
 |---|---|
 | Field | 2 m cells, 32 cells × 48 rows. Deployment zones as in B (player rows 0–13, enemy rows 34–47). No props; the ground is y = 0. Cell (x, row) is centered at ((x + 0.5) · 2, 0, (row + 0.5) · 2) m: the player's side is −Z, the enemy's +Z |
 | Deployment | By squad ("Squads"): a Crawler squad is six on 2 × 2 cells (3 columns, 2 rows). Each side has 1000 supply and a Crawler squad costs 100 (at most 10 squads, 60 Crawlers, per side). The enemy deployment is fixed in the stage. Start needs at least one player unit. Retry goes back to deployment with the same placement; Reset clears the player's placement |
-| Units | One type, the Crawler, ground only. No size classes |
+| Units | The Crawler (ground), and air units ("Layers"). No size classes |
 | Round | A fixed 30 Hz tick. It ends when one side is wiped out or at 60 seconds (1800 ticks). When time runs out, the side with more remaining value (the sum of `squad cost / squad size × health / max health`) wins; equal is a draw. Both sides wiped out on the same tick is a draw too |
 | Targeting | The nearest enemy, picked again every 0.25 seconds (8 ticks) and at once when the target dies; equal distances go to the lower slot index. Distance (for targeting and range alike) is between centers on the ground (XZ) |
 | Movement | Steer straight at the target and stop once it is within 90% of the range. Overlapping units push each other apart (separation, all with the same weight), and stay inside the field. Finding nearby units and separating compare every pair directly (no spatial grid). Turning is instant: a moving unit faces its velocity, a stopped one its target |
@@ -640,6 +652,21 @@ Details settled in the build (phase 1):
   is reported at its block header's line; errors about a whole file (no `supply`, no unit or `place` at all) have no line. A supply
   overrun is reported at the first `place` that takes the total over. A key that was given with a bad value counts as given, so it
   does not add a "missing" error.
+
+### Layers
+
+Added (2026-10-11). Air units were brought forward from B ("air" in B). A unit's `layer` and a weapon's `targets` decide it (`abproj.md`,
+"Layers").
+
+- **Layers:** ground (`ground`) or air (`air`). An air unit flies at its definition's `altitude`, and its body stands from that height
+  up by its `height`.
+- **Targeting:** a unit picks only enemies in its weapon's `targets`. With none to hit, it has no target and stands (when time runs out,
+  remaining value decides).
+- **Movement and separation:** air units keep their height and move over the ground. Separation is within a layer only.
+- **Aiming:** an air target is aimed at the middle of its body (the lead is worked out on the ground, the ballistic solve at that height).
+  A ground target is a point on the ground. An air target too close for the shell to climb to its height is not hit.
+- **Hits:** a shell hits only the units and shields of the layers in its weapon's `targets`. Other layers are passed. Ground hits are as before.
+- A layer changes a round (a role does not). Ground units compute exactly as before, so the golden hashes stay.
 
 ### Squads
 

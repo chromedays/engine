@@ -298,7 +298,8 @@ internal void frame(void* userdata)
 // in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
-// length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame.
+// length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
+// units alive.
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -326,6 +327,12 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 20: return (int)game->defs.role_count;
     case 21: return (int)game->role_filter;
     case 22: return (int)game->unit_buttons_shown;
+    case 23: {
+        u32 air = 0;
+        for (u32 i = 1; i <= battle->unit_count; ++i)
+            air += !(battle->units[i].flags & UNIT_DEAD) && battle->defs->units[battle->units[i].def].layer == UNIT_LAYER_AIR;
+        return (int)air;
+    }
     default: return (int)game->selected_def;
     }
 }

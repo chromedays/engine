@@ -711,7 +711,19 @@ internal void scene_defs(void)
         def->weapon.cooldown = 1.5f;
         def->weapon.launch_angle = NV_PI / 4.0f;
         def->weapon.muzzle = nv_vec3(0.0f, 0.6f, 0.3f);
+        def->weapon.targets = TARGET_GROUND;
     }
+}
+
+// Unit 2 is a Wasp: a Dummy that flies, at 10 m, with a body 0.6 m high.
+internal void scene_air_unit(void)
+{
+    defs.units[2] = defs.units[1];
+    snprintf(defs.units[2].name, sizeof(defs.units[2].name), "Wasp");
+    defs.units[2].layer = UNIT_LAYER_AIR;
+    defs.units[2].altitude = 10.0f;
+    defs.units[2].height = 0.6f;
+    defs.unit_count = 3;
 }
 
 internal void give_shield(u32 def, f32 capacity)
@@ -760,7 +772,8 @@ internal void inject_shell(u32 team, NvVec3 position, NvVec3 velocity, f32 damag
 {
     NV_ASSERT(battle.projectile_count < BATTLE_MAX_PROJECTILES);
     battle.projectiles[battle.projectile_count++] = (Projectile){.team = (u8)team, .shooter = {1}, .position = position,
-                                                                 .previous_position = position, .velocity = velocity, .damage = damage};
+                                                                 .previous_position = position, .velocity = velocity, .damage = damage,
+                                                                 .targets = TARGET_GROUND | TARGET_AIR};
 }
 
 // A fast player shell that crosses `x`, `z` from 4.5 m before it, level at `y`, in two ticks (3 m per tick).
@@ -1839,6 +1852,119 @@ internal void test_roles(void)
     CHECK(play_round(1, &finished) == plain && finished);
 }
 
+// Layers (abproj.md, "Layers"; battle.md, "Layers"): what a unit's layer, altitude and a weapon's targets read as, and what the
+// layers do in a round.
+
+// A unit named Wasp with `extra` (its lines after its stats, indented: "  layer air\n") and a weapon whose `targets` line is `targets`.
+// Its lines: the unit is 1, the layer 7 (or altitude 8 after a layer line), the weapon's targets line 12.
+static char wasp[1024];
+internal const char* make_wasp(const char* extra, const char* targets)
+{
+    snprintf(wasp, sizeof(wasp), "unit Wasp\n  cost 1\n  health 1\n  speed 0\n  radius 1\n  height 1\n%s"
+                                 "  weapon W\n    range 1\n    damage 0\n    cooldown 1\n    launch_angle 30\n%s",
+             extra, targets);
+    return wasp;
+}
+
+internal void test_layers_format(void)
+{
+    // An air unit with its altitude, and a weapon that hits air.
+    CHECK(read_units(make_wasp("  layer air\n  altitude 10\n", "    targets air\n"), "Wasp"));
+    CHECK(defs.units[0].layer == UNIT_LAYER_AIR && defs.units[0].altitude == 10.0f && defs.units[0].weapon.targets == TARGET_AIR);
+    CHECK(read_units(make_wasp("  layer air\n  altitude 10\n", "    targets ground air\n"), "Wasp") &&
+          defs.units[0].weapon.targets == (TARGET_GROUND | TARGET_AIR));
+    // Without them a unit is on the ground and hits the ground.
+    CHECK(read_units(good_units, "Crawler") && defs.units[0].layer == UNIT_LAYER_GROUND && defs.units[0].altitude == 0.0f &&
+          defs.units[0].weapon.targets == TARGET_GROUND);
+
+    // An air unit needs its altitude, a ground unit has none, and the altitude is above zero.
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n", ""), 1, 1, "flies (layer air) and needs 'altitude'");
+    expect_error_in(PART_UNITS, make_wasp("  layer ground\n  altitude 5\n", ""), 1, 8, "'altitude' is only for air units");
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n  altitude 0\n", ""), 1, 8, "'altitude' must be > 0");
+    // A layer is ground or air, given once, with a word.
+    expect_error_in(PART_UNITS, make_wasp("  layer sea\n", ""), 1, 7, "unknown layer 'sea' (ground or air)");
+    expect_error_in(PART_UNITS, make_wasp("  layer air\n  layer air\n  altitude 3\n", ""), 1, 8, "'layer' is given twice in this block");
+    expect_error_in(PART_UNITS, make_wasp("  layer\n", ""), 1, 7, "'layer' takes ground or air");
+    // A weapon's targets: ground, air or both; at least one; once. In a unit block they are an unknown key.
+    expect_error_in(PART_UNITS, make_wasp("", "    targets sea\n"), 1, 12, "unknown target 'sea' (ground or air)");
+    expect_error_in(PART_UNITS, make_wasp("", "    targets\n"), 1, 12, "'targets' takes ground, air or both");
+    expect_error_in(PART_UNITS, make_wasp("", "    targets air air\n"), 1, 12, "target 'air' is given twice");
+    expect_error_in(PART_UNITS, make_wasp("  targets air\n", ""), 1, 7, "unknown key 'targets'");
+}
+
+internal void test_layers_in_use(void)
+{
+    // An air unit stands at its altitude; a ground unit on the ground.
+    scene_defs();
+    scene_air_unit();
+    u8 wasp_player[1] = {2};
+    u8 dummy_enemy[1] = {1};
+    scene_start(wasp_player, 1, dummy_enemy, 1);
+    CHECK(battle.units[1].position.y == 10.0f && battle.units[2].position.y == 0.0f);
+
+    // A ground unit only picks the enemies its weapon can hit: an air unit is none of them until the weapon can hit air.
+    scene_defs();
+    scene_air_unit();
+    u8 shooter[1] = {0};
+    u8 wasp_enemy[1] = {2};
+    scene_start(shooter, 1, wasp_enemy, 1);
+    put(1, 10.0f, 10.0f);
+    put(2, 10.0f, 20.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    run(1);
+    CHECK(battle.units[1].target.index == 0 && battle.units[1].position.z == 10.0f); // no target: it stands
+    defs.units[0].weapon.targets = TARGET_GROUND | TARGET_AIR;
+    run(1);
+    CHECK(battle.units[1].target.index == 2);
+
+    // A ground-only shell passes an air unit and goes on; an anti-air shell hits it.
+    for (u32 pass = 0; pass < 2; ++pass) {
+        scene_defs();
+        scene_air_unit();
+        u8 dummy_player[1] = {1};
+        scene_start(dummy_player, 1, wasp_enemy, 1);
+        put(1, 5.0f, 2.0f);
+        put(2, 10.0f, 15.0f);
+        battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+        inject_shell(TEAM_PLAYER, nv_vec3(10.0f, 10.3f, 14.0f), nv_vec3(0.0f, 0.0f, 90.0f), 30.0f);
+        battle.projectiles[0].targets = pass ? (TARGET_GROUND | TARGET_AIR) : TARGET_GROUND;
+        run(1);
+        if (pass) {
+            CHECK(battle.units[2].health == 70.0f && battle.projectile_count == 0); // hit
+        } else {
+            CHECK(battle.units[2].health == 100.0f && battle.projectile_count == 1); // passed
+        }
+    }
+
+    // An anti-air shell is aimed at an air unit's middle, so a stopped flier 20 m away is hit (a shell aimed at the ground would
+    // pass over it).
+    scene_defs();
+    scene_air_unit();
+    defs.units[0].weapon.range = 30.0f;
+    defs.units[0].weapon.targets = TARGET_AIR;
+    defs.units[0].weapon.cooldown = 1000.0f; // one shot
+    u8 aa_shooter[1] = {0};
+    scene_start(aa_shooter, 1, wasp_enemy, 1);
+    put(1, 10.0f, 5.0f);
+    put(2, 10.0f, 25.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    run(120);
+    CHECK(battle.units[2].health == 70.0f);
+
+    // Units of different layers do not push each other apart; two air units do.
+    scene_defs();
+    scene_air_unit();
+    u8 two_wasps[2] = {2, 2};
+    scene_start(dummy_enemy, 1, two_wasps, 2); // a ground Dummy of the player's, and two Wasps
+    put(1, 10.0f, 15.0f);
+    put(2, 10.0f, 15.0f);
+    put(3, 10.0f, 15.0f);
+    battle.units[2].position.y = battle.units[2].previous_position.y = 10.0f;
+    battle.units[3].position.y = battle.units[3].previous_position.y = 10.0f;
+    run(1);
+    CHECK(battle.units[1].position.x == 10.0f && battle.units[2].position.x != battle.units[3].position.x);
+}
+
 int main(void)
 {
     test_project_file();
@@ -1860,6 +1986,8 @@ int main(void)
     test_squad_deployment();
     test_squad_round();
     test_roles();
+    test_layers_format();
+    test_layers_in_use();
     test_whole_round();
     test_golden_rounds();
     test_seek();

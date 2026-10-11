@@ -227,6 +227,7 @@ global const Field unit_fields[] = {
     UNIT_FIELD("speed", FIELD_NUMBER, speed, 0, false, true),
     UNIT_FIELD("radius", FIELD_NUMBER, radius, 0, true, true),
     UNIT_FIELD("height", FIELD_NUMBER, height, 0, true, true),
+    UNIT_FIELD("altitude", FIELD_NUMBER, altitude, 0, true, false),
 };
 
 global const Field weapon_fields[] = {
@@ -403,7 +404,8 @@ internal LineText next_line(Lines* lines)
 
 typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_ROLES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
-enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17, SEEN_ROLES = 1 << 18 }; // beyond the unit's own fields in Block.seen
+enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17, SEEN_ROLES = 1 << 18, SEEN_LAYER = 1 << 19, SEEN_TARGETS = 1 << 20 };
+// beyond the unit's own fields in Block.seen (a weapon block's `targets` is SEEN_TARGETS)
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
 typedef struct Block {
@@ -432,6 +434,8 @@ typedef struct ProjectReader {
     u32 squad_line;     // the same for its `squad`
     u32 unit_errors_start;
     u32 unit_roles;     // the roles of the unit being read, as a mask over BattleDefs.roles
+    u32 altitude_line;  // the unit being read: its `altitude` line when that value is good; 0 when none
+    b32 altitude_seen;  // the unit being read has an `altitude` line, good or not
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
@@ -459,6 +463,10 @@ internal void close_block(ProjectReader* reader)
             check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
             if (!(block->seen & SEEN_WEAPON))
                 report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
+            if (reader->unit.layer == UNIT_LAYER_AIR && !reader->altitude_seen)
+                report(base, block->header_line, "unit '%s' flies (layer air) and needs 'altitude'", reader->unit.name);
+            if (reader->unit.layer == UNIT_LAYER_GROUND && reader->altitude_line)
+                report(base, reader->altitude_line, "'altitude' is only for air units");
         }
         // A squad must fit in a zone, and its units must not stand on each other (judged only against rules that were read right,
         // and for a unit read without an error, so one mistake is one error).
@@ -545,11 +553,13 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
-    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1}; // without `squad` and `footprint`, a unit is a squad of one
+    reader->unit = (UnitDef){.squad_size = 1, .footprint = 1, .weapon = {.targets = TARGET_GROUND}}; // without `squad` and `footprint`, a unit is a squad of one
     reader->unit_named = false;
     reader->unit_kept = false;
     reader->footprint_line = 0;
     reader->unit_roles = 0;
+    reader->altitude_line = 0;
+    reader->altitude_seen = false;
     reader->squad_line = 0;
     reader->unit_errors_start = base->errors;
     open_block(reader, BLOCK_UNIT, line);
@@ -665,6 +675,26 @@ internal b32 read_name_mask(Reader* reader, const Line* line, u32 first, const c
     return true;
 }
 
+// A weapon's `targets` line: the layers it can hit, as words (`ground`, `air`, or both). Given once, with at least one.
+global const char layer_names[2][8] = {"ground", "air"}; // by layer: bit i of a target mask is layer i
+internal void read_targets(ProjectReader* reader, const Line* line, Block* block)
+{
+    Reader* base = &reader->base;
+    b32 repeated = (block->seen & SEEN_TARGETS) != 0;
+    block->seen |= SEEN_TARGETS;
+    if (repeated) {
+        report(base, line->number, "'targets' is given twice in this weapon");
+        return;
+    }
+    if (line->token_count < 2) {
+        report(base, line->number, "'targets' takes ground, air or both");
+        return;
+    }
+    u32 mask = 0;
+    if (read_name_mask(base, line, 1, (const char*)layer_names, 2, 8, "target", "ground or air", &mask))
+        reader->unit.weapon.targets = mask;
+}
+
 // A line of the `roles` block: one role's name, declared once.
 internal void read_role(ProjectReader* reader, const Line* line)
 {
@@ -718,6 +748,21 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
         }
         return;
     }
+    if (token_is(key, "layer")) {
+        b32 repeated = (block->seen & SEEN_LAYER) != 0;
+        block->seen |= SEEN_LAYER;
+        if (repeated)
+            report(base, line->number, "'layer' is given twice in this block");
+        else if (line->token_count != 2)
+            report(base, line->number, "'layer' takes ground or air");
+        else if (token_is(line->tokens[1], "ground"))
+            reader->unit.layer = UNIT_LAYER_GROUND;
+        else if (token_is(line->tokens[1], "air"))
+            reader->unit.layer = UNIT_LAYER_AIR;
+        else
+            report(base, line->number, "unknown layer '%.*s' (ground or air)", shown(line->tokens[1]), line->tokens[1].text);
+        return;
+    }
     if (token_is(key, "roles")) {
         b32 repeated = (block->seen & SEEN_ROLES) != 0;
         block->seen |= SEEN_ROLES;
@@ -743,6 +788,11 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
     read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
     if (token_is(key, "footprint") && base->errors == errors)
         reader->footprint_line = line->number;
+    if (token_is(key, "altitude")) {
+        reader->altitude_seen = true;
+        if (base->errors == errors)
+            reader->altitude_line = line->number;
+    }
     if (token_is(key, "squad") && base->errors == errors)
         reader->squad_line = line->number;
 }
@@ -874,6 +924,10 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     } break;
     case BLOCK_WEAPON:
     case BLOCK_SHIELD: {
+        if (block->kind == BLOCK_WEAPON && token_is(key, "targets")) {
+            read_targets(reader, line, block);
+            break;
+        }
         const Field* fields = block->kind == BLOCK_WEAPON ? weapon_fields : shield_fields;
         u32 count = block->kind == BLOCK_WEAPON ? FIELD_COUNT(weapon_fields) : FIELD_COUNT(shield_fields);
         void* data = block->kind == BLOCK_WEAPON ? (void*)&reader->unit.weapon : (void*)&reader->unit.ability;

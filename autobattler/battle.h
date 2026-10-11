@@ -45,12 +45,18 @@ typedef struct BattleRules {
     f32 min_damage_fraction;     // armor never takes more than 1 minus this off a hit
 } BattleRules;
 
+// A unit's layer: ground units walk on the ground, air units fly at their `altitude`. A weapon's targets are the layers it can hit: one
+// TARGET_* bit per layer (TARGET_GROUND for UNIT_LAYER_GROUND, TARGET_AIR for UNIT_LAYER_AIR).
+typedef enum UnitLayer { UNIT_LAYER_GROUND, UNIT_LAYER_AIR } UnitLayer;
+enum { TARGET_GROUND = 1 << UNIT_LAYER_GROUND, TARGET_AIR = 1 << UNIT_LAYER_AIR };
+
 typedef struct WeaponDef {
     char name[BATTLE_NAME_SIZE];
     f32 range, damage, cooldown; // meters, damage, seconds
     f32 launch_angle;            // radians
     f32 spread;                  // meters: the shell lands within this radius of its aim point
     NvVec3 muzzle;               // in the unit's space: x to its right, y up, z forward (facing +Z, its right is -X)
+    u32 targets;                 // the layers it can hit (TARGET_*); a shell passes the units of the others
 } WeaponDef;
 
 typedef enum AbilityKind { ABILITY_NONE, ABILITY_SHIELD } AbilityKind;
@@ -71,6 +77,8 @@ typedef struct UnitDef {
     u32 footprint;  // cells on a side, at least 1
     f32 health, armor, speed; // speed in m/s
     f32 radius, height;       // meters
+    f32 altitude;             // an air unit's height in the air, meters; its body is above it
+    UnitLayer layer;
     WeaponDef weapon;
     AbilityDef ability;
 } UnitDef;
@@ -154,6 +162,7 @@ typedef struct Projectile { // a shell
     UnitId shooter;
     NvVec3 position, previous_position, velocity;
     f32 damage; // before armor; a shield that takes only part of it leaves the rest
+    u32 targets; // the layers the shooter's weapon can hit: the shell passes the units and shields of the others
 } Projectile;
 
 typedef enum BattleEventKind {

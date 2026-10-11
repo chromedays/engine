@@ -114,12 +114,15 @@
 | ├ `radius` | 수, m | 예 | > 0 |
 | ├ `height` | 수, m | 예 | > 0 |
 | ├ `roles` | 이름, 여럿 가능 | 아니오 | `roles` 블록에 선언한 이름. 한 줄에 여럿, 같은 이름 두 번은 오류(`unknown role 'x' (declare it under 'roles')`) |
+| ├ `layer` | 낱말: `ground`, `air` | 아니오 | 기본 `ground`. `air`는 공중 유닛(`altitude` 높이로 난다) |
+| ├ `altitude` | 수, m | 공중이면 예, 지상이면 금지 | > 0. 공중 유닛이 나는 높이 |
 | ├ `weapon <이름>` | 블록 | 예, 정확히 하나 | |
 | │ ├ `range` | 수, m | 예 | > 0 |
 | │ ├ `damage` | 수 | 예 | ≥ 0 |
 | │ ├ `cooldown` | 수, 초 | 예 | > 0 |
 | │ ├ `launch_angle` | 수, 도 | 예 | 0 초과 90 미만 |
 | │ ├ `spread` | 수, m | 아니오 | ≥ 0, 기본 0 |
+| │ ├ `targets` | 낱말: `ground`, `air`(한 줄에 둘 다 가능) | 아니오 | 칠 수 있는 레이어. 기본 `ground` |
 | │ └ `muzzle` | 수 셋(x y z), m, 유닛 공간 | 아니오 | 기본 0 0 0 |
 | └ `ability <종류>` | 블록 | 아니오, 하나까지 | 종류: `shield` |
 | &nbsp;&nbsp; ├ `radius` | 수, m | 예 | > 0 |
@@ -135,6 +138,15 @@
   `footprint × cell_size / 열 수`(열 수는 그 제곱이 유닛 수 이상인 가장 작은 수)다. 이 간격이 유닛의 폭(`2 × radius`)보다 작으면
   `squad` 줄에 `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. 맞닿는 것(간격 = 폭)은 된다. 규칙이나 그 유닛에
   다른 오류가 있으면 따지지 않는다(실수 하나가 오류 하나).
+
+#### 레이어
+
+- 유닛은 **지상**(`ground`, 기본)이나 **공중**(`air`)이다. 공중 유닛은 `altitude` 높이로 날고 `altitude`가 필요하다. 지상 유닛에 `altitude`를
+  두면 오류다(`'altitude' is only for air units`). 공중 유닛의 몸은 그 높이에서 위로 `height`만큼이다.
+- 무기의 `targets`는 칠 수 있는 레이어다(`ground`, `air`, 또는 둘). 기본은 `ground`다. 목표는 이 레이어의 적 중에서 고르고, 포탄은 칠 수 없는
+  레이어의 유닛과 그 실드를 **지나간다**. 대공 무기(`targets air`)는 공중 적의 몸 가운데를 겨눈다.
+- 서로 다른 레이어의 유닛은 서로 밀어내지 않는다(공중 유닛은 지상 유닛 위를 지나도 된다).
+- 레이어는 라운드를 바꾼다. 역할(`roles`)은 바꾸지 않는다.
 
 #### `stage`
 
@@ -217,7 +229,7 @@ stage
 
 | 버전 | 바뀐 것 | 옛 파일 읽기 |
 |---|---|---|
-| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나. `roles` 블록과 유닛의 `roles`(역할 태그) | — |
+| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나. `roles` 블록과 유닛의 `roles`(역할 태그), `layer`, `altitude`, 무기의 `targets`(레이어) | — |
 
 ### 읽기와 오류
 
@@ -318,6 +330,7 @@ stage
   아닌 `unit`, `stage`, `rules`, 두 번째 `stage`), 파일 전체의 모자람, 시간의 틱 변환(0.25 → 8, 60 → 1800, 0.01 → 1).
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
   `stop_fraction`, `gravity`(포탄이 어느 중력에서도 목표점에 떨어지고 약하면 오래 난다), `min_damage_fraction` 0과 1.
+- 레이어: 기본값(지상, `ground`), `layer air`와 `altitude`, 공중인데 `altitude` 없음, 지상인데 `altitude`, `altitude 0`, 모르는 낱말, 두 번 나옴, 빈 값, `targets`의 낱말(둘, 모름, 두 번, 빈 값), 유닛 블록의 `targets`는 모르는 키.
 - 역할: `roles` 블록의 오류(줄 하나에 이름 하나, 두 번 선언, 32개 초과, 자리)와 유닛의 `roles` 오류(선언되지 않은 역할, 두 번, 빈 줄)가 맞는 줄에 나온다. 마스크는 선언 순서의 비트다. 역할을 더해도 시드 1의 라운드 해시가 같다.
 - 분대: `squad`와 `footprint`를 읽고 없으면 1, 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 큰
   footprint와 그렇게 줄이는 규칙 고치기의 거절, 겹치는 분대(맞닿음은 된다, 다른 오류가 있으면 더하지 않는다, `cell_size`를 줄이는 고침의 거절), `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
@@ -338,7 +351,7 @@ stage
 - **별도 리포:** `default.abproj`를 데이터 리포로 옮기고 엔진 리포가 서브모듈로 고정한다. 버전 줄이 둘의 호환을 확인한다.
 - **스테이지 여러 개:** `stage`에 이름을 붙이고(`stage <이름>`) 여럿을 허용한다. 스테이지마다 전장 크기가 달라지면 `grid`를 `stage`로
   옮긴다. 버전을 올린다.
-- **B의 키:** 유닛의 `layer`, `size`, `altitude`, 여러 `weapon` 블록과 무기의 `projectile`, `targets`,
+- **B의 키:** 유닛의 `size`, 여러 `weapon` 블록과 무기의 `projectile`, `targets`,
   `min_range`, `splash`, `speed`, `turn_rate`, `ability jump`, 스테이지의 `prop`이 같은 문법으로 더해진다. 모르는 키는 여전히 오류다.
   더할 때마다 버전을 올린다.
 - **이펙트, 유닛 외형:** 지금은 `battle_view.c`의 코드다. 디자이너가 다뤄야 하면 블록으로 더한다.
@@ -462,6 +475,8 @@ never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes
 | ├ `speed` | Number, m/s | Yes | ≥ 0 |
 | ├ `radius` | Number, m | Yes | > 0 |
 | ├ `height` | Number, m | Yes | > 0 |
+| ├ `layer` | Word: `ground`, `air` | No | Default `ground`. `air` is a flier (it flies at `altitude`) |
+| ├ `altitude` | Number, m | Yes for air, forbidden for ground | > 0. The height an air unit flies at |
 | ├ `roles` | Names, several allowed | No | Names declared in the `roles` block. Several on a line; a name twice is an error (`unknown role 'x' (declare it under 'roles')`) |
 | ├ `weapon <name>` | Block | Yes, exactly one | |
 | │ ├ `range` | Number, m | Yes | > 0 |
@@ -469,6 +484,7 @@ never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes
 | │ ├ `cooldown` | Number, s | Yes | > 0 |
 | │ ├ `launch_angle` | Number, degrees | Yes | Above 0 and below 90 |
 | │ ├ `spread` | Number, m | No | ≥ 0, default 0 |
+| │ ├ `targets` | Words: `ground`, `air` (both on a line) | No | The layers it can hit. Default `ground` |
 | │ └ `muzzle` | Three numbers (x y z), m, unit space | No | Default 0 0 0 |
 | └ `ability <kind>` | Block | No, at most one | Kinds: `shield` |
 | &nbsp;&nbsp; ├ `radius` | Number, m | Yes | > 0 |
@@ -484,6 +500,16 @@ never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes
   columns), `footprint × cell_size / columns` apart (the columns are the fewest whose square holds the units). When that is less than a
   unit's width (`2 × radius`), the `squad` line says `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. Touching (the
   gap equal to the width) is fine. It is not judged when the rules or that unit have another error (one mistake, one error).
+
+#### Layers
+
+- A unit is **ground** (`ground`, the default) or **air** (`air`). An air unit flies at its `altitude`, which it needs. A ground unit with
+  an `altitude` is an error (`'altitude' is only for air units`). An air unit's body stands from that height up by its `height`.
+- A weapon's `targets` are the layers it can hit (`ground`, `air`, or both). The default is `ground`. A target is picked among the enemies of
+  those layers, and a shell **passes** the units and shields of other layers. An anti-air weapon (`targets air`) aims at the middle of an air
+  target's body.
+- Units of different layers do not push each other apart (an air unit may pass over a ground unit).
+- A layer changes a round. A role (`roles`) does not.
 
 #### `stage`
 
@@ -569,7 +595,7 @@ stage
 
 | Version | What changed | Reading older files |
 |---|---|---|
-| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell. The `roles` block and a unit's `roles` (role tags) | — |
+| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell. The `roles` block and a unit's `roles` (role tags), `layer`, `altitude` and a weapon's `targets` (layers) | — |
 
 ### Reading and errors
 
@@ -682,6 +708,7 @@ once, without a text editor, and Save writes it to the file.
 - Scenes on changed rules: another grid and cell size (cell centers, outside the zone, the field's edge), a short `round_time` ends at
   that tick, `retarget_interval`, `stop_fraction`, `gravity` (a shell lands on its aim point under any pull, and flies longer under
   less), `min_damage_fraction` 0 and 1.
+- Layers: defaults (ground, `ground`), `layer air` with `altitude`, air without `altitude`, ground with `altitude`, `altitude 0`, an unknown word, given twice, no value, `targets` words (both, unknown, twice, no value), `targets` in a unit block is an unknown key.
 - Roles: the `roles` block's errors (one name a line, declared once, at most 32, its place) and a unit's `roles` errors (undeclared, given twice, no role) are at their lines. A mask is the bits in declaration order. A round with roles has the same hash as without.
 - Squads: `squad` and `footprint` read, 1 without them, their ranges (0, over the
   limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a squad whose units overlap (touching is fine, no error
@@ -705,7 +732,7 @@ once, without a text editor, and Save writes it to the file.
   version line checks that the two fit.
 - **Several stages:** `stage` gets a name (`stage <name>`) and there can be several. If stages come to have fields of different
   sizes, `grid` moves to `stage`. Raises the version.
-- **B's keys:** a unit's `layer`, `size` and `altitude`, several `weapon` blocks with a weapon's `projectile`,
+- **B's keys:** a unit's `size`, several `weapon` blocks with a weapon's `projectile`,
   `targets`, `min_range`, `splash`, `speed` and `turn_rate`, `ability jump`, and the stage's `prop` join with the same syntax. An
   unknown key is still an error. Each is listed in the version table.
 - **Effects and unit looks:** code in `battle_view.c` for now. They become blocks if designers need to work on them.

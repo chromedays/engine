@@ -453,6 +453,9 @@ void view_update(Game* game, f32 game_dt)
                                   lerp(unit->previous_position.z, unit->position.z, alpha));
         node->position = position;
         node->rotation = nv_quat_axis_angle(nv_vec3(0.0f, 1.0f, 0.0f), lerp_angle(unit->previous_yaw, unit->yaw, alpha));
+        // A flier's shadow-like line down to the ground, so its height reads.
+        if (alive && def->layer == UNIT_LAYER_AIR)
+            nv_renderer_debug_line(renderer, nv_vec3(position.x, 0.0f, position.z), position, nv_vec3(0.35f, 0.35f, 0.4f));
         if (!alive)
             continue;
         if (battle->phase != BATTLE_DEPLOY) {
@@ -708,6 +711,18 @@ void view_panel(Game* game)
             char names[BATTLE_MAX_ROLES * (BATTLE_NAME_SIZE + 2)];
             format_roles(battle->defs, battle->defs->unit_roles[game->selected_def], names, sizeof(names));
             igText(T("Roles: %s"), names[0] ? names : T("none"));
+        }
+        // The chosen unit's layer, and the layers its weapon can hit.
+        {
+            const UnitDef* def = &battle->defs->units[game->selected_def];
+            char targets[32] = "";
+            if (def->weapon.targets & TARGET_GROUND)
+                snprintf(targets, sizeof(targets), "%s", T("Ground"));
+            if (def->weapon.targets & TARGET_AIR) {
+                umm used = strlen(targets);
+                snprintf(targets + used, sizeof(targets) - used, "%s%s", used ? ", " : "", T("Air"));
+            }
+            igText(T("Layer: %s, targets: %s"), def->layer == UNIT_LAYER_AIR ? T("Air") : T("Ground"), targets);
         }
 
         b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
