@@ -205,7 +205,8 @@ internal NvMaterialId load_material(const cgltf_material* material, NvRenderer* 
     return nv_renderer_add_material(renderer, &desc);
 }
 
-NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent, NvArena* scratch)
+NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvNodeId parent, NvRenderer* renderer, NvArena* permanent,
+                              NvArena* scratch)
 {
     umm mark = scratch->used;
     Parsed parsed = parse_file(path, scratch);
@@ -224,7 +225,7 @@ NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* rend
 
     const char* name = strrchr(path, '/') ? strrchr(path, '/') + 1 : path;
     out->scene = scene;
-    out->root = nv_scene_add_node(scene, (NvNodeId){0}, name);
+    out->root = nv_scene_add_node(scene, parent, name);
 
     for (cgltf_size n = 0; n < data->nodes_count; ++n) {
         const cgltf_node* node = &data->nodes[n];

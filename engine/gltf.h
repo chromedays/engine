@@ -28,13 +28,15 @@ typedef struct NvGltfModel {
 } NvGltfModel;
 
 // Loads meshes, base color materials and textures into `renderer`, and adds a node tree under a
-// new root node in `scene`. Loading uses `scratch` and leaves it as it was. Fails (zeroed, having
-// logged why) when the file is missing or not valid glTF.
+// new root node in `scene`, a child of `parent` (a zeroed id adds it at the top level). Loading uses
+// `scratch` and leaves it as it was. Fails (zeroed, having logged why) when the file is missing or
+// not valid glTF.
 typedef struct NvGltfLoad {
     b32 ok;
     NvGltfModel model;
 } NvGltfLoad;
-NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvRenderer* renderer, NvArena* permanent, NvArena* scratch);
+NvGltfLoad nv_gltf_load_model(const char* path, NvScene* scene, NvNodeId parent, NvRenderer* renderer, NvArena* permanent,
+                              NvArena* scratch);
 
 // Adds another copy of a loaded model to `scene` (any scene), under `parent` (a zeroed id adds it
 // at the top level): a new root with the same node names, meshes and materials, and a new animator

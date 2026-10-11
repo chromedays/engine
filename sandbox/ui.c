@@ -233,75 +233,6 @@ void ui_scene_tab(Sandbox* sandbox)
 // Inspector tab
 //
 
-internal void animator_section(Sandbox* sandbox, NvAnimator* animator)
-{
-    search_section(sandbox, "Animator");
-
-    // Clips of this skeleton, without the root-motion copies (sandbox_play picks those).
-    NvClipId current = animator->layers[0].clip.index ? sandbox_regular_clip(sandbox, animator->layers[0].clip) : (NvClipId){0};
-    u32 clip_count = nv_anim_clip_count();
-    for (u32 c = 1; c <= clip_count; ++c) {
-        NvClipId clip = {c};
-        if (nv_anim_clip_skeleton(clip).index != animator->skeleton.index || nv_anim_clip_has_root_motion(clip))
-            continue;
-        if (search_group(sandbox, nv_anim_clip_name(clip), "clip animation play")) {
-            if (igSelectable_Bool(nv_anim_clip_name(clip), clip.index == current.index, 0, (ImVec2_c){0, 0}))
-                sandbox_play(sandbox, clip);
-        }
-    }
-    igBeginDisabled(!sandbox->playing); // a jump is something that happens while playing
-    if (search_group(sandbox, "Jump", "play")) {
-        if (igButton(TL("Jump"), (ImVec2_c){-1.0f, 0.0f}))
-            sandbox_jump(sandbox);
-    }
-    igEndDisabled();
-
-    if (search_row(sandbox, "Speed", "playback"))
-        igSliderFloat(TL("Speed"), &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
-    if (search_row(sandbox, "Fade", "crossfade blend"))
-        igSliderFloat(TL("Fade"), &sandbox->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
-    if (search_row(sandbox, "Blend", "clip")) {
-        const char* names[SANDBOX_MAX_CLIPS];
-        for (u32 i = 0; i < sandbox->clip_count; ++i)
-            names[i] = nv_anim_clip_name(sandbox->clips[i]);
-        igCombo_Str_arr(TL("Blend"), &sandbox->blend_clip, names, (int)sandbox->clip_count, -1);
-    }
-    if (search_row(sandbox, "Weight", "blend"))
-        igSliderFloat(TL("Weight"), &sandbox->blend_weight, 0.0f, 1.0f, "%.2f", 0);
-
-    // What the layers play now is no setting: shown only without a search.
-    if (search_plain(sandbox)) {
-        f32 total = 0.0f;
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            if (animator->layers[l].clip.index)
-                total += animator->layers[l].weight;
-        }
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            NvAnimLayer* layer = &animator->layers[l];
-            if (!layer->clip.index)
-                continue;
-            char overlay[64];
-            snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
-            igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
-        }
-    }
-
-    if (search_row(sandbox, "Root motion", "walk")) {
-        if (igCheckbox(TL("Root motion"), &sandbox->root_motion) && sandbox->jump == JUMP_NONE)
-            sandbox_play(sandbox, sandbox_regular_clip(sandbox, animator->layers[0].clip));
-    }
-    igBeginDisabled(!sandbox->root_motion);
-    if (search_row(sandbox, "Turn", "root motion"))
-        igSliderFloat(TL("Turn"), &sandbox->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
-    if (search_group(sandbox, "Back to center", "root motion")) {
-        if (igButton(TL("Back to center"), (ImVec2_c){-1.0f, 0.0f}))
-            sandbox_back_to_center(sandbox);
-    }
-    igEndDisabled();
-    if (search_row(sandbox, "Look at target", "head ik aim"))
-        igCheckbox(TL("Look at target"), &sandbox->look_at);
-}
-
 internal void attach_section(Sandbox* sandbox, NvNode* node)
 {
     search_section(sandbox, "Attach");
@@ -318,10 +249,6 @@ internal void attach_section(Sandbox* sandbox, NvNode* node)
             }
             igEndCombo();
         }
-    }
-    if (sandbox->shown == SCENE_SHOWCASE && node == nv_scene_get(sandbox->scene, sandbox->sword)) {
-        if (search_row(sandbox, "Visible", "sword"))
-            igCheckbox(TL("Visible"), &sandbox->show_sword);
     }
 }
 
@@ -561,8 +488,18 @@ void ui_inspector_tab(Sandbox* sandbox)
     if (search_row(sandbox, "Scale", "transform size"))
         igDragFloat3(TL("Scale"), &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
-    if (node->mesh.index) {
+    // A node with a mesh of its own can be hidden, and then has none for the scene: its runtime remembers it.
+    SceneDoc* doc = sandbox_doc(sandbox);
+    NodeRuntime* runtime = doc_node(doc, view->selected);
+    if (node->mesh.index || (runtime && runtime->mesh.index)) {
         search_section(sandbox, "Mesh");
+        if (runtime && runtime->mesh.index) {
+            bool visible = runtime->visible != 0;
+            if (search_row(sandbox, "Visible", "show hide hidden")) {
+                if (igCheckbox(TL("Visible"), &visible))
+                    runtime->visible = visible;
+            }
+        }
         if (search_row(sandbox, "Color", "material base color")) {
             f32 color[4];
             for (u32 i = 0; i < 4; ++i)
@@ -588,10 +525,14 @@ void ui_inspector_tab(Sandbox* sandbox)
     }
     if (node->attach.animator.index)
         attach_section(sandbox, node);
-    // The full animator controls drive the showcase character; others show what they play.
+    // A node's behaviors have their sections; an animator without one (the crowd's) shows what it plays.
+    Behavior* spin = behavior_find(doc, BEHAVIOR_SPIN, view->selected);
+    if (spin)
+        spin_section(sandbox, spin);
     NvAnimatorId animator = sandbox_node_animator(view->scene, view->selected);
-    if (animator.index == sandbox->animator.index) {
-        animator_section(sandbox, nv_anim_get(animator));
+    Behavior* character = animator.index ? behavior_character_of(doc, animator) : NULL;
+    if (character) {
+        character_section(sandbox, character);
     } else if (animator.index) {
         search_section(sandbox, "Animator");
         NvAnimLayer* layer = &nv_anim_get(animator)->layers[0];
@@ -639,9 +580,7 @@ void ui_view_tab(Sandbox* sandbox)
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
     if (sandbox->shown == SCENE_SHOWCASE) {
         if (search_row(sandbox, "Show bones", "skeleton debug lines"))
-            igCheckbox(TL("Show bones"), &sandbox->show_bones);
-        if (search_row(sandbox, "Planet orbit", "speed moon spin"))
-            igSliderFloat(TL("Planet orbit"), &sandbox->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
+            igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
     }
     msaa_ui(sandbox);
     post_ui(sandbox);

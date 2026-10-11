@@ -59,6 +59,12 @@ typedef struct SceneField {
     u32 word_count;
     u32 first_word;
     u32 size;       // FIELD_TEXT's bytes
+    // A parameter's face in the UI, the search and the undo labels:
+    const char* label;    // "Speed"; the English text, through T()
+    const char* keywords; // search words
+    const char* format;   // the slider's printf format ("%.2f rad/s")
+    f64 ui_min, ui_max;   // the slider's range, in run-time units; both 0: the file's range
+    b32 logarithmic;
 } SceneField;
 
 typedef struct RootMotionDesc {

@@ -20,6 +20,8 @@
 
 #include <engine/strings.h>
 
+#include "scene_file.h"
+
 // The Korean table of this sandbox (sandbox/strings.c): hands it to the engine's T() and TL(). Call once, before the first frame.
 void sandbox_strings_init(void);
 
@@ -146,8 +148,8 @@ typedef enum SceneKind {
 // Parts of the showcase that undo snapshots separately (docs/specs/undo.md).
 typedef enum SaveScope {
     SAVE_SCOPE_NODE,      // the selected nodes
-    SAVE_SCOPE_CHARACTER, // the character's playback and controls
-    SAVE_SCOPE_SCENE,     // planet orbit speed, show bones
+    SAVE_SCOPE_BEHAVIORS, // the parameters of the scene's behaviors
+    SAVE_SCOPE_SCENE,     // show bones
     SAVE_SCOPE_COUNT,
 } SaveScope;
 
@@ -472,6 +474,68 @@ typedef enum JumpPhase {
     JUMP_LAND,
 } JumpPhase;
 
+//
+// Scenes (docs/specs/scene_file.md)
+//
+
+#define SANDBOX_MAX_ASSETS 8
+
+// A glb the scenes share: its meshes, materials, skeleton and clips are loaded once, for the whole sandbox, by the first node that
+// needs it; every other node copies it (nv_gltf_instantiate).
+typedef struct Asset {
+    char path[SCENE_PATH_SIZE];
+    b32 loaded;
+    NvGltfModel model; // the first instance, which the others copy
+    NvClipId clips[SANDBOX_MAX_CLIPS]; // in place
+    u32 clip_count;
+    NvClipId root_motion_clips[SANDBOX_MAX_CLIPS]; // same names, root motion taken out
+    u32 root_motion_clip_count;
+} Asset;
+
+// What runs for a node of the file besides the scene's own fields: its mesh while hidden, and whether it is shown.
+typedef struct NodeRuntime {
+    NvNodeId id;
+    NvMeshId mesh;  // the node's own mesh (a shape model's), 0 for a node without one
+    b32 visible;
+    b32 suppressed; // a behavior hides it this frame (the look target while look-at is off)
+} NodeRuntime;
+
+typedef struct SpinState {
+    f32 angle;       // radians since Play
+    NvQuat authored; // the node's rotation at Play, which the spin turns from
+} SpinState;
+
+typedef struct CharacterState {
+    NvGltfModel model; // this character's nodes and animator
+    Asset* asset;      // its clips
+    s32 blend_clip;    // index into the asset's clips; blended with the current clip by blend_weight
+    JumpPhase jump;
+    f32 jump_air_time;
+    NvClipId jump_return; // loop to go back to after landing
+    NvNodeId look_target;
+} CharacterState;
+
+// A behavior as it runs: `desc` holds its structure and its parameters as they are now.
+typedef struct Behavior {
+    BehaviorDesc desc;
+    NvNodeId node;
+    union {
+        SpinState spin;
+        CharacterState character;
+    };
+} Behavior;
+
+typedef struct SceneDoc {
+    b32 built;
+    const SceneDesc* desc;
+    NodeRuntime nodes[SCENE_MAX_NODES]; // the file's nodes, in the file's order
+    u32 node_count;
+    Behavior behaviors[SCENE_MAX_BEHAVIORS];
+    u32 behavior_count;
+    u32 layout; // save_scene_layout of the tree as built (before any generator)
+    bool show_bones;
+} SceneDoc;
+
 // A test missile in flight: it leaves a trail and explodes where its life ends.
 typedef struct Flight {
     NvVec3 pos, vel;
@@ -518,41 +582,10 @@ typedef struct Sandbox {
 
     Stress stress;
 
-    // Planet and moon: the moon is the planet's child, so spinning the planet carries it around.
-    NvNodeId planet;
-    NvNodeId moon;
-    f32 orbit_angle;
-    f32 orbit_speed; // radians per second
-
-    // Character
-    NvGltfModel character;
-    NvAnimatorId animator; // character.animator
-    NvClipId clips[SANDBOX_MAX_CLIPS]; // in place
-    u32 clip_count;
-    NvClipId root_motion_clips[SANDBOX_MAX_CLIPS]; // same names, root motion taken out
-    u32 root_motion_clip_count;
-
-    // Playback
-    f32 fade_seconds;
-    s32 blend_clip; // index into clips; blended with the current clip by blend_weight
-    f32 blend_weight;
-    JumpPhase jump;
-    f32 jump_air_time;
-    NvClipId jump_return; // loop to go back to after landing
-
-    // A sword attached to the right hand.
-    bool show_sword; // bool because ImGui writes it through a bool*
-    NvNodeId sword;
-    NvMeshId sword_mesh;
-
-    // Root motion: the character walks by what the clip's root joint does, turning as it goes.
-    bool root_motion;
-    f32 turn_rate; // radians per second
-
-    // Aim IK: the head follows a target that sweeps in front of the character.
-    bool look_at;
-    NvNodeId target;
-    NvMeshId target_mesh;
+    // The scenes (scenes.c): one document for each, built from its file.
+    SceneDoc docs[SCENE_COUNT];
+    Asset assets[SANDBOX_MAX_ASSETS];
+    u32 asset_count;
 
     Undo undo;
     Console console;
@@ -565,12 +598,9 @@ typedef struct Sandbox {
     f32 play_time;          // seconds since Play
     u8* play_snapshot;      // save bytes of the showcase at Play [SAVE_MAX_SIZE]
     u32 play_snapshot_size;
-    NvQuat planet_rotation; // the authored rotations the spin turns from, taken at Play
-    NvQuat moon_rotation;
 
     // Autosave (save.c)
     bool autosave;
-    u32 scene_layout; // save_scene_layout of the showcase as built
     NvStorage storage;
     u8* saved;       // the bytes last written [SAVE_MAX_SIZE], to skip writing an unchanged save
     u32 saved_size;
@@ -611,7 +641,6 @@ typedef struct Sandbox {
     // The build label's box while it carries a badge, in CSS pixels (x0, y0, x1, y1), grown to a
     // size a finger can hit; a tap inside opens the Console tab. Zero width = no badge.
     f32 badge_box[4];
-    bool show_bones;
 
     // Layout (ui.c, ui_desktop.c, ui_phone.c)
     UiMode ui_mode;
@@ -631,13 +660,8 @@ typedef struct Sandbox {
 } Sandbox;
 
 // main.c
-NvClipId sandbox_find_clip(Sandbox* sandbox, const char* name);
-NvClipId sandbox_regular_clip(Sandbox* sandbox, NvClipId clip); // the in-place clip with the same name
-void sandbox_play(Sandbox* sandbox, NvClipId clip);             // crossfades, with root motion while it is on
-void sandbox_jump(Sandbox* sandbox);
-void sandbox_back_to_center(Sandbox* sandbox);
-void sandbox_start_playing(Sandbox* sandbox); // Play: snapshot the showcase and run it
-void sandbox_stop_playing(Sandbox* sandbox);  // Stop: restore the showcase from the snapshot
+void sandbox_start_playing(Sandbox* sandbox); // Play: snapshot the scene and run it
+void sandbox_stop_playing(Sandbox* sandbox);  // Stop: restore the scene from the snapshot
 // The animator a node has, or that its first animated child has (a character root); 0 = none.
 NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id);
 void sandbox_show_scene(Sandbox* sandbox, SceneKind kind);
@@ -645,6 +669,33 @@ void sandbox_focus_selection(Sandbox* sandbox); // F: the orbit point moves to t
 void sandbox_set_home(SceneView* view); // remembers the view as it is now as the one Home goes back to
 NvMeshId sandbox_box_mesh(Sandbox* sandbox, NvVec3 half);
 SceneView* sandbox_view(Sandbox* sandbox); // the shown scene's view
+
+// scenes.c (docs/specs/scene_file.md)
+#define SHOWCASE_FILE "/data/showcase.nvscene"
+// Reads the scene file and builds the scene into `scene`, `docs[kind]` and `views[kind]`. Fails (logged) if the file is bad.
+b32 scenes_build(Sandbox* sandbox, SceneKind kind, NvScene* scene, const char* path);
+SceneDoc* sandbox_doc(Sandbox* sandbox); // the shown scene's
+NodeRuntime* doc_node(SceneDoc* doc, NvNodeId id); // the runtime of a node of the file, or NULL
+Asset* sandbox_character_asset(Sandbox* sandbox);   // the first glb with a skeleton, whose clips the crowd plays
+// The materials of an asset's meshes, each once, in the order its mesh nodes use them: what the save keeps for the asset.
+u32 asset_materials(const Asset* asset, NvMaterialId* out, u32 capacity);
+
+// behaviors.c
+NvClipId character_find_clip(const CharacterState* state, const char* name);
+NvClipId character_regular_clip(const CharacterState* state, NvClipId clip); // the in-place clip with the same name
+void character_play(Sandbox* sandbox, Behavior* behavior, NvClipId clip);    // crossfades, with root motion while it is on
+void character_jump(Sandbox* sandbox, Behavior* behavior);
+void character_back_to_center(Sandbox* sandbox, Behavior* behavior);
+Behavior* behavior_find(SceneDoc* doc, BehaviorKind kind, NvNodeId node);
+Behavior* behavior_character_of(SceneDoc* doc, NvAnimatorId animator); // the character that animator belongs to, or NULL
+void behaviors_update(Sandbox* sandbox, SceneDoc* doc, f32 dt);
+void behaviors_play_start(Sandbox* sandbox, SceneDoc* doc);
+void behaviors_restart_clips(Sandbox* sandbox, SceneDoc* doc);
+void behaviors_stop(Sandbox* sandbox, SceneDoc* doc);
+void behavior_apply(Sandbox* sandbox, Behavior* behavior); // after its parameters were set from a save or an undo step
+void behaviors_draw_bones(Sandbox* sandbox, SceneDoc* doc);
+void spin_section(Sandbox* sandbox, Behavior* behavior);      // Inspector sections
+void character_section(Sandbox* sandbox, Behavior* behavior);
 
 // effects.c
 void effects_init(Sandbox* sandbox);               // makes the particle system and registers the effects
@@ -776,7 +827,9 @@ NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeI
 b32 save_apply_scope(Sandbox* sandbox, SaveScope scope, const NvNodeId* nodes, u32 node_count, const void* bytes, u32 size);
 // Which parts of a node's transform the sandbox drives (bit 0 position, bit 1 rotation).
 u32 save_driven_fields(Sandbox* sandbox, u32 node);
-const char* save_field_label(u32 tag); // "Position", "Clip", ...
+const char* save_field_label(u32 tag); // "Position", "Visible", ...
+// What differs between two Behaviors snapshots, as "<node name> <parameter label>".
+void save_behavior_label(Sandbox* sandbox, const void* before, u32 before_size, const void* after, u32 after_size, char* out, umm capacity);
 
 // undo.c
 void undo_init(Sandbox* sandbox);   // after the save is loaded

@@ -186,7 +186,8 @@ internal void update_crowd(Sandbox* sandbox, u32 target)
 {
     Stress* stress = &sandbox->stress;
     NvScene* scene = stress->scene;
-    const NvGltfModel* source = &sandbox->character;
+    Asset* asset = sandbox_character_asset(sandbox);
+    const NvGltfModel* source = &asset->model;
     NV_ASSERT(source->mesh_node_count + 1 == CROWD_NODES);
 
     // Characters are made on first use and then kept: an animator cannot be destroyed.
@@ -203,9 +204,9 @@ internal void update_crowd(Sandbox* sandbox, u32 target)
         // Every character loops its own clip from its own point in time.
         NvClipId loops[SANDBOX_MAX_CLIPS];
         u32 loop_count = 0;
-        for (u32 c = 0; c < sandbox->clip_count; ++c) {
-            if (strstr(nv_anim_clip_name(sandbox->clips[c]), "_Loop"))
-                loops[loop_count++] = sandbox->clips[c];
+        for (u32 c = 0; c < asset->clip_count; ++c) {
+            if (strstr(nv_anim_clip_name(asset->clips[c]), "_Loop"))
+                loops[loop_count++] = asset->clips[c];
         }
         NvAnimator* animator = nv_anim_get(model->animator);
         NvClipId clip = loops[i % loop_count];

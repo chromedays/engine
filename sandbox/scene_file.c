@@ -94,20 +94,25 @@ global const SceneField benchmark_fields[] = {
 // Behaviors: a parameter is changed by the UI, kept by the save and taken back by undo; the other keys are structure.
 global const SceneField spin_fields[] = {
     ROW("axis", FIELD_NUMBER, SpinDesc, axis, .count = 3, ANY, .required = 1),
-    ROW("speed", FIELD_DEGREES, SpinDesc, speed, .count = 1, .min = -171.9, .max = 171.9, .required = 1, .parameter = 1),
+    ROW("speed", FIELD_DEGREES, SpinDesc, speed, .count = 1, .min = -171.9, .max = 171.9, .required = 1, .parameter = 1,
+        .label = "Speed", .keywords = "spin orbit rotate planet moon", .format = "%.2f rad/s", .ui_min = -3, .ui_max = 3),
 };
 
 global const SceneField character_fields[] = {
     ROW("look_target", FIELD_NAME_PAIR, CharacterDesc, look_target),
     ROW("jump", FIELD_JUMP, CharacterDesc, jump, .min = 0, .max = 10, .min_open = 1),
-    ROW("clip", FIELD_NAME, CharacterDesc, clip, .parameter = 1),
-    ROW("speed", FIELD_NUMBER, CharacterDesc, speed, .count = 1, .min = 0, .max = 2, .parameter = 1, .fallback = 1),
-    ROW("fade", FIELD_NUMBER, CharacterDesc, fade, .count = 1, .min = 0, .max = 1, .parameter = 1, .fallback = 0.3),
-    ROW("blend", FIELD_NAME, CharacterDesc, blend, .parameter = 1),
-    ROW("blend_weight", FIELD_NUMBER, CharacterDesc, blend_weight, .count = 1, .min = 0, .max = 1, .parameter = 1),
-    ROW("root_motion", FIELD_BOOL, CharacterDesc, root_motion, .count = 1, .parameter = 1),
-    ROW("turn", FIELD_DEGREES, CharacterDesc, turn, .count = 1, .min = -85.95, .max = 85.95, .parameter = 1, .fallback = 0.6),
-    ROW("look_at", FIELD_BOOL, CharacterDesc, look_at, .count = 1, .parameter = 1),
+    ROW("clip", FIELD_NAME, CharacterDesc, clip, .parameter = 1, .label = "Clip", .keywords = "animation play"),
+    ROW("speed", FIELD_NUMBER, CharacterDesc, speed, .count = 1, .min = 0, .max = 2, .parameter = 1, .fallback = 1,
+        .label = "Speed", .keywords = "playback", .format = "%.2fx"),
+    ROW("fade", FIELD_NUMBER, CharacterDesc, fade, .count = 1, .min = 0, .max = 1, .parameter = 1, .fallback = 0.3,
+        .label = "Fade", .keywords = "crossfade blend", .format = "%.2f s"),
+    ROW("blend", FIELD_NAME, CharacterDesc, blend, .parameter = 1, .label = "Blend", .keywords = "clip"),
+    ROW("blend_weight", FIELD_NUMBER, CharacterDesc, blend_weight, .count = 1, .min = 0, .max = 1, .parameter = 1,
+        .label = "Weight", .keywords = "blend", .format = "%.2f"),
+    ROW("root_motion", FIELD_BOOL, CharacterDesc, root_motion, .count = 1, .parameter = 1, .label = "Root motion", .keywords = "walk"),
+    ROW("turn", FIELD_DEGREES, CharacterDesc, turn, .count = 1, .min = -85.95, .max = 85.95, .parameter = 1, .fallback = 0.6,
+        .label = "Turn", .keywords = "root motion", .format = "%.2f rad/s", .ui_min = -1.5, .ui_max = 1.5),
+    ROW("look_at", FIELD_BOOL, CharacterDesc, look_at, .count = 1, .parameter = 1, .label = "Look at target", .keywords = "head ik aim"),
 };
 
 global const SceneField grid_fields[] = {

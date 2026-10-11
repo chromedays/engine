@@ -40,10 +40,21 @@
 #define TAG_LAYT NV_TAG('L', 'A', 'Y', 'T')
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
 #define TAG_PLNT NV_TAG('P', 'L', 'N', 'T')
-#define TAG_ORBS NV_TAG('O', 'R', 'B', 'S') // undo only: the orbit speed without the angle
 #define TAG_BONE NV_TAG('B', 'O', 'N', 'E')
 #define TAG_CHAR NV_TAG('C', 'H', 'A', 'R')
 #define TAG_NODE NV_TAG('N', 'O', 'D', 'E')
+#define TAG_BHVR NV_TAG('B', 'H', 'V', 'R') // a behavior's parameters (docs/specs/scene_file.md)
+// Top level, after SCNE
+#define TAG_ASET NV_TAG('A', 'S', 'E', 'T') // one glb's materials: edits belong to the asset, not to a scene
+// ASET
+#define TAG_FILE NV_TAG('F', 'I', 'L', 'E') // the glb's path
+#define TAG_MATL NV_TAG('M', 'A', 'T', 'L') // one material: INDX, COLR
+#define TAG_INDX NV_TAG('I', 'N', 'D', 'X') // the material's place among the asset's (in the order its mesh nodes use them)
+// BHVR
+#define TAG_KIND NV_TAG('K', 'I', 'N', 'D') // the behavior's kind, as the scene file names it
+#define TAG_PARM NV_TAG('P', 'A', 'R', 'M') // one parameter: NAME, then VALU or TEXT
+#define TAG_VALU NV_TAG('V', 'A', 'L', 'U') // f32[], in run-time units (radians)
+#define TAG_TEXT NV_TAG('T', 'E', 'X', 'T')
 // VIEW
 #define TAG_YAW  NV_TAG('Y', 'A', 'W', ' ')
 #define TAG_PTCH NV_TAG('P', 'T', 'C', 'H')
@@ -75,6 +86,7 @@
 #define TAG_CFOV NV_TAG('C', 'F', 'O', 'V')
 #define TAG_LCOL NV_TAG('L', 'C', 'O', 'L')
 #define TAG_LINT NV_TAG('L', 'I', 'N', 'T')
+#define TAG_VISI NV_TAG('V', 'I', 'S', 'I') // a node with a mesh of its own: shown
 
 #define SAVE_MAX_PATH 16
 #define SAVE_MAX_CLIP_NAME 64
@@ -187,34 +199,120 @@ internal void write_view(NvChunkWriter* w, NvScene* scene, const SceneView* view
     nv_chunk_end(w);
 }
 
-// The character's fields. The clip's time (CTIM) is no longer written: the saved state is the edit
-// state, which has no running time, and a run starts every clip from its start
-// (docs/specs/play.md). Older saves that have it still load.
-internal void write_character_fields(NvChunkWriter* w, Sandbox* sandbox, b32 undo)
+internal SceneDoc* showcase(Sandbox* sandbox)
 {
-    (void)undo;
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    NvAnimLayer* layer = &animator->layers[0];
-    // Mid-jump, the clip the jump lands back into stands for it.
-    NvClipId clip = sandbox->jump != JUMP_NONE ? sandbox->jump_return : layer->clip;
-
-    if (clip.index)
-        nv_chunk_string(w, TAG_CLIP, nv_anim_clip_name(sandbox_regular_clip(sandbox, clip)));
-    nv_chunk_f32(w, TAG_SPED, layer->speed);
-    nv_chunk_f32(w, TAG_FADE, sandbox->fade_seconds);
-    if (sandbox->blend_clip >= 0 && (u32)sandbox->blend_clip < sandbox->clip_count)
-        nv_chunk_string(w, TAG_BLND, nv_anim_clip_name(sandbox->clips[sandbox->blend_clip]));
-    nv_chunk_f32(w, TAG_BLDW, sandbox->blend_weight);
-    nv_chunk_u32(w, TAG_RMOT, sandbox->root_motion);
-    nv_chunk_f32(w, TAG_TURN, sandbox->turn_rate);
-    nv_chunk_u32(w, TAG_LOOK, sandbox->look_at);
-    nv_chunk_u32(w, TAG_SWRD, sandbox->show_sword);
+    return &sandbox->docs[SCENE_SHOWCASE];
 }
 
-internal void write_character(NvChunkWriter* w, Sandbox* sandbox)
+internal Behavior* first_behavior(SceneDoc* doc, BehaviorKind kind)
 {
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (doc->behaviors[i].desc.kind == kind)
+            return &doc->behaviors[i];
+    return NULL;
+}
+
+// The runtime of the node with this slot, if it is one of the file's nodes.
+internal NodeRuntime* node_runtime(Sandbox* sandbox, u32 index)
+{
+    NvNodeId id = {index, sandbox->scene->nodes[index].gen};
+    return doc_node(showcase(sandbox), id);
+}
+
+// The first node under a character's that follows a joint (the sword): an old save's SWRD is its visibility.
+internal NodeRuntime* attached_runtime(SceneDoc* doc, const Behavior* character)
+{
+    const SceneDesc* desc = doc->desc;
+    for (u32 n = 0; n < desc->node_count; ++n) {
+        if (!desc->nodes[n].attach[0])
+            continue;
+        for (s32 p = desc->nodes[n].parent; p >= 0; p = desc->nodes[p].parent)
+            if (p == character->desc.node)
+                return &doc->nodes[n];
+    }
+    return NULL;
+}
+
+// The numbers a parameter holds, as the floats the save keeps (whole numbers and flags among them).
+internal u32 param_values(const SceneField* field, const Behavior* behavior, f32* out)
+{
+    const u8* data = (const u8*)&behavior->desc.spin + field->offset;
+    u32 count = field->kind == FIELD_BOOL ? 1 : field->count;
+    for (u32 i = 0; i < count; ++i) {
+        if (field->kind == FIELD_INTEGER || field->kind == FIELD_BOOL)
+            out[i] = (f32)nv_chunk_load_u32(data + i * 4);
+        else
+            memcpy(&out[i], data + i * 4, sizeof(f32));
+    }
+    return count;
+}
+
+// A behavior: where it is (its node's path and its kind), then each parameter it has as PARM {NAME, VALU or TEXT}. Parameters are
+// all that is saved of it; its structure comes from the scene file.
+internal void write_behavior(NvChunkWriter* w, Sandbox* sandbox, const Behavior* behavior)
+{
+    u32 path[SAVE_MAX_PATH];
+    NodePath node_path = path_of(sandbox->scene, behavior->node.index, path);
+    if (!node_path.ok)
+        return;
+    const BehaviorDef* def = scene_behavior_def(behavior->desc.kind);
+    nv_chunk_begin(w, TAG_BHVR);
+    nv_chunk_u32s(w, TAG_PATH, path, node_path.length);
+    nv_chunk_string(w, TAG_KIND, def->name);
+    for (u32 f = 0; f < def->field_count; ++f) {
+        const SceneField* field = &def->fields[f];
+        if (!field->parameter)
+            continue;
+        if (field->kind == FIELD_NAME) {
+            const char* text = (const char*)&behavior->desc.spin + field->offset;
+            if (!text[0])
+                continue;
+            nv_chunk_begin(w, TAG_PARM);
+            nv_chunk_string(w, TAG_NAME, field->key);
+            nv_chunk_string(w, TAG_TEXT, text);
+            nv_chunk_end(w);
+        } else {
+            f32 values[4];
+            u32 count = param_values(field, behavior, values);
+            nv_chunk_begin(w, TAG_PARM);
+            nv_chunk_string(w, TAG_NAME, field->key);
+            nv_chunk_f32s(w, TAG_VALU, values, count);
+            nv_chunk_end(w);
+        }
+    }
+    nv_chunk_end(w);
+}
+
+// The tags an older build kept the showcase's spin and character in. Still written, so that build reads this save: PLNT is the
+// first spin's speed, CHAR the first character's controls.
+internal void write_old_tags(NvChunkWriter* w, Sandbox* sandbox)
+{
+    SceneDoc* doc = showcase(sandbox);
+    Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
+    Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
+    // The orbit angle is written as 0: like the clip time, it only runs while playing.
+    f32 planet[2] = {spin ? spin->desc.spin.speed : 0.0f, 0.0f};
+    nv_chunk_f32s(w, TAG_PLNT, planet, 2);
+    nv_chunk_u32(w, TAG_BONE, doc->show_bones);
+    if (!character)
+        return;
+    const CharacterDesc* c = &character->desc.character;
+    NvAnimator* animator = nv_anim_get(character->character.model.animator);
     nv_chunk_begin(w, TAG_CHAR);
-    write_character_fields(w, sandbox, 0);
+    // The clip's time (CTIM) is no longer written: the saved state is the edit state, which has no running time, and a run starts
+    // every clip from its start (docs/specs/play.md). Older saves that have it still load.
+    if (c->clip[0])
+        nv_chunk_string(w, TAG_CLIP, c->clip);
+    nv_chunk_f32(w, TAG_SPED, animator->layers[0].speed);
+    nv_chunk_f32(w, TAG_FADE, c->fade);
+    if (c->blend[0])
+        nv_chunk_string(w, TAG_BLND, c->blend);
+    nv_chunk_f32(w, TAG_BLDW, c->blend_weight);
+    nv_chunk_u32(w, TAG_RMOT, c->root_motion);
+    nv_chunk_f32(w, TAG_TURN, c->turn);
+    nv_chunk_u32(w, TAG_LOOK, c->look_at);
+    NodeRuntime* sword = attached_runtime(doc, character);
+    nv_chunk_u32(w, TAG_SWRD, sword ? sword->visible : 1);
     nv_chunk_end(w);
 }
 
@@ -255,6 +353,28 @@ internal void write_node_fields(NvChunkWriter* w, Sandbox* sandbox, u32 index, b
         nv_chunk_f32s(w, TAG_LCOL, &node->light.color.x, 3);
         nv_chunk_f32(w, TAG_LINT, node->light.intensity);
     }
+    NodeRuntime* runtime = node_runtime(sandbox, index);
+    if (runtime && runtime->mesh.index)
+        nv_chunk_u32(w, TAG_VISI, runtime->visible);
+}
+
+// A glb's materials as the sandbox has them now. The color of a glTF material is shared by every node of every scene that uses
+// it, so it is saved once, here, and not with a scene.
+internal void write_asset(NvChunkWriter* w, Sandbox* sandbox, const Asset* asset)
+{
+    NvMaterialId materials[NV_GLTF_MAX_MESH_NODES];
+    u32 count = asset_materials(asset, materials, NV_ARRAY_COUNT(materials));
+    if (!count)
+        return;
+    nv_chunk_begin(w, TAG_ASET);
+    nv_chunk_string(w, TAG_FILE, asset->path);
+    for (u32 i = 0; i < count; ++i) {
+        nv_chunk_begin(w, TAG_MATL);
+        nv_chunk_u32(w, TAG_INDX, i);
+        nv_chunk_f32s(w, TAG_COLR, sandbox->renderer.materials[materials[i].index].desc.base_color, 4);
+        nv_chunk_end(w);
+    }
+    nv_chunk_end(w);
 }
 
 internal void write_node(NvChunkWriter* w, Sandbox* sandbox, u32 index)
@@ -304,16 +424,17 @@ NvChunkWritten save_write(Sandbox* sandbox, void* buffer, u32 capacity)
     nv_chunk_end(&w);
 
     nv_chunk_begin(&w, TAG_SCNE);
-    nv_chunk_u32(&w, TAG_LAYT, sandbox->scene_layout);
+    nv_chunk_u32(&w, TAG_LAYT, showcase(sandbox)->layout);
     write_view(&w, sandbox->scene, &sandbox->views[SCENE_SHOWCASE]);
-    // The orbit angle is written as 0: like the clip time, it only runs while playing.
-    f32 planet[2] = {sandbox->orbit_speed, 0.0f};
-    nv_chunk_f32s(&w, TAG_PLNT, planet, 2);
-    nv_chunk_u32(&w, TAG_BONE, sandbox->show_bones);
-    write_character(&w, sandbox);
+    write_old_tags(&w, sandbox);
     for (u32 index = sandbox->scene->first_root; index; index = next_in_tree(sandbox->scene, index))
         write_node(&w, sandbox, index);
+    for (u32 i = 0; i < showcase(sandbox)->behavior_count; ++i)
+        write_behavior(&w, sandbox, &showcase(sandbox)->behaviors[i]);
     nv_chunk_end(&w);
+
+    for (u32 i = 0; i < sandbox->asset_count; ++i)
+        write_asset(&w, sandbox, &sandbox->assets[i]);
 
     return nv_chunk_file_end(&w);
 }
@@ -457,67 +578,147 @@ internal void read_view(NvChunkReader* r, NvChunk parent, NvScene* scene, SceneV
     *view = v;
 }
 
-internal NvClipId clip_named(Sandbox* sandbox, const char* name)
+internal const SceneField* find_parameter(const BehaviorDef* def, const char* name)
 {
-    for (u32 i = 0; i < sandbox->clip_count; ++i) {
-        if (strcmp(nv_anim_clip_name(sandbox->clips[i]), name) == 0)
-            return sandbox->clips[i];
-    }
-    return (NvClipId){0};
+    for (u32 f = 0; f < def->field_count; ++f)
+        if (def->fields[f].parameter && strcmp(def->fields[f].key, name) == 0)
+            return &def->fields[f];
+    return NULL;
 }
 
-// Applies only the fields present, so it also restores an undo snapshot (which has no time).
-internal void read_character_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
+// Puts values read from a save into a parameter, held to the field's range (in run-time units: radians for an angle).
+internal void store_param(const SceneField* field, Behavior* behavior, const f32* values)
 {
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
+    u8* data = (u8*)&behavior->desc.spin + field->offset;
+    f64 scale = field->kind == FIELD_DEGREES ? 3.14159265358979323846 / 180.0 : 1.0;
+    f64 low = field->min * scale, high = field->max * scale;
+    u32 count = field->kind == FIELD_BOOL ? 1 : field->count;
+    for (u32 i = 0; i < count; ++i) {
+        f64 value = values[i] == values[i] ? values[i] : 0.0; // not a number: zero
+        value = value < low ? low : value > high ? high : value;
+        if (field->kind == FIELD_BOOL) {
+            u32 flag = values[i] != 0.0f;
+            memcpy(data + i * 4, &flag, 4);
+        } else if (field->kind == FIELD_INTEGER) {
+            u32 whole = (u32)(value + 0.5);
+            memcpy(data + i * 4, &whole, 4);
+        } else {
+            f32 number = (f32)value;
+            memcpy(data + i * 4, &number, 4);
+        }
+    }
+}
+
+internal void set_param(Behavior* behavior, const char* key, const f32* values)
+{
+    const SceneField* field = find_parameter(scene_behavior_def(behavior->desc.kind), key);
+    NV_ASSERT(field);
+    store_param(field, behavior, values);
+}
+
+// A behavior of the save (BHVR): its node's path, its kind, and the parameters it has. Read even when they will not be applied,
+// so a damaged one still fails the load. A name this build does not have is skipped.
+internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
+{
+    SceneDoc* doc = showcase(sandbox);
+    u32 path[SAVE_MAX_PATH];
+    NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
+    char kind_name[SCENE_ID_SIZE] = "";
+    nv_chunk_read_string(r, chunk, TAG_KIND, kind_name, sizeof(kind_name));
+    const BehaviorDef* def = NULL;
+    BehaviorKind kind = BEHAVIOR_SPIN;
+    for (u32 k = 0; k < BEHAVIOR_COUNT; ++k) {
+        if (strcmp(scene_behavior_def((BehaviorKind)k)->name, kind_name) == 0) {
+            def = scene_behavior_def((BehaviorKind)k);
+            kind = (BehaviorKind)k;
+        }
+    }
+    Behavior* behavior = NULL;
+    if (apply && def && node_path.ok && node_path.count) {
+        u32 index = node_at(sandbox->scene, path, node_path.count);
+        if (index)
+            behavior = behavior_find(doc, kind, (NvNodeId){index, sandbox->scene->nodes[index].gen});
+    }
+    NvChunk child = {0};
+    while (nv_chunk_next(r, chunk, &child)) {
+        if (child.tag != TAG_PARM)
+            continue;
+        char name[SCENE_ID_SIZE] = "";
+        nv_chunk_read_string(r, child, TAG_NAME, name, sizeof(name));
+        const SceneField* field = def ? find_parameter(def, name) : NULL;
+        if (!field)
+            continue;
+        if (field->kind == FIELD_NAME) {
+            char text[SCENE_ID_SIZE];
+            if (nv_chunk_read_string(r, child, TAG_TEXT, text, sizeof(text)) && behavior)
+                memcpy((u8*)&behavior->desc.spin + field->offset, text, sizeof(text));
+        } else {
+            f32 values[4];
+            if (nv_chunk_read_f32s(r, child, TAG_VALU, values, field->kind == FIELD_BOOL ? 1 : field->count) && behavior)
+                store_param(field, behavior, values);
+        }
+    }
+    if (behavior)
+        behavior_apply(sandbox, behavior);
+}
+
+// An older save keeps the showcase's spin and character in PLNT and CHAR (and SWRD, the sword's visibility): their values belong
+// to the scene's first spin and first character, and to the node that follows the character's joint.
+internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 apply)
+{
+    SceneDoc* doc = showcase(sandbox);
+    Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
+    Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
+    f32 planet[2] = {spin ? spin->desc.spin.speed : 0.0f, 0.0f};
+    nv_chunk_read_f32s(r, scene, TAG_PLNT, planet, 2);
+
+    NvChunk chunk = nv_chunk_find(r, scene, TAG_CHAR);
+    CharacterDesc current = character ? character->desc.character : (CharacterDesc){0};
     char clip_name[SAVE_MAX_CLIP_NAME] = "Idle_Loop";
     char blend_name[SAVE_MAX_CLIP_NAME] = "";
-    f32 time = animator->layers[0].time;
-    f32 speed = animator->layers[0].speed;
-    f32 fade = sandbox->fade_seconds, blend_weight = sandbox->blend_weight, turn = sandbox->turn_rate;
-    bool root_motion = sandbox->root_motion, look_at = sandbox->look_at, sword = sandbox->show_sword;
-    b32 has_clip = nv_chunk_read_string(r, chunk, TAG_CLIP, clip_name, sizeof(clip_name));
-    b32 has_time = nv_chunk_read_f32s(r, chunk, TAG_CTIM, &time, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_SPED, &speed, 1);
-    nv_chunk_read_f32s(r, chunk, TAG_FADE, &fade, 1);
-    nv_chunk_read_string(r, chunk, TAG_BLND, blend_name, sizeof(blend_name));
-    nv_chunk_read_f32s(r, chunk, TAG_BLDW, &blend_weight, 1);
-    read_bool(r, chunk, TAG_RMOT, &root_motion);
-    nv_chunk_read_f32s(r, chunk, TAG_TURN, &turn, 1);
-    read_bool(r, chunk, TAG_LOOK, &look_at);
-    read_bool(r, chunk, TAG_SWRD, &sword);
+    f32 time = 0.0f;
+    f32 speed = current.speed, fade = current.fade, blend_weight = current.blend_weight, turn = current.turn;
+    bool root_motion = current.root_motion, look_at = current.look_at, sword = 1;
+    b32 has_clip = 0, has_time = 0;
+    if (chunk.data) {
+        has_clip = nv_chunk_read_string(r, chunk, TAG_CLIP, clip_name, sizeof(clip_name));
+        has_time = nv_chunk_read_f32s(r, chunk, TAG_CTIM, &time, 1);
+        nv_chunk_read_f32s(r, chunk, TAG_SPED, &speed, 1);
+        nv_chunk_read_f32s(r, chunk, TAG_FADE, &fade, 1);
+        nv_chunk_read_string(r, chunk, TAG_BLND, blend_name, sizeof(blend_name));
+        nv_chunk_read_f32s(r, chunk, TAG_BLDW, &blend_weight, 1);
+        read_bool(r, chunk, TAG_RMOT, &root_motion);
+        nv_chunk_read_f32s(r, chunk, TAG_TURN, &turn, 1);
+        read_bool(r, chunk, TAG_LOOK, &look_at);
+        read_bool(r, chunk, TAG_SWRD, &sword);
+    }
     if (!apply)
         return;
-
-    sandbox->root_motion = root_motion;
-    sandbox->turn_rate = turn;
-    sandbox->look_at = look_at;
-    sandbox->show_sword = sword;
-    sandbox->blend_weight = nv_clamp_f32(blend_weight, 0.0f, 1.0f);
-    for (u32 i = 0; i < sandbox->clip_count; ++i) {
-        if (strcmp(nv_anim_clip_name(sandbox->clips[i]), blend_name) == 0)
-            sandbox->blend_clip = (s32)i;
-    }
+    if (spin)
+        set_param(spin, "speed", &planet[0]);
+    if (!character || !chunk.data)
+        return;
+    CharacterDesc* c = &character->desc.character;
+    f32 flag_root = root_motion, flag_look = look_at;
+    set_param(character, "root_motion", &flag_root);
+    set_param(character, "turn", &turn);
+    set_param(character, "look_at", &flag_look);
+    set_param(character, "blend_weight", &blend_weight);
+    set_param(character, "fade", &fade);
+    set_param(character, "speed", &speed);
+    if (blend_name[0])
+        snprintf(c->blend, sizeof(c->blend), "%s", blend_name);
     if (has_clip) {
-        NvClipId clip = clip_named(sandbox, clip_name);
-        if (!clip.index)
-            clip = clip_named(sandbox, "Idle_Loop");
-        // Straight into the clip, without a crossfade from whatever played before. The same clip
-        // keeps playing where it is; root motion on or off picks its copy.
-        sandbox->fade_seconds = 0.0f;
-        sandbox_play(sandbox, clip);
+        // A clip name the build does not have falls back to Idle_Loop.
+        snprintf(c->clip, sizeof(c->clip), "%s",
+                 character_find_clip(&character->character, clip_name).index ? clip_name : "Idle_Loop");
     }
-    sandbox->fade_seconds = nv_clamp_f32(fade, 0.0f, 1.0f);
+    behavior_apply(sandbox, character);
     if (has_time)
-        animator->layers[0].time = time;
-    animator->layers[0].speed = speed;
-}
-
-internal void read_character(NvChunkReader* r, NvChunk parent, Sandbox* sandbox, b32 apply)
-{
-    NvChunk chunk = nv_chunk_find(r, parent, TAG_CHAR);
-    if (chunk.data)
-        read_character_fields(r, chunk, sandbox, apply);
+        nv_anim_get(character->character.model.animator)->layers[0].time = time;
+    NodeRuntime* sword_node = attached_runtime(doc, character);
+    if (sword_node)
+        sword_node->visible = sword;
 }
 
 // Applies only the fields present to node `index` (0: only checks them).
@@ -538,6 +739,9 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox
     nv_chunk_read_f32s(r, chunk, TAG_CFOV, &n.camera.fov_y, 1);
     nv_chunk_read_f32s(r, chunk, TAG_LCOL, &n.light.color.x, 3);
     nv_chunk_read_f32s(r, chunk, TAG_LINT, &n.light.intensity, 1);
+    NodeRuntime* runtime = index ? node_runtime(sandbox, index) : NULL;
+    u32 visible = runtime ? runtime->visible : 1;
+    nv_chunk_read_u32s(r, chunk, TAG_VISI, &visible, 1);
     if (!apply || !index)
         return;
 
@@ -567,6 +771,8 @@ internal void read_node_fields(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox
         node->light.color = n.light.color;
         node->light.intensity = n.light.intensity;
     }
+    if (runtime && runtime->mesh.index)
+        runtime->visible = visible != 0;
 }
 
 internal void read_node(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
@@ -583,26 +789,52 @@ internal void read_scene(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 
     b32 apply_scene = apply && (parts & SAVE_PART_SCENE);
     u32 layout = 0;
     nv_chunk_read_u32s(r, scene, TAG_LAYT, &layout, 1);
-    b32 nodes_match = layout == sandbox->scene_layout;
+    SceneDoc* doc = showcase(sandbox);
+    b32 nodes_match = layout == doc->layout;
 
-    f32 planet[2] = {sandbox->orbit_speed, sandbox->orbit_angle};
-    bool bones = sandbox->show_bones;
-    nv_chunk_read_f32s(r, scene, TAG_PLNT, planet, 2);
+    b32 has_behaviors = nv_chunk_find(r, scene, TAG_BHVR).data != NULL;
+    bool bones = doc->show_bones;
     read_bool(r, scene, TAG_BONE, &bones);
-    if (apply_scene) {
-        sandbox->orbit_speed = planet[0];
-        sandbox->orbit_angle = planet[1];
-        sandbox->show_bones = bones;
-    }
-    read_character(r, scene, sandbox, apply_scene);
+    if (apply_scene)
+        doc->show_bones = bones;
+    // The older tags are read only without the behaviors that replace them.
+    read_old_tags(r, scene, sandbox, apply_scene && !has_behaviors);
     // Nodes are read even when they will not be applied, so a damaged one still fails the load.
     NvChunk child = {0};
     while (nv_chunk_next(r, scene, &child)) {
         if (child.tag == TAG_NODE)
             read_node(r, child, sandbox, apply_scene && nodes_match);
+        else if (child.tag == TAG_BHVR)
+            read_behavior(r, child, sandbox, apply_scene && nodes_match);
     }
     // After the nodes, so a selection's path finds the tree as saved.
     read_view(r, scene, sandbox->scene, &sandbox->views[SCENE_SHOWCASE], apply && (parts & SAVE_PART_VIEW), nodes_match);
+}
+
+// An asset's materials. A glb that is not loaded is skipped.
+// TODO: An ASET for a glb that no scene has loaded yet is dropped, and so lost at the next save; it should be kept until a scene
+// loads the glb (docs/specs/scene_file.md, "Save"). Every scene shares one glb today.
+internal void read_asset(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, b32 apply)
+{
+    char path[SCENE_PATH_SIZE] = "";
+    nv_chunk_read_string(r, chunk, TAG_FILE, path, sizeof(path));
+    Asset* asset = NULL;
+    for (u32 i = 0; i < sandbox->asset_count; ++i)
+        if (sandbox->assets[i].loaded && strcmp(sandbox->assets[i].path, path) == 0)
+            asset = &sandbox->assets[i];
+    NvMaterialId materials[NV_GLTF_MAX_MESH_NODES];
+    u32 count = asset ? asset_materials(asset, materials, NV_ARRAY_COUNT(materials)) : 0;
+    NvChunk child = {0};
+    while (nv_chunk_next(r, chunk, &child)) {
+        if (child.tag != TAG_MATL)
+            continue;
+        u32 index = 0;
+        f32 color[4];
+        b32 has_index = nv_chunk_read_u32s(r, child, TAG_INDX, &index, 1);
+        b32 has_color = nv_chunk_read_f32s(r, child, TAG_COLR, color, 4);
+        if (apply && has_index && has_color && index < count)
+            nv_renderer_set_material_color(&sandbox->renderer, materials[index], color);
+    }
 }
 
 internal b32 read_state(NvChunk root, Sandbox* sandbox, b32 apply, u32 parts)
@@ -614,9 +846,12 @@ internal b32 read_state(NvChunk root, Sandbox* sandbox, b32 apply, u32 parts)
     NvChunk scene = nv_chunk_find(&r, root, TAG_SCNE);
     if (scene.data)
         read_scene(&r, scene, sandbox, apply, parts);
-    // Walk the whole top level too, so a malformed chunk after the known ones is caught.
+    // The assets (read after the scene, so the glb's materials are the ones the saved colors belong to), and the whole top level,
+    // so that a malformed chunk after the known ones is caught.
     NvChunk child = {0};
     while (nv_chunk_next(&r, root, &child)) {
+        if (child.tag == TAG_ASET)
+            read_asset(&r, child, sandbox, apply && (parts & SAVE_PART_SCENE));
     }
     return !r.failed;
 }
@@ -675,12 +910,12 @@ NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeI
             nv_chunk_end(&w);
         }
         break;
-    case SAVE_SCOPE_CHARACTER:
-        write_character_fields(&w, sandbox, 1);
+    case SAVE_SCOPE_BEHAVIORS:
+        for (u32 i = 0; i < showcase(sandbox)->behavior_count; ++i)
+            write_behavior(&w, sandbox, &showcase(sandbox)->behaviors[i]);
         break;
     case SAVE_SCOPE_SCENE:
-        nv_chunk_f32(&w, TAG_ORBS, sandbox->orbit_speed);
-        nv_chunk_u32(&w, TAG_BONE, sandbox->show_bones);
+        nv_chunk_u32(&w, TAG_BONE, showcase(sandbox)->show_bones);
         break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -705,18 +940,17 @@ internal b32 read_scope(NvChunk chunk, Sandbox* sandbox, SaveScope scope, const 
         if (read != node_count)
             return 0;
     } break;
-    case SAVE_SCOPE_CHARACTER:
-        read_character_fields(&r, chunk, sandbox, apply);
-        break;
+    case SAVE_SCOPE_BEHAVIORS: {
+        NvChunk child = {0};
+        while (nv_chunk_next(&r, chunk, &child))
+            if (child.tag == TAG_BHVR)
+                read_behavior(&r, child, sandbox, apply);
+    } break;
     case SAVE_SCOPE_SCENE: {
-        f32 speed = sandbox->orbit_speed;
-        bool bones = sandbox->show_bones;
-        nv_chunk_read_f32s(&r, chunk, TAG_ORBS, &speed, 1);
+        bool bones = showcase(sandbox)->show_bones;
         read_bool(&r, chunk, TAG_BONE, &bones);
-        if (apply) {
-            sandbox->orbit_speed = speed;
-            sandbox->show_bones = bones;
-        }
+        if (apply)
+            showcase(sandbox)->show_bones = bones;
     } break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -750,19 +984,49 @@ const char* save_field_label(u32 tag)
     case TAG_CFOV: return "Field of view";
     case TAG_LCOL: return "Light color";
     case TAG_LINT: return "Intensity";
-    case TAG_CLIP: return "Clip";
-    case TAG_SPED: return "Speed";
-    case TAG_FADE: return "Fade";
-    case TAG_BLND: return "Blend";
-    case TAG_BLDW: return "Blend weight";
-    case TAG_RMOT: return "Root motion";
-    case TAG_TURN: return "Turn";
-    case TAG_LOOK: return "Look at";
-    case TAG_SWRD: return "Sword";
-    case TAG_ORBS: return "Planet orbit";
+    case TAG_VISI: return "Visible";
     case TAG_BONE: return "Show bones";
     }
     return "Edit";
+}
+
+// What differs between two Behaviors snapshots, as "<node name> <parameter>": the first parameter of the first behavior that has a
+// different value. The snapshots hold the same behaviors in the same order (the scene's).
+void save_behavior_label(Sandbox* sandbox, const void* before, u32 before_size, const void* after, u32 after_size, char* out, umm capacity)
+{
+    SceneDoc* doc = showcase(sandbox);
+    NvChunk a = {.size = before_size, .data = before};
+    NvChunk b = {.size = after_size, .data = after};
+    NvChunkReader ra = {0}, rb = {0};
+    NvChunk old = {0}, now = {0};
+    for (u32 i = 0; i < doc->behavior_count && nv_chunk_next(&ra, a, &old) && nv_chunk_next(&rb, b, &now); ++i) {
+        const Behavior* behavior = &doc->behaviors[i];
+        const BehaviorDef* def = scene_behavior_def(behavior->desc.kind);
+        NvChunk param = {0};
+        NvChunkReader rp = {0};
+        while (nv_chunk_next(&rp, now, &param)) {
+            if (param.tag != TAG_PARM)
+                continue;
+            char name[SCENE_ID_SIZE] = "";
+            nv_chunk_read_string(&rp, param, TAG_NAME, name, sizeof(name));
+            // The same parameter before: find it by name and compare its bytes.
+            NvChunk other = {0};
+            NvChunk previous = {0};
+            NvChunkReader rq = {0};
+            while (nv_chunk_next(&rq, old, &other)) {
+                char other_name[SCENE_ID_SIZE] = "";
+                if (other.tag == TAG_PARM && nv_chunk_read_string(&rq, other, TAG_NAME, other_name, sizeof(other_name)) &&
+                    strcmp(other_name, name) == 0)
+                    previous = other;
+            }
+            if (previous.data && previous.size == param.size && memcmp(previous.data, param.data, param.size) == 0)
+                continue;
+            const SceneField* field = find_parameter(def, name);
+            snprintf(out, capacity, "%s %s", sandbox->scene->nodes[behavior->node.index].name, field ? field->label : name);
+            return;
+        }
+    }
+    snprintf(out, capacity, "Edit");
 }
 
 //
@@ -839,20 +1103,21 @@ typedef enum TagKind {
 internal TagKind tag_kind(u32 container, u32 tag)
 {
     switch (tag) {
-    case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE:
+    case TAG_EDIT: case TAG_SCNE: case TAG_VIEW: case TAG_CHAR: case TAG_NODE: case TAG_BHVR: case TAG_PARM: case TAG_ASET:
+    case TAG_MATL:
         return TAG_KIND_CONTAINER;
     case TAG_MSAA: case TAG_TONE: case TAG_BLOM: case TAG_RSMD: case TAG_RSCL: case TAG_RSFT: case TAG_RSFW: case TAG_RSFH:
     case TAG_DKLW: case TAG_DKRW: case TAG_DKBH: case TAG_DKBO: case TAG_LANG:
     case TAG_AUTO: case TAG_GZOP: case TAG_GZLC: case TAG_GZSN: case TAG_LAYT: case TAG_FOLW: case TAG_SELN: case TAG_SELO:
-    case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH:
+    case TAG_RMOT: case TAG_LOOK: case TAG_SWRD: case TAG_PATH: case TAG_VISI: case TAG_INDX:
         return TAG_KIND_U32;
     case TAG_BONE: // a u32 in SCNE (show bones)
         return TAG_KIND_U32;
     case TAG_YAW: case TAG_PTCH: case TAG_DIST: case TAG_ORBT: case TAG_PAN: case TAG_PLNT: case TAG_CTIM:
     case TAG_SPED: case TAG_FADE: case TAG_BLDW: case TAG_TURN: case TAG_POS: case TAG_ROT: case TAG_SCL:
-    case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT: case TAG_EXPO: case TAG_BLMI:
+    case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT: case TAG_EXPO: case TAG_BLMI: case TAG_VALU:
         return TAG_KIND_F32;
-    case TAG_CLIP: case TAG_BLND: case TAG_NAME: case TAG_ATCH:
+    case TAG_CLIP: case TAG_BLND: case TAG_NAME: case TAG_ATCH: case TAG_KIND: case TAG_TEXT: case TAG_FILE:
         return TAG_KIND_STRING;
     }
     (void)container;

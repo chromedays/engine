@@ -252,7 +252,7 @@ global const NvStringPair entries[] = {
     {"Camera pitch", "카메라 상하"},
     {"Camera follows selection", "카메라가 선택을 따라감"},
     {"Show bones", "뼈대 보기"},
-    {"Planet orbit", "행성 공전"},
+    {"Spin", "회전"},
     {"Playing: edits are lost on Stop.", "재생 중: 정지하면 편집 내용이 사라집니다."},
     {"Console", "콘솔"},
     {"Reset...", "초기화..."},

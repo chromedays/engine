@@ -127,8 +127,8 @@ internal void push_step(Sandbox* sandbox, SaveScope scope, const u8* before, u32
     const char* field = save_field_label(first_difference(before, before_size, after, after_size));
     if (scope == SAVE_SCOPE_NODE)
         node_step_label(sandbox, step);
-    else if (scope == SAVE_SCOPE_CHARACTER)
-        snprintf(step->label, sizeof(step->label), "Character %s", field);
+    else if (scope == SAVE_SCOPE_BEHAVIORS)
+        save_behavior_label(sandbox, before, before_size, after, after_size, step->label, sizeof(step->label));
     else
         snprintf(step->label, sizeof(step->label), "%s", field);
     nv_utf8_trim(step->label); // a long Hangul name may have been cut
