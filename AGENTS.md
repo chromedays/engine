@@ -317,8 +317,6 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - Binary assets live under `assets/` and are stored with Git LFS. `.gitattributes` lists the
   tracked types; add a pattern there before committing a new binary type.
 - Check `git lfs ls-files` after adding assets, so a binary never lands in plain Git history.
-- Only commit assets whose license allows redistribution in a public repository, and record the
-  source and license next to them.
 
 ## Third-party libraries
 
