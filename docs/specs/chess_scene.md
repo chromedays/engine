@@ -44,6 +44,7 @@
 | 주제 | 결정 |
 |---|---|
 | 에셋 | A Beautiful Game의 GLB를 **그대로** `assets/chess/chess.glb`에 둔다(Git LFS). 줄이거나 다시 인코딩하는 과정은 이 스펙에 없다. CC-BY 4.0이므로 출처를 `assets/chess/LICENSE.txt`에 적는다 |
+| 출처 표기 | `assets/chess/LICENSE.txt` 하나뿐이다. 앱 화면(View 탭 등)과 씬 파일에는 출처를 보이지 않는다 |
 | 서드파티 | 새 라이브러리 없음 |
 | 쓰지 않는 데이터 | 파일에 남는다. 로더는 지금처럼 베이스 컬러 텍스처만 디코드하고(`NvMaterialDesc`), normal과 ORM 이미지, `KHR_materials_transmission`/`volume`은 읽지 않는다(필수 확장이 아니므로 cgltf가 건너뛴다) |
 | 임시 메모리 | 샌드박스의 scratch 아레나를 32 MB에서 128 MB로 늘린다(`sandbox/main.c`의 `scratch_memory`). glb 43 MB, 2048 텍스처 하나의 픽셀 16 MB와 밉, 정점 변환을 담는다 |
