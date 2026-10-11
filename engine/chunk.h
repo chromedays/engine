@@ -63,6 +63,9 @@ typedef struct NvChunk {
     const u8* data;
 } NvChunk;
 
+// Writes a chunk as it was read (its tag, size and bytes), unchanged: a scene that is not built yet keeps its saved bytes this way.
+void nv_chunk_copy(NvChunkWriter* writer, NvChunk chunk);
+
 // Every read checks bounds. A chunk that runs past its parent, or a field of the wrong size, sets
 // `failed`; after that every read returns nothing, so a reader checks once at the end.
 typedef struct NvChunkReader {

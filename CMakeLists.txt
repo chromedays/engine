@@ -21,7 +21,6 @@ target_link_options(webgpu INTERFACE
     --use-port=emdawnwebgpu
     -sDEFAULT_TO_CXX   # the port's implementation is C++
     -sASYNCIFY         # lets wgpuInstanceWaitAny yield to the browser during setup
-    -sASYNCIFY_IGNORE_INDIRECT # setup reaches WaitAny only through direct calls
     -sALLOW_MEMORY_GROWTH
     -sENVIRONMENT=web)
 

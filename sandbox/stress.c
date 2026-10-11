@@ -22,11 +22,11 @@ u32 stress_live_nodes(NvScene* scene)
 // The tab is for scenes that have something to load the engine with or to measure.
 b32 stress_tab_shown(Sandbox* sandbox)
 {
-    SceneDoc* doc = sandbox_doc(sandbox);
-    if (doc->desc->has_benchmark)
+    const SceneDesc* desc = sandbox_doc(sandbox)->desc; // the file says it, so it is known before the scene is built
+    if (desc->has_benchmark)
         return 1;
-    for (u32 i = 0; i < doc->behavior_count; ++i)
-        if (scene_behavior_def(doc->behaviors[i].desc.kind)->generator)
+    for (u32 i = 0; i < desc->behavior_count; ++i)
+        if (scene_behavior_def(desc->behaviors[i].kind)->generator)
             return 1;
     return 0;
 }

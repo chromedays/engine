@@ -34,6 +34,10 @@ global const SceneField view_fields[] = {
     ROW("select", FIELD_NAME, ViewDesc, select),
 };
 
+global const SceneField lighting_fields[] = {
+    ROW("ambient", FIELD_NUMBER, LightingDesc, ambient, .count = 3, .min = 0, .max = 1),
+};
+
 global const SceneField palette_fields[] = {
     ROW("base", FIELD_NUMBER, PaletteDesc, base, .count = 3, .min = 0, .max = 1, .required = 1),
     ROW("wheel", FIELD_INTEGER, PaletteDesc, wheel, .count = 1, .min = 2, .max = SCENE_MAX_PALETTE_COLORS, .required = 1),
@@ -207,6 +211,7 @@ typedef enum BlockKind {
     BLOCK_ROOT,
     BLOCK_SKIP, // the inside of a block that was already reported
     BLOCK_VIEW,
+    BLOCK_LIGHTING,
     BLOCK_PALETTE,
     BLOCK_MODEL,
     BLOCK_NODE,
@@ -229,7 +234,7 @@ typedef struct Block {
 } Block;
 
 // The top-level statements, in the order they must come in.
-typedef enum Top { TOP_NONE, TOP_VERSION, TOP_TITLE, TOP_VIEW, TOP_PALETTE, TOP_MODEL, TOP_NODE, TOP_BENCHMARK } Top;
+typedef enum Top { TOP_NONE, TOP_VERSION, TOP_TITLE, TOP_VIEW, TOP_LIGHTING, TOP_PALETTE, TOP_MODEL, TOP_NODE, TOP_BENCHMARK } Top;
 
 typedef struct SceneReader {
     NvTextReader text;
@@ -577,6 +582,8 @@ internal void close_block(SceneReader* reader)
     case BLOCK_VIEW:
         check_required(reader, view_fields, (u32)NV_ARRAY_COUNT(view_fields), block->seen, block->header_line, "block", "view");
         break;
+    case BLOCK_LIGHTING: // every key is optional
+        break;
     case BLOCK_PALETTE:
         check_required(reader, palette_fields, (u32)NV_ARRAY_COUNT(palette_fields), block->seen, block->header_line, "palette",
                        desc->palettes[block->index].id);
@@ -679,7 +686,7 @@ internal void close_block(SceneReader* reader)
 
 internal const char* top_name(Top top)
 {
-    local_persist const char* const names[] = {"", "nvscene_version", "title", "view", "palette", "model", "node", "benchmark"};
+    local_persist const char* const names[] = {"", "nvscene_version", "title", "view", "lighting", "palette", "model", "node", "benchmark"};
     return names[top];
 }
 
@@ -851,6 +858,14 @@ internal void read_top_line(SceneReader* reader, const NvTextLine* line)
             fail(reader, line->number, "'view' takes no value");
         reader->desc->view.target = (NvVec3){0};
         open_block(reader, BLOCK_VIEW, line, -1);
+    } else if (nv_text_token_is(key, "lighting")) {
+        if (!check_order(reader, line, TOP_LIGHTING)) {
+            open_block(reader, BLOCK_SKIP, line, -1);
+            return;
+        }
+        if (line->token_count != 1)
+            fail(reader, line->number, "'lighting' takes no value");
+        open_block(reader, BLOCK_LIGHTING, line, -1);
     } else if (nv_text_token_is(key, "palette")) {
         if (!check_order(reader, line, TOP_PALETTE))
             open_block(reader, BLOCK_SKIP, line, -1);
@@ -1084,6 +1099,13 @@ internal void read_scene_line(SceneReader* reader, const NvTextLine* line)
         else
             read_field(reader, line, field, (u32)(field - view_fields), &desc->view, &block->seen);
     } break;
+    case BLOCK_LIGHTING: {
+        const SceneField* field = find_field(lighting_fields, (u32)NV_ARRAY_COUNT(lighting_fields), key);
+        if (!field)
+            fail(reader, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
+        else
+            read_field(reader, line, field, (u32)(field - lighting_fields), &desc->lighting, &block->seen);
+    } break;
     case BLOCK_PALETTE: {
         const SceneField* field = find_field(palette_fields, (u32)NV_ARRAY_COUNT(palette_fields), key);
         if (!field)
@@ -1314,6 +1336,8 @@ internal void resolve(SceneReader* reader)
 SceneRead scene_read(SceneDesc* desc, const char* file_name, const char* text, umm size)
 {
     memset(desc, 0, sizeof(*desc));
+    for (u32 i = 0; i < 3; ++i)
+        desc->lighting.ambient[i] = 0.15f;
     SceneRead result = {0};
     SceneReader* reader = &(SceneReader){0};
     reader->desc = desc;
