@@ -5,6 +5,20 @@
 
 ## 한국어
 
+> 2026-10 (`scene_file.md`): 씬은 이제 씬 파일의 목록이고 저장은 모두를 담는다. 이 안내가 아래의 쇼케이스 중심 서술보다 우선한다.
+>
+> - **씬마다 `SCNE` 하나** (반복): `FILE`(문자열, 씬 목록의 파일 경로) 다음에 `LAYT`, `VIEW`, `BONE`, `NODE`, `BHVR`. 씬 목록의 순서로 쓰고,
+>   첫 씬이 맨 앞이다. `FILE`이 없는 `SCNE`(옛 저장)는 첫 씬의 것이다. 옛 빌드는 첫 `SCNE`만 읽고 모르는 태그는 건너뛴다.
+> - **`BHVR`**(씬 안, 반복): 동작 하나의 파라미터. `PATH`(노드 경로), `KIND`(문자열), 파라미터마다 `PARM` {`NAME`, `VALU` f32[] 또는 `TEXT`}.
+>   값은 실행 중의 단위(라디안)다. 모르는 이름은 건너뛰고, 없는 이름은 지금 값을 지닌다. 읽은 뒤 그 동작의 "적용"을 부른다.
+> - **`VISI`**(`NODE` 안, u32): 메시가 있는 노드의 보임.
+> - **`ASET`**(최상위, 읽은 glb마다): 공통 에셋의 머티리얼 색. `FILE`(glb 경로) 다음에 `MATL` {`INDX`, `COLR`}.
+> - **옛 태그**: `PLNT`, `CHAR`(`SWRD` 포함)는 그 타입(`spin`, `character`)이 씬에 있을 때 계속 쓰고, 그 씬에 `BHVR`가 없을 때만 읽는다.
+> - **생성기가 만든 노드**(그리드의 큐브 등)는 `NODE`로 쓰지 않고, 선택 (`SELN`, `SELO`)에서도 빠진다. 생성기의 수는 `BHVR`의 파라미터다.
+> - 스트레스 씬도 저장된다 (설정, 카메라, 선택, 노드 편집). 벤치마크 결과는 저장하지 않는다. 샌드박스는 씬 목록의 첫 씬에서 시작한다.
+> - `LAYT`는 파일의 노드를 만든 직후, 생성기가 돌기 전의 트리에서 잰다.
+> - 모든 씬은 시작할 때 만들어지므로 저장의 모든 `SCNE`가 바로 적용된다.
+
 참고 (2026-10-02, `shared.md`): 카메라 필드는 `SceneView.orbit`(`NvOrbitCamera`, `engine/camera.h`)에 있다: `camera_yaw`는
 `orbit.yaw`, `camera_pitch`는 `orbit.pitch`, `camera_distance`는 `orbit.distance`, `orbit_point`는 `orbit.target`이다. 태그와
 값은 그대로이고, 불러올 때의 제한은 `orbit`의 `min_pitch`, `max_pitch`, `min_distance`, `max_distance`다.
@@ -16,7 +30,7 @@
 탭을 닫고 돌아와도 샌드박스가 떠난 그대로 있게 한다. 샌드박스는 자기 상태 (쇼케이스 씬과 에디터 설정)를 저장 하나로, 스스로,
 Emscripten의 IDBFS를 통해 브라우저의 IndexedDB에 저장한다; 잊어버릴 저장 버튼이 없다.
 
-스트레스 씬은 저장하지 않는다: 벤치마크이고, 매 방문마다 기본값으로 시작하므로 모든 실행이 같은 곳에서 시작한다.
+스트레스 씬도 씬 목록의 한 씬으로서 저장된다 (위의 2026-10 안내). 벤치마크는 실행마다 파일의 값에서 시작하므로 저장된 설정과 상관없이 같은 곳에서 시작한다.
 
 지금은 범위 밖: 파일로의 수동 저장 (내보내기와 가져오기)과 서버 저장소 (Worker 뒤의 Cloudflare R2 같은 CDN). 둘 다
 이 스펙의 저장 바이트를 바꾸지 않고 실어 나를 수 있다.
@@ -195,7 +209,7 @@ Chunks
 
 #### 저장하지 않는 것
 
-- 스트레스 씬: 그 설정, 카메라, 선택, 노드 편집, 벤치마크 결과. 샌드박스는 항상 쇼케이스에서 시작한다.
+- 벤치마크 결과와 생성기가 만든 노드. 샌드박스는 항상 씬 목록의 첫 씬에서 시작한다.
 - 프레임 시간과 통계.
 - 진행 중인 점프 (돌아갈 클립은 저장된다), 진행 중인 크로스페이드, 블렌드 레이어 자체의 시간.
 - 패널 상태: 열린 탭, 스크롤 위치, 어떤 트리 노드가 열려 있는지.
@@ -273,6 +287,26 @@ Chunks
 저장, 새 버전의 저장을 쓰고, 샌드박스가 첫 방문처럼 시작하고 `.bad` 파일을 유지하는지 확인한다.
 
 ## English
+
+> 2026-10 (`scene_file.md`): The scenes are now a list of scene files, and the save holds all of them. This note wins over the
+> showcase-centered text below.
+>
+> - **One `SCNE` per scene** (repeated): `FILE` (a string, the scene list's file path), then `LAYT`, `VIEW`, `BONE`, `NODE`, `BHVR`. Written in the scene
+>   list's order, the first scene first. A `SCNE` without `FILE` (an old save) is the first scene's. An older build reads only the first
+>   `SCNE` and skips tags it does not know.
+> - **`BHVR`** (inside a scene, repeated): the parameters of one behavior. `PATH` (the node's path), `KIND` (a string), and a `PARM` {`NAME`,
+>   `VALU` f32[] or `TEXT`} for each parameter. Values are in run-time units (radians). An unknown name is skipped, a missing one keeps its
+>   current value. After reading, the behavior's "apply" runs.
+> - **`VISI`** (inside `NODE`, u32): whether a node with a mesh is shown.
+> - **`ASET`** (top level, one per glb read): the shared asset's material colors. `FILE` (the glb's path), then `MATL` {`INDX`, `COLR`}.
+> - **Old tags**: `PLNT` and `CHAR` (with `SWRD`) are still written when the scene has that type (`spin`, `character`), and read only when
+>   the scene has no `BHVR`.
+> - **Nodes a generator made** (the grid's cubes and so on) are not written as `NODE`, and are left out of the selection (`SELN`, `SELO`).
+>   A generator's counts are `BHVR` parameters.
+> - The stress scene is saved too (settings, camera, selection, node edits). Benchmark results are not. The sandbox starts on the scene
+>   list's first scene.
+> - `LAYT` is taken from the tree right after the file's nodes are made, before any generator runs.
+> - Every scene is built at start, so every `SCNE` of the save is applied at once.
 
 Note (2026-10-02, `shared.md`): the camera fields are in `SceneView.orbit` (`NvOrbitCamera`, `engine/camera.h`): `camera_yaw`
 is `orbit.yaw`, `camera_pitch` is `orbit.pitch`, `camera_distance` is `orbit.distance` and `orbit_point` is `orbit.target`. The tags

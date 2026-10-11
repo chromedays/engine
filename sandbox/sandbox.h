@@ -1,9 +1,10 @@
 #pragma once
 
-// The nv sandbox: a showcase scene with a planet and moon and an animated character, a stress scene
-// that loads the engine with many objects (docs/specs/stress.md), and an editor panel to inspect
-// and change them. main.c owns the showcase and the frame, stress.c the stress scene and its
-// benchmark, ui.c the panel.
+// The nv sandbox: an editor and test ground for the engine. Its scenes are text files (sandbox/data/*.nvscene,
+// docs/specs/scene_file.md): a showcase with a planet and moon and an animated character, and a stress scene that loads the
+// engine with many objects (docs/specs/stress.md). scene_file.c reads a file, scenes.c builds each scene of the list, behaviors.c
+// runs what their objects do, and the panels (ui.c) inspect and change them. main.c owns the frame, stress.c the Stress tab and
+// the benchmark.
 
 #include <engine/anim.h>
 #include <engine/camera.h>
@@ -129,7 +130,7 @@ typedef enum ShortcutId {
 #define UNDO_MAX_BYTES (SELECTION_MAX * UNDO_NODE_BYTES)
 #define UNDO_LABEL_MAX 64
 
-// Parts of the showcase that undo snapshots separately (docs/specs/undo.md).
+// Parts of a scene that undo snapshots separately (docs/specs/undo.md).
 typedef enum SaveScope {
     SAVE_SCOPE_NODE,      // the selected nodes
     SAVE_SCOPE_BEHAVIORS, // the parameters of the scene's behaviors
@@ -808,12 +809,12 @@ typedef struct SaveLoad {
 SaveLoad save_load(Sandbox* sandbox, const void* bytes, u32 size);
 // Loads only some parts of a save (SAVE_PART_*), e.g. the scene without the view for Stop.
 #define SAVE_PART_EDITOR (1u << 0) // gizmo and autosave settings
-#define SAVE_PART_VIEW   (1u << 1) // the showcase's camera view and selection
+#define SAVE_PART_VIEW   (1u << 1) // the scenes' camera views and selections
 #define SAVE_PART_SCENE  (1u << 2) // nodes, character and scene settings
 #define SAVE_PART_ALL    (SAVE_PART_EDITOR | SAVE_PART_VIEW | SAVE_PART_SCENE)
 #define SAVE_PART_SHOWN  (1u << 3) // only the shown scene's SCNE (Stop: the others did not run)
 SaveLoad save_load_parts(Sandbox* sandbox, const void* bytes, u32 size, u32 parts);
-// Undo scopes: the undoable fields of a part of the showcase, written and read with the save's code
+// Undo scopes: the undoable fields of a part of the shown scene, written and read with the save's code
 // (docs/specs/undo.md). Values the sandbox drives every frame are left out.
 // The Node scope holds each of `nodes` in a container, in order; the other scopes ignore them.
 // Fails when it does not fit.

@@ -99,15 +99,15 @@ Live:
 engine/              each module's header and source side by side: base.h, math.h, scene.h, window.h,
                      gpu.h, imgui.h, renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h and
                      their .c (anim.cpp wraps ozz-animation; everything else is C). `#include <engine/scene.h>`
-sandbox/             the sandbox: a showcase scene (a planet and moon, an animated character with a
-                     sword), a stress scene with a benchmark (picked in the View tab), and an
-                     editor (node tree, inspector, view settings, stress workloads), with a
+sandbox/             the sandbox: scenes read from text files (sandbox/data/*.nvscene): a showcase (a planet and
+                     moon, an animated character with a sword) and a stress scene with a benchmark, picked in the
+                     View tab, and an editor (node tree, inspector, view settings, stress workloads), with a
                      desktop UI (docks around the viewport) and a phone UI (one tabbed panel),
                      Play / Stop at the top center of both. It
                      autosaves the showcase to the browser (IndexedDB), has undo and redo,
                      multiple selection (Ctrl / Shift+click, or Multi on a phone) moved together
                      by the gizmo, and
-                     Edit and Play modes (Play runs the showcase; Stop puts it back). The sun
+                     Edit and Play modes in every scene (Play runs the scene; Stop puts it back). The sun
                      casts shadows (one shadow map; size, format and filter in the View tab), and edges are
                      smoothed with 4x MSAA (a View tab setting). The scene can render at a
                      fraction of the viewport's pixels or at a fixed size with black bars. A
@@ -116,7 +116,7 @@ sandbox/             the sandbox: a showcase scene (a planet and moon, an animat
                      depth target) with their mips and channels. The scene is drawn in linear HDR through tone
                      mapping (Clamp, PBR Neutral, ACES) and bloom, with GPU particles simulated by compute
                      shaders (2 million by default), trails, beams and ground decals (the View tab's Effects
-                     and the stress scene's Fire effects workload)
+                     and the stress scene's effects workload)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts

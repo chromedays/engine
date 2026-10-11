@@ -34,10 +34,12 @@ engine/                    each module's header and source side by side, include
                            docs/specs/mesh.md), camera.c/.h (orbit camera math),
                            strings.c/.h (T, TL and the language; each executable brings its own table),
                            renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
-sandbox/                   the sandbox (the engine's test ground): main.c (showcase scene, frame), stress.c (stress scene and
-                           benchmark, picked in the View tab), ui.c (editor panel), save.c (autosave),
-                           undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures tab),
-                           effects.c (the effect definitions and the Effects workload),
+sandbox/                   the sandbox (the engine's test ground): main.c (window, frame, debug exports), scene_file.c/.h (reads a
+                           .nvscene file into plain data; no GPU), scenes.c (builds each scene of the list from its file), behaviors.c
+                           (the behaviors a scene's objects have, and their Inspector rows), data/*.nvscene (the scenes: showcase,
+                           stress; docs/specs/scene_file.md), stress.c (the Stress tab: statistics, the benchmark), ui.c (editor
+                           panel), save.c (autosave), undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures
+                           tab), effects.c (the effect definitions and the View tab's test effects),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), sandbox.h (shared state)
@@ -116,22 +118,39 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   in the viewport waits two frames before the hook decides. Tests must hold the press longer than
   that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
   stays behind the panel.
-- The sandbox autosaves its state (the showcase and the editor settings, not the stress scene) to
-  `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`). A new piece of editable state gets a
-  tag in `sandbox/save.c` and a row in the spec's tables. Never change what an existing tag means
+- The sandbox's scenes are files (`sandbox/data/*.nvscene`, `docs/specs/scene_file.md`), listed in `sandbox/scenes.c`, read by
+  `sandbox/scene_file.c` (line-based text, `engine/text.c`, shared with the auto-battler) and all built at start, each into a
+  `SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
+  (Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
+  and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of
+  types (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`; one `switch` branch each in `sandbox/behaviors.c`, no function
+  pointers). A behavior's keys are rows of a `SceneField` table in `scene_file.c`: structure keys are read once, **parameters** are
+  what the UI changes, the save keeps (`BHVR`) and undo takes back. The same row makes the reader, the Inspector and Stress tab
+  widgets (`generator_rows`), the search and the undo label, so a new parameter is a row with its `label`, `keywords` and range,
+  plus what it does in `behaviors.c`; a new behavior kind is a `BehaviorKind`, a table and a branch. Nodes a generator makes are not
+  in the file: `SceneDoc.authored` says which the file made, and the save, undo and the gizmo leave the others alone while the
+  Inspector shows them read-only. A glb is an asset for the whole sandbox (`Asset`): the first node that needs it loads it in
+  place, the others copy it, and its material edits are saved once (`ASET`). The first scene that fails to build stops the
+  sandbox; another is refused when picked and the View tab shows why. Debug builds export `_sandbox_debug_show_scene(index)`,
+  `_sandbox_debug_scenes`, `_sandbox_debug_set_grid`, `_set_chain`, `_set_crowd`, `_set_effects` (the shown scene's first behavior
+  of that type), `_sandbox_debug_built`, `_sandbox_debug_benchmark` and `_sandbox_debug_benchmark_start` for tests.
+- The sandbox autosaves its state (every scene and the editor settings; benchmark results and the nodes a generator made are not
+  saved) to `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`): one `SCNE` per scene, named by its `FILE`. A new piece of
+  editable state gets a tag in `sandbox/save.c` and a row in the spec's tables. Never change what an existing tag means
   without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
   save, load, save gives the same bytes; tests call `Module._sandbox_debug_save_round_trip()` after
   editing.
-- The showcase has Edit and Play modes (`docs/specs/play.md`). In Edit mode nothing may move the
-  scene by itself: anything time-driven (spins, walking, sweeps, jumps) goes in the
-  `sandbox->playing` branch of `update_showcase`, and the animation only previews in place. Play
-  snapshots the showcase in the save format and Stop loads it back (`SAVE_PART_SCENE`), so
-  anything Stop must restore has to be in the save. The autosave writes that snapshot while
+- Every scene has Edit and Play modes (`docs/specs/play.md`). In Edit mode nothing may move the
+  scene by itself: anything time-driven (spins, walking, sweeps, jumps, churn, effects) goes in the
+  `sandbox->playing` branch of its behavior in `sandbox/behaviors.c`, and the animation only previews in place. Play
+  snapshots the sandbox in the save format and Stop loads the shown scene back (`SAVE_PART_SCENE | SAVE_PART_SHOWN`), so
+  anything Stop must restore has to be in the save. There is one playing state; switching scenes stops Play first. The autosave writes that snapshot while
   playing, and undo is off. Debug builds expose `Module._sandbox_debug_save_crc()` to compare the
-  state before Play and after Stop.
+  state before Play and after Stop. A benchmark run (`sandbox/stress.c`) starts Play in Edit mode, sets each step from the
+  scene file's values, and ends with Stop, or puts the parameters back when Play was already running.
 - Undo (`docs/specs/undo.md`) needs no code at edit sites: whenever no widget, gizmo or popup is in
-  use, `sandbox/undo.c` compares the selected node, the character and the scene settings (written by
-  `save_write_scope`) with the last commit. So a new editable value is undoable once it is saved in
+  use, `sandbox/undo.c` compares the selected nodes, the behaviors' parameters and the scene settings (written by
+  `save_write_scope`) with the last commit. There is one history; a step carries its scene. So a new editable value is undoable once it is saved in
   its scope; a value the sandbox changes every frame in Edit mode must be left out there
   (`driven_fields` in `sandbox/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._sandbox_debug_undo_steps()`
   and `_sandbox_debug_undo_done()` for tests.
@@ -148,7 +167,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   matrix; undo's Node scope holds every selected node, so such a drag is one step. The save keeps the
   others as `SELO`. Debug builds export `_sandbox_debug_selection_count`, `_sandbox_debug_selection(i)`,
   `_sandbox_debug_select(index, mode)`, `_sandbox_debug_set_multi`, `_sandbox_debug_tree_row`,
-  `_sandbox_debug_find_node`, `_sandbox_debug_node` and `_sandbox_debug_set_grid` for tests.
+  `_sandbox_debug_find_node` and `_sandbox_debug_node` for tests. A node a generator made can be selected but not edited: it is not
+  saved (`SELN`, `SELO` skip it), undo leaves it out and the gizmo does not move it.
 - Desktop keyboard shortcuts are rows of one table in `sandbox/shortcuts.c` (`docs/specs/shortcuts.md`):
   add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
   the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
@@ -240,7 +260,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   Segments and decals are rings the CPU stages and uploads in runs; their shaders drop an expired slot by moving it
   outside the clip volume. Alpha particles are unsorted on purpose (`// TODO:` in `sandbox/effects.c`). Stats come back
   a frame or two late. Debug builds export `Module._sandbox_debug_vfx(n)`, `_sandbox_debug_vfx_fire(effect)`,
-  `_sandbox_debug_set_effects(...)`, `_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
+  `_sandbox_debug_set_effects(...)` (the shown scene's `effects` behavior, whose workload runs in Play), `_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
   (`TONE`, `EXPO`, `BLOM`, `BLMI`).
 - The scene pass is multisampled by default (`docs/specs/msaa.md`): the sandbox sets `NvRenderer.msaa`
   (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
@@ -262,8 +282,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - Animation runs through the scene: `nv_anim_update_scene` (before `nv_scene_update`) updates
   every animator, moves its `owner` node by root motion, aims look-at at `target_node` and fills
   `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
-- `nv_gltf_load_model` creates the skeleton and animator for a skinned model; call `nv_anim_init`
-  first.
+- `nv_gltf_load_model` creates the skeleton and animator for a skinned model, under the `parent` it is given; call `nv_anim_init`
+  first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so a generator keeps the characters it made.
 - There are two executables, `sandbox` (the engine's test ground, with an editor UI) and `autobattler` (`docs/specs/battle.md`), each with its own page.
   `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])` packs the files a program reads
   into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at `/assets`), `autobattler` only the
