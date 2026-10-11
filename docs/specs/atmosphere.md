@@ -1,6 +1,6 @@
 # Atmospheric scattering spec
 
-상태: 제안 (2026-10-11). 구현은 사용자가 시작하라고 할 때 시작한다. 이 스펙의 변경은 먼저 합의한다.
+상태: 결정됨, 구현 전 (2026-10-11). 구현은 사용자가 시작하라고 할 때 시작한다. 이 스펙의 변경은 먼저 합의한다.
 
 이 스펙은 **공부가 첫 목적**이다. 사용자가 처음 구현해 보는 기술이므로, 기능을 빨리 끝내는 순서가 아니라 **개념을 하나씩 이해하며
 쌓는 순서**로 짠다. 결과물(샌드박스의 하늘과 대기 원근)은 그 과정의 산물이다.
@@ -15,7 +15,7 @@
 6. 공부 도구 — Study 섹션, 성분 보기, 차이 보기, 프로브, 그래프
 7. 설계 — 모델, LUT, 패스, 엔진 API, 샌드박스 (구현의 결정)
 8. 시험
-9. 합의할 것, 범위 밖, 용어, 읽을거리
+9. 결정, 범위 밖, 용어, 읽을거리
 
 ---
 
@@ -29,7 +29,7 @@
   붉어지고, 해 주변에 후광이 있고, 해 원반이 보인다. 지평선 아래는 행성의 지면이다.
 - **햇빛의 색**: 해가 낮을수록 지면에 닿는 햇빛이 붉고 어두워진다.
 - **대기 원근(aerial perspective)**: 먼 물체가 하늘 색으로 흐려진다.
-- **하늘의 주변광**: 고정된 `ambient` 0.15 대신 하늘에서 오는 빛.
+- **하늘의 주변광**: 씬의 고정된 주변광(`lighting`의 `ambient`, chess_scene.md) 대신 하늘에서 오는 빛.
 
 해는 씬의 첫 directional light다(`shadows.md`와 같다). 그 노드를 기즈모로 돌리면 시각이 바뀌고, 그 노드에 `spin`을 달면 Play에서
 하루가 흐른다.
@@ -124,7 +124,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 - 한 점 주변이 다 같은 높이의 공기라고 보면, 빛이 한 번 더 산란될 때마다 같은 비율 f_ms가 돌아온다.
 - 그러면 모든 차수의 합은 등비급수다: L₂ + L₂·f_ms + L₂·f_ms² + … = L₂ / (1 − f_ms).
 다중 산란 LUT가 높이와 해의 천정각마다 Ψ_ms = L₂ / (1 − f_ms)를 담고, 5번의 적분 안에 σ_s(x) · Ψ_ms 항이 더해진다.
-버리는 것: 다중 산란의 방향성. 그래서 연무가 아주 짙으면 틀린다(선택 실험 4-b).
+버리는 것: 다중 산란의 방향성. 그래서 연무가 아주 짙으면 틀린다(실험 4-d: 경로 추적과 비교).
 
 **8. 대기 원근.** 물체까지의 시선에 5번(과 7번)을 t_max = 물체까지의 거리로 적분한 산란 S와 투과율 T. 화면 색 = 물체의 색 · T + S.
 하늘은 "물체가 없는 시선"의 대기 원근이다: 같은 적분이다.
@@ -144,7 +144,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 ## 5. 단계
 
 단계마다: **배울 것**, **이론**(4절의 번호), **만드는 것**, **볼 것**, **실험**(예측 → 확인), **확인 질문**(답할 수 있으면 이해한
-것), **읽기 순서**, **다음 단계의 동기**. 실험의 값은 Inspector의 Atmosphere 섹션과 그 아래 Study 섹션(6절)에서 바꾼다.
+것), **읽기 순서**, **다음 단계의 동기**. 실험의 값은 View 탭의 Atmosphere 섹션(대기 값)과 Atmosphere study 섹션(6절)에서 바꾼다.
 
 ### 0단계: 단위, 기하, 투과율 (CPU만)
 
@@ -154,7 +154,8 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
   - `engine/atmosphere.h`, `engine/atmosphere.c`: `NvAtmosphere`, 지구 기본값, 광선-구 교차, 밀도, 광학 깊이, `nv_atmosphere_transmittance`.
   - `tests/atmosphere_test.c`(ctest).
   - 렌더러: `frame.light_color`에 해 방향의 투과율을 곱한다(햇빛의 색).
-  - 샌드박스: `atmosphere` 동작(파라미터, Inspector), 쇼케이스의 `sun`에 단다. Study 섹션의 그래프 둘: 높이별 밀도, 해의 고도별 투과율.
+  - 샌드박스: 씬 파일 `lighting` 블록 안의 `atmosphere` 블록(읽기, View 탭, 저장 `ATMO`, undo), 쇼케이스 파일에 블록. Study 섹션의
+    그래프 둘: 높이별 밀도, 해의 고도별 투과율.
   - 하늘은 아직 `clear_color`다.
 - **볼 것**: 기즈모로 해를 낮추면 바닥과 캐릭터가 주황으로, 지평선 아래로 가면 검게 바뀐다. 그래프에서 파랑이 먼저 떨어진다.
 - **실험**:
@@ -233,13 +234,14 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 - **배울 것**: 산란의 차수, 등방 근사, 등비급수, 근사의 한계.
 - **이론**: 7.
 - **만드는 것**: 다중 산란 LUT compute 패스(텍셀마다 방향 64개를 workgroup이 나눠 적분), 적분에 Ψ_ms 항, 토글 "Multiple scattering",
-  성분 보기 `MULTIPLE`. C 판에도 같은 항.
+  성분 보기 `MULTIPLE`. C 판에도 같은 항. C의 몬테카를로 경로 추적(`nv_atmosphere_path_trace`, Debug 빌드의 Study 섹션).
 - **볼 것**: 하늘이 밝아진다. 해가 진 직후에도 하늘이 완전히 검지 않다. 짙은 연무에서 차이가 크다.
 - **실험**:
   - a. 토글을 끄고 켠다. 예측: 어느 쪽 하늘이 가장 많이 바뀔까?
   - b. `mie` 20배에서 토글. 예측: 단일 산란만으로는 짙은 안개가 어떻게 보일까?
   - c. 해 고도 −3°에서 `SINGLE`과 `MULTIPLE` 보기.
-  - (선택) 4-b. C의 몬테카를로 경로 추적(한 방향, Debug 빌드만)과 근사를 프로브 방향에서 비교한다. 연무를 짙게 할수록 차이가 커지는지 본다(합의할 것 7).
+  - d. **경로 추적과 비교**(Debug 빌드): 프로브 방향에서 C의 몬테카를로 경로 추적(모든 차수의 산란, 근사 없음)을 돌려 근사와 비교한다.
+    값이 프레임마다 쌓이며 수렴하는 것을 본다(잡음은 경로 수의 제곱근에 반비례한다). 예측: `mie` 1과 20에서 근사의 오차는?
 - **확인 질문**:
   1. 2차 이상의 산란을 등방이라 봐도 되는 이유는? 언제 안 되나?
   2. f_ms는 무엇의 비율이고, 1 / (1 − f_ms)는 왜 나오나?
@@ -286,7 +288,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 - **배울 것**: radiance에서 irradiance로(코사인 가중 반구 적분), 지면에서 튀는 빛.
 - **이론**: 10.
 - **만드는 것**: 하늘 뷰 LUT를 반구 적분하는 compute(위 조도, 아래 조도), 메시 셰이더가 법선의 y로 섞는다. 토글 "Sky ambient"(끄면
-  지금의 `ambient`). 그래프 대신 Study 섹션에 두 조도의 색 견본.
+  씬의 `lighting`/`ambient`). 그래프 대신 Study 섹션에 두 조도의 색 견본.
 - **볼 것**: 한낮에 그늘이 푸르스름하고, 해질녘엔 전체가 붉고 어두워진다.
 - **실험**:
   - a. 토글을 끄고 켜며 그늘 속 색. 예측: 한낮의 그늘은 무슨 색일까?
@@ -298,13 +300,14 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 ### 8단계: 마무리 (새 개념 없음)
 
 이펙트(알파 파티클, 데칼, 선분)의 대기 원근, 쇼케이스 다듬기, AGENTS.md 정리, "구현 결과"에 단계별 GPU 시간 표. 공학 작업이라
-사용자가 원하면 건너뛰거나 나중에 한다(합의할 것 3).
+7단계를 마친 뒤 할지 정한다(결정 3).
 
 ---
 
 ## 6. 공부 도구
 
-모두 해 노드의 Inspector, Atmosphere 섹션 아래 **Study** 섹션에 있다(데스크톱과 폰 같다). 편집기 도구라 저장하지 않고 undo도 없다.
+모두 View 탭의 **Atmosphere study** 섹션에 있다(Atmosphere 섹션 바로 아래, 데스크톱과 폰 같다). 보이는 씬에 대기가 없으면 두
+섹션 모두 숨는다. 편집기 도구라 저장하지 않고 undo도 없다. 다 만든 뒤에도 남긴다(결정 8).
 엔진 쪽 설정은 `NvAtmosphereStudy`이고 0이 "모든 최적화 켬, 최종 보기"다.
 
 | 도구 | 하는 일 | 생기는 단계 |
@@ -320,7 +323,7 @@ T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
 | 프로브 | "Place probe"를 누른 뒤 뷰포트를 탭하면 그 픽셀에 십자가 남는다. 그 픽셀의 시선(해 기준 고도, 방위), GPU의 HDR 값(노출 전, 씬 색 텍셀 하나를 읽어 온다), 같은 시선의 C 값과 성분(Rayleigh, Mie, 다중), 상대 차이. 메시가 있는 픽셀은 GPU 값만 | 1 |
 | LUT를 만든 횟수 | 투과율/다중 산란, 하늘 뷰, 볼륨 | 3 |
 | GPU 시간 | 대기 compute 패스, 씬 패스(하늘 포함) | 1 |
-| 경로 추적 (선택) | C의 몬테카를로 경로 추적으로 프로브 방향의 radiance(수 초 걸림, Debug 빌드만) | 4 (합의할 것 7) |
+| 경로 추적 | C의 몬테카를로 경로 추적으로 프로브 방향의 radiance. 프레임마다 약 5 ms어치 경로를 더해 화면을 멈추지 않고 수렴한다. 경로 수, 평균, 표준 오차, 근사와의 차이. Debug 빌드만 | 4 |
 
 - 프로브의 읽기는 타임스탬프와 같은 규칙을 따른다: 다른 읽기가 진행 중이 아닐 때 시작하고, 값은 몇 프레임 늦게 온다.
 - 프로브의 십자는 뷰포트에 그리는 편집기 UI의 예외다(빌드 표시, 기즈모와 같이). AGENTS.md에 예외로 적는다.
@@ -426,7 +429,7 @@ typedef struct NvAtmosphereStudy {
     b32 no_multiple_scattering;
     b32 no_sky_view_lut;        // integrate every sky pixel
     b32 no_aerial_volume;       // integrate every fragment's ray
-    b32 no_sky_ambient;         // the renderer's fixed ambient instead
+    b32 no_sky_ambient;         // NvRenderer.ambient (the scene's) instead
     u32 view_steps, sun_steps;  // of the direct integrals; 0 = 32, 16
     f32 altitude;               // km added to the camera's, for the atmosphere only
     f32 difference_gain;        // 0 = 10
@@ -448,6 +451,11 @@ NvVec3 nv_atmosphere_transmittance(const NvAtmosphere* atmosphere, f32 altitude,
 // direct integral the GPU's reference path does too.
 NvSkySample nv_atmosphere_sky(const NvAtmosphere* atmosphere, f32 altitude, NvVec3 view, NvVec3 sun, NvVec3 sun_illuminance,
                               u32 view_steps, u32 sun_steps);
+
+// Debug study tool (step 4): adds `paths` Monte Carlo paths along `view`, every order of scattering and no approximation, to
+// `sum` and `sum_squares` (for the mean and its standard error). Called a few hundred paths a frame, so the page keeps running.
+void nv_atmosphere_path_trace(const NvAtmosphere* atmosphere, f32 altitude, NvVec3 view, NvVec3 sun, NvVec3 sun_illuminance,
+                              u32 paths, u64* random_state, NvVec3* sum, NvVec3* sum_squares);
 ```
 
 `NvRenderer`에 `NvAtmosphere atmosphere`, `NvAtmosphereStudy atmosphere_study`(앱이 매 프레임 설정, `shadows`, `post`와 같다), LUT,
@@ -456,20 +464,26 @@ NvSkySample nv_atmosphere_sky(const NvAtmosphere* atmosphere, f32 altitude, NvVe
 
 ### 샌드박스
 
+결정 2: 대기는 씬 설정이다. 체스 씬이 만든 `lighting` 블록(씬의 빛 설정: `ambient`, chess_scene.md)과 같은 길을 간다: 파일이
+기본값을 주고, View 탭에서 바꾸고, `SCNE` 안에 저장되고, undo의 Scene settings 범위에 든다.
+
 | 주제 | 결정 |
 |---|---|
-| 어디에 적나 | 해 노드의 동작 `atmosphere`(`scene_file.md`의 동작 종류에 하나 더함). 파라미터 표가 읽기, Inspector, 검색, 저장(`BHVR`), undo를 만든다 |
-| 제약 | 씬에 많아야 하나, 그 노드는 씬의 첫 directional light. 아니면 씬 파일 오류 |
-| 매 프레임 | `behaviors.c`의 `atmosphere` 분기가 `renderer.atmosphere`를 채운다. 시간으로 움직이는 것이 없어 Edit와 Play가 같다. 동작이 없는 씬은 0 |
-| Study | `Sandbox.atmosphere_study`(저장 안 함)를 `renderer.atmosphere_study`에 넣는다. UI는 6절 |
+| 어디에 적나 | `lighting` 블록 안의 하위 블록 `atmosphere`. 없으면 그 씬에 대기가 없다. 키는 `SceneField` 표 하나(`scene_file.c`의 `atmosphere_fields`)이고, 모두 파라미터다: 같은 행이 읽기, View 탭의 위젯, 검색, 저장, undo 이름표를 만든다(동작의 파라미터와 같은 방식) |
+| 데이터 | `SceneDesc.lighting.atmosphere`(`AtmosphereDesc`: 아래 키의 값과 `on`)를 `SceneDoc.atmosphere`가 복사해 시작한다 |
+| 해 | 씬의 첫 directional light. 제약 없음: 그런 빛이 없으면 하늘이 검다(오류 아님) |
+| 매 프레임 | 주변광처럼(`sandbox/main.c`가 `renderer.ambient`를 넣는 곳) 보이는 씬의 `SceneDoc.atmosphere`로 `renderer.atmosphere`를 만든다. 시간으로 움직이는 것이 없어 Edit와 Play가 같다 |
+| View 탭 | Ambient 행 아래 **Atmosphere** 섹션(파라미터 행), 그 아래 **Atmosphere study** 섹션(6절). 보이는 씬에 대기가 없으면 둘 다 숨는다(대기를 켜고 끄는 것은 파일이 정한다) |
+| 저장 | `SCNE` 안의 새 컨테이너 `ATMO`: 파라미터마다 `PARM`{`NAME`, `VALU`}(`BHVR`와 같은 모양, 이름으로 찾으므로 키가 늘어도 옛 저장이 읽힌다). 없으면 파일의 값. 기존 태그의 뜻은 그대로이므로 `SAVE_VERSION`은 그대로다. `save.md`에 행을 더한다 |
+| undo | Scene settings 범위(`SAVE_SCOPE_SCENE`)에 `ATMO`. 이름표는 "Atmosphere " + 행의 이름표. `undo.md`에 행을 더한다 |
+| Study | `Sandbox.atmosphere_study`(저장 안 함, 씬마다가 아니라 하나)를 `renderer.atmosphere_study`에 넣는다 |
 | Play | 하루의 흐름은 해 노드의 `spin`. Stop이 해의 회전을 되돌린다 |
-| 저장, undo | 새 태그 없음, `SAVE_VERSION` 그대로 |
-| 쇼케이스 | `sun`에 `atmosphere`. `aerial_scale`과 노출은 6단계에서 정한다 |
-| 스트레스 | 대기 없음 |
+| 씬 | 쇼케이스: 대기 있음, `aerial_scale`과 노출은 6단계에서 정한다. 스트레스: 없음(결정 5, 벤치마크 비교 유지). 체스: 없음(조명과 그림자의 기준 씬이라 그대로 둔다. 원하면 파일에 한 줄) |
 | Textures 탭 | 투과율, 다중 산란, 하늘 뷰 LUT(`gather`) |
+| 문서 | 0단계에서 `scene_file.md`(`lighting`의 하위 블록), `save.md`(`ATMO`), `undo.md`, AGENTS.md(프로브 십자의 예외는 1단계) |
 | 문자열 | 새 UI 문자열은 `sandbox/strings.c`에 한국어 행 |
 
-**`atmosphere` 동작의 키** (모두 파라미터, 모두 선택. 배율은 지구 기본값에 곱한다)
+**`atmosphere` 블록의 키** (`lighting` 안. 모두 파라미터, 모두 선택. 배율은 지구 기본값에 곱한다)
 
 | 키 | 범위 | 기본 | 뜻 | 이름표 | 단계 |
 |---|---|---|---|---|---|
@@ -481,6 +495,13 @@ NvSkySample nv_atmosphere_sky(const NvAtmosphere* atmosphere, f32 altitude, NvVe
 | `sun_disk <도>` | 0–10 | 0.545 | 해 원반의 시직경, 0이면 없음 | "Sun disk" | 2 |
 | `aerial_scale <배율>` | 0–1000 | 1 | 대기 원근의 거리 배율, 0이면 없음 | "Aerial distance" | 6 |
 
+```
+lighting
+    ambient 0.15 0.15 0.15      # used where the sky's ambient is off (step 7)
+    atmosphere
+        aerial_scale 50
+```
+
 검색 키워드: sky, atmosphere, scattering, fog, haze, sunset, rayleigh, mie, ozone.
 
 ---
@@ -488,7 +509,7 @@ NvSkySample nv_atmosphere_sky(const NvAtmosphere* atmosphere, f32 altitude, NvVe
 ## 8. 시험
 
 Debug 빌드가 내보낸다: `_sandbox_debug_set_atmosphere(rayleigh, mie, anisotropy, ozone, sun_disk, aerial_scale)`(보이는 씬의 `atmosphere`
-동작), `_sandbox_debug_set_sun(elevation_degrees, azimuth_degrees)`, `_sandbox_debug_set_atmosphere_study(view, flags, view_steps,
+블록), `_sandbox_debug_set_sun(elevation_degrees, azimuth_degrees)`, `_sandbox_debug_set_atmosphere_study(view, flags, view_steps,
 sun_steps, altitude)`, `_sandbox_debug_atmosphere(n)`(0 켜짐, 1~3 LUT를 만든 횟수), `_sandbox_debug_set_probe(x, y)`,
 `_sandbox_debug_probe(i)`(0 준비됨, 1~3 GPU 값, 4~6 C 값).
 
@@ -502,7 +523,7 @@ sun_steps, altitude)`, `_sandbox_debug_atmosphere(n)`(0 켜짐, 1~3 LUT를 만�
 
 | 시험 | 단계 |
 |---|---|
-| 해를 낮추면 바닥 픽셀이 붉어진다. 파라미터를 바꾸면 undo 한 걸음, 저장 왕복이 같다. Play와 Stop 뒤 `save_crc`가 같다 | 0 |
+| 해를 낮추면 바닥 픽셀이 붉어진다. 파라미터를 바꾸면 undo 한 걸음(Scene settings), 저장 왕복이 같다, 다시 불러오면 값이 남는다. Play와 Stop 뒤 `save_crc`가 같다. 대기가 없는 씬(스트레스, 체스)은 그림이 전과 같다 | 0 |
 | 하늘 픽셀이 파랗다. **프로브: GPU의 곧은 적분과 C가 하늘 픽셀 셋(천정 근처, 해 반대편, 지평선)에서 1% 안** | 1, 2 |
 | MSAA 끔/4x, Scale 2, Fixed에서 같은 결과, WebGPU 오류 없음, 성분 보기마다 오류 없음 | 1 |
 | **LUT 경로와 곧은 경로가 해의 고도 45°, 10°, 2°에서 하늘 픽셀 셋에서 상대 5% 안**(해 원반 근처 제외). 해를 돌려도 투과율 LUT 횟수가 그대로, `rayleigh`를 바꾸면 1 오름 | 3, 4, 5 |
@@ -512,19 +533,20 @@ sun_steps, altitude)`, `_sandbox_debug_atmosphere(n)`(0 켜짐, 1~3 LUT를 만�
 
 ---
 
-## 9. 합의할 것
+## 9. 결정
 
-1. **직접 작성(Hillaire 2020), 새 라이브러리 없음.** (권장: 공부가 목적이다)
-2. **씬 파일에서 어디에 적나.** 해 노드의 동작 `atmosphere`(권장), 또는 최상위 블록과 View 탭.
-3. **8단계(이펙트의 대기 원근)를 이 스펙에 두나.** 새 개념이 없으므로 "나중"으로 미뤄도 된다(권장: 7단계까지 하고 그때 정한다).
-4. **7단계(주변광)를 두나.** 둔다(권장: irradiance라는 새 개념이고, 그늘의 색으로 결과가 크게 보인다).
-5. **스트레스 씬**: 대기 없음(권장).
-6. ~~누가 코드를 쓰나~~ **정함 (2026-10-11): Claude가 단계마다 쓰고 사용자가 읽고 질문한 뒤 넘어간다**(3절).
-7. **4단계의 선택 실험(C의 몬테카를로 경로 추적)**: 한다(약 150줄, Debug 빌드의 공부 도구), 또는 하지 않는다. 다중 산란 근사를 정답과
-   직접 비교하는 유일한 방법이다.
-8. **공부 도구를 끝까지 남기나.** 남긴다(권장: 시험이 쓰고, 나중에 다시 공부할 때 쓴다), 또는 8단계에서 걷어 낸다.
-9. **프로브의 십자**를 뷰포트에 그리는 편집기 UI의 예외로 두나(권장), 또는 프로브를 Study 섹션의 고도/방위 슬라이더로만 정하나
-   (그러면 GPU 값과의 비교가 없다).
+모두 정함 (2026-10-11).
+
+1. **직접 작성(Hillaire 2020), 새 라이브러리 없음.**
+2. **씬 설정으로 둔다**: `lighting` 블록 안의 `atmosphere` 블록, View 탭에서 편집, `ATMO`로 저장, Scene settings 범위로 undo(7절 "샌드박스").
+   해 노드의 동작으로 두는 안은 고르지 않았다.
+3. **8단계(이펙트의 대기 원근)는 7단계를 마친 뒤 할지 정한다.**
+4. **7단계(하늘의 주변광)를 둔다.**
+5. **스트레스 씬은 대기 없음.** (체스 씬도 없음: 7절)
+6. **Claude가 단계마다 코드를 쓰고, 사용자가 읽고 질문한 뒤 다음 단계로 간다**(3절). 구현은 사용자가 시작하라고 할 때 시작한다.
+7. **C의 몬테카를로 경로 추적을 만든다**(4단계, Debug 빌드의 공부 도구).
+8. **공부 도구를 끝까지 남긴다.**
+9. **프로브는 뷰포트를 탭해 고르고 십자를 그린다**: "편집기 UI는 도크 안에"의 예외로 AGENTS.md에 적는다.
 
 ## 범위 밖 (나중)
 
