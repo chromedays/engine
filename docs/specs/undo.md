@@ -7,6 +7,11 @@
 
 상태: 구현됨 (2026-09-28). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-10: undo는 이제 모든 씬에 있다 (`scene_file.md`). 이력은 하나이고 단계마다 자기 씬을 지닌다. 범위는 **노드**, **동작**(`BHVR`:
+> 행성의 속도, 캐릭터의 설정, 생성기의 수 등 씬 파일의 동작 파라미터; 예전의 **캐릭터**와 `ORBS`를 대신한다), **씬 설정**이다. 라벨은
+> "노드 이름 + 파라미터 이름표"다 (예: "planet Speed", "grid Cubes", "sword Visible"). 생성기가 만든 노드는 저장되지 않으므로 undo되지
+> 않는다. 아래 표와 문장 중 이것과 다른 것은 이 안내가 우선한다.
+
 ### 목표
 
 쇼케이스에서의 편집을 되돌리고 다시 한다: 기즈모 드래그, Inspector 필드, 체크박스, 캐릭터에 고른 클립. 사용자 액션 하나는
@@ -23,8 +28,8 @@
 
 ### undo 가능한 것
 
-쇼케이스만, 그리고 그 내용만. 스트레스 씬은 설정에서 다시 만들어지며 undo되지 않는다 (그것이 보이는 동안 Undo와 Redo는
-꺼진다).
+씬의 내용과 동작의 파라미터. 보이는 씬에 대해서만 비교하고, 씬을 바꾸면 그 씬의 지금 바이트를 단계 없이 커밋한다. 다른 씬의 단계를
+되돌리면 그 씬을 먼저 보인다.
 
 | 범위 | 담는 것 (저장의 필드) | 샌드박스가 움직이므로 빼는 것 |
 |---|---|---|
@@ -33,8 +38,7 @@
 | **씬 설정** | 공전 속도 (`ORBS`, undo만 쓰는 태그: 저장의 `PLNT`는 각도도 담는다), 뼈 표시 | 공전 각도 (재생 중에만 돈다) |
 | 재생 중 | 없음: undo는 꺼지고, Stop이 씬을 마지막 커밋으로 되돌린다 | |
 
-undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), 선택, 에디터 설정 (기즈모 모드, 자동 저장), 스트레스 씬의
-모든 것. 텍스트 필드는 입력하는 동안 자체 undo를 유지한다 (Dear ImGui의 것); 끝난 편집은 그다음 한 단계다.
+undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), 선택, 에디터 설정 (기즈모 모드, 자동 저장), 생성기가 만든 노드. 텍스트 필드는 입력하는 동안 자체 undo를 유지한다 (Dear ImGui의 것); 끝난 편집은 그다음 한 단계다.
 
 ### 결정
 
@@ -47,7 +51,7 @@ undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), �
 | 이력 | 메모리에 128 단계; 가득 차면 가장 오래된 것을 버린다. 저장하지 않는다: 새로고침은 이력 없이 시작한다. undo 뒤의 상태는 평소처럼 자동 저장된다 |
 | 단계 크기 | 전과 후는 각각 최대 1 KB (노드는 약 120바이트); 들어가지 않는 범위는 기록되지 않고 Debug에서 assert한다 |
 | 키 | Ctrl+Z undo; Ctrl+Shift+Z와 Ctrl+Y redo (macOS에서 Cmd는 Ctrl로 센다). 텍스트 필드를 편집하는 동안은 아님. `shortcuts.md` 이후로 데스크톱 UI만: 키는 그 표에 살고 `Undo.request`로 요청한다 |
-| UI | Undo와 Redo, 할 것이 없을 때, 재생 중에, 스트레스 씬이 보이는 동안 비활성 (`layout.md`): 데스크톱 UI에서는 Edit 메뉴, 각 항목에 바꿀 것을 라벨로 달고 ("Undo: character Position") 단축키를 보여 줌; 폰 UI에서는 상단 바의 왼쪽과 오른쪽 끝의 버튼 두 개, 라벨 없이. (원래는 패널 탭 위의 줄.) 버튼은 요청만 한다; undo는 프레임 끝에, 진행 중인 편집이 (있다면) 단계가 된 뒤에 일어난다 |
+| UI | Undo와 Redo, 할 것이 없을 때, 재생 중에 비활성 (`layout.md`): 데스크톱 UI에서는 Edit 메뉴, 각 항목에 바꿀 것을 라벨로 달고 ("Undo: character Position") 단축키를 보여 줌; 폰 UI에서는 상단 바의 왼쪽과 오른쪽 끝의 버튼 두 개, 라벨 없이. (원래는 패널 탭 위의 줄.) 버튼은 요청만 한다; undo는 프레임 끝에, 진행 중인 편집이 (있다면) 단계가 된 뒤에 일어난다 |
 | 테스트 | Debug 빌드는 `Module._sandbox_debug_undo_steps()`와 `Module._sandbox_debug_undo_done()`을 노출한다 |
 | 라벨 | 처음으로 다른 필드에서 가져온다: Position, Rotation, Scale, Name, Color, Joint, Field of view, Light color, Intensity, Clip, Speed, Fade, Blend, Root motion, Turn, Look at, Sword, Planet orbit, Show bones |
 | 서드파티 | 없음 |
@@ -77,6 +81,12 @@ undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), �
 
 Status: implemented (2026-09-28). Changes to this spec are agreed first.
 
+> 2026-10: Undo is now in every scene (`scene_file.md`). There is one history, and each step carries its scene. The scopes are **Node**,
+> **Behaviors** (`BHVR`: the scene file's behavior parameters, such as a planet's speed, a character's settings and a generator's
+> counts; it replaces the old **Character** scope and `ORBS`) and **Scene settings**. Labels are "node name + parameter label" (for
+> example "planet Speed", "grid Cubes", "sword Visible"). Nodes a generator made are not saved, so they are not undoable. Where a table
+> or a sentence below differs, this note wins.
+
 ### Goal
 
 Take back an edit in the showcase, and redo it: a gizmo drag, an Inspector field, a checkbox, a
@@ -93,8 +103,8 @@ clip picked for the character. One user action is one step, however many frames 
 
 ### What is undoable
 
-Only the showcase, and only its content. The stress scene is rebuilt from its settings and is not
-undoable (Undo and Redo are off while it is shown).
+A scene's content and the parameters of its behaviors. Only the shown scene is compared, and switching scenes commits the new scene's
+bytes as they are, without a step. Undoing a step of another scene shows that scene first.
 
 | Scope | Holds (the save's fields) | Left out, because the sandbox drives them |
 |---|---|---|
@@ -104,7 +114,7 @@ undoable (Undo and Redo are off while it is shown).
 | While playing | Nothing: undo is off, and Stop puts the scene back to the last commit | |
 
 Not undoable: the camera view (yaw, pitch, distance, pan, follow), the selection, the editor
-settings (gizmo mode, autosave), anything in the stress scene. Text fields keep their own undo
+settings (gizmo mode, autosave), the nodes a generator made. Text fields keep their own undo
 while they are being typed in (Dear ImGui's); the finished edit is then one step.
 
 ### Decisions
@@ -118,7 +128,7 @@ while they are being typed in (Dear ImGui's); the finished edit is then one step
 | History | In memory, 128 steps; the oldest is dropped when full. It is not saved: a reload starts with no history. The state after an undo is autosaved as usual |
 | Step size | Before and after are at most 64 KB each (a node is about 150 bytes, 220 at most, and up to 256 are selected: `UNDO_MAX_BYTES`; 1 KB before `selection.md`); a scope that does not fit is not recorded and asserts in Debug |
 | Keys | Ctrl+Z undo; Ctrl+Shift+Z and Ctrl+Y redo (Cmd counts as Ctrl on macOS). Not while a text field is being edited. Desktop UI only since `shortcuts.md`: the keys live in its table and ask through `Undo.request` |
-| UI | Undo and Redo, disabled when there is nothing to do, while playing, or while the stress scene is shown (`layout.md`): on the desktop UI the Edit menu, each item labeled with what it would change ("Undo: character Position") and showing its shortcut; on the phone UI two buttons at the top bar's left and right ends, without the labels. (Originally a row above the panel's tabs.) The buttons only ask; the undo happens at the frame's end, after the edit in progress (if any) has become a step |
+| UI | Undo and Redo, disabled when there is nothing to do or while playing (`layout.md`): on the desktop UI the Edit menu, each item labeled with what it would change ("Undo: character Position") and showing its shortcut; on the phone UI two buttons at the top bar's left and right ends, without the labels. (Originally a row above the panel's tabs.) The buttons only ask; the undo happens at the frame's end, after the edit in progress (if any) has become a step |
 | Tests | Debug builds expose `Module._sandbox_debug_undo_steps()` and `Module._sandbox_debug_undo_done()` |
 | Labels | Taken from the first field that differs: Position, Rotation, Scale, Name, Color, Joint, Field of view, Light color, Intensity, Clip, Speed, Fade, Blend, Root motion, Turn, Look at, Sword, Planet orbit, Show bones |
 | Third-party | None |

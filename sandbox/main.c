@@ -14,119 +14,6 @@ global u8 scratch_memory[NV_MEGABYTES(32)];
 global u8 anim_memory[NV_MEGABYTES(48)];
 
 //
-// Clips
-//
-
-NvClipId sandbox_find_clip(Sandbox* sandbox, const char* name)
-{
-    for (u32 i = 0; i < sandbox->clip_count; ++i) {
-        if (strcmp(nv_anim_clip_name(sandbox->clips[i]), name) == 0)
-            return sandbox->clips[i];
-    }
-    return (NvClipId){0};
-}
-
-internal NvClipId find_root_motion_clip(Sandbox* sandbox, const char* name)
-{
-    for (u32 i = 0; i < sandbox->root_motion_clip_count; ++i) {
-        if (strcmp(nv_anim_clip_name(sandbox->root_motion_clips[i]), name) == 0)
-            return sandbox->root_motion_clips[i];
-    }
-    return (NvClipId){0};
-}
-
-internal b32 is_loop(NvClipId clip)
-{
-    return strstr(nv_anim_clip_name(clip), "_Loop") != NULL;
-}
-
-NvClipId sandbox_regular_clip(Sandbox* sandbox, NvClipId clip)
-{
-    NvClipId regular = sandbox_find_clip(sandbox, nv_anim_clip_name(clip));
-    return regular.index ? regular : clip;
-}
-
-void sandbox_play(Sandbox* sandbox, NvClipId clip)
-{
-    // Root motion moves the node, which only happens while playing; Edit mode previews in place.
-    NvClipId moving = find_root_motion_clip(sandbox, nv_anim_clip_name(clip));
-    if (sandbox->root_motion && sandbox->playing && moving.index)
-        clip = moving;
-    sandbox->jump = JUMP_NONE;
-    nv_anim_play(nv_anim_get(sandbox->animator), clip, sandbox->fade_seconds, is_loop(clip));
-}
-
-// Jump is three clips chained: take-off, a short loop in the air, landing, then back to the loop
-// that was playing before.
-void sandbox_jump(Sandbox* sandbox)
-{
-    if (sandbox->jump != JUMP_NONE || !sandbox->playing)
-        return;
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    sandbox->jump_return = animator->layers[0].clip;
-    nv_anim_play(animator, sandbox_find_clip(sandbox, "Jump_Start"), 0.1f, 0);
-    sandbox->jump = JUMP_START;
-}
-
-internal void update_jump(Sandbox* sandbox, f32 dt)
-{
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    NvAnimLayer* layer = &animator->layers[0];
-    b32 finished = layer->clip.index && layer->time >= nv_anim_clip_duration(layer->clip) - 0.001f;
-    switch (sandbox->jump) {
-    case JUMP_START:
-        if (finished) {
-            nv_anim_play(animator, sandbox_find_clip(sandbox, "Jump_Loop"), 0.05f, 1);
-            sandbox->jump_air_time = 0.0f;
-            sandbox->jump = JUMP_AIR;
-        }
-        break;
-    case JUMP_AIR:
-        sandbox->jump_air_time += dt;
-        if (sandbox->jump_air_time >= 0.35f) {
-            nv_anim_play(animator, sandbox_find_clip(sandbox, "Jump_Land"), 0.05f, 0);
-            sandbox->jump = JUMP_LAND;
-        }
-        break;
-    case JUMP_LAND:
-        if (finished) {
-            nv_anim_play(animator, sandbox->jump_return, 0.2f, is_loop(sandbox->jump_return));
-            sandbox->jump = JUMP_NONE;
-        }
-        break;
-    case JUMP_NONE:
-        break;
-    }
-}
-
-// Blends a second clip into the current one, time-synchronized so feet stay in step.
-internal void update_blend(Sandbox* sandbox)
-{
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    NvAnimLayer* base = &animator->layers[0];
-    NvAnimLayer* blend = &animator->layers[2];
-    NvClipId other = sandbox->clips[sandbox->blend_clip];
-    b32 active = sandbox->blend_weight > 0.0f && base->clip.index && other.index != base->clip.index &&
-                 animator->fade_duration == 0.0f && sandbox->jump == JUMP_NONE;
-    if (!active) {
-        *blend = (NvAnimLayer){0};
-        if (animator->fade_duration == 0.0f)
-            base->weight = 1.0f;
-        return;
-    }
-    f32 base_duration = nv_anim_clip_duration(base->clip);
-    f32 other_duration = nv_anim_clip_duration(other);
-    *blend = (NvAnimLayer){
-        .clip = other,
-        .time = base->time / base_duration * other_duration,
-        .speed = base->speed * other_duration / base_duration,
-        .weight = sandbox->blend_weight,
-        .loop = 1,
-    };
-    base->weight = 1.0f - sandbox->blend_weight;
-}
-
-//
 // Scene
 //
 
@@ -139,157 +26,6 @@ NvMeshId sandbox_box_mesh(Sandbox* sandbox, NvVec3 half)
     nv_mesh_append_box(&mesh, nv_vec3(0, 0, 0), half);
     NvMeshData data = nv_mesh_builder_data(&mesh);
     return nv_renderer_add_mesh(&sandbox->renderer, &data);
-}
-
-// A sword along +Y: the grip is centered on the origin so it sits in the fist.
-internal NvMeshId create_sword_mesh(NvRenderer* renderer)
-{
-    NvVertex vertices[24 * 3];
-    u32 indices[36 * 3];
-    NvMeshBuilder mesh = {.vertices = vertices, .vertex_capacity = NV_ARRAY_COUNT(vertices), .indices = indices,
-                          .index_capacity = NV_ARRAY_COUNT(indices)};
-    nv_mesh_append_box(&mesh, nv_vec3(0, 0, 0), nv_vec3(0.018f, 0.09f, 0.018f));
-    nv_mesh_append_box(&mesh, nv_vec3(0, 0.1f, 0), nv_vec3(0.09f, 0.012f, 0.025f));
-    nv_mesh_append_box(&mesh, nv_vec3(0, 0.52f, 0), nv_vec3(0.025f, 0.41f, 0.006f));
-    NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(renderer, &data);
-}
-
-internal NvMeshId create_ground_mesh(NvRenderer* renderer)
-{
-    NvVertex vertices[4];
-    u32 indices[6];
-    NvMeshBuilder mesh = {.vertices = vertices, .vertex_capacity = NV_ARRAY_COUNT(vertices), .indices = indices,
-                          .index_capacity = NV_ARRAY_COUNT(indices)};
-    nv_mesh_append_plane(&mesh, 30.0f, 30.0f); // half size in meters
-    NvMeshData data = nv_mesh_builder_data(&mesh);
-    return nv_renderer_add_mesh(renderer, &data);
-}
-
-internal NvMaterialId add_color(Sandbox* sandbox, f32 r, f32 g, f32 b, b32 double_sided)
-{
-    NvMaterialDesc desc = {.base_color = {r, g, b, 1.0f}, .double_sided = double_sided};
-    return nv_renderer_add_material(&sandbox->renderer, &desc);
-}
-
-internal void build_world(Sandbox* sandbox)
-{
-    NvScene* scene = sandbox->scene;
-    NvNodeId none = {0};
-
-    NvNodeId camera = nv_scene_add_node(scene, none, "camera");
-    nv_scene_get(scene, camera)->camera = (NvCamera){
-        .projection = NV_PROJECTION_PERSPECTIVE,
-        .fov_y = 45.0f * NV_PI / 180.0f,
-        .near_z = 0.05f,
-        .far_z = 100.0f,
-    };
-    scene->active_camera = camera;
-    sandbox->views[SCENE_SHOWCASE] = (SceneView){
-        .scene = scene,
-        .camera = camera,
-        .orbit = {.target = {0.0f, 0.92f, 0.0f}, // the character's head height, where following would look
-                  .yaw = 0.35f, .pitch = 0.12f, .distance = 5.0f, ORBIT_LIMITS},
-        .follow_selection = false,
-    };
-    sandbox_set_home(&sandbox->views[SCENE_SHOWCASE]);
-
-    NvNodeId sun = nv_scene_add_node(scene, none, "sun");
-    NvNode* sun_node = nv_scene_get(scene, sun);
-    sun_node->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.5f),
-                                     nv_quat_axis_angle(nv_vec3(1, 0, 0), -0.8f));
-    sun_node->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.1f};
-
-    NvNodeId ground = nv_scene_add_node(scene, none, "ground");
-    NvNode* ground_node = nv_scene_get(scene, ground);
-    ground_node->mesh = create_ground_mesh(&sandbox->renderer);
-    ground_node->material = add_color(sandbox, 0.32f, 0.34f, 0.38f, 0);
-
-    // The planet floats beside the character, far enough that the moon's orbit misses it.
-    NvMeshId cube = sandbox_box_mesh(sandbox, nv_vec3(0.5f, 0.5f, 0.5f));
-    sandbox->planet = nv_scene_add_node(scene, none, "planet");
-    NvNode* planet = nv_scene_get(scene, sandbox->planet);
-    planet->position = nv_vec3(-4.5f, 1.6f, -4.0f);
-    planet->mesh = cube;
-    planet->material = add_color(sandbox, 0.95f, 0.55f, 0.25f, 0);
-
-    sandbox->moon = nv_scene_add_node(scene, sandbox->planet, "moon");
-    NvNode* moon = nv_scene_get(scene, sandbox->moon);
-    moon->position = nv_vec3(2.4f, 0.0f, 0.0f);
-    moon->scale = nv_vec3(0.45f, 0.45f, 0.45f);
-    moon->mesh = cube;
-    moon->material = add_color(sandbox, 0.55f, 0.70f, 0.95f, 0);
-}
-
-// Returns the joint-space axis (+-X, +-Y or +-Z) that points most along `direction` in model space.
-internal NvVec3 joint_axis_towards(NvMat4 joint_model, NvVec3 direction)
-{
-    NvVec3 best = nv_vec3(1, 0, 0);
-    f32 best_dot = -2.0f;
-    for (u32 axis = 0; axis < 3; ++axis) {
-        NvVec3 column = nv_vec3_normalize(nv_vec3(joint_model.e[axis * 4], joint_model.e[axis * 4 + 1], joint_model.e[axis * 4 + 2]));
-        f32 d = nv_vec3_dot(column, direction);
-        for (s32 sign = -1; sign <= 1; sign += 2) {
-            if (d * (f32)sign > best_dot) {
-                best_dot = d * (f32)sign;
-                best = nv_vec3(axis == 0 ? (f32)sign : 0.0f, axis == 1 ? (f32)sign : 0.0f, axis == 2 ? (f32)sign : 0.0f);
-            }
-        }
-    }
-    return best;
-}
-
-// Loads the character and its clips, and sets up the sword, the look-at target and the IK axes
-// from the rest pose (so before any clip plays).
-internal b32 build_character(Sandbox* sandbox)
-{
-    NvGltfLoad load = nv_gltf_load_model("/assets/quaternius/character.glb", sandbox->scene, &sandbox->renderer, &sandbox->permanent, &sandbox->scratch);
-    if (!load.ok)
-        return 0;
-    sandbox->character = load.model;
-    NV_ASSERT(sandbox->character.animator.index);
-    NvNode* root = nv_scene_get(sandbox->scene, sandbox->character.root);
-    snprintf(root->name, sizeof(root->name), "character");
-    sandbox->animator = sandbox->character.animator;
-    NvSkeletonId skeleton = sandbox->character.skeleton;
-    // A file that does not load leaves no clips (the load logged why).
-    sandbox->clip_count = nv_gltf_load_clips("/assets/quaternius/clips.glb", skeleton, NULL, &sandbox->scratch, sandbox->clips, SANDBOX_MAX_CLIPS).count;
-    sandbox->root_motion_clip_count = nv_gltf_load_clips("/assets/quaternius/clips_rm.glb", skeleton, "root", &sandbox->scratch,
-                                                     sandbox->root_motion_clips, SANDBOX_MAX_CLIPS).count;
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-
-    // The character faces +Z with +Y up. In the rest (T) pose the right fist's grip runs along
-    // +Z, so the sword there points +Z with its grip a little past the wrist, toward the fist.
-    s32 hand_joint = nv_anim_find_joint(skeleton, "hand_r");
-    NV_ASSERT(hand_joint >= 0);
-    NvMat4 hand = animator->joint_model[hand_joint];
-    NvVec3 grip = nv_vec3_add(nv_mat4_translation(hand), nv_vec3(-0.08f, -0.02f, 0.0f));
-    NvMat4 desired = nv_mat4_trs(grip, nv_quat_axis_angle(nv_vec3(1, 0, 0), NV_PI * 0.5f), nv_vec3(1, 1, 1));
-    sandbox->sword_mesh = create_sword_mesh(&sandbox->renderer);
-    sandbox->sword = nv_scene_add_node(sandbox->scene, sandbox->character.root, "sword");
-    NvNode* sword = nv_scene_get(sandbox->scene, sandbox->sword);
-    sword->material = add_color(sandbox, 0.75f, 0.77f, 0.8f, 1);
-    sword->attach = (NvJointAttach){.animator = sandbox->animator, .joint = (u32)hand_joint};
-    nv_mat4_decompose(nv_mat4_mul(nv_mat4_inverse(hand), desired), &sword->position, &sword->rotation, &sword->scale);
-
-    sandbox->target_mesh = sandbox_box_mesh(sandbox, nv_vec3(0.06f, 0.06f, 0.06f));
-    sandbox->target = nv_scene_add_node(sandbox->scene, (NvNodeId){0}, "look target");
-    NvNode* target = nv_scene_get(sandbox->scene, sandbox->target);
-    target->material = add_color(sandbox, 1.0f, 0.75f, 0.2f, 0);
-    // In Edit mode it stays where it is put, so it starts in front of the head.
-    target->position = nv_vec3(0.0f, 1.75f, 1.2f);
-
-    s32 head_joint = nv_anim_find_joint(skeleton, "Head");
-    NV_ASSERT(head_joint >= 0);
-    NvMat4 head = animator->joint_model[head_joint];
-    animator->look_at = (NvLookAt){
-        .joint = head_joint,
-        .forward = joint_axis_towards(head, nv_vec3(0, 0, 1)),
-        .up = joint_axis_towards(head, nv_vec3(0, 1, 0)),
-        .weight = 1.0f,
-        .target_node = sandbox->target,
-    };
-    return 1;
 }
 
 NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id)
@@ -306,54 +42,31 @@ NvAnimatorId sandbox_node_animator(NvScene* scene, NvNodeId id)
 
 SceneView* sandbox_view(Sandbox* sandbox)
 {
-    return &sandbox->views[sandbox->shown];
+    return &sandbox->docs[sandbox->shown].view;
 }
 
-void sandbox_show_scene(Sandbox* sandbox, SceneKind kind)
+void sandbox_show_scene(Sandbox* sandbox, u32 index)
 {
-    if (kind == SCENE_STRESS && !sandbox->stress.built)
-        stress_build(sandbox);
-    if (kind == SCENE_STRESS && sandbox->shown != SCENE_STRESS)
+    if (index >= sandbox->scene_count)
+        return;
+    SceneDoc* doc = &sandbox->docs[index];
+    if (!doc->built) {
+        nv_log(NV_LOG_ERROR, "scene", "cannot show %s: %s", doc->file, doc->error);
+        return;
+    }
+    if (index == sandbox->shown)
+        return;
+    // Play belongs to the scene on screen: switching ends it, so a scene that is not shown is always in Edit mode.
+    sandbox_stop_playing(sandbox);
+    sandbox->shown = index;
+    effects_clear(sandbox); // what the other scene fired does not carry over
+    if (stress_tab_shown(sandbox))
         sandbox->open_stress = 1;
-    sandbox->shown = kind;
-}
-
-void sandbox_back_to_center(Sandbox* sandbox)
-{
-    NvNode* root = nv_scene_get(sandbox->scene, sandbox->character.root);
-    root->position = nv_vec3(0, 0, 0);
-    root->rotation = nv_quat_identity();
 }
 
 //
 // Frame
 //
-
-// Turns the character while root motion walks it (nv_anim_update_scene moves it).
-internal void apply_turn(Sandbox* sandbox, f32 dt)
-{
-    NvNode* root = nv_scene_get(sandbox->scene, sandbox->character.root);
-    if (sandbox->root_motion)
-        root->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), sandbox->turn_rate * dt), root->rotation);
-}
-
-// The head's aim IK follows the target. While playing, the target sweeps in front of the
-// character; in Edit mode it stays where it was put.
-internal void update_look_target(Sandbox* sandbox)
-{
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    NvNode* target = nv_scene_get(sandbox->scene, sandbox->target);
-    target->mesh = sandbox->look_at ? sandbox->target_mesh : (NvMeshId){0};
-    animator->look_at.enabled = sandbox->look_at;
-    if (!sandbox->look_at || !sandbox->playing)
-        return;
-    f32 t = sandbox->play_time;
-    f32 angle = sinf(t * 0.7f) * 1.3f;
-    NvVec3 local = nv_vec3(sinf(angle) * 1.2f, 1.75f + 0.3f * sinf(t * 1.3f), cosf(angle) * 1.2f);
-    NvNode* root = nv_scene_get(sandbox->scene, sandbox->character.root);
-    target->position = nv_vec3_add(root->position, nv_quat_rotate(root->rotation, local));
-    target->rotation = nv_quat_axis_angle(nv_vec3(0, 1, 0), t * 2.0f);
-}
 
 #define ORBIT_RADIANS_PER_PIXEL 0.008f
 
@@ -546,14 +259,15 @@ internal void set_node_world(NvScene* scene, NvNode* node, NvMat4 world)
 }
 
 // The nodes the gizmo moves: the selected ones, without the active camera (the orbit camera's to
-// move) and without those under a selected node, which already move with it.
-internal u32 gizmo_targets(SceneView* view, NvNodeId* out)
+// move), without those under a selected node, which already move with it, and without what a generator made.
+internal u32 gizmo_targets(Sandbox* sandbox, SceneView* view, NvNodeId* out)
 {
     NvScene* scene = view->scene;
+    SceneDoc* doc = sandbox_doc(sandbox);
     u32 count = 0;
     for (u32 i = 0; i < selection_count(view); ++i) {
         NvNodeId id = selection_get(view, i);
-        if (id.index == scene->active_camera.index)
+        if (id.index == scene->active_camera.index || !doc_authored(doc, id.index))
             continue;
         b32 under_selected = 0;
         for (u32 p = scene->nodes[id.index].parent; p && !under_selected; p = scene->nodes[p].parent)
@@ -594,7 +308,7 @@ internal void draw_gizmo(Sandbox* sandbox, const NvSceneOutput* scene_output)
     sandbox->gizmo_shown = 0;
     // While a drag runs, the nodes it started with stay its nodes; otherwise the selection's.
     if (!ImGuizmo_IsUsingAny()) {
-        sandbox->gizmo_node_count = gizmo_targets(view, sandbox->gizmo_nodes);
+        sandbox->gizmo_node_count = gizmo_targets(sandbox, view, sandbox->gizmo_nodes);
         if (!sandbox->gizmo_node_count)
             return;
         for (u32 i = 0; i < sandbox->gizmo_node_count; ++i)
@@ -654,33 +368,6 @@ internal void draw_gizmo(Sandbox* sandbox, const NvSceneOutput* scene_output)
     }
 }
 
-internal void draw_bones(Sandbox* sandbox)
-{
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    const NvJointDesc* joints = nv_anim_joints(animator->skeleton);
-    NvMat4 root = nv_scene_get(sandbox->scene, animator->owner)->world;
-    for (u32 j = 0; j < animator->joint_count; ++j) {
-        if (joints[j].parent < 0)
-            continue;
-        NvVec3 a = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[joints[j].parent]));
-        NvVec3 b = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[j]));
-        nv_renderer_debug_line(&sandbox->renderer, a, b, nv_vec3(1.0f, 0.8f, 0.2f));
-    }
-
-    // Aim IK: the head's forward axis (green) against the direction to the target (red).
-    NvLookAt* look = &animator->look_at;
-    if (look->enabled) {
-        NvMat4 head = nv_mat4_mul(root, animator->joint_model[look->joint]);
-        NvVec3 f = look->forward;
-        NvVec3 origin = nv_mat4_translation(head);
-        NvVec3 forward = nv_vec3(head.e[0] * f.x + head.e[4] * f.y + head.e[8] * f.z,
-                                 head.e[1] * f.x + head.e[5] * f.y + head.e[9] * f.z,
-                                 head.e[2] * f.x + head.e[6] * f.y + head.e[10] * f.z);
-        nv_renderer_debug_line(&sandbox->renderer, origin, nv_vec3_add(origin, nv_vec3_scale(nv_vec3_normalize(forward), 0.6f)), nv_vec3(0.2f, 1.0f, 0.3f));
-        nv_renderer_debug_line(&sandbox->renderer, origin, nv_mat4_translation(nv_scene_get(sandbox->scene, sandbox->target)->world), nv_vec3(1.0f, 0.2f, 0.2f));
-    }
-}
-
 internal f64 now_ms(void)
 {
     return nv_time_seconds() * 1000.0;
@@ -725,41 +412,6 @@ internal void accumulate_times(Sandbox* sandbox, f64 now)
     sandbox->window_start = now;
 }
 
-// What always runs is the animation preview (with its crossfades and blend); what moves the scene
-// runs only while playing.
-internal void update_showcase(Sandbox* sandbox, f32 dt)
-{
-    if (sandbox->playing) {
-        sandbox->play_time += dt;
-        sandbox->orbit_angle += sandbox->orbit_speed * dt;
-        // The spins turn on top of the rotations authored in Edit mode.
-        nv_scene_get(sandbox->scene, sandbox->planet)->rotation =
-            nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), sandbox->orbit_angle), sandbox->planet_rotation);
-        nv_scene_get(sandbox->scene, sandbox->moon)->rotation =
-            nv_quat_mul(nv_quat_axis_angle(nv_vec3_normalize(nv_vec3(1, 1, 0)), sandbox->play_time * 2.0f), sandbox->moon_rotation);
-        update_jump(sandbox, dt);
-        apply_turn(sandbox, dt);
-    }
-    update_blend(sandbox);
-    update_look_target(sandbox);
-    nv_scene_get(sandbox->scene, sandbox->sword)->mesh = sandbox->show_sword ? sandbox->sword_mesh : (NvMeshId){0};
-}
-
-// Restarts the character's clip from its start with no crossfade, as a run begins and ends. With
-// `playing` set, root motion picks the clip's moving copy.
-internal void restart_clip(Sandbox* sandbox)
-{
-    NvAnimator* animator = nv_anim_get(sandbox->animator);
-    NvClipId clip = sandbox->jump != JUMP_NONE ? sandbox->jump_return : animator->layers[0].clip;
-    clip = sandbox_regular_clip(sandbox, clip);
-    f32 fade = sandbox->fade_seconds;
-    sandbox->fade_seconds = 0.0f;
-    animator->layers[0].clip = (NvClipId){0}; // so the same clip restarts too
-    sandbox_play(sandbox, clip);
-    sandbox->fade_seconds = fade;
-    animator->layers[0].time = 0.0f;
-}
-
 void sandbox_start_playing(Sandbox* sandbox)
 {
     if (sandbox->playing)
@@ -767,13 +419,11 @@ void sandbox_start_playing(Sandbox* sandbox)
     NvChunkWritten snapshot = save_write(sandbox, sandbox->play_snapshot, SAVE_MAX_SIZE);
     NV_ASSERT(snapshot.ok);
     sandbox->play_snapshot_size = snapshot.size;
-    sandbox->planet_rotation = nv_scene_get(sandbox->scene, sandbox->planet)->rotation;
-    sandbox->moon_rotation = nv_scene_get(sandbox->scene, sandbox->moon)->rotation;
     sandbox->play_time = 0.0f;
-    sandbox->orbit_angle = 0.0f;
+    behaviors_play_start(sandbox, sandbox_doc(sandbox));
     effects_clear(sandbox);
     sandbox->playing = 1;
-    restart_clip(sandbox);
+    behaviors_restart_clips(sandbox, sandbox_doc(sandbox));
 }
 
 void sandbox_stop_playing(Sandbox* sandbox)
@@ -781,15 +431,14 @@ void sandbox_stop_playing(Sandbox* sandbox)
     if (!sandbox->playing)
         return;
     sandbox->playing = 0;
-    // The scene as it was at Play: nodes, character settings, scene settings. The view, the
-    // selection and the editor settings stay as they are now.
-    SaveLoad load = save_load_parts(sandbox, sandbox->play_snapshot, sandbox->play_snapshot_size, SAVE_PART_SCENE);
+    benchmark_end(sandbox); // a run ends with the Play it ran in
+    // The scene as it was at Play: nodes, behaviors, scene settings. The view, the selection and the editor settings stay as they
+    // are now.
+    SaveLoad load = save_load_parts(sandbox, sandbox->play_snapshot, sandbox->play_snapshot_size, SAVE_PART_SCENE | SAVE_PART_SHOWN);
     NV_ASSERT(load.ok); // written by save_write at Play
     (void)load;
-    sandbox->jump = JUMP_NONE;
-    sandbox->orbit_angle = 0.0f;
     effects_clear(sandbox);
-    restart_clip(sandbox);
+    behaviors_stop(sandbox, sandbox_doc(sandbox));
 }
 
 internal void frame(void* userdata)
@@ -830,12 +479,10 @@ internal void frame(void* userdata)
     sandbox_build_ui(sandbox);
     times->ui = now_ms() - t;
 
-    NvScene* scene = sandbox_view(sandbox)->scene;
-    if (sandbox->shown == SCENE_SHOWCASE)
-        update_showcase(sandbox, dt);
-    else
-        stress_update(sandbox, dt);
-    selection_prune(sandbox_view(sandbox)); // the stress scene may have removed selected nodes
+    SceneDoc* doc = sandbox_doc(sandbox);
+    NvScene* scene = doc->scene;
+    behaviors_update(sandbox, doc, dt);
+    selection_prune(sandbox_view(sandbox)); // a generator may have removed selected nodes
 
     effects_update(sandbox, dt);
     t = now_ms();
@@ -849,10 +496,8 @@ internal void frame(void* userdata)
     draw_gizmo(sandbox, &layout->scene);
     undo_update(sandbox);
     draw_selection(sandbox);
-    if (sandbox->shown == SCENE_SHOWCASE && sandbox->show_bones)
-        draw_bones(sandbox);
-    if (sandbox->shown == SCENE_STRESS && sandbox->stress.want.show_bones)
-        stress_draw_bones(sandbox);
+    if (doc->show_bones)
+        behaviors_draw_bones(sandbox, doc);
 
     WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(sandbox->gpu.device, NULL);
     t = now_ms();
@@ -999,16 +644,29 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_vfx(int which)
     return values[which];
 }
 
-// Sets the stress scene's Effects workload: particles kept, explosions a second, missiles, beams, decals a second.
+// The first behavior of a kind in the shown scene, or NULL.
+internal Behavior* first_generator(BehaviorKind kind)
+{
+    SceneDoc* doc = sandbox_doc(&sandbox_state);
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (doc->behaviors[i].desc.kind == kind)
+            return &doc->behaviors[i];
+    return NULL;
+}
+
+// Sets the shown scene's first `effects` behavior: particles kept, explosions a second, missiles, beams, decals a second.
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
 {
-    StressWorkloads* want = &sandbox_state.stress.want;
-    want->effects_on = particles || explosions || missiles || beams || decals;
-    want->effect_particles = particles;
-    want->effect_explosions = explosions;
-    want->effect_missiles = missiles;
-    want->effect_beams = beams;
-    want->effect_decals = decals;
+    Behavior* behavior = first_generator(BEHAVIOR_EFFECTS);
+    if (!behavior)
+        return;
+    EffectsDesc* effects = &behavior->desc.effects;
+    effects->on = particles || explosions || missiles || beams || decals;
+    effects->particles = (u32)particles;
+    effects->explosions = (u32)explosions;
+    effects->missiles = (u32)missiles;
+    effects->beams = (u32)beams;
+    effects->decals = (u32)decals;
 }
 
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire(int effect)
@@ -1227,10 +885,10 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_shadows(int size, int format)
     sandbox_state.renderer.shadows.format = (NvShadowFormat)format;
 }
 
-// Shows a scene (0 showcase, 1 stress), as the View tab's picker does.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_show_scene(int kind)
+// Shows scene `index` of the list (0 is the first), as the View tab's picker does.
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_show_scene(int index)
 {
-    sandbox_show_scene(&sandbox_state, (SceneKind)kind);
+    sandbox_show_scene(&sandbox_state, (u32)index);
 }
 
 // Renderer textures: how many, and the i-th's width, height and mip count (component 0, 1, 2).
@@ -1318,9 +976,9 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_result(int i, int k)
     const PaletteResult* r = &s->results[i];
     if (k < 0)
         return r->kind;
-    const char* name = r->kind == PALETTE_ACTION ? command_name(r->index)
+    const char* name = r->kind == PALETTE_ACTION ? command_name(&sandbox_state, r->index)
                        : r->kind == PALETTE_SETTING ? s->settings[r->index].label
-                       : r->kind == PALETTE_NODE ? sandbox_state.views[sandbox_state.shown].scene->nodes[r->index].name
+                       : r->kind == PALETTE_NODE ? sandbox_view(&sandbox_state)->scene->nodes[r->index].name
                                                  : "";
     return k < (int)strlen(name) ? (u8)name[k] : 0;
 }
@@ -1359,20 +1017,72 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_rename_selected(void)
     node->name[length] = 0;
 }
 
-// Turns the stress scene's deep chain on with `links` links (0 = off).
+// Turns the shown scene's first `chain` on with `links` links (0 = off).
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_chain(int links)
 {
-    sandbox_state.stress.want.chain_on = links > 0;
+    Behavior* behavior = first_generator(BEHAVIOR_CHAIN);
+    if (!behavior)
+        return;
+    behavior->desc.chain.on = links > 0;
     if (links > 0)
-        sandbox_state.stress.want.chain_count = links;
+        behavior->desc.chain.count = (u32)links;
 }
 
-// Sets the stress scene's grid to `cubes` cubes (0 = off).
+// Sets the shown scene's first `grid` to `cubes` cubes (0 = off).
 EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_grid(int cubes)
 {
-    sandbox_state.stress.want.grid_on = cubes > 0;
+    Behavior* behavior = first_generator(BEHAVIOR_GRID);
+    if (!behavior)
+        return;
+    behavior->desc.grid.on = cubes > 0;
     if (cubes > 0)
-        sandbox_state.stress.want.grid_count = cubes;
+        behavior->desc.grid.count = (u32)cubes;
+}
+
+// Sets the shown scene's first `crowd` to `characters` characters (0 = off).
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_crowd(int characters)
+{
+    Behavior* behavior = first_generator(BEHAVIOR_CROWD);
+    if (!behavior)
+        return;
+    behavior->desc.crowd.on = characters > 0;
+    if (characters > 0)
+        behavior->desc.crowd.count = (u32)characters;
+}
+
+// What the shown scene's generators have made: 0 cubes, 1 links, 2 characters in use, 3 characters made.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_built(int which)
+{
+    Behavior* grid = first_generator(BEHAVIOR_GRID);
+    Behavior* chain = first_generator(BEHAVIOR_CHAIN);
+    Behavior* crowd = first_generator(BEHAVIOR_CROWD);
+    int values[4] = {grid ? (int)grid->grid.built : 0, chain ? (int)chain->chain.built : 0, crowd ? (int)crowd->crowd.active : 0,
+                     crowd ? (int)crowd->crowd.created : 0};
+    return values[which];
+}
+
+// The benchmark: 0 running, 1 the step, 2 results held, 3 the run started Play. _sandbox_debug_benchmark_start runs it, as the
+// button does.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_benchmark(int which)
+{
+    const Benchmark* benchmark = &sandbox_state.benchmark;
+    int values[4] = {benchmark->running, (int)benchmark->step, (int)benchmark->result_count, benchmark->started_play};
+    return values[which];
+}
+
+EMSCRIPTEN_KEEPALIVE void sandbox_debug_benchmark_start(void)
+{
+    benchmark_start(&sandbox_state);
+}
+
+// The scenes: 0 the shown scene's index, 1 how many there are, 2 whether scene `a` was built.
+EMSCRIPTEN_KEEPALIVE int sandbox_debug_scenes(int which, int a)
+{
+    switch (which) {
+    case 0: return (int)sandbox_state.shown;
+    case 1: return (int)sandbox_state.scene_count;
+    default: return a >= 0 && a < (int)sandbox_state.scene_count && sandbox_state.docs[a].built;
+    }
 }
 
 // The selected node's index in the shown scene; 0 = none.
@@ -1457,7 +1167,6 @@ int main(void)
     nv_arena_init(&sandbox->scratch, scratch_memory, sizeof(scratch_memory));
     nv_arena_init(&sandbox->anim_memory, anim_memory, sizeof(anim_memory));
     sandbox_strings_init();
-    sandbox->scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
 
     nv_window_create(&sandbox->window, "nv");
     if (!nv_gpu_create(&sandbox->gpu, &sandbox->window)) {
@@ -1512,28 +1221,17 @@ int main(void)
     gizmo_style->CenterCircleSize *= ui_scale;
     nv_anim_init(&sandbox->anim_memory);
 
-    build_world(sandbox);
-    if (!build_character(sandbox)) {
-        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to load the character");
+    // Every scene is built from its file. One that cannot be built cannot be shown, but the first is where the sandbox starts.
+    if (!scenes_init(sandbox)) {
+        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to build the first scene: %s", sandbox->docs[0].error);
         return 1;
     }
 
     effects_init(sandbox);
-    sandbox->orbit_speed = 0.7f;
-    sandbox->fade_seconds = 0.3f;
-    sandbox->turn_rate = 0.6f;
-    sandbox->show_sword = true;
-    sandbox->views[SCENE_SHOWCASE].selected = sandbox->character.root;
-    sandbox->views[SCENE_SHOWCASE].focus = sandbox->character.root;
     sandbox->autosave = true;
     sandbox->console.auto_scroll = true;
     sandbox->play_snapshot = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
-    // Taken before anything can rename or move nodes: saves apply to nodes by their place in this
-    // tree, and only while it is the same tree.
-    sandbox->scene_layout = save_scene_layout(sandbox->scene);
     sandbox->window_start = nv_time_seconds();
-    sandbox_show_scene(sandbox, SCENE_SHOWCASE);
-    sandbox_play(sandbox, sandbox_find_clip(sandbox, "Idle_Loop"));
     NV_ASSERT(save_round_trip_matches(sandbox));
     save_init(sandbox);
     undo_init(sandbox);

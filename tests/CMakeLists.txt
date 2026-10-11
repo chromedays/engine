@@ -57,14 +57,28 @@ target_include_directories(camera_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_options(camera_test PRIVATE -sENVIRONMENT=node)
 add_test(NAME camera_test COMMAND camera_test)
 
+# The line-based text reading in engine/text.c: lines, tokens, numbers, names and error reports.
+add_executable(text_test text_test.c ${PROJECT_SOURCE_DIR}/engine/text.c ${PROJECT_SOURCE_DIR}/engine/log.c)
+target_include_directories(text_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_link_options(text_test PRIVATE -sENVIRONMENT=node)
+add_test(NAME text_test COMMAND text_test)
+
 # The auto-battler's rules and definition files (autobattler/battle.c, defs.c): no GPU. NODERAWFS reads the repository's
 # autobattler/data directly.
 add_executable(battle_test battle_test.c ${PROJECT_SOURCE_DIR}/autobattler/battle.c ${PROJECT_SOURCE_DIR}/autobattler/defs.c
-    ${PROJECT_SOURCE_DIR}/engine/log.c)
+    ${PROJECT_SOURCE_DIR}/engine/log.c ${PROJECT_SOURCE_DIR}/engine/text.c)
 target_include_directories(battle_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE_DIR}/autobattler/data")
 target_link_options(battle_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
 add_test(NAME battle_test COMMAND battle_test)
+
+# The scene file reader (sandbox/scene_file.c): no GPU. NODERAWFS reads the sandbox's own .nvscene files.
+add_executable(scene_file_test scene_file_test.c ${PROJECT_SOURCE_DIR}/sandbox/scene_file.c ${PROJECT_SOURCE_DIR}/engine/text.c
+    ${PROJECT_SOURCE_DIR}/engine/log.c)
+target_include_directories(scene_file_test PRIVATE ${PROJECT_SOURCE_DIR})
+target_compile_definitions(scene_file_test PRIVATE SCENE_DATA_DIR="${PROJECT_SOURCE_DIR}/sandbox/data")
+target_link_options(scene_file_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
+add_test(NAME scene_file_test COMMAND scene_file_test)
 
 # Reading a whole file into an arena (engine/file.c). NODERAWFS reads this test's own source.
 add_executable(file_test file_test.c ${PROJECT_SOURCE_DIR}/engine/file.c)

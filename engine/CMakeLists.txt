@@ -14,6 +14,7 @@ add_library(nv STATIC
     scene.c
     storage.c
     strings.c
+    text.c
     vfx.c
     vfx_cpu.c
     window.c)

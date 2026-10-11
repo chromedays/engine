@@ -5,6 +5,7 @@
 #include "battle.h"
 
 #include <engine/log.h>
+#include <engine/text.h>
 
 #include <math.h>
 #include <stdarg.h>
@@ -13,187 +14,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_LOGGED_ERRORS 20
-#define MAX_TOKENS        (1 + BATTLE_MAX_ROLES) // a line's words: its key, and up to a role for each declared role
 #define NO_LIMIT          1e30
 
-typedef struct Token {
-    const char* text;
-    u32 length;
-} Token;
-
-typedef struct Line {
-    u32 number; // from 1
-    u32 indent; // spaces
-    u32 token_count;
-    Token tokens[MAX_TOKENS];
-} Line;
-
 typedef struct Reader {
+    NvTextReader text;
     BattleDefs* defs;
-    const char* file_name;
-    u32 errors; // found by this read
 } Reader;
-
-// `reader` is NULL in a scan of text already read without errors (the rules editor's), which reports nothing.
-__attribute__((format(printf, 3, 4))) internal void report(Reader* reader, u32 line, const char* format, ...)
-{
-    if (!reader)
-        return;
-    char message[128];
-    va_list arguments;
-    va_start(arguments, format);
-    vsnprintf(message, sizeof(message), format, arguments);
-    va_end(arguments);
-    nv_utf8_trim(message); // a long message is cut at the buffer's end, perhaps inside a character
-
-    BattleDefs* defs = reader->defs;
-    char full[sizeof(defs->first_error)];
-    if (line)
-        snprintf(full, sizeof(full), "%s:%u: %s", reader->file_name, line, message);
-    else
-        snprintf(full, sizeof(full), "%s: %s", reader->file_name, message);
-    nv_utf8_trim(full);
-    ++reader->errors;
-    ++defs->error_count;
-    if (defs->error_count == 1)
-        memcpy(defs->first_error, full, sizeof(full));
-    if (defs->error_count <= MAX_LOGGED_ERRORS)
-        nv_log(NV_LOG_ERROR, "battle", "%s", full);
-    else if (defs->error_count == MAX_LOGGED_ERRORS + 1)
-        nv_log(NV_LOG_ERROR, "battle", "more errors, not shown");
-}
-
-// How many bytes of a token a message shows: at most 24, cut before a character rather than inside it.
-internal int shown(Token token)
-{
-    u32 length = token.length;
-    if (length > 24) {
-        length = 24;
-        while (length > 0 && ((u8)token.text[length] & 0xC0) == 0x80)
-            --length;
-    }
-    return (int)length;
-}
-
-internal b32 token_is(Token token, const char* word)
-{
-    return token.length == strlen(word) && memcmp(token.text, word, token.length) == 0;
-}
-
-// Splitting a line. A comment runs from '#' to the end of the line; a line with nothing else is blank (no tokens). A tab
-// is an error, since indentation is spaces only. Fails on an error, which it reports.
-typedef struct Tokenized {
-    b32 ok;
-    Line line;
-} Tokenized;
-
-internal Tokenized tokenize(Reader* reader, const char* begin, const char* end, u32 number)
-{
-    const char* stop = end;
-    for (const char* p = begin; p < stop; ++p)
-        if (*p == '#')
-            stop = p;
-    while (stop > begin && (stop[-1] == ' ' || stop[-1] == '\r')) // trailing spaces and the CR of a CRLF
-        --stop;
-    for (const char* p = begin; p < stop; ++p) {
-        if (*p == '\t') {
-            report(reader, number, "tab (indent and separate with spaces)");
-            return (Tokenized){0};
-        }
-    }
-
-    Tokenized result = {.ok = true, .line = {.number = number}};
-    Line* line = &result.line;
-    const char* p = begin;
-    while (p < stop && *p == ' ') {
-        ++line->indent;
-        ++p;
-    }
-    if (p == stop)
-        return result;
-    while (p < stop) {
-        while (p < stop && *p == ' ')
-            ++p;
-        if (p == stop)
-            break;
-        const char* word = p;
-        while (p < stop && *p != ' ')
-            ++p;
-        if (line->token_count == MAX_TOKENS) {
-            report(reader, number, "too many values");
-            return (Tokenized){0};
-        }
-        line->tokens[line->token_count++] = (Token){word, (u32)(p - word)};
-    }
-    return result;
-}
-
-// Values
-
-internal b32 is_digit(char c)
-{
-    return c >= '0' && c <= '9';
-}
-
-typedef struct Number {
-    b32 ok;
-    f64 value;
-} Number;
-
-// A decimal number: an optional sign, digits, an optional point with digits ("120", "0.5", "-3", ".5"); no exponent.
-// With `integer`, a point is an error too. Fails on an error, which it reports.
-internal Number parse_number(Reader* reader, u32 line, Token token, b32 integer)
-{
-    char buffer[40];
-    u32 i = 0, digits = 0;
-    b32 valid = token.length < sizeof(buffer);
-    if (valid && i < token.length && (token.text[i] == '+' || token.text[i] == '-'))
-        ++i;
-    while (valid && i < token.length && is_digit(token.text[i])) {
-        ++i;
-        ++digits;
-    }
-    b32 has_point = valid && i < token.length && token.text[i] == '.';
-    if (has_point) {
-        ++i;
-        while (i < token.length && is_digit(token.text[i])) {
-            ++i;
-            ++digits;
-        }
-    }
-    valid = valid && i == token.length && digits > 0;
-    if (!valid) {
-        report(reader, line, "'%.*s' is not a number", shown(token), token.text);
-        return (Number){0};
-    }
-    if (integer && has_point) {
-        report(reader, line, "'%.*s' is not an integer", shown(token), token.text);
-        return (Number){0};
-    }
-    memcpy(buffer, token.text, token.length);
-    buffer[token.length] = 0;
-    return (Number){.ok = true, .value = strtod(buffer, NULL)}; // strtod rounds correctly, so a file always gives the same values
-}
-
-// A name: a letter or '_', then letters, digits and '_'; at most 31 bytes. Copies it into `destination`.
-internal b32 parse_name(Reader* reader, u32 line, Token token, char destination[BATTLE_NAME_SIZE])
-{
-    b32 valid = token.length > 0 && token.length < BATTLE_NAME_SIZE;
-    for (u32 i = 0; valid && i < token.length; ++i) {
-        char c = token.text[i];
-        b32 letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
-        valid = letter || (i > 0 && is_digit(c));
-    }
-    if (!valid) {
-        report(reader, line, "'%.*s' is not a name (letters, digits and _; at most %d bytes; not starting with a digit)",
-               shown(token), token.text, BATTLE_NAME_SIZE - 1);
-        return false;
-    }
-    memcpy(destination, token.text, token.length);
-    destination[token.length] = 0;
-    return true;
-}
 
 // A key whose values are numbers, stored at `offset` in the struct being read.
 typedef enum FieldKind {
@@ -269,10 +95,10 @@ internal u32 field_values(const Field* field)
     return field->kind == FIELD_VECTOR ? 3 : field->kind == FIELD_GRID ? 2 : 1;
 }
 
-internal const Field* find_field(const Field* fields, u32 count, Token key)
+internal const Field* find_field(const Field* fields, u32 count, NvTextToken key)
 {
     for (u32 i = 0; i < count; ++i)
-        if (token_is(key, fields[i].key))
+        if (nv_text_token_is(key, fields[i].key))
             return &fields[i];
     return NULL;
 }
@@ -292,36 +118,36 @@ internal void report_range(Reader* reader, u32 line, const Field* field)
         used += (u32)snprintf(text + used, sizeof(text) - used, "%s %.10g", field->min_open ? ">" : ">=", field->min);
     if (field->max < NO_LIMIT)
         used += (u32)snprintf(text + used, sizeof(text) - used, "%s%s %.10g", used ? " and " : "", field->max_open ? "<" : "<=", field->max);
-    report(reader, line, "'%s' must be %s", field->key, text);
+    nv_text_report(&reader->text, line, "'%s' must be %s", field->key, text);
 }
 
 // Reads a line `key value...` into the struct at `base`. `seen` holds a bit per field already given in this block.
-internal void read_field(Reader* reader, const Line* line, const Field* field, u32 index, void* base, u32* seen)
+internal void read_field(Reader* reader, const NvTextLine* line, const Field* field, u32 index, void* base, u32* seen)
 {
     if (*seen & (1u << index)) {
-        report(reader, line->number, "'%s' is given twice in this block", field->key);
+        nv_text_report(&reader->text, line->number, "'%s' is given twice in this block", field->key);
         return;
     }
     *seen |= 1u << index; // a bad value is not "missing" on top of that
     u32 values = field_values(field);
     if (line->token_count != 1 + values) {
-        report(reader, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
+        nv_text_report(&reader->text, line->number, "'%s' takes %u value%s", field->key, values, values > 1 ? "s" : "");
         return;
     }
     f64 numbers[3];
     for (u32 i = 0; i < values; ++i) {
-        Number number = parse_number(reader, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER || field->kind == FIELD_GRID);
+        NvTextNumber number = nv_text_parse_number(&reader->text, line->number, line->tokens[1 + i], field->kind == FIELD_INTEGER || field->kind == FIELD_GRID);
         if (!number.ok)
             return;
         numbers[i] = number.value;
     }
     if (field->kind == FIELD_GRID) {
         if (numbers[0] < 1 || numbers[0] > BATTLE_MAX_GRID_WIDTH) {
-            report(reader, line->number, "'grid' width must be 1 to %d", BATTLE_MAX_GRID_WIDTH);
+            nv_text_report(&reader->text, line->number, "'grid' width must be 1 to %d", BATTLE_MAX_GRID_WIDTH);
             return;
         }
         if (numbers[1] < 2 || numbers[1] > BATTLE_MAX_GRID_LENGTH) {
-            report(reader, line->number, "'grid' length must be 2 to %d", BATTLE_MAX_GRID_LENGTH);
+            nv_text_report(&reader->text, line->number, "'grid' length must be 2 to %d", BATTLE_MAX_GRID_LENGTH);
             return;
         }
     } else {
@@ -367,37 +193,7 @@ internal void check_required(Reader* reader, const Field* fields, u32 count, u32
 {
     for (u32 i = 0; i < count; ++i)
         if (fields[i].required && !(seen & (1u << i)))
-            report(reader, header_line, "%s '%s' is missing '%s'", what, name, fields[i].key);
-}
-
-// Lines of a file, with the position of each
-
-typedef struct Lines {
-    const char* text;
-    umm size;
-    umm cursor;
-    u32 number;
-} Lines;
-
-// A line's text, without its '\n'. Fails (zeroed) after the last line.
-typedef struct LineText {
-    b32 ok;
-    const char* begin;
-    const char* end;
-} LineText;
-
-internal LineText next_line(Lines* lines)
-{
-    if (lines->cursor >= lines->size)
-        return (LineText){0};
-    const char* begin = lines->text + lines->cursor;
-    const char* limit = lines->text + lines->size;
-    const char* p = begin;
-    while (p < limit && *p != '\n')
-        ++p;
-    lines->cursor = (umm)(p - lines->text) + 1; // past the '\n'
-    ++lines->number;
-    return (LineText){.ok = true, .begin = begin, .end = p};
+            nv_text_report(&reader->text, header_line, "%s '%s' is missing '%s'", what, name, fields[i].key);
 }
 
 // The project file
@@ -455,18 +251,18 @@ internal void close_block(ProjectReader* reader)
         check_required(base, rules_fields, FIELD_COUNT(rules_fields), block->seen, block->header_line, "block", "rules");
         const BattleRules* rules = &defs->rules;
         if (rules->grid_length && rules->zone_rows && rules->zone_rows * 2 > rules->grid_length)
-            report(base, reader->zone_rows_line, "'zone_rows' must be at most %u (half the grid's length)", rules->grid_length / 2);
-        reader->rules_ok = base->errors == reader->rules_errors_start;
+            nv_text_report(&base->text, reader->zone_rows_line, "'zone_rows' must be at most %u (half the grid's length)", rules->grid_length / 2);
+        reader->rules_ok = base->text.errors == reader->rules_errors_start;
     } break;
     case BLOCK_UNIT:
         if (reader->unit_named) {
             check_required(base, unit_fields, FIELD_COUNT(unit_fields), block->seen, block->header_line, "unit", reader->unit.name);
             if (!(block->seen & SEEN_WEAPON))
-                report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
+                nv_text_report(&base->text, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
             if (reader->unit.layer == UNIT_LAYER_AIR && !reader->altitude_seen)
-                report(base, block->header_line, "unit '%s' flies (layer air) and needs 'altitude'", reader->unit.name);
+                nv_text_report(&base->text, block->header_line, "unit '%s' flies (layer air) and needs 'altitude'", reader->unit.name);
             if (reader->unit.layer == UNIT_LAYER_GROUND && reader->altitude_line)
-                report(base, reader->altitude_line, "'altitude' is only for air units");
+                nv_text_report(&base->text, reader->altitude_line, "'altitude' is only for air units");
         }
         // A squad must fit in a zone, and its units must not stand on each other (judged only against rules that were read right,
         // and for a unit read without an error, so one mistake is one error).
@@ -474,13 +270,13 @@ internal void close_block(ProjectReader* reader)
             const BattleRules* rules = &defs->rules;
             u32 most = rules->zone_rows < rules->grid_width ? rules->zone_rows : rules->grid_width;
             if (reader->unit.footprint > most)
-                report(base, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
+                nv_text_report(&base->text, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
         }
-        if (reader->rules_ok && reader->squad_line && base->errors == reader->unit_errors_start) {
+        if (reader->rules_ok && reader->squad_line && base->text.errors == reader->unit_errors_start) {
             const UnitDef* unit = &reader->unit;
             f32 apart = (f32)unit->footprint * defs->rules.cell_size / (f32)battle_squad_columns(unit->squad_size);
             if (unit->squad_size > 1 && apart < 2.0f * unit->radius)
-                report(base, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
+                nv_text_report(&base->text, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
                        unit->footprint, unit->footprint, apart, 2.0f * unit->radius);
         }
         if (reader->unit_kept) {
@@ -496,15 +292,15 @@ internal void close_block(ProjectReader* reader)
         break;
     case BLOCK_STAGE:
         check_required(base, stage_fields, FIELD_COUNT(stage_fields), block->seen, block->header_line, "block", "stage");
-        if (reader->places_seen == 0 && base->errors == reader->stage_errors_start)
-            report(base, block->header_line, "'stage' has no 'place' lines");
+        if (reader->places_seen == 0 && base->text.errors == reader->stage_errors_start)
+            nv_text_report(&base->text, block->header_line, "'stage' has no 'place' lines");
         if (defs->supply) {
             // The first place that takes the total over the supply is the one reported.
             u32 total = 0;
             for (u32 i = 0; i < defs->enemy_count; ++i) {
                 total += defs->units[defs->enemy[i].def].cost;
                 if (total > defs->supply) {
-                    report(base, reader->place_lines[i], "the total cost is over the supply (%u)", defs->supply);
+                    nv_text_report(&base->text, reader->place_lines[i], "the total cost is over the supply (%u)", defs->supply);
                     break;
                 }
             }
@@ -517,7 +313,7 @@ internal void close_block(ProjectReader* reader)
     }
 }
 
-internal void open_block(ProjectReader* reader, BlockKind kind, const Line* line)
+internal void open_block(ProjectReader* reader, BlockKind kind, const NvTextLine* line)
 {
     NV_ASSERT(reader->depth < NV_ARRAY_COUNT(reader->stack));
     reader->stack[reader->depth++] = (Block){.kind = kind, .header_indent = (s32)line->indent, .child_indent = -1, .header_line = line->number};
@@ -525,31 +321,31 @@ internal void open_block(ProjectReader* reader, BlockKind kind, const Line* line
 
 // Top-level statements
 
-internal void read_version(ProjectReader* reader, const Line* line)
+internal void read_version(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     if (reader->last != TOP_NONE) {
-        report(base, line->number, "'abproj_version' must be the first statement");
+        nv_text_report(&base->text, line->number, "'abproj_version' must be the first statement");
         return;
     }
     reader->last = TOP_VERSION;
     if (line->token_count != 2) {
-        report(base, line->number, "'abproj_version' takes one integer");
+        nv_text_report(&base->text, line->number, "'abproj_version' takes one integer");
         return;
     }
-    Number number = parse_number(base, line->number, line->tokens[1], true);
+    NvTextNumber number = nv_text_parse_number(&base->text, line->number, line->tokens[1], true);
     if (!number.ok)
         return;
     if (number.value < 1) {
-        report(base, line->number, "'abproj_version' must be 1 to %d", ABPROJ_VERSION);
+        nv_text_report(&base->text, line->number, "'abproj_version' must be 1 to %d", ABPROJ_VERSION);
     } else if (number.value > ABPROJ_VERSION) {
         // A newer format may mean anything by what follows, so the rest is not read.
-        report(base, line->number, "format %.0f is newer than this build reads (%d)", number.value, ABPROJ_VERSION);
+        nv_text_report(&base->text, line->number, "format %.0f is newer than this build reads (%d)", number.value, ABPROJ_VERSION);
         reader->stop = true;
     }
 }
 
-internal void read_unit_header(ProjectReader* reader, const Line* line)
+internal void read_unit_header(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
@@ -561,23 +357,23 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
     reader->altitude_line = 0;
     reader->altitude_seen = false;
     reader->squad_line = 0;
-    reader->unit_errors_start = base->errors;
+    reader->unit_errors_start = base->text.errors;
     open_block(reader, BLOCK_UNIT, line);
     if (line->token_count != 2) {
-        report(base, line->number, "'unit' takes a name");
+        nv_text_report(&base->text, line->number, "'unit' takes a name");
         return;
     }
-    if (!parse_name(base, line->number, line->tokens[1], reader->unit.name))
+    if (!nv_text_parse_name(&base->text, line->number, line->tokens[1], reader->unit.name, BATTLE_NAME_SIZE))
         return;
     reader->unit_named = true;
     for (u32 i = 0; i < defs->unit_count; ++i) {
         if (strcmp(defs->units[i].name, reader->unit.name) == 0) {
-            report(base, line->number, "unit '%s' is defined twice", reader->unit.name);
+            nv_text_report(&base->text, line->number, "unit '%s' is defined twice", reader->unit.name);
             return;
         }
     }
     if (defs->unit_count == BATTLE_MAX_UNIT_DEFS) {
-        report(base, line->number, "too many units (at most %d)", BATTLE_MAX_UNIT_DEFS);
+        nv_text_report(&base->text, line->number, "too many units (at most %d)", BATTLE_MAX_UNIT_DEFS);
         return;
     }
     reader->unit_kept = true;
@@ -585,65 +381,65 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
 
 // A statement at the left edge. Each is allowed in one place only; one out of place is reported and its block skipped, so
 // that a swap of two blocks is one error and not the errors of everything that depends on them.
-internal void read_top_line(ProjectReader* reader, const Line* line)
+internal void read_top_line(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
-    Token key = line->tokens[0];
+    NvTextToken key = line->tokens[0];
     if (reader->first_statement) {
         reader->first_statement = false;
-        if (!token_is(key, "abproj_version")) {
-            report(base, line->number, "the file must start with 'abproj_version <version>'");
+        if (!nv_text_token_is(key, "abproj_version")) {
+            nv_text_report(&base->text, line->number, "the file must start with 'abproj_version <version>'");
             reader->last = TOP_VERSION; // read on as if it had, so a missing line is one error
         }
     }
 
-    if (token_is(key, "abproj_version")) {
+    if (nv_text_token_is(key, "abproj_version")) {
         read_version(reader, line);
-    } else if (token_is(key, "rules")) {
+    } else if (nv_text_token_is(key, "rules")) {
         if (reader->last == TOP_VERSION) {
             if (line->token_count != 1)
-                report(base, line->number, "'rules' takes no value");
+                nv_text_report(&base->text, line->number, "'rules' takes no value");
             reader->last = TOP_RULES;
-            reader->rules_errors_start = base->errors;
+            reader->rules_errors_start = base->text.errors;
             open_block(reader, BLOCK_RULES, line);
         } else {
-            report(base, line->number, "'rules' is given twice");
+            nv_text_report(&base->text, line->number, "'rules' is given twice");
             open_block(reader, BLOCK_SKIP, line);
         }
-    } else if (token_is(key, "roles")) {
+    } else if (nv_text_token_is(key, "roles")) {
         if (reader->last == TOP_RULES) {
             if (line->token_count != 1)
-                report(base, line->number, "'roles' takes no value");
+                nv_text_report(&base->text, line->number, "'roles' takes no value");
             reader->last = TOP_ROLES;
             open_block(reader, BLOCK_ROLES, line);
         } else {
-            report(base, line->number, reader->last == TOP_ROLES ? "'roles' is given twice" : "'roles' must come after 'rules' and before the units");
+            nv_text_report(&base->text, line->number, reader->last == TOP_ROLES ? "'roles' is given twice" : "'roles' must come after 'rules' and before the units");
             open_block(reader, BLOCK_SKIP, line);
         }
-    } else if (token_is(key, "unit")) {
+    } else if (nv_text_token_is(key, "unit")) {
         if (reader->last == TOP_RULES || reader->last == TOP_ROLES || reader->last == TOP_UNIT) {
             reader->last = TOP_UNIT;
             read_unit_header(reader, line);
         } else {
-            report(base, line->number, reader->last == TOP_STAGE ? "'unit' must come before 'stage'" : "'unit' must come after 'rules'");
+            nv_text_report(&base->text, line->number, reader->last == TOP_STAGE ? "'unit' must come before 'stage'" : "'unit' must come after 'rules'");
             open_block(reader, BLOCK_SKIP, line);
         }
-    } else if (token_is(key, "stage")) {
+    } else if (nv_text_token_is(key, "stage")) {
         if (reader->last == TOP_UNIT) {
             if (line->token_count != 1)
-                report(base, line->number, "'stage' takes no value");
+                nv_text_report(&base->text, line->number, "'stage' takes no value");
             reader->last = TOP_STAGE;
-            reader->stage_errors_start = base->errors;
+            reader->stage_errors_start = base->text.errors;
             base->defs->seed = 1;
             open_block(reader, BLOCK_STAGE, line);
         } else {
-            report(base, line->number, reader->last == TOP_STAGE   ? "'stage' is given twice"
+            nv_text_report(&base->text, line->number, reader->last == TOP_STAGE   ? "'stage' is given twice"
                                        : reader->last == TOP_RULES ? "'stage' must come after the units"
                                                                    : "'stage' must come after 'rules' and the units");
             open_block(reader, BLOCK_SKIP, line);
         }
     } else {
-        report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+        nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         open_block(reader, BLOCK_SKIP, line);
     }
 }
@@ -652,21 +448,21 @@ internal void read_top_line(ProjectReader* reader, const Line* line)
 
 // Reads the words of `line` from `first` on as names from a fixed list (`count` names, `stride` bytes apart) into `mask`: bit i is
 // name i. An unknown name (`hint` says what the names are) and a name given twice are reported; `mask` is then left as it was.
-internal b32 read_name_mask(Reader* reader, const Line* line, u32 first, const char* names, u32 count, u32 stride, const char* what,
+internal b32 read_name_mask(Reader* reader, const NvTextLine* line, u32 first, const char* names, u32 count, u32 stride, const char* what,
                             const char* hint, u32* mask)
 {
     u32 bits = 0;
     for (u32 t = first; t < line->token_count; ++t) {
-        Token word = line->tokens[t];
+        NvTextToken word = line->tokens[t];
         u32 i = 0;
-        while (i < count && !token_is(word, names + i * stride))
+        while (i < count && !nv_text_token_is(word, names + i * stride))
             ++i;
         if (i == count) {
-            report(reader, line->number, "unknown %s '%.*s' (%s)", what, shown(word), word.text, hint);
+            nv_text_report(&reader->text, line->number, "unknown %s '%.*s' (%s)", what, nv_text_shown(word), word.text, hint);
             return false;
         }
         if (bits & (1u << i)) {
-            report(reader, line->number, "%s '%.*s' is given twice", what, shown(word), word.text);
+            nv_text_report(&reader->text, line->number, "%s '%.*s' is given twice", what, nv_text_shown(word), word.text);
             return false;
         }
         bits |= 1u << i;
@@ -677,17 +473,17 @@ internal b32 read_name_mask(Reader* reader, const Line* line, u32 first, const c
 
 // A weapon's `targets` line: the layers it can hit, as words (`ground`, `air`, or both). Given once, with at least one.
 global const char layer_names[2][8] = {"ground", "air"}; // by layer: bit i of a target mask is layer i
-internal void read_targets(ProjectReader* reader, const Line* line, Block* block)
+internal void read_targets(ProjectReader* reader, const NvTextLine* line, Block* block)
 {
     Reader* base = &reader->base;
     b32 repeated = (block->seen & SEEN_TARGETS) != 0;
     block->seen |= SEEN_TARGETS;
     if (repeated) {
-        report(base, line->number, "'targets' is given twice in this weapon");
+        nv_text_report(&base->text, line->number, "'targets' is given twice in this weapon");
         return;
     }
     if (line->token_count < 2) {
-        report(base, line->number, "'targets' takes ground, air or both");
+        nv_text_report(&base->text, line->number, "'targets' takes ground, air or both");
         return;
     }
     u32 mask = 0;
@@ -696,80 +492,81 @@ internal void read_targets(ProjectReader* reader, const Line* line, Block* block
 }
 
 // A line of the `roles` block: one role's name, declared once.
-internal void read_role(ProjectReader* reader, const Line* line)
+internal void read_role(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
     if (line->token_count != 1) {
-        report(base, line->number, "a role line takes one name");
+        nv_text_report(&base->text, line->number, "a role line takes one name");
         return;
     }
     char role[BATTLE_NAME_SIZE];
-    if (!parse_name(base, line->number, line->tokens[0], role))
+    if (!nv_text_parse_name(&base->text, line->number, line->tokens[0], role, BATTLE_NAME_SIZE))
         return;
     for (u32 i = 0; i < defs->role_count; ++i) {
         if (strcmp(defs->roles[i], role) == 0) {
-            report(base, line->number, "role '%s' is declared twice", role);
+            nv_text_report(&base->text, line->number, "role '%s' is declared twice", role);
             return;
         }
     }
     if (defs->role_count == BATTLE_MAX_ROLES) {
-        report(base, line->number, "too many roles (at most %d)", BATTLE_MAX_ROLES);
+        nv_text_report(&base->text, line->number, "too many roles (at most %d)", BATTLE_MAX_ROLES);
         return;
     }
     memcpy(defs->roles[defs->role_count++], role, BATTLE_NAME_SIZE);
 }
 
-internal void read_unit_line(ProjectReader* reader, const Line* line, Block* block)
+internal void read_unit_line(ProjectReader* reader, const NvTextLine* line, Block* block)
 {
     Reader* base = &reader->base;
-    Token key = line->tokens[0];
-    if (token_is(key, "weapon") || token_is(key, "ability")) {
-        b32 is_weapon = token_is(key, "weapon");
+    NvTextToken key = line->tokens[0];
+    if (nv_text_token_is(key, "weapon") || nv_text_token_is(key, "ability")) {
+        b32 is_weapon = nv_text_token_is(key, "weapon");
         u32 seen_bit = is_weapon ? SEEN_WEAPON : SEEN_ABILITY;
         b32 repeated = (block->seen & seen_bit) != 0;
         block->seen |= seen_bit;
         if (repeated)
-            report(base, line->number, "a unit has at most one '%s'", is_weapon ? "weapon" : "ability");
+            nv_text_report(&base->text, line->number, "a unit has at most one '%s'", is_weapon ? "weapon" : "ability");
         if (line->token_count != 2) {
-            report(base, line->number, "'%s' takes %s", is_weapon ? "weapon" : "ability", is_weapon ? "a name" : "a kind");
+            nv_text_report(&base->text, line->number, "'%s' takes %s", is_weapon ? "weapon" : "ability", is_weapon ? "a name" : "a kind");
             open_block(reader, BLOCK_SKIP, line);
         } else if (is_weapon) {
             // A repeated weapon is read into scratch: the first one stays what the unit has.
-            b32 named = parse_name(base, line->number, line->tokens[1], repeated ? (char[BATTLE_NAME_SIZE]){0} : reader->unit.weapon.name);
+            b32 named = nv_text_parse_name(&base->text, line->number, line->tokens[1],
+                                         repeated ? (char[BATTLE_NAME_SIZE]){0} : reader->unit.weapon.name, BATTLE_NAME_SIZE);
             open_block(reader, repeated || !named ? BLOCK_SKIP : BLOCK_WEAPON, line);
-        } else if (token_is(line->tokens[1], "shield") && !repeated) {
+        } else if (nv_text_token_is(line->tokens[1], "shield") && !repeated) {
             reader->unit.ability.kind = ABILITY_SHIELD;
             open_block(reader, BLOCK_SHIELD, line);
         } else {
-            if (!token_is(line->tokens[1], "shield"))
-                report(base, line->number, "unknown ability '%.*s' (kinds: shield)", shown(line->tokens[1]), line->tokens[1].text);
+            if (!nv_text_token_is(line->tokens[1], "shield"))
+                nv_text_report(&base->text, line->number, "unknown ability '%.*s' (kinds: shield)", nv_text_shown(line->tokens[1]), line->tokens[1].text);
             open_block(reader, BLOCK_SKIP, line);
         }
         return;
     }
-    if (token_is(key, "layer")) {
+    if (nv_text_token_is(key, "layer")) {
         b32 repeated = (block->seen & SEEN_LAYER) != 0;
         block->seen |= SEEN_LAYER;
         if (repeated)
-            report(base, line->number, "'layer' is given twice in this block");
+            nv_text_report(&base->text, line->number, "'layer' is given twice in this block");
         else if (line->token_count != 2)
-            report(base, line->number, "'layer' takes ground or air");
-        else if (token_is(line->tokens[1], "ground"))
+            nv_text_report(&base->text, line->number, "'layer' takes ground or air");
+        else if (nv_text_token_is(line->tokens[1], "ground"))
             reader->unit.layer = UNIT_LAYER_GROUND;
-        else if (token_is(line->tokens[1], "air"))
+        else if (nv_text_token_is(line->tokens[1], "air"))
             reader->unit.layer = UNIT_LAYER_AIR;
         else
-            report(base, line->number, "unknown layer '%.*s' (ground or air)", shown(line->tokens[1]), line->tokens[1].text);
+            nv_text_report(&base->text, line->number, "unknown layer '%.*s' (ground or air)", nv_text_shown(line->tokens[1]), line->tokens[1].text);
         return;
     }
-    if (token_is(key, "roles")) {
+    if (nv_text_token_is(key, "roles")) {
         b32 repeated = (block->seen & SEEN_ROLES) != 0;
         block->seen |= SEEN_ROLES;
         if (repeated) {
-            report(base, line->number, "'roles' is given twice in this block");
+            nv_text_report(&base->text, line->number, "'roles' is given twice in this block");
         } else if (line->token_count < 2) {
-            report(base, line->number, "'roles' takes at least one role");
+            nv_text_report(&base->text, line->number, "'roles' takes at least one role");
         } else {
             u32 mask = 0;
             BattleDefs* defs = base->defs;
@@ -781,19 +578,19 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
     }
     const Field* field = find_field(unit_fields, FIELD_COUNT(unit_fields), key);
     if (!field) {
-        report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+        nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         return;
     }
-    u32 errors = base->errors;
+    u32 errors = base->text.errors;
     read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
-    if (token_is(key, "footprint") && base->errors == errors)
+    if (nv_text_token_is(key, "footprint") && base->text.errors == errors)
         reader->footprint_line = line->number;
-    if (token_is(key, "altitude")) {
+    if (nv_text_token_is(key, "altitude")) {
         reader->altitude_seen = true;
-        if (base->errors == errors)
+        if (base->text.errors == errors)
             reader->altitude_line = line->number;
     }
-    if (token_is(key, "squad") && base->errors == errors)
+    if (nv_text_token_is(key, "squad") && base->text.errors == errors)
         reader->squad_line = line->number;
 }
 
@@ -803,34 +600,34 @@ typedef struct UnitIndex {
 } UnitIndex;
 
 // Fails when no unit has that name.
-internal UnitIndex find_unit(const BattleDefs* defs, Token name)
+internal UnitIndex find_unit(const BattleDefs* defs, NvTextToken name)
 {
     for (u32 i = 0; i < defs->unit_count; ++i)
-        if (token_is(name, defs->units[i].name))
+        if (nv_text_token_is(name, defs->units[i].name))
             return (UnitIndex){.ok = true, .index = i};
     return (UnitIndex){0};
 }
 
-internal void read_place(ProjectReader* reader, const Line* line)
+internal void read_place(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     BattleDefs* defs = base->defs;
     const BattleRules* rules = &defs->rules;
     if (line->token_count != 4) {
-        report(base, line->number, "'place' takes a unit name, a cell x and a cell row");
+        nv_text_report(&base->text, line->number, "'place' takes a unit name, a cell x and a cell row");
         return;
     }
     ++reader->places_seen;
     b32 ok = true;
     UnitIndex unit = find_unit(defs, line->tokens[1]);
     if (!unit.ok) {
-        report(base, line->number, "unknown unit '%.*s'", shown(line->tokens[1]), line->tokens[1].text);
+        nv_text_report(&base->text, line->number, "unknown unit '%.*s'", nv_text_shown(line->tokens[1]), line->tokens[1].text);
         ok = false;
     }
-    Number x_number = parse_number(base, line->number, line->tokens[2], true);
+    NvTextNumber x_number = nv_text_parse_number(&base->text, line->number, line->tokens[2], true);
     if (!x_number.ok)
         return;
-    Number row_number = parse_number(base, line->number, line->tokens[3], true);
+    NvTextNumber row_number = nv_text_parse_number(&base->text, line->number, line->tokens[3], true);
     if (!row_number.ok)
         return;
     if (!reader->rules_ok)
@@ -844,11 +641,11 @@ internal void read_place(ProjectReader* reader, const Line* line)
     u32 first_row = battle_enemy_first_row(rules);
     u32 last_x = rules->grid_width - footprint, last_row = rules->grid_length - footprint;
     if (x < 0 || x > last_x) {
-        report(base, line->number, "cell x must be 0 to %u", last_x);
+        nv_text_report(&base->text, line->number, "cell x must be 0 to %u", last_x);
         ok = false;
     }
     if (row < first_row || row > last_row) {
-        report(base, line->number, "cell row must be %u to %u (the enemy zone)", first_row, last_row);
+        nv_text_report(&base->text, line->number, "cell row must be %u to %u (the enemy zone)", first_row, last_row);
         ok = false;
     }
     if (!ok)
@@ -858,13 +655,13 @@ internal void read_place(ProjectReader* reader, const Line* line)
     for (u32 r = cell_row; r < cell_row + footprint; ++r) {
         for (u32 c = cell_x; c < cell_x + footprint; ++c) {
             if (reader->taken[r][c]) {
-                report(base, line->number, "cell (%u, %u) already has a unit", c, r + first_row);
+                nv_text_report(&base->text, line->number, "cell (%u, %u) already has a unit", c, r + first_row);
                 return;
             }
         }
     }
     if (reader->enemy_units + def->squad_size > BATTLE_MAX_TEAM_UNITS) {
-        report(base, line->number, "the enemy has more than %d units", BATTLE_MAX_TEAM_UNITS);
+        nv_text_report(&base->text, line->number, "the enemy has more than %d units", BATTLE_MAX_TEAM_UNITS);
         return;
     }
     for (u32 r = cell_row; r < cell_row + footprint; ++r)
@@ -875,7 +672,7 @@ internal void read_place(ProjectReader* reader, const Line* line)
     defs->enemy[defs->enemy_count++] = (StagePlace){(u8)unit.index, (u8)cell_x, (u8)row};
 }
 
-internal void read_project_line(ProjectReader* reader, const Line* line)
+internal void read_project_line(ProjectReader* reader, const NvTextLine* line)
 {
     Reader* base = &reader->base;
     while (reader->depth > 1 && (s32)line->indent <= reader->stack[reader->depth - 1].header_indent)
@@ -886,11 +683,11 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     if (block->child_indent < 0)
         block->child_indent = (s32)line->indent;
     if ((s32)line->indent != block->child_indent) {
-        report(base, line->number, block->kind == BLOCK_ROOT ? "unexpected indentation" : "inconsistent indentation (a block's lines are indented alike)");
+        nv_text_report(&base->text, line->number, block->kind == BLOCK_ROOT ? "unexpected indentation" : "inconsistent indentation (a block's lines are indented alike)");
         return;
     }
 
-    Token key = line->tokens[0];
+    NvTextToken key = line->tokens[0];
     switch (block->kind) {
     case BLOCK_ROOT:
         read_top_line(reader, line);
@@ -904,27 +701,27 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     case BLOCK_RULES: {
         const Field* field = find_field(rules_fields, FIELD_COUNT(rules_fields), key);
         if (!field) {
-            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+            nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
             break;
         }
-        if (token_is(key, "zone_rows"))
+        if (nv_text_token_is(key, "zone_rows"))
             reader->zone_rows_line = line->number;
         read_field(base, line, field, (u32)(field - rules_fields), &base->defs->rules, &block->seen);
     } break;
     case BLOCK_STAGE: {
-        if (token_is(key, "place")) {
+        if (nv_text_token_is(key, "place")) {
             read_place(reader, line);
             break;
         }
         const Field* field = find_field(stage_fields, FIELD_COUNT(stage_fields), key);
         if (!field)
-            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+            nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         else
             read_field(base, line, field, (u32)(field - stage_fields), base->defs, &block->seen);
     } break;
     case BLOCK_WEAPON:
     case BLOCK_SHIELD: {
-        if (block->kind == BLOCK_WEAPON && token_is(key, "targets")) {
+        if (block->kind == BLOCK_WEAPON && nv_text_token_is(key, "targets")) {
             read_targets(reader, line, block);
             break;
         }
@@ -933,7 +730,7 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
         void* data = block->kind == BLOCK_WEAPON ? (void*)&reader->unit.weapon : (void*)&reader->unit.ability;
         const Field* field = find_field(fields, count, key);
         if (!field)
-            report(base, line->number, "unknown key '%.*s'", shown(key), key.text);
+            nv_text_report(&base->text, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         else
             read_field(base, line, field, (u32)(field - fields), data, &block->seen);
     } break;
@@ -944,31 +741,39 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
 
 b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text, umm size)
 {
-    ProjectReader reader = {.base = {defs, file_name, 0}, .first_statement = true};
+    ProjectReader reader = {
+        .base = {.text = {.file_name = file_name,
+                          .log_source = "battle",
+                          .total = &defs->error_count,
+                          .first_error = defs->first_error,
+                          .first_error_capacity = sizeof(defs->first_error)},
+                 .defs = defs},
+        .first_statement = true,
+    };
     reader.stack[0] = (Block){.kind = BLOCK_ROOT, .header_indent = -1, .child_indent = 0};
     reader.depth = 1;
     defs->seed = 1;
 
-    Lines lines = {text, size, 0, 0};
-    for (LineText text_line = next_line(&lines); text_line.ok && !reader.stop; text_line = next_line(&lines)) {
-        Tokenized tokenized = tokenize(&reader.base, text_line.begin, text_line.end, lines.number);
+    NvTextLines lines = {text, size, 0, 0};
+    for (NvTextLineRange text_line = nv_text_next_line(&lines); text_line.ok && !reader.stop; text_line = nv_text_next_line(&lines)) {
+        NvTextTokenized tokenized = nv_text_tokenize(&reader.base.text, text_line.begin, text_line.end, lines.number);
         if (tokenized.ok && tokenized.line.token_count)
             read_project_line(&reader, &tokenized.line);
     }
     while (reader.depth > 1)
         close_block(&reader);
     // What the whole file lacks, once the rest is right: the first of the missing parts, since they come in order.
-    if (reader.base.errors == 0) {
+    if (reader.base.text.errors == 0) {
         if (reader.last < TOP_VERSION)
-            report(&reader.base, 0, "the file must start with 'abproj_version <version>'");
+            nv_text_report(&reader.base.text, 0, "the file must start with 'abproj_version <version>'");
         else if (reader.last < TOP_RULES)
-            report(&reader.base, 0, "missing 'rules'");
+            nv_text_report(&reader.base.text, 0, "missing 'rules'");
         else if (reader.last < TOP_UNIT)
-            report(&reader.base, 0, "no units");
+            nv_text_report(&reader.base.text, 0, "no units");
         else if (reader.last < TOP_STAGE)
-            report(&reader.base, 0, "missing 'stage'");
+            nv_text_report(&reader.base.text, 0, "missing 'stage'");
     }
-    return reader.base.errors == 0;
+    return reader.base.text.errors == 0;
 }
 
 // Editing the rules (docs/specs/abproj.md, "Editing the rules"). These work on the text of a project that was read without
@@ -978,7 +783,7 @@ b32 defs_read_project(BattleDefs* defs, const char* file_name, const char* text,
 typedef struct RuleLine {
     b32 ok;
     const Field* field;
-    Line line;
+    NvTextLine line;
     const char* end; // where the line's text ends (its '\n', or the text's end)
 } RuleLine;
 
@@ -990,16 +795,16 @@ internal RuleLine find_rule(const char* text, umm size, const char* key)
             field = &rules_fields[i];
     if (!field)
         return (RuleLine){0};
-    Lines lines = {text, size, 0, 0};
+    NvTextLines lines = {text, size, 0, 0};
     b32 in_rules = false;
-    for (LineText text_line = next_line(&lines); text_line.ok; text_line = next_line(&lines)) {
-        Tokenized tokenized = tokenize(NULL, text_line.begin, text_line.end, lines.number);
-        const Line* line = &tokenized.line;
+    for (NvTextLineRange text_line = nv_text_next_line(&lines); text_line.ok; text_line = nv_text_next_line(&lines)) {
+        NvTextTokenized tokenized = nv_text_tokenize(NULL, text_line.begin, text_line.end, lines.number);
+        const NvTextLine* line = &tokenized.line;
         if (!tokenized.ok || !line->token_count)
             continue;
         if (line->indent == 0) // a top-level statement: the rules block starts or ends
-            in_rules = token_is(line->tokens[0], "rules");
-        else if (in_rules && token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field))
+            in_rules = nv_text_token_is(line->tokens[0], "rules");
+        else if (in_rules && nv_text_token_is(line->tokens[0], key) && line->token_count == 1 + field_values(field))
             return (RuleLine){.ok = true, .field = field, .line = *line, .end = text_line.end};
     }
     return (RuleLine){0};
@@ -1013,7 +818,7 @@ u32 defs_rule_get(const char* text, umm size, const char* key, f64 values[BATTLE
     u32 count = field_values(rule.field);
     NV_ASSERT(count <= BATTLE_RULE_MAX_VALUES);
     for (u32 i = 0; i < count; ++i) {
-        Number number = parse_number(NULL, 0, rule.line.tokens[1 + i], false);
+        NvTextNumber number = nv_text_parse_number(NULL, 0, rule.line.tokens[1 + i], false);
         if (!number.ok)
             return 0;
         values[i] = number.value;
@@ -1060,7 +865,7 @@ umm defs_rule_set(const char* text, umm size, const char* key, const f64* values
     // The values' old text, from the first value to the end of the last, is replaced. The spaces after it shrink or grow
     // with the change so that a comment keeps its column (one space at the least).
     const char* first = rule.line.tokens[1].text;
-    const Token* last = &rule.line.tokens[count];
+    const NvTextToken* last = &rule.line.tokens[count];
     const char* after = last->text + last->length;
     const char* rest = after;
     while (rest < rule.end && *rest == ' ')

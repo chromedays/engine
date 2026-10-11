@@ -7,6 +7,10 @@
 
 상태: 구현됨 (2026-09-27). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-10: 스트레스 씬은 이제 코드가 아니라 씬 파일(`sandbox/data/stress.nvscene`)이 정의한다. 워크로드는 `grid`, `chain`, `crowd`,
+> `effects` 동작이고, 벤치마크의 단계도 파일에 있으며, 모든 씬이 쇼케이스와 같은 Edit/Play, undo, 자동 저장 규칙을 따른다
+> (`scene_file.md`). 아래에서 그 때문에 바뀐 곳에 표시했다.
+
 ### 목표
 
 엔진에 많은 객체로 부하를 거는 샌드박스 안의 두 번째 씬. 수가 늘 때 프레임 시간이 어디로 가는지 재서, 다음에 무엇을 최적화할지
@@ -27,8 +31,11 @@
 
 ### 워크로드
 
-각 워크로드에는 켜기/끄기 토글과 수 슬라이더가 있다. 슬라이더는 모든 워크로드를 합쳐 `NV_MAX_NODES` 아래에 머물도록
-제한된다.
+각 워크로드에는 켜기/끄기 토글과 수 슬라이더가 있다. 이것들은 씬 파일의 `grid`, `chain`, `crowd`, `effects` 동작의 파라미터이고,
+Stress 탭과 그 노드의 Inspector 섹션에 같은 행으로 보인다. 슬라이더는 모든 워크로드를 합쳐 `NV_MAX_NODES` 아래에 머물도록
+제한된다(`scene_file.md`의 노드 예산: 군중, 체인, 그리드 순서로 나눈다).
+
+Edit 모드에서는 그리드, 체인, 군중의 수만 바로 따른다. churn, 체인의 흔들림, Fire effects는 Play에서만 돈다.
 
 | 워크로드 | 만드는 것 | 최대 | 재는 것 |
 |---|---|---|---|
@@ -37,11 +44,12 @@
 | Crowd | 줄지어 선 캐릭터 N명, 각자의 클립과 시작 시간 | 200 | ozz 샘플링, 스킨 행렬 업로드, 스키닝 셰이더 |
 | Material variety | 그리드가 머티리얼 하나 또는 최대 256개의 서로 다른 색을 쓴다 | 256 | bind group 전환 |
 | Churn | 매 프레임 그리드 큐브 K개를 제거하고 다시 추가 | 256/프레임 | 프리 리스트, 세대 id |
-| Bone overlay | 모든 crowd 캐릭터의 뼈 라인 | ~12800 라인 | 디버그 라인 |
+| Bone overlay | 모든 crowd 캐릭터의 뼈 라인 (View 탭의 Show bones, 모든 씬 공통) | ~12800 라인 | 디버그 라인 |
 | Fire effects | 살아 있는 파티클 N개 (0–4M; 작은 불씨 버스트로 유지), 초당 폭발 (0–200), 날아가는 미사일 (0–2,000; 궤적과 연기), 빔 (0–500), 초당 데칼 (0–2,000) | 위와 같음 | compute 파티클 패스, 선분과 데칼 그리기, bloom, fill rate (`vfx.md`) |
 
 스트레스 씬에도 카메라, 태양, 지면이 있다. 큰 워크로드는 Scene 탭에서 접힌 채로 시작하는 그룹 노드 ("grid", "chain",
-"crowd") 아래에 있다. 그렇지 않으면 트리가 매 프레임 수천 행을 그려 측정을 왜곡할 것이다. Scene 탭의 검색 상자는 그래도
+"crowd") 아래에 있다. 이 노드들이 생성기를 지니고, "effects" 노드는 이펙트 워크로드의 중심이다. 생성기가 만든 노드는 선택할 수
+있지만 읽기 전용이다. 그렇지 않으면 트리가 매 프레임 수천 행을 그려 측정을 왜곡할 것이다. Scene 탭의 검색 상자는 그래도
 그 안의 맞는 것을 나열한다 (최대 500행; `search.md`).
 
 ### 엔진 변경
@@ -62,24 +70,27 @@
 ### 샌드박스
 
 - **씬:**
-  - `Sandbox`이 쇼케이스와 스트레스 씬과 보이는 씬을 담는다.
+  - `Sandbox`이 씬 목록(`sandbox/scenes.c`)과 보이는 씬을 담는다. 모든 씬은 시작할 때 자기 파일에서 만들어진다.
   - Scene, Inspector, View 탭은 보이는 씬에서 동작한다. 각 씬은 자체 선택과 카메라를 유지한다.
-  - 스트레스 씬은 처음 보일 때 만든다.
+  - 스트레스 씬에도 Play/Stop, undo, 자동 저장이 있다. 재생 중에 씬을 바꾸면 먼저 Stop된다.
 - **전환:**
   - View 탭의 콤보 상자가 씬을 바꾼다. (`save.md`가 없앨 때까지 시작할 때 읽는 `#stress` URL 해시도 설정했다.)
-- **Stress 탭** (스트레스 씬이 보이는 동안 보임):
-  - 워크로드 토글과 슬라이더;
+- **Stress 탭** (보이는 씬에 생성기나 벤치마크가 있는 동안 보임):
+  - 워크로드 토글과 슬라이더 (생성기의 파라미터 행);
   - 그 위의 검색 상자 (`search.md`): 통계, 워크로드 행, 벤치마크 그룹이 그것이 거르는 행이고, 팔레트도 그것을 찾는다;
   - 실시간 통계: FPS; 프레임 시간 (지난 1초의 평균과 최대); 애니메이션 갱신, 씬 갱신, 그리기 기록, ImGui의 CPU 시간;
     노드, 그리기, 삼각형, skinned 수; 가능하면 GPU 시간.
-- **벤치마크:** "Run benchmark"가 고정된 구성을 차례로 돌며, 1초의 준비 뒤 각각 3초를 기록한다.
+- **벤치마크:** "Run benchmark"가 씬 파일의 단계를 차례로 돌며, 1초의 준비 뒤 각각 3초를 기록한다(파일의 `warmup`, `measure`).
+  씬이 Edit 모드면 실행이 Play를 시작하고 끝나면 Stop한다. 한 단계는 모든 생성기를 파일의 값으로 두고 끈 다음 그 단계의 줄만
+  켠다.
   - 큐브: 250, 1000, 4000, 8000, 16000, crowd 꺼짐.
   - 캐릭터: 8, 32, 60, 120, 200, 그리드 꺼짐.
+  - 파티클 250k, 1M, 2M; 미사일 500, 2000; 빔 500.
   - 표는 부하도 보여 준다: CPU 단계 합계와 GPU 패스 중 큰 것을 프레임 시간에 대한 비율로. vsync가 프레임률을 붙잡는
     동안에도 계속 오른다.
   - 표는 단계마다 평균과 최악의 프레임 시간과 CPU 단계 시간을 보여 준다.
   - "Copy"는 브라우저의 user agent와 커밋 해시와 함께 표를 텍스트로 클립보드에 넣는다.
-  - 워크로드 조작을 건드리면 실행이 멈춘다.
+  - 워크로드 조작을 건드리면 실행이 멈추고 건드린 값이 남는다. Stop을 누르거나 씬을 바꾸면 실행이 끝나고 Play 전 상태로 돌아간다.
 
 ### 단계
 
@@ -100,6 +111,10 @@ SwiftShader의 숫자는 의미가 없다; 실제 측정은 실제 장치에서 
 ## English
 
 Status: implemented (2026-09-27). Changes to this spec are agreed first.
+
+> 2026-10: The stress scene is now defined by a scene file (`sandbox/data/stress.nvscene`), not by code. The workloads are the `grid`,
+> `chain`, `crowd` and `effects` behaviors, the benchmark's steps are in the file, and every scene follows the same Edit/Play, undo
+> and autosave rules as the showcase (`scene_file.md`). Where this changes something below, it is marked.
 
 ### Goal
 
@@ -122,8 +137,12 @@ uploaded every frame. None of that has been measured yet.
 
 ### Workloads
 
-Each workload has an on/off toggle and a count slider. The sliders are clamped so that all
-workloads together stay under `NV_MAX_NODES`.
+Each workload has an on/off toggle and a count slider. They are parameters of the scene file's `grid`, `chain`, `crowd` and `effects`
+behaviors, shown as the same rows in the Stress tab and in the Inspector section of their node. The sliders are clamped so that
+all workloads together stay under `NV_MAX_NODES` (the node budget of `scene_file.md`: the crowd, the chain, then the grid).
+
+In Edit mode only the counts of the grid, the chain and the crowd are followed at once. Churn, the chain's wobble and Fire effects run
+only in Play.
 
 | Workload | What it builds | Max | Measures |
 |---|---|---|---|
@@ -132,11 +151,12 @@ workloads together stay under `NV_MAX_NODES`.
 | Crowd | N characters in rows, each on its own clip and start time | 200 | ozz sampling, skin matrix upload, skinning shader |
 | Material variety | the grid uses one material, or up to 256 distinct colors | 256 | bind group switches |
 | Churn | K grid cubes removed and added again every frame | 256/frame | free list, generation ids |
-| Bone overlay | bone lines for every crowd character | ~12800 lines | debug lines |
+| Bone overlay | bone lines for every crowd character (the View tab's Show bones, the same in every scene) | ~12800 lines | debug lines |
 | Fire effects | N live particles (0–4M, held by embers fired in bursts), explosions per second (0–200), missiles in flight (0–2,000; trails and smoke), beams (0–500), decals per second (0–2,000) | as listed | the compute particle passes, drawing segments and decals, bloom, fill rate (`vfx.md`) |
 
 The stress scene also has a camera, a sun and a ground. Big workloads sit under group nodes
-("grid", "chain", "crowd") that start collapsed in the Scene tab. Otherwise the tree would draw
+("grid", "chain", "crowd") that start collapsed in the Scene tab. These nodes carry the generators, and the "effects" node is the
+center of the effects workload. Nodes a generator made can be selected but are read-only. Otherwise the tree would draw
 thousands of rows every frame and distort the measurements. The Scene tab's search box lists a
 match inside them anyway (at most 500 rows; `search.md`).
 
@@ -158,30 +178,32 @@ match inside them anyway (at most 500 rows; `search.md`).
 ### Sandbox
 
 - **Scenes:**
-  - `Sandbox` holds the showcase and stress scenes and the one that is shown.
+  - `Sandbox` holds the scene list (`sandbox/scenes.c`) and the one that is shown. Every scene is built from its file at start.
   - The Scene, Inspector and View tabs work on the shown scene. Each scene keeps its own
     selection and camera.
-  - The stress scene is built the first time it is shown.
+  - The stress scene has Play/Stop, undo and autosave too. Switching scenes while playing stops first.
 - **Switching:**
   - A combo box in the View tab switches scenes. (It also set a `#stress` URL hash, read at
     startup, until `save.md` removed it.)
-- **Stress tab** (shown while the stress scene is):
-  - the workload toggles and sliders;
+- **Stress tab** (shown while the shown scene has a generator or a benchmark):
+  - the workload toggles and sliders (the generators' parameter rows);
   - a search box above them (`search.md`): the stats, the workload rows and the benchmark group are
     rows it filters, and the palette finds them too;
   - live stats: FPS; frame time (average and max over the last second); CPU time for animation
     update, scene update, draw recording and ImGui; node, draw, triangle and skinned counts;
     GPU time when available.
-- **Benchmark:** "Run benchmark" steps through fixed setups and records 3 seconds of each, after
-  1 second of warm-up.
+- **Benchmark:** "Run benchmark" steps through the setups of the scene file and records 3 seconds of each, after
+  1 second of warm-up (the file's `warmup` and `measure`). In Edit mode a run starts Play and ends with Stop. A step puts every
+  generator at the file's values and turns it off, then turns on only the lines of that step.
   - Cubes: 250, 1000, 4000, 8000 and 16000, the crowd off.
   - Characters: 8, 32, 60, 120 and 200, the grid off.
+  - Particles 250k, 1M and 2M; missiles 500 and 2000; beams 500.
   - The table also shows the load: the larger of the CPU stage total and the GPU pass, as a
     share of the frame time. It keeps rising while vsync holds the frame rate.
   - The table shows average and worst frame time and the CPU stage times per step.
   - "Copy" puts the table on the clipboard as text, with the browser's user agent and the commit
     hash.
-  - Touching the workload controls stops a run.
+  - Touching the workload controls stops a run and keeps what was touched. Stop, or switching scenes, ends a run and goes back to the state before Play.
 
 ### Phases
 

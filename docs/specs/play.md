@@ -7,6 +7,10 @@
 
 상태: 구현됨 (2026-09-28). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-10: Edit와 Play는 이제 모든 씬의 규칙이다 (`scene_file.md`). 아래의 "쇼케이스"는 보이는 씬을, 행성, 캐릭터, 칼, 시선 타깃은
+> 씬 파일의 `spin`과 `character` 동작을 뜻한다. 스트레스 씬도 Play/Stop을 가진다: churn, 체인의 흔들림, 이펙트 워크로드는 Play에서만
+> 돈다. 재생 중에 씬을 바꾸면 먼저 Stop한다.
+
 ### 목표
 
 Unity, Unreal, Godot처럼 쇼케이스를 편집하는 것과 실행하는 것을 나눈다.
@@ -43,7 +47,7 @@ Unity, Unreal, Godot처럼 쇼케이스를 편집하는 것과 실행하는 것�
 | 점프 | 꺼짐 | 켜짐 |
 | 크로스페이드와 블렌드 | 켜짐 (미리보기의 일부) | 켜짐 |
 | 공전 카메라, picking, 기즈모 | 켜짐 | 켜짐 |
-| 스트레스 씬 | 영향 없음: 벤치마크는 항상 돌고, 그것이 보이는 동안 Play 버튼은 숨는다 | |
+| 생성기 (`grid`, `chain`, `crowd`, `effects`) | 수는 바로 따른다; churn, 체인의 흔들림, 이펙트 워크로드는 꺼짐; 군중은 제자리 미리보기 | 모두 켜짐 |
 
 Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방식으로 시작한다: 클립은 처음부터, 행성은 지정한
 회전부터.
@@ -60,7 +64,7 @@ Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방�
 | 재생 중 편집 | 허용 (기즈모와 Inspector가 동작), Unity처럼 Stop에서 사라진다 |
 | 재생 중 Undo | 꺼짐: 그 이력은 편집 상태의 것이다. Stop 뒤에는 씬이 다시 마지막 커밋과 같으므로 단계가 생기지 않는다 |
 | 재생 중 자동 저장 | 실행 중인 씬이 아니라 스냅숏을 쓴다; 새로고침은 항상 편집 상태의 Edit 모드로 시작한다 |
-| 재생 중 쇼케이스 떠나기 | 쇼케이스는 Play 모드로 남되 멈춘다, 지금 스트레스 씬이 보이는 동안처럼 |
+| 재생 중 씬 바꾸기 | 먼저 Stop한다: 재생 상태와 스냅숏은 샌드박스에 하나이고, 보이지 않는 씬은 언제나 Edit 모드다. (전에는 쇼케이스가 Play 모드로 남아 멈췄다) |
 | 저장 형식 | 편집 상태에는 실행 시간이 없으므로, 저장은 클립 시간 (`CTIM`)과 행성의 공전 각도를 더 이상 쓰지 않는다 (`PLNT`는 배치를 유지하고 각도를 0으로 쓴다). 옛 저장은 여전히 불러온다; Play가 둘 다 0에서 시작하므로 그 값은 남는 효과가 없다. 이것은 1단계로 옮겨졌다: 미리보기의 클립 시간이 빠져야 Play 전과 Stop 뒤의 저장을 비교할 수 있다 |
 | Undo | 공전 카메라만 driven 노드로 남는다 (뷰를 따라간다). 행성, 달, look 타깃, 루트 모션 캐릭터는 다른 노드처럼 undo 가능해진다 |
 | 서드파티 | 없음 |
@@ -92,6 +96,10 @@ Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방�
 ## English
 
 Status: implemented (2026-09-28). Changes to this spec are agreed first.
+
+> 2026-10: Edit and Play are now the rules of every scene (`scene_file.md`). "The showcase" below means the shown scene; the planet,
+> the character, the sword and the look target are the scene file's `spin` and `character` behaviors. The stress scene has Play/Stop
+> too: churn, the chain's wobble and the effects workload run only in Play. Switching scenes while playing stops first.
 
 ### Goal
 
@@ -131,7 +139,7 @@ No third-party library applies.
 | Jump | Off | On |
 | Crossfades and blends | On (they are part of the preview) | On |
 | Orbit camera, picking, gizmo | On | On |
-| Stress scene | Not affected: a benchmark always runs, and the Play button is hidden while it is shown | |
+| Generators (`grid`, `chain`, `crowd`, `effects`) | Counts are followed at once; churn, the chain's wobble and the effects workload are off; the crowd previews in place | All on |
 
 Play time starts at 0 on Play, so a run always starts the same way: clips from their start, the
 planet from its authored rotation.
@@ -148,7 +156,7 @@ planet from its authored rotation.
 | Edits while playing | Allowed (the gizmo and the Inspector work), and lost on Stop, as in Unity |
 | Undo while playing | Off: its history belongs to the edit state. After Stop the scene equals the last commit again, so no step appears |
 | Autosave while playing | Writes the snapshot, never the running scene; a reload always starts in Edit mode with the edit state |
-| Leaving the showcase while playing | The showcase stays in Play mode but pauses, as it does today while the stress scene is shown |
+| Switching scenes while playing | Stops first: the playing state and the snapshot are one for the sandbox, and a scene that is not shown is always in Edit mode. (The showcase used to stay in Play mode, paused) |
 | Save format | The edit state has no running time, so the save stops writing the clip time (`CTIM`) and the planet's orbit angle (`PLNT` keeps its layout with the angle written as 0). Older saves still load; the values have no lasting effect, since Play starts both from 0. This moved into phase 1: before-Play and after-Stop saves can only be compared once the preview's clip time is out of them |
 | Undo | Only the orbit camera stays a driven node (it follows the view). The planet, the moon, the look target and a root-motion character become undoable like any node |
 | Third-party | None |

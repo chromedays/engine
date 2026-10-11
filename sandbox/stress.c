@@ -8,24 +8,8 @@
 
 internal void resolution_text(Sandbox* sandbox, char* out, umm size);
 
-// The stress scene (docs/specs/stress.md): workloads that load the engine with many objects,
-// live frame statistics and a benchmark that steps through fixed setups.
-
-
-#define GRID_COLUMNS 128
-#define GRID_SPACING 0.9f
-#define CROWD_COLUMNS 20
-#define CROWD_SPACING 1.6f
-
-// Nodes the scene has besides the workloads: camera, sun, ground and the three groups.
-#define FIXED_NODES 6
-// Nodes per crowd character: the root and its meshes.
-#define CROWD_NODES 4
-
-internal b32 same_workloads(const StressWorkloads* a, const StressWorkloads* b)
-{
-    return memcmp(a, b, sizeof(*a)) == 0;
-}
+// The Stress tab and the benchmark (docs/specs/stress.md, docs/specs/scene_file.md): live frame statistics, the rows of the shown
+// scene's generators, and a benchmark that steps through the setups its scene file lists.
 
 u32 stress_live_nodes(NvScene* scene)
 {
@@ -35,328 +19,122 @@ u32 stress_live_nodes(NvScene* scene)
     return count;
 }
 
-// A color wheel, so neighboring cubes differ.
-internal void color_wheel(u32 i, u32 count, f32* rgb)
+// The tab is for scenes that have something to load the engine with or to measure.
+b32 stress_tab_shown(Sandbox* sandbox)
 {
-    f32 h = (f32)i / (f32)count * 6.0f;
-    f32 x = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
-    f32 r = 0, g = 0, b = 0;
-    switch ((u32)h % 6) {
-    case 0: r = 1; g = x; break;
-    case 1: r = x; g = 1; break;
-    case 2: g = 1; b = x; break;
-    case 3: g = x; b = 1; break;
-    case 4: r = x; b = 1; break;
-    default: r = 1; b = x; break;
-    }
-    rgb[0] = 0.15f + 0.8f * r;
-    rgb[1] = 0.15f + 0.8f * g;
-    rgb[2] = 0.15f + 0.8f * b;
-}
-
-void stress_build(Sandbox* sandbox)
-{
-    Stress* stress = &sandbox->stress;
-    NvScene* scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
-    stress->scene = scene;
-    NvNodeId none = {0};
-
-    NvNodeId camera = nv_scene_add_node(scene, none, "camera");
-    nv_scene_get(scene, camera)->camera = (NvCamera){
-        .projection = NV_PROJECTION_PERSPECTIVE,
-        .fov_y = 50.0f * NV_PI / 180.0f,
-        .near_z = 0.1f,
-        .far_z = 300.0f,
-    };
-    scene->active_camera = camera;
-
-    NvNode* sun = nv_scene_get(scene, nv_scene_add_node(scene, none, "sun"));
-    sun->rotation = nv_quat_mul(nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.5f), nv_quat_axis_angle(nv_vec3(1, 0, 0), -0.8f));
-    sun->light = (NvLight){.type = NV_LIGHT_DIRECTIONAL, .color = nv_vec3(1.0f, 0.96f, 0.9f), .intensity = 1.1f};
-
-    stress->cube = sandbox_box_mesh(sandbox, nv_vec3(0.5f, 0.5f, 0.5f));
-    stress->small_cube = sandbox_box_mesh(sandbox, nv_vec3(0.06f, 0.06f, 0.06f));
-    stress->colors[0] = nv_renderer_add_material(&sandbox->renderer, &(NvMaterialDesc){.base_color = {0.6f, 0.62f, 0.66f, 1.0f}});
-    for (u32 i = 1; i < STRESS_MAX_COLORS; ++i) {
-        NvMaterialDesc desc = {.base_color = {0, 0, 0, 1}};
-        color_wheel(i, STRESS_MAX_COLORS, desc.base_color);
-        stress->colors[i] = nv_renderer_add_material(&sandbox->renderer, &desc);
-    }
-
-    NvNode* ground = nv_scene_get(scene, nv_scene_add_node(scene, none, "ground"));
-    ground->position = nv_vec3(0, -0.05f, -50.0f);
-    ground->scale = nv_vec3(260.0f, 0.1f, 260.0f);
-    ground->mesh = stress->cube;
-    ground->material = nv_renderer_add_material(&sandbox->renderer, &(NvMaterialDesc){.base_color = {0.28f, 0.3f, 0.34f, 1.0f}});
-
-    // The grid grows away from the camera, the crowd stands in front of it, the chain to its right.
-    stress->grid_group = nv_scene_add_node(scene, none, "grid");
-    stress->chain_group = nv_scene_add_node(scene, none, "chain");
-    nv_scene_get(scene, stress->chain_group)->position = nv_vec3(14.0f, 0.5f, 8.0f);
-    stress->crowd_group = nv_scene_add_node(scene, none, "crowd");
-    nv_scene_get(scene, stress->crowd_group)->position = nv_vec3(0, 0, 4.0f);
-
-    stress->want = (StressWorkloads){
-        .grid_on = true,
-        .grid_count = 1000,
-        .color_count = 16,
-        .chain_count = 300,
-        .crowd_on = true,
-        .crowd_count = 16,
-        .churn_count = 32,
-    };
-
-    local_persist const BenchmarkStep steps[] = {
-        {"Cubes 250", 250, 0, 0, 0, 0},   {"Cubes 1000", 1000, 0, 0, 0, 0}, {"Cubes 4000", 4000, 0, 0, 0, 0},
-        {"Cubes 8000", 8000, 0, 0, 0, 0}, {"Cubes 16000", 16000, 0, 0, 0, 0}, {"Crowd 8", 0, 8, 0, 0, 0},
-        {"Crowd 32", 0, 32, 0, 0, 0},     {"Crowd 60", 0, 60, 0, 0, 0},     {"Crowd 120", 0, 120, 0, 0, 0},
-        {"Crowd 200", 0, 200, 0, 0, 0},
-        {"Particles 250k", 0, 0, 250000, 0, 0}, {"Particles 1M", 0, 0, 1000000, 0, 0}, {"Particles 2M", 0, 0, 2000000, 0, 0},
-        {"Missiles 500", 0, 0, 0, 500, 0}, {"Missiles 2000", 0, 0, 0, 2000, 0}, {"Beams 500", 0, 0, 0, 0, 500},
-    };
-    NV_ASSERT(NV_ARRAY_COUNT(steps) <= STRESS_MAX_STEPS);
-    memcpy(stress->steps, steps, sizeof(steps));
-    stress->step_count = NV_ARRAY_COUNT(steps);
-
-    sandbox->views[SCENE_STRESS] = (SceneView){
-        .scene = scene,
-        .camera = camera,
-        .focus = stress->grid_group,
-        .orbit = {.yaw = 0.45f, .pitch = 0.42f, .distance = 28.0f, ORBIT_LIMITS},
-        .follow_selection = false,
-    };
-    sandbox_set_home(&sandbox->views[SCENE_STRESS]);
-    stress->built = 1;
-}
-
-//
-// Workloads
-//
-
-internal void add_grid_cube(Stress* stress, u32 i)
-{
-    NvScene* scene = stress->scene;
-    NvNodeId id = nv_scene_add_node(scene, stress->grid_group, "cube");
-    NvNode* node = nv_scene_get(scene, id);
-    u32 column = i % GRID_COLUMNS;
-    u32 row = i / GRID_COLUMNS;
-    node->position = nv_vec3(((f32)column - (GRID_COLUMNS - 1) * 0.5f) * GRID_SPACING, 0.25f, -(f32)row * GRID_SPACING);
-    node->scale = nv_vec3(0.5f, 0.5f, 0.5f);
-    node->mesh = stress->cube;
-    node->material = stress->grid_colors ? stress->colors[1 + i % stress->grid_colors] : stress->colors[0];
-    stress->grid[i] = id;
-}
-
-internal void update_grid(Stress* stress, u32 target, u32 colors)
-{
-    NvScene* scene = stress->scene;
-    if (colors != stress->grid_colors) {
-        stress->grid_colors = colors;
-        for (u32 i = 0; i < stress->grid_built; ++i)
-            nv_scene_get(scene, stress->grid[i])->material = colors ? stress->colors[1 + i % colors] : stress->colors[0];
-    }
-    while (stress->grid_built > target)
-        nv_scene_remove_node(scene, stress->grid[--stress->grid_built]);
-    while (stress->grid_built < target)
-        add_grid_cube(stress, stress->grid_built++);
-}
-
-// A helix: each link is the child of the last, so moving the first moves them all.
-internal void update_chain(Stress* stress, u32 target, f32 dt)
-{
-    NvScene* scene = stress->scene;
-    while (stress->chain_built > target)
-        nv_scene_remove_node(scene, stress->chain[--stress->chain_built]);
-    while (stress->chain_built < target) {
-        u32 i = stress->chain_built++;
-        NvNodeId parent = i ? stress->chain[i - 1] : stress->chain_group;
-        stress->chain[i] = nv_scene_add_node(scene, parent, "link");
-        NvNode* node = nv_scene_get(scene, stress->chain[i]);
-        node->position = i ? nv_vec3(0.12f, 0.03f, 0.0f) : nv_vec3(0, 0, 0);
-        node->mesh = stress->small_cube;
-        node->material = stress->colors[1 + (i * 7) % (STRESS_MAX_COLORS - 1)];
-    }
-    stress->chain_angle += dt;
-    NvQuat twist = nv_quat_axis_angle(nv_vec3(0, 1, 0), 0.25f + 0.04f * sinf(stress->chain_angle));
-    for (u32 i = 0; i < stress->chain_built; ++i)
-        nv_scene_get(scene, stress->chain[i])->rotation = twist;
-}
-
-internal void update_crowd(Sandbox* sandbox, u32 target)
-{
-    Stress* stress = &sandbox->stress;
-    NvScene* scene = stress->scene;
-    const NvGltfModel* source = &sandbox->character;
-    NV_ASSERT(source->mesh_node_count + 1 == CROWD_NODES);
-
-    // Characters are made on first use and then kept: an animator cannot be destroyed.
-    while (stress->crowd_created < target) {
-        u32 i = stress->crowd_created++;
-        NvGltfModel* model = &stress->crowd[i];
-        nv_gltf_instantiate(source, scene, stress->crowd_group, model);
-        NvNode* root = nv_scene_get(scene, model->root);
-        u32 column = i % CROWD_COLUMNS;
-        u32 row = i / CROWD_COLUMNS;
-        root->position = nv_vec3(((f32)column - (CROWD_COLUMNS - 1) * 0.5f) * CROWD_SPACING, 0.0f, (f32)row * CROWD_SPACING);
-        snprintf(root->name, sizeof(root->name), "character %u", i + 1);
-
-        // Every character loops its own clip from its own point in time.
-        NvClipId loops[SANDBOX_MAX_CLIPS];
-        u32 loop_count = 0;
-        for (u32 c = 0; c < sandbox->clip_count; ++c) {
-            if (strstr(nv_anim_clip_name(sandbox->clips[c]), "_Loop"))
-                loops[loop_count++] = sandbox->clips[c];
-        }
-        NvAnimator* animator = nv_anim_get(model->animator);
-        NvClipId clip = loops[i % loop_count];
-        nv_anim_play(animator, clip, 0.0f, 1);
-        animator->layers[0].time = fmodf((f32)i * 0.37f, nv_anim_clip_duration(clip));
-    }
-
-    // The ones not asked for are hidden and paused.
-    for (u32 i = 0; i < stress->crowd_created; ++i) {
-        NvGltfModel* model = &stress->crowd[i];
-        b32 active = i < target;
-        nv_anim_get(model->animator)->scene = active ? scene : NULL;
-        for (u32 m = 0; m < model->mesh_node_count; ++m) {
-            NvNode* node = nv_scene_get(scene, model->mesh_nodes[m]);
-            node->mesh = active ? nv_scene_get(source->scene, source->mesh_nodes[m])->mesh : (NvMeshId){0};
-        }
-    }
-    stress->crowd_active = target;
-}
-
-// Removes and re-adds grid cubes, so node slots keep being freed and reused.
-internal void churn(Stress* stress, u32 count)
-{
-    NvScene* scene = stress->scene;
-    if (count > stress->grid_built)
-        count = stress->grid_built;
-    for (u32 k = 0; k < count; ++k) {
-        u32 i = stress->churn_cursor++ % stress->grid_built;
-        nv_scene_remove_node(scene, stress->grid[i]);
-        add_grid_cube(stress, i);
-    }
-}
-
-void stress_update(Sandbox* sandbox, f32 dt)
-{
-    Stress* stress = &sandbox->stress;
-    StressWorkloads* want = &stress->want;
-
-    // Every workload fits under NV_MAX_NODES: the crowd and the chain first, the grid gets the rest.
-    u32 animators_left = NV_MAX_ANIMATORS - 2; // slot 0 and the showcase character
-    u32 crowd = want->crowd_on ? (u32)want->crowd_count : 0;
-    if (crowd > STRESS_MAX_CROWD)
-        crowd = STRESS_MAX_CROWD;
-    if (crowd > animators_left)
-        crowd = animators_left;
-    u32 crowd_nodes = (crowd > stress->crowd_created ? crowd : stress->crowd_created) * CROWD_NODES;
-    u32 budget = NV_MAX_NODES - 1 - FIXED_NODES - crowd_nodes;
-    u32 chain = want->chain_on ? (u32)want->chain_count : 0;
-    if (chain > budget)
-        chain = budget;
-    budget -= chain;
-    u32 grid = want->grid_on ? (u32)want->grid_count : 0;
-    if (grid > STRESS_MAX_GRID)
-        grid = STRESS_MAX_GRID;
-    if (grid > budget)
-        grid = budget;
-
-    // Shrink before growing, so the node count never passes the limit on the way.
-    u32 colors = want->colors_on ? (u32)want->color_count : 0;
-    update_grid(stress, grid < stress->grid_built ? grid : stress->grid_built, colors);
-    update_chain(stress, chain < stress->chain_built ? chain : stress->chain_built, 0.0f);
-    update_crowd(sandbox, crowd);
-    update_chain(stress, chain, dt);
-    update_grid(stress, grid, colors);
-    if (want->churn_on)
-        churn(stress, (u32)want->churn_count);
-    effects_stress_update(sandbox, want, dt);
-}
-
-void stress_draw_bones(Sandbox* sandbox)
-{
-    Stress* stress = &sandbox->stress;
-    for (u32 i = 0; i < stress->crowd_active; ++i) {
-        NvAnimator* animator = nv_anim_get(stress->crowd[i].animator);
-        const NvJointDesc* joints = nv_anim_joints(animator->skeleton);
-        NvMat4 root = nv_scene_get(stress->scene, animator->owner)->world;
-        for (u32 j = 0; j < animator->joint_count; ++j) {
-            if (joints[j].parent < 0)
-                continue;
-            NvVec3 a = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[joints[j].parent]));
-            NvVec3 b = nv_mat4_translation(nv_mat4_mul(root, animator->joint_model[j]));
-            nv_renderer_debug_line(&sandbox->renderer, a, b, nv_vec3(1.0f, 0.8f, 0.2f));
-        }
-    }
+    SceneDoc* doc = sandbox_doc(sandbox);
+    if (doc->desc->has_benchmark)
+        return 1;
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (scene_behavior_def(doc->behaviors[i].desc.kind)->generator)
+            return 1;
+    return 0;
 }
 
 //
 // Benchmark
 //
 
+// Every generator's parameters as the file gave them, all of them off, and then the step's lines: the setup of step `step`.
 internal void start_step(Sandbox* sandbox, u32 step, f64 now)
 {
-    Stress* stress = &sandbox->stress;
-    const BenchmarkStep* s = &stress->steps[step];
-    stress->want = (StressWorkloads){
-        .grid_on = s->grid > 0,
-        .grid_count = s->grid,
-        .color_count = stress->before_benchmark.color_count,
-        .chain_count = stress->before_benchmark.chain_count,
-        .crowd_on = s->crowd > 0,
-        .crowd_count = s->crowd,
-        .churn_count = stress->before_benchmark.churn_count,
-        .effects_on = s->particles > 0 || s->missiles > 0 || s->beams > 0,
-        .effect_particles = s->particles,
-        .effect_missiles = s->missiles,
-        .effect_beams = s->beams,
-    };
+    Benchmark* benchmark = &sandbox->benchmark;
+    SceneDoc* doc = sandbox_doc(sandbox);
+    const StepDesc* source = &doc->desc->steps[step];
+    for (u32 i = 0; i < doc->behavior_count; ++i) {
+        Behavior* behavior = &doc->behaviors[i];
+        if (!scene_behavior_def(behavior->desc.kind)->generator)
+            continue;
+        behavior->desc = doc->desc->behaviors[i];
+        u32* on = behavior_field(behavior, behavior_parameter(behavior, "on"));
+        *on = 0;
+    }
+    for (u32 l = 0; l < source->line_count; ++l) {
+        const StepLine* line = &source->lines[l];
+        Behavior* behavior = &doc->behaviors[line->behavior];
+        const SceneField* field = &scene_behavior_def(behavior->desc.kind)->fields[line->field];
+        memcpy(behavior_field(behavior, field), &line->value, sizeof(line->value));
+        *(u32*)behavior_field(behavior, behavior_parameter(behavior, "on")) = 1;
+    }
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        benchmark->applied[i] = doc->behaviors[i].desc;
     effects_clear(sandbox); // every step starts from an empty sky
-    stress->benchmark_step = step;
-    stress->benchmark_step_start = now;
-    stress->results[step] = (BenchmarkResult){0};
+    benchmark->step = step;
+    benchmark->step_start = now;
+    benchmark->results[step] = (BenchmarkResult){0};
+    snprintf(benchmark->step_names[step], sizeof(benchmark->step_names[step]), "%s", source->name);
 }
 
-internal void start_benchmark(Sandbox* sandbox)
+void benchmark_start(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
-    stress->before_benchmark = stress->want;
-    stress->benchmark_shadows = sandbox->renderer.shadows;
-    stress->benchmark_msaa = sandbox->renderer.scene_samples;
-    resolution_text(sandbox, stress->benchmark_resolution, sizeof(stress->benchmark_resolution));
-    stress->benchmark_running = 1;
-    stress->result_count = 0;
+    Benchmark* benchmark = &sandbox->benchmark;
+    SceneDoc* doc = sandbox_doc(sandbox);
+    if (benchmark->running || !doc->desc->has_benchmark)
+        return;
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        benchmark->before[i] = doc->behaviors[i].desc;
+    benchmark->scene = sandbox->shown;
+    // A run needs Play; one that began it ends it.
+    benchmark->started_play = !sandbox->playing;
+    if (benchmark->started_play)
+        sandbox_start_playing(sandbox);
+    benchmark->shadows = sandbox->renderer.shadows;
+    benchmark->msaa = sandbox->renderer.scene_samples;
+    resolution_text(sandbox, benchmark->resolution, sizeof(benchmark->resolution));
+    benchmark->result_count = 0;
+    benchmark->running = 1;
     start_step(sandbox, 0, nv_time_seconds());
 }
 
-internal void stop_benchmark(Sandbox* sandbox, b32 restore)
+void benchmark_end(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
-    stress->benchmark_running = 0;
-    if (restore)
-        stress->want = stress->before_benchmark;
+    sandbox->benchmark.running = 0;
+    sandbox->benchmark.started_play = 0;
 }
 
-#define BENCHMARK_WARMUP_SECONDS  1.0
-#define BENCHMARK_MEASURE_SECONDS 3.0
+// The run is over: Stop puts everything back (the snapshot has the parameters); a run inside a Play that was already going puts
+// the generators' parameters back and the Play goes on.
+internal void finish_run(Sandbox* sandbox)
+{
+    Benchmark* benchmark = &sandbox->benchmark;
+    if (benchmark->started_play) {
+        sandbox_stop_playing(sandbox); // ends the run too (benchmark_end)
+        return;
+    }
+    SceneDoc* doc = sandbox_doc(sandbox);
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (scene_behavior_def(doc->behaviors[i].desc.kind)->generator)
+            doc->behaviors[i].desc = benchmark->before[i];
+    benchmark_end(sandbox);
+}
+
+// What the user changed during a run: the run stops, and what was touched stays.
+internal b32 touched_during_run(SceneDoc* doc, const Benchmark* benchmark)
+{
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (scene_behavior_def(doc->behaviors[i].desc.kind)->generator &&
+            !behavior_parameters_equal(&doc->behaviors[i].desc, &benchmark->applied[i]))
+            return 1;
+    return 0;
+}
 
 void stress_after_frame(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
-    if (!stress->benchmark_running)
+    Benchmark* benchmark = &sandbox->benchmark;
+    if (!benchmark->running)
         return;
-    if (sandbox->shown != SCENE_STRESS) {
-        stop_benchmark(sandbox, 1);
+    SceneDoc* doc = sandbox_doc(sandbox);
+    if (touched_during_run(doc, benchmark)) {
+        benchmark_end(sandbox);
         return;
     }
     f64 now = nv_time_seconds();
-    f64 elapsed = now - stress->benchmark_step_start;
-    if (elapsed < BENCHMARK_WARMUP_SECONDS)
+    f64 elapsed = now - benchmark->step_start;
+    f64 warmup = (f64)doc->desc->warmup;
+    if (elapsed < warmup)
         return;
 
-    BenchmarkResult* result = &stress->results[stress->benchmark_step];
+    BenchmarkResult* result = &benchmark->results[benchmark->step];
     FrameTimes* t = &sandbox->times;
     FrameTimes* sum = &result->average; // a sum until the step ends
     sum->frame += t->frame;
@@ -374,17 +152,17 @@ void stress_after_frame(Sandbox* sandbox)
         result->worst_frame = t->frame;
     ++result->frames;
 
-    if (elapsed < BENCHMARK_WARMUP_SECONDS + BENCHMARK_MEASURE_SECONDS)
+    if (elapsed < warmup + (f64)doc->desc->measure)
         return;
     f64 n = (f64)result->frames;
     *sum = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
                         sum->gpu_shadow / n, sum->gpu_upscale / n, sum->gpu_bloom / n, sum->gpu_particles / n};
     result->particles /= n;
-    stress->result_count = stress->benchmark_step + 1;
-    if (stress->benchmark_step + 1 < stress->step_count)
-        start_step(sandbox, stress->benchmark_step + 1, now);
+    benchmark->result_count = benchmark->step + 1;
+    if (benchmark->step + 1 < doc->desc->step_count)
+        start_step(sandbox, benchmark->step + 1, now);
     else
-        stop_benchmark(sandbox, 1);
+        finish_run(sandbox);
 }
 
 EM_JS_DEPS(nv_stress, "$stringToUTF8");
@@ -422,23 +200,23 @@ internal void shadow_settings_text(const NvShadowSettings* s, char* out, umm siz
 
 internal void copy_results(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
+    Benchmark* benchmark = &sandbox->benchmark;
     char agent[256];
     js_user_agent(agent, sizeof(agent));
     char text[4096];
     umm used = 0;
     char shadows[64];
-    shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
+    shadow_settings_text(&benchmark->shadows, shadows, sizeof(shadows));
     used += (umm)snprintf(text + used, sizeof(text) - used,
-                          "nv stress benchmark\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
+                          "nv benchmark: %s\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
                           "shadows: %s\nanti-aliasing: %s\nresolution: %s\n\n"
                           "step            frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale  bloom  particles  alive\n",
-                          NV_GIT_COMMIT, NV_BUILD_NAME, agent, sandbox->gpu.width, sandbox->gpu.height, sandbox->gpu.has_timestamps ? "yes" : "no",
-                          shadows, stress->benchmark_msaa > 1 ? "MSAA 4x" : "off", stress->benchmark_resolution);
-    for (u32 i = 0; i < stress->result_count && used < sizeof(text); ++i) {
-        const BenchmarkResult* r = &stress->results[i];
+                          sandbox_doc(sandbox)->desc->title, NV_GIT_COMMIT, NV_BUILD_NAME, agent, sandbox->gpu.width, sandbox->gpu.height, sandbox->gpu.has_timestamps ? "yes" : "no",
+                          shadows, benchmark->msaa > 1 ? "MSAA 4x" : "off", benchmark->resolution);
+    for (u32 i = 0; i < benchmark->result_count && used < sizeof(text); ++i) {
+        const BenchmarkResult* r = &benchmark->results[i];
         used += (umm)snprintf(text + used, sizeof(text) - used, "%-15s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f  %5.2f  %9.2f  %5.0f\n",
-                              stress->steps[i].name, r->frames, r->average.frame, r->worst_frame, sandbox_load(&r->average),
+                              benchmark->step_names[i], r->frames, r->average.frame, r->worst_frame, sandbox_load(&r->average),
                               r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
                               r->average.gpu_shadow, r->average.gpu_upscale, r->average.gpu_bloom, r->average.gpu_particles, r->particles);
     }
@@ -492,7 +270,7 @@ internal void stats_section(Sandbox* sandbox)
     stat(stats, &count, "CPU scene", "%.2f", a->scene);
     stat(stats, &count, "CPU draw", "%.2f", a->draw);
     stat(stats, &count, "CPU ui", "%.2f", a->ui);
-    stat(stats, &count, "Nodes", "%.0f", (f64)stress_live_nodes(sandbox->stress.scene));
+    stat(stats, &count, "Nodes", "%.0f", (f64)stress_live_nodes(sandbox_doc(sandbox)->scene));
     stat(stats, &count, "Draws", "%.0f", (f64)r->draws);
     stat(stats, &count, "Triangles", "%.0f", (f64)r->triangles);
     stat(stats, &count, "Skinned draws", "%.0f", (f64)r->skinned_draws);
@@ -541,72 +319,47 @@ internal void stats_section(Sandbox* sandbox)
 
 internal void workloads_section(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
-    StressWorkloads* w = &stress->want;
+    SceneDoc* doc = sandbox_doc(sandbox);
     search_section(sandbox, "Workloads");
-    if (search_row(sandbox, "Cube grid", "workload cubes"))
-        igCheckbox(TL("Cube grid"), &w->grid_on);
-    if (search_row(sandbox, "Cubes", "workload grid count"))
-        igSliderInt(TL("Cubes"), &w->grid_count, 0, STRESS_MAX_GRID, "%d", ImGuiSliderFlags_Logarithmic);
-    if (search_row(sandbox, "Many colors", "workload materials"))
-        igCheckbox(TL("Many colors"), &w->colors_on);
-    if (search_row(sandbox, "Colors", "workload materials count"))
-        igSliderInt(TL("Colors"), &w->color_count, 2, STRESS_MAX_COLORS - 1, "%d", 0);
-    if (search_row(sandbox, "Deep chain", "workload hierarchy"))
-        igCheckbox(TL("Deep chain"), &w->chain_on);
-    if (search_row(sandbox, "Links", "workload chain count"))
-        igSliderInt(TL("Links"), &w->chain_count, 1, STRESS_MAX_CHAIN, "%d", 0);
-    if (search_row(sandbox, "Crowd", "workload characters animation"))
-        igCheckbox(TL("Crowd"), &w->crowd_on);
-    if (search_row(sandbox, "Characters", "workload crowd count"))
-        igSliderInt(TL("Characters"), &w->crowd_count, 1, STRESS_MAX_CROWD, "%d", 0);
-    if (search_row(sandbox, "Churn", "workload add remove nodes"))
-        igCheckbox(TL("Churn"), &w->churn_on);
-    if (search_row(sandbox, "Cubes / frame", "workload churn count"))
-        igSliderInt(TL("Cubes / frame"), &w->churn_count, 1, STRESS_MAX_CHURN, "%d", 0);
-    if (search_row(sandbox, "Crowd bones", "workload skeleton debug"))
-        igCheckbox(TL("Crowd bones"), &w->show_bones);
-    if (search_row(sandbox, "Fire effects", "workload particles vfx"))
-        igCheckbox(TL("Fire effects"), &w->effects_on);
-    if (search_row(sandbox, "Live particles", "workload effects vfx count"))
-        igSliderInt(TL("Live particles"), &w->effect_particles, 0, STRESS_MAX_PARTICLES, "%d", ImGuiSliderFlags_Logarithmic);
-    if (search_row(sandbox, "Explosions / s", "workload effects vfx"))
-        igSliderInt(TL("Explosions / s"), &w->effect_explosions, 0, STRESS_MAX_EXPLOSIONS, "%d", 0);
-    if (search_row(sandbox, "Missiles in flight", "workload effects vfx trails"))
-        igSliderInt(TL("Missiles in flight"), &w->effect_missiles, 0, STRESS_MAX_MISSILES, "%d", 0);
-    if (search_row(sandbox, "Beams", "workload effects vfx laser"))
-        igSliderInt(TL("Beams"), &w->effect_beams, 0, STRESS_MAX_BEAMS, "%d", 0);
-    if (search_row(sandbox, "Decals / s", "workload effects vfx scorch"))
-        igSliderInt(TL("Decals / s"), &w->effect_decals, 0, STRESS_MAX_DECALS, "%d", 0);
-    if (search_plain(sandbox))
-        igTextDisabled(T("Built: %u cubes, %u links, %u of %u characters"), stress->grid_built, stress->chain_built,
-                       stress->crowd_active, stress->crowd_created);
+    for (u32 i = 0; i < doc->behavior_count; ++i)
+        if (scene_behavior_def(doc->behaviors[i].desc.kind)->generator)
+            generator_rows(sandbox, &doc->behaviors[i], i);
+    if (!search_plain(sandbox))
+        return;
+    for (u32 i = 0; i < doc->behavior_count; ++i) {
+        char status[64];
+        generator_status(&doc->behaviors[i], status, sizeof(status));
+        if (status[0])
+            igTextDisabled("%s", status);
+    }
 }
 
 internal void benchmark_section(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
+    Benchmark* benchmark = &sandbox->benchmark;
+    SceneDoc* doc = sandbox_doc(sandbox);
     search_section(sandbox, "Benchmark");
     // One group: the buttons, the step line and the results go together.
     if (!search_group(sandbox, "Benchmark", "run stop copy results table"))
         return;
-    if (stress->benchmark_running) {
-        f64 elapsed = nv_time_seconds() - stress->benchmark_step_start;
-        igText("Step %u/%u: %s (%s)", stress->benchmark_step + 1, stress->step_count, stress->steps[stress->benchmark_step].name,
-               elapsed < BENCHMARK_WARMUP_SECONDS ? "warming up" : "measuring");
+    b32 mine = benchmark->scene == sandbox->shown; // the results are of this scene's run
+    if (benchmark->running) {
+        f64 elapsed = nv_time_seconds() - benchmark->step_start;
+        igText("Step %u/%u: %s (%s)", benchmark->step + 1, doc->desc->step_count, doc->desc->steps[benchmark->step].name,
+               elapsed < (f64)doc->desc->warmup ? "warming up" : "measuring");
         if (igButton(TL("Stop"), (ImVec2_c){-1.0f, 0.0f}))
-            stop_benchmark(sandbox, 1);
+            finish_run(sandbox);
     } else if (igButton(TL("Run benchmark"), (ImVec2_c){-1.0f, 0.0f})) {
-        start_benchmark(sandbox);
+        benchmark_start(sandbox);
     }
-    if (!stress->result_count)
+    if (!benchmark->result_count || !mine)
         return;
     ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit;
     char shadows[64];
-    shadow_settings_text(&stress->benchmark_shadows, shadows, sizeof(shadows));
+    shadow_settings_text(&benchmark->shadows, shadows, sizeof(shadows));
     igText(T("Shadows: %s"), shadows);
-    igText(T("Anti-aliasing: %s"), stress->benchmark_msaa > 1 ? "MSAA 4x" : "off");
-    igText(T("Resolution: %s"), stress->benchmark_resolution);
+    igText(T("Anti-aliasing: %s"), benchmark->msaa > 1 ? "MSAA 4x" : "off");
+    igText(T("Resolution: %s"), benchmark->resolution);
     if (igBeginTable("results", 8, flags, (ImVec2_c){0, 0}, 0.0f)) {
         igTableSetupColumn("Step", 0, 0.0f, 0);
         igTableSetupColumn("Avg ms", 0, 0.0f, 0);
@@ -617,11 +370,11 @@ internal void benchmark_section(Sandbox* sandbox)
         igTableSetupColumn("GPU bl/pt", 0, 0.0f, 0);
         igTableSetupColumn("Alive", 0, 0.0f, 0);
         igTableHeadersRow();
-        for (u32 i = 0; i < stress->result_count; ++i) {
-            const BenchmarkResult* r = &stress->results[i];
+        for (u32 i = 0; i < benchmark->result_count; ++i) {
+            const BenchmarkResult* r = &benchmark->results[i];
             igTableNextRow(0, 0.0f);
             igTableNextColumn();
-            igTextUnformatted(stress->steps[i].name, NULL);
+            igTextUnformatted(benchmark->step_names[i], NULL);
             igTableNextColumn();
             igText("%.2f", r->average.frame);
             igTableNextColumn();
@@ -645,20 +398,17 @@ internal void benchmark_section(Sandbox* sandbox)
         }
         igEndTable();
     }
-    if (!stress->benchmark_running && igButton(TL("Copy results"), (ImVec2_c){-1.0f, 0.0f}))
+    if (!benchmark->running && igButton(TL("Copy results"), (ImVec2_c){-1.0f, 0.0f}))
         copy_results(sandbox);
 }
 
 void stress_ui(Sandbox* sandbox)
 {
-    Stress* stress = &sandbox->stress;
-    StressWorkloads before = stress->want;
+    SceneDoc* doc = sandbox_doc(sandbox);
     search_panel_begin(sandbox, SEARCH_STRESS);
     stats_section(sandbox);
     workloads_section(sandbox);
-    // Touching a workload during a run stops it and keeps what was touched.
-    if (stress->benchmark_running && !same_workloads(&before, &stress->want))
-        stop_benchmark(sandbox, 0);
-    benchmark_section(sandbox);
+    if (doc->desc->has_benchmark)
+        benchmark_section(sandbox);
     search_panel_end(sandbox);
 }

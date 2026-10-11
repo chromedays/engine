@@ -233,75 +233,6 @@ void ui_scene_tab(Sandbox* sandbox)
 // Inspector tab
 //
 
-internal void animator_section(Sandbox* sandbox, NvAnimator* animator)
-{
-    search_section(sandbox, "Animator");
-
-    // Clips of this skeleton, without the root-motion copies (sandbox_play picks those).
-    NvClipId current = animator->layers[0].clip.index ? sandbox_regular_clip(sandbox, animator->layers[0].clip) : (NvClipId){0};
-    u32 clip_count = nv_anim_clip_count();
-    for (u32 c = 1; c <= clip_count; ++c) {
-        NvClipId clip = {c};
-        if (nv_anim_clip_skeleton(clip).index != animator->skeleton.index || nv_anim_clip_has_root_motion(clip))
-            continue;
-        if (search_group(sandbox, nv_anim_clip_name(clip), "clip animation play")) {
-            if (igSelectable_Bool(nv_anim_clip_name(clip), clip.index == current.index, 0, (ImVec2_c){0, 0}))
-                sandbox_play(sandbox, clip);
-        }
-    }
-    igBeginDisabled(!sandbox->playing); // a jump is something that happens while playing
-    if (search_group(sandbox, "Jump", "play")) {
-        if (igButton(TL("Jump"), (ImVec2_c){-1.0f, 0.0f}))
-            sandbox_jump(sandbox);
-    }
-    igEndDisabled();
-
-    if (search_row(sandbox, "Speed", "playback"))
-        igSliderFloat(TL("Speed"), &animator->layers[0].speed, 0.0f, 2.0f, "%.2fx", 0);
-    if (search_row(sandbox, "Fade", "crossfade blend"))
-        igSliderFloat(TL("Fade"), &sandbox->fade_seconds, 0.0f, 1.0f, "%.2f s", 0);
-    if (search_row(sandbox, "Blend", "clip")) {
-        const char* names[SANDBOX_MAX_CLIPS];
-        for (u32 i = 0; i < sandbox->clip_count; ++i)
-            names[i] = nv_anim_clip_name(sandbox->clips[i]);
-        igCombo_Str_arr(TL("Blend"), &sandbox->blend_clip, names, (int)sandbox->clip_count, -1);
-    }
-    if (search_row(sandbox, "Weight", "blend"))
-        igSliderFloat(TL("Weight"), &sandbox->blend_weight, 0.0f, 1.0f, "%.2f", 0);
-
-    // What the layers play now is no setting: shown only without a search.
-    if (search_plain(sandbox)) {
-        f32 total = 0.0f;
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            if (animator->layers[l].clip.index)
-                total += animator->layers[l].weight;
-        }
-        for (u32 l = 0; l < NV_MAX_ANIM_LAYERS; ++l) {
-            NvAnimLayer* layer = &animator->layers[l];
-            if (!layer->clip.index)
-                continue;
-            char overlay[64];
-            snprintf(overlay, sizeof(overlay), "%s %.2f", nv_anim_clip_name(layer->clip), layer->weight);
-            igProgressBar(total > 0.0f ? layer->weight / total : 0.0f, (ImVec2_c){-1.0f, 0.0f}, overlay);
-        }
-    }
-
-    if (search_row(sandbox, "Root motion", "walk")) {
-        if (igCheckbox(TL("Root motion"), &sandbox->root_motion) && sandbox->jump == JUMP_NONE)
-            sandbox_play(sandbox, sandbox_regular_clip(sandbox, animator->layers[0].clip));
-    }
-    igBeginDisabled(!sandbox->root_motion);
-    if (search_row(sandbox, "Turn", "root motion"))
-        igSliderFloat(TL("Turn"), &sandbox->turn_rate, -1.5f, 1.5f, "%.2f rad/s", 0);
-    if (search_group(sandbox, "Back to center", "root motion")) {
-        if (igButton(TL("Back to center"), (ImVec2_c){-1.0f, 0.0f}))
-            sandbox_back_to_center(sandbox);
-    }
-    igEndDisabled();
-    if (search_row(sandbox, "Look at target", "head ik aim"))
-        igCheckbox(TL("Look at target"), &sandbox->look_at);
-}
-
 internal void attach_section(Sandbox* sandbox, NvNode* node)
 {
     search_section(sandbox, "Attach");
@@ -318,10 +249,6 @@ internal void attach_section(Sandbox* sandbox, NvNode* node)
             }
             igEndCombo();
         }
-    }
-    if (sandbox->shown == SCENE_SHOWCASE && node == nv_scene_get(sandbox->scene, sandbox->sword)) {
-        if (search_row(sandbox, "Visible", "sword"))
-            igCheckbox(TL("Visible"), &sandbox->show_sword);
     }
 }
 
@@ -524,6 +451,12 @@ void ui_inspector_tab(Sandbox* sandbox)
         igSetItemTooltip("%s", T("Keep only the node shown here selected"));
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
+    // What a generator made is shown but not edited: the generator makes and removes it (docs/specs/scene_file.md).
+    SceneDoc* doc = sandbox_doc(sandbox);
+    Behavior* made_by = doc_generator_of(doc, view->selected.index);
+    if (made_by && search_plain(sandbox))
+        igTextDisabled(T("Made by %s"), nv_scene_get(view->scene, made_by->node)->name);
+    igBeginDisabled(made_by != NULL);
     if (search_row(sandbox, "Name", "node rename"))
         igInputText(TL("Name"), node->name, sizeof(node->name), 0, NULL, NULL);
     if (view->selected.index != view->scene->active_camera.index) {
@@ -561,8 +494,17 @@ void ui_inspector_tab(Sandbox* sandbox)
     if (search_row(sandbox, "Scale", "transform size"))
         igDragFloat3(TL("Scale"), &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
-    if (node->mesh.index) {
+    // A node with a mesh of its own can be hidden, and then has none for the scene: its runtime remembers it.
+    NodeRuntime* runtime = doc_node(doc, view->selected);
+    if (node->mesh.index || (runtime && runtime->mesh.index)) {
         search_section(sandbox, "Mesh");
+        if (runtime && runtime->mesh.index) {
+            bool visible = runtime->visible != 0;
+            if (search_row(sandbox, "Visible", "show hide hidden")) {
+                if (igCheckbox(TL("Visible"), &visible))
+                    runtime->visible = visible;
+            }
+        }
         if (search_row(sandbox, "Color", "material base color")) {
             f32 color[4];
             for (u32 i = 0; i < 4; ++i)
@@ -588,16 +530,27 @@ void ui_inspector_tab(Sandbox* sandbox)
     }
     if (node->attach.animator.index)
         attach_section(sandbox, node);
-    // The full animator controls drive the showcase character; others show what they play.
+    // A node's behaviors have their sections; an animator without one (the crowd's) shows what it plays.
+    Behavior* spin = behavior_find(doc, BEHAVIOR_SPIN, view->selected);
+    if (spin)
+        spin_section(sandbox, spin);
+    for (u32 i = 0; i < doc->behavior_count; ++i) {
+        Behavior* generator = &doc->behaviors[i];
+        if (scene_behavior_def(generator->desc.kind)->generator && generator->node.index == view->selected.index &&
+            generator->node.gen == view->selected.gen)
+            generator_section(sandbox, generator, i);
+    }
     NvAnimatorId animator = sandbox_node_animator(view->scene, view->selected);
-    if (animator.index == sandbox->animator.index) {
-        animator_section(sandbox, nv_anim_get(animator));
+    Behavior* character = animator.index ? behavior_character_of(doc, animator) : NULL;
+    if (character) {
+        character_section(sandbox, character);
     } else if (animator.index) {
         search_section(sandbox, "Animator");
         NvAnimLayer* layer = &nv_anim_get(animator)->layers[0];
         if (layer->clip.index && search_group(sandbox, "Playing", "animation clip"))
             igText("%s  %.2f / %.2f s", nv_anim_clip_name(layer->clip), layer->time, nv_anim_clip_duration(layer->clip));
     }
+    igEndDisabled();
     search_panel_end(sandbox);
 }
 
@@ -610,11 +563,21 @@ void ui_view_tab(Sandbox* sandbox)
     ImGuiIO* io = igGetIO_Nil();
     SceneView* view = sandbox_view(sandbox);
     search_panel_begin(sandbox, SEARCH_VIEW);
-    const char* scenes[SCENE_COUNT] = {T("Showcase"), T("Stress")};
+    const char* scenes[SANDBOX_MAX_SCENES];
+    for (u32 i = 0; i < sandbox->scene_count; ++i)
+        scenes[i] = T(sandbox->docs[i].desc ? sandbox->docs[i].desc->title : sandbox->docs[i].file);
     int shown = (int)sandbox->shown;
-    if (search_row(sandbox, "Scene", "showcase stress switch")) {
-        if (igCombo_Str_arr(TL("Scene"), &shown, scenes, SCENE_COUNT, -1))
-            sandbox_show_scene(sandbox, (SceneKind)shown);
+    if (search_row(sandbox, "Scene", "switch")) {
+        if (igCombo_Str_arr(TL("Scene"), &shown, scenes, (int)sandbox->scene_count, -1))
+            sandbox_show_scene(sandbox, (u32)shown);
+    }
+    // A scene that could not be built cannot be shown: the first error says why.
+    for (u32 i = 0; i < sandbox->scene_count; ++i) {
+        if (!sandbox->docs[i].built && search_plain(sandbox)) {
+            igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.45f, 0.4f, 1.0f});
+            igTextWrapped("%s", sandbox->docs[i].error);
+            igPopStyleColor(1);
+        }
     }
     if (search_row(sandbox, "Language", "english korean 한국어 언어")) {
         const char* languages[NV_LANGUAGE_COUNT] = {"English", "한국어"};
@@ -637,12 +600,8 @@ void ui_view_tab(Sandbox* sandbox)
         igSliderFloat(TL("Distance"), &view->orbit.distance, 1.0f, 100.0f, "%.1f m", ImGuiSliderFlags_Logarithmic);
     if (search_row(sandbox, "Camera follows selection", "orbit follow"))
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
-    if (sandbox->shown == SCENE_SHOWCASE) {
-        if (search_row(sandbox, "Show bones", "skeleton debug lines"))
-            igCheckbox(TL("Show bones"), &sandbox->show_bones);
-        if (search_row(sandbox, "Planet orbit", "speed moon spin"))
-            igSliderFloat(TL("Planet orbit"), &sandbox->orbit_speed, -3.0f, 3.0f, "%.2f rad/s", 0);
-    }
+    if (search_row(sandbox, "Show bones", "skeleton debug lines"))
+        igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
     msaa_ui(sandbox);
     post_ui(sandbox);
     effects_ui(sandbox);
@@ -666,15 +625,12 @@ internal void format_unseen(u32 unseen, char* out, umm capacity)
 // count; a tap on the label then opens the Console tab (pick in main.c, through `badge_box`).
 void ui_draw_build_label(Sandbox* sandbox)
 {
-    // A popup (the command palette, the help window) is above everything but this foreground
-    // drawing, so the label waits.
-    if (igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
-        sandbox->badge_box[0] = sandbox->badge_box[1] = sandbox->badge_box[2] = sandbox->badge_box[3] = 0.0f;
-        return;
-    }
+    // The label is drawn behind the windows, so a popup that overlaps it covers it. While one is open a tap does not reach the
+    // badge, so its box is empty.
+    b32 popup = igIsPopupOpen_Str("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     char text[160];
     snprintf(text, sizeof(text), "%s build %s%s%s%s", NV_BUILD_NAME, NV_GIT_COMMIT, sandbox->download_text[0] ? " \xC2\xB7 " : "",
-             sandbox->download_text, sandbox->playing && sandbox->shown == SCENE_SHOWCASE ? " \xC2\xB7 Playing" : "");
+             sandbox->download_text, sandbox->playing ? " \xC2\xB7 Playing" : "");
     NvLogLevel worst;
     u32 unseen = console_unseen(sandbox, &worst);
     char count[8];
@@ -689,7 +645,7 @@ void ui_draw_build_label(Sandbox* sandbox)
     f32* box = sandbox->badge_box;
     memcpy(box, label.box, sizeof(label.box));
     if (unseen) {
-        ImDrawList* draw = igGetForegroundDrawList_ViewportPtr(NULL);
+        ImDrawList* draw = igGetBackgroundDrawList(NULL);
         ImU32 color = console_level_color(worst);
         f32 x = label.text_end + 8.0f;
         ImDrawList_AddCircleFilled(draw, (ImVec2_c){x + radius, label.text_top + label.text_height * 0.5f}, radius, color, 12);
@@ -697,7 +653,7 @@ void ui_draw_build_label(Sandbox* sandbox)
     }
 
     // The box a tap counts in: the label (not the subject line), grown to a size a finger can hit.
-    if (!unseen) {
+    if (!unseen || popup) {
         box[0] = box[1] = box[2] = box[3] = 0.0f;
         return;
     }
@@ -711,22 +667,118 @@ void ui_draw_build_label(Sandbox* sandbox)
     }
 }
 
+//
+// Pixel icons
+//
+
+// An icon is a 16 x 16 bitmap written as text, '#' a pixel: drawn as squares of whole framebuffer pixels, in the text color, centered
+// in an item. A new icon is a new table; there is no image file or font.
+#define PIXEL_ICON_SIZE 16
+global const char* const icon_play[PIXEL_ICON_SIZE] = {
+    "................",
+    "..#.............",
+    "..###...........",
+    "..#####.........",
+    "..######........",
+    "..########......",
+    "..##########....",
+    "..############..",
+    "..############..",
+    "..##########....",
+    "..########......",
+    "..######........",
+    "..#####.........",
+    "..###...........",
+    "..#.............",
+    "................",
+};
+global const char* const icon_stop[PIXEL_ICON_SIZE] = {
+    "................",
+    "................",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "..############..",
+    "................",
+    "................",
+};
+
+global const char* const icon_cthulhu[PIXEL_ICON_SIZE] = {
+    "................",
+    ".....######.....",
+    "...##########...",
+    "..############..",
+    "..############..",
+    "..##..####..##..",
+    "..##..####..##..",
+    "..############..",
+    "..############..",
+    "..###.####.###..",
+    "..##..#..#..##..",
+    ".##..##..##..##.",
+    ".##..#....#..##.",
+    ".#..##....##..#.",
+    "....#......#....",
+    "................",
+};
+
+internal void draw_pixel_icon(Sandbox* sandbox, const char* const* rows, ImVec2_c min, ImVec2_c max, ImU32 color)
+{
+    f32 ratio = nv_window_pixel_ratio(&sandbox->window);
+    // The largest whole number of framebuffer pixels a cell can have while the icon takes about three quarters of the height.
+    u32 cell = (u32)((max.y - min.y) * ratio * 0.75f / (f32)PIXEL_ICON_SIZE);
+    if (cell < 1)
+        cell = 1;
+    f32 side = (f32)(cell * PIXEL_ICON_SIZE);
+    f32 x0 = floorf(((min.x + max.x) * 0.5f * ratio) - side * 0.5f); // framebuffer pixels, so the squares have no gaps
+    f32 y0 = floorf(((min.y + max.y) * 0.5f * ratio) - side * 0.5f);
+    ImDrawList* draw = igGetWindowDrawList();
+    for (u32 y = 0; y < PIXEL_ICON_SIZE; ++y) {
+        for (u32 x = 0; x < PIXEL_ICON_SIZE;) {
+            if (rows[y][x] != '#') {
+                ++x;
+                continue;
+            }
+            u32 end = x;
+            while (end < PIXEL_ICON_SIZE && rows[y][end] == '#')
+                ++end;
+            ImDrawList_AddRectFilled(draw, (ImVec2_c){(x0 + (f32)(x * cell)) / ratio, (y0 + (f32)(y * cell)) / ratio},
+                                     (ImVec2_c){(x0 + (f32)(end * cell)) / ratio, (y0 + (f32)((y + 1) * cell)) / ratio}, color, 0.0f, 0);
+            x = end;
+        }
+    }
+}
+
+// The sandbox's mark, at the start of the top bar's menu row: a green Cthulhu as tall as the row.
+void ui_logo(Sandbox* sandbox)
+{
+    ImVec2_c pos = igGetCursorScreenPos();
+    f32 side = igGetFrameHeight();
+    igDummy((ImVec2_c){side + 6.0f, side});
+    draw_pixel_icon(sandbox, icon_cthulhu, pos, (ImVec2_c){pos.x + side, pos.y + side}, 0xFF80D090u); // ABGR: a sea green
+}
+
 void ui_play_button(Sandbox* sandbox, ImVec2_c size)
 {
     f32* box = sandbox->play_box;
     box[0] = box[1] = box[2] = box[3] = 0.0f;
-    // Play and Stop belong to the showcase; the stress scene always runs.
-    if (sandbox->shown != SCENE_SHOWCASE)
-        return;
-    char play_label[64];
-    snprintf(play_label, sizeof(play_label), "%s###play", T(sandbox->playing ? "Stop" : "Play"));
-    if (igButton(play_label, size)) {
+    // An icon, no text: the triangle plays, the square stops. The button keeps its id (###play).
+    if (igButton("###play", size)) {
         if (sandbox->playing)
             sandbox_stop_playing(sandbox);
         else
             sandbox_start_playing(sandbox);
     }
     ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
+    draw_pixel_icon(sandbox, sandbox->playing ? icon_stop : icon_play, min, max, igGetColorU32_Col(ImGuiCol_Text, 1.0f));
     box[0] = min.x;
     box[1] = min.y;
     box[2] = max.x;
@@ -735,7 +787,7 @@ void ui_play_button(Sandbox* sandbox, ImVec2_c size)
 
 void ui_playing_note(Sandbox* sandbox)
 {
-    if (!sandbox->playing || sandbox->shown != SCENE_SHOWCASE)
+    if (!sandbox->playing)
         return;
     igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){0.55f, 0.85f, 1.0f, 1.0f});
     igTextWrapped(T("Playing: edits are lost on Stop."));
@@ -744,9 +796,9 @@ void ui_playing_note(Sandbox* sandbox)
 
 b32 ui_push_play_tint(Sandbox* sandbox)
 {
-    // A tinted panel while the showcase plays, so edits that will be lost are not mistaken for
+    // A tinted panel while the scene plays, so edits that will be lost are not mistaken for
     // edits that stay.
-    if (!sandbox->playing || sandbox->shown != SCENE_SHOWCASE)
+    if (!sandbox->playing)
         return 0;
     igPushStyleColor_Vec4(ImGuiCol_WindowBg, (ImVec4_c){0.05f, 0.12f, 0.20f, 1.0f});
     return 1;

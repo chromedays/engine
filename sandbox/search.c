@@ -468,7 +468,7 @@ internal void build_results(Sandbox* sandbox)
             add_result(s, PALETTE_ACTION, command_enabled(sandbox, id), id, make_key(!command_enabled(sandbox, id), 0, 0, 0, i));
         }
         for (u32 id = 0; id < SHORTCUT_COUNT; ++id) {
-            if (!command_listed(id))
+            if (!command_listed(sandbox, id))
                 continue;
             b32 recent = 0;
             for (u32 i = 0; i < s->recent_count; ++i)
@@ -482,13 +482,13 @@ internal void build_results(Sandbox* sandbox)
 
     char text[200];
     for (u32 id = 0; id < SHORTCUT_COUNT; ++id) {
-        if (!command_listed(id))
+        if (!command_listed(sandbox, id))
             continue;
-        candidate_text(text, sizeof(text), command_name(id), command_group(id), NULL);
+        candidate_text(text, sizeof(text), command_name(sandbox, id), command_group(id), NULL);
         QueryMatch match = query_match(&query, text);
         if (match.ok)
             add_result(s, PALETTE_ACTION, command_enabled(sandbox, id), id,
-                       make_key(!command_enabled(sandbox, id), match.score, (u32)strlen(command_name(id)), PALETTE_ACTION, id));
+                       make_key(!command_enabled(sandbox, id), match.score, (u32)strlen(command_name(sandbox, id)), PALETTE_ACTION, id));
     }
     for (u32 i = 0; i < s->setting_count; ++i) {
         const SearchSetting* setting = &s->settings[i];
@@ -598,7 +598,7 @@ internal void draw_result_row(Sandbox* sandbox, u32 i, f32 width, f32 row_height
     switch (result->kind) {
     case PALETTE_ACTION:
         snprintf(kind, sizeof(kind), "%s", T("Action"));
-        snprintf(name, sizeof(name), "%s", T(command_name(result->index)));
+        snprintf(name, sizeof(name), "%s", T(command_name(sandbox, result->index)));
         snprintf(right, sizeof(right), "%s", shortcut_label((ShortcutId)result->index));
         break;
     case PALETTE_SETTING: {
@@ -669,7 +669,7 @@ internal void collect_settings(Sandbox* sandbox)
     if (igBegin("##search collect", NULL, flags)) {
         ui_inspector_tab(sandbox);
         ui_view_tab(sandbox);
-        if (sandbox->shown == SCENE_STRESS)
+        if (stress_tab_shown(sandbox))
             stress_ui(sandbox);
     }
     igEnd();

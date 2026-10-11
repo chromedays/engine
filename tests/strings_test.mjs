@@ -48,6 +48,8 @@ function check(root, label) {
       const row = line.match(new RegExp(String.raw`\[SC_\w+\] = \{${str}, ${str}, \{[^}]*\}, (?:NULL|${str})`));
       if (row) { note(row[1], where); note(row[2], where); if (row[3]) note(row[3], where); }
       for (const m of line.matchAll(new RegExp(String.raw`\.note = [^"]*${str}`, 'g'))) note(m[1], where);
+      // A behavior parameter's label in the scene file's field tables (shown through T() by its rows).
+      for (const m of line.matchAll(new RegExp(String.raw`\.label = ${str}`, 'g'))) note(m[1], where);
       if (/\bstat(?:_text)?\(stats/.test(line)) for (const m of line.matchAll(new RegExp(str, 'g'))) if (!m[1].includes('%')) note(m[1], where);
       for (const m of line.matchAll(new RegExp(String.raw`\bsection\(sandbox, ${str}`, 'g'))) note(m[1], where);
       if (/panel_names\[[^\]]*\]\s*=/.test(line)) for (const m of line.matchAll(new RegExp(str, 'g'))) note(m[1], where);

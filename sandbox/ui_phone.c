@@ -98,7 +98,7 @@ void phone_build_ui(Sandbox* sandbox)
             console_tab(sandbox);
             igEndTabItem();
         }
-        if (sandbox->shown == SCENE_STRESS) {
+        if (stress_tab_shown(sandbox)) {
             ImGuiTabItemFlags stress_flags = sandbox->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
             sandbox->open_stress = 0;
             if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {

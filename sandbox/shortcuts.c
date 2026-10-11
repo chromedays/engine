@@ -15,8 +15,7 @@ EM_JS(int, js_is_mac, (void), {
 
 // What must hold for a shortcut to apply.
 enum {
-    WHEN_SHOWCASE = 1 << 0,
-    WHEN_EDITING = 1 << 1,   // the showcase, not playing
+    WHEN_EDITING = 1 << 1,   // not playing
     WHEN_SELECTION = 1 << 2, // a node is selected
     WHEN_STORAGE = 1 << 3,   // browser storage is available
     WHEN_DESKTOP = 1 << 4,   // the desktop UI (docks and the help window do not exist on the phone)
@@ -85,8 +84,11 @@ internal void run_show_save(Sandbox* sandbox)
     sandbox->open_view = 1;
 }
 internal void run_reset(Sandbox* sandbox) { sandbox->request_reset = 1; }
-internal void run_scene_showcase(Sandbox* sandbox) { sandbox_show_scene(sandbox, SCENE_SHOWCASE); }
-internal void run_scene_stress(Sandbox* sandbox) { sandbox_show_scene(sandbox, SCENE_STRESS); }
+// One command for each place of the scene list (the first SANDBOX_MAX_SCENES rows); a place the list has no scene at is not listed.
+internal void run_scene_0(Sandbox* sandbox) { sandbox_show_scene(sandbox, 0); }
+internal void run_scene_1(Sandbox* sandbox) { sandbox_show_scene(sandbox, 1); }
+internal void run_scene_2(Sandbox* sandbox) { sandbox_show_scene(sandbox, 2); }
+internal void run_scene_3(Sandbox* sandbox) { sandbox_show_scene(sandbox, 3); }
 internal void run_textures(Sandbox* sandbox)
 {
     sandbox->open_textures = 1;
@@ -106,7 +108,7 @@ local_persist const Command shortcuts[SHORTCUT_COUNT] = {
     [SC_UNDO] = {"Edit", "Undo", {CTRL | ImGuiKey_Z}, NULL, WHEN_EDITING, 1, run_undo},
     [SC_REDO] = {"Edit", "Redo", {CTRL | SHIFT | ImGuiKey_Z, CTRL | ImGuiKey_Y}, NULL, WHEN_EDITING, 1, run_redo},
     [SC_DESELECT] = {"Edit", "Clear the selection", {ImGuiKey_Escape}, NULL, WHEN_SELECTION, 0, run_deselect},
-    [SC_PLAY] = {"Play", "Play or Stop", {ImGuiKey_Space}, NULL, WHEN_SHOWCASE, 0, run_play},
+    [SC_PLAY] = {"Play", "Play or Stop", {ImGuiKey_Space}, NULL, 0, 0, run_play},
     [SC_MOVE] = {"Gizmo", "Move", {ImGuiKey_W}, NULL, 0, 0, run_move},
     [SC_ROTATE] = {"Gizmo", "Rotate", {ImGuiKey_E}, NULL, 0, 0, run_rotate},
     [SC_SCALE] = {"Gizmo", "Scale", {ImGuiKey_R}, NULL, 0, 0, run_scale},
@@ -123,18 +125,17 @@ local_persist const Command shortcuts[SHORTCUT_COUNT] = {
     [SC_HELP] = {"Help", "Keyboard shortcuts", {SHIFT | ImGuiKey_Slash}, "?", WHEN_DESKTOP, 0, run_help},
     [SC_SHOW_SAVE] = {"File", "Show save", {0}, NULL, WHEN_STORAGE, 0, run_show_save},
     [SC_RESET] = {"File", "Reset everything...", {0}, NULL, WHEN_STORAGE, 0, run_reset},
-    [SC_SCENE_SHOWCASE] = {"View", "Show the Showcase scene", {0}, NULL, 0, 0, run_scene_showcase},
-    [SC_SCENE_STRESS] = {"View", "Show the Stress scene", {0}, NULL, 0, 0, run_scene_stress},
+    [SC_SCENE_FIRST + 0] = {"View", "Show the scene", {0}, NULL, 0, 0, run_scene_0}, // named by the scene (command_name)
+    [SC_SCENE_FIRST + 1] = {"View", "Show the scene", {0}, NULL, 0, 0, run_scene_1},
+    [SC_SCENE_FIRST + 2] = {"View", "Show the scene", {0}, NULL, 0, 0, run_scene_2},
+    [SC_SCENE_FIRST + 3] = {"View", "Show the scene", {0}, NULL, 0, 0, run_scene_3},
     [SC_TEXTURES] = {"View", "Open the Textures tab", {0}, NULL, 0, 0, run_textures},
     [SC_CLEAR_CONSOLE] = {"View", "Clear the console", {0}, NULL, 0, 0, run_clear_console},
 };
 
 internal b32 applies(Sandbox* sandbox, u32 when)
 {
-    b32 showcase = sandbox->shown == SCENE_SHOWCASE;
-    if ((when & WHEN_SHOWCASE) && !showcase)
-        return 0;
-    if ((when & WHEN_EDITING) && !(showcase && !sandbox->playing))
+    if ((when & WHEN_EDITING) && sandbox->playing)
         return 0;
     if ((when & WHEN_SELECTION) && !sandbox_view(sandbox)->selected.index)
         return 0;
@@ -298,12 +299,26 @@ void shortcuts_help(Sandbox* sandbox)
 // the palette itself or a box.
 //
 
-b32 command_listed(u32 id)
+b32 command_listed(Sandbox* sandbox, u32 id)
 {
+    if (id >= SC_SCENE_FIRST && id < SC_SCENE_FIRST + SANDBOX_MAX_SCENES)
+        return id - SC_SCENE_FIRST < sandbox->scene_count && sandbox->docs[id - SC_SCENE_FIRST].built;
     return shortcuts[id].run && id != SC_PALETTE && id != SC_FIND;
 }
 
-const char* command_name(u32 id) { return shortcuts[id].name; }
+// The scenes' commands are named by the scenes: "Show the Stress scene". The title goes through the table whole, so a scene the
+// table has no row for stays in English.
+const char* command_name(Sandbox* sandbox, u32 id)
+{
+    if (id >= SC_SCENE_FIRST && id < SC_SCENE_FIRST + SANDBOX_MAX_SCENES) {
+        local_persist char names[SANDBOX_MAX_SCENES][64];
+        char* name = names[id - SC_SCENE_FIRST];
+        const SceneDoc* doc = &sandbox->docs[id - SC_SCENE_FIRST];
+        snprintf(name, sizeof(names[0]), "Show the %s scene", doc->desc ? doc->desc->title : doc->file);
+        return name;
+    }
+    return shortcuts[id].name;
+}
 const char* command_group(u32 id) { return shortcuts[id].group; }
 
 b32 command_enabled(Sandbox* sandbox, u32 id)

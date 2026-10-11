@@ -1,0 +1,128 @@
+# sandbox/data/stress.nvscene: the stress scene, workloads that load the engine with many objects (docs/specs/stress.md and
+# docs/specs/scene_file.md). The grid grows away from the camera, the crowd stands in front of it, the chain to its right.
+nvscene_version 1
+title "Stress"
+
+view
+    camera camera
+    yaw 25.7831001      # 0.45 rad
+    pitch 24.0642266    # 0.42 rad
+    distance 28
+    focus grid
+
+# A color wheel, so neighboring cubes differ.
+palette colors
+    base 0.6 0.62 0.66
+    wheel 200
+
+model cube
+    box 0 0 0 0.5 0.5 0.5
+
+model small_cube
+    box 0 0 0 0.06 0.06 0.06
+
+model character
+    file "/assets/quaternius/character.glb"
+    clips "/assets/quaternius/clips.glb"
+    root_motion_clips "/assets/quaternius/clips_rm.glb" root
+
+node camera
+    camera
+        projection perspective
+        fov 50
+        near 0.1
+        far 300
+
+node sun
+    rotation -0.377312273 0.227874145 0.0963436365 0.892427444    # 0.5 rad about Y, then -0.8 rad about X
+    light
+        type directional
+        color 1 0.96 0.9
+        intensity 1.1
+
+node ground
+    position 0 -0.05 -50
+    scale 260 0.1 260
+    model cube
+        color 0.28 0.3 0.34
+
+node grid
+    grid
+        model cube
+        palette colors
+        max 16000
+        columns 128
+        spacing 0.9
+        height 0.25
+        scale 0.5
+        on 1
+        count 1000
+        colors_on 0
+        colors 16
+        churn_on 0
+        churn 32
+
+node chain
+    position 14 0.5 8
+    chain
+        model small_cube
+        palette colors
+        stride 7
+        max 1000
+        link 0.12 0.03 0
+        twist 14.3239449    # 0.25 rad
+        wobble 2.29183113   # 0.04 rad
+        on 0
+        count 300
+
+node crowd
+    position 0 0 4
+    crowd
+        model character
+        max 200
+        columns 20
+        spacing 1.6
+        offset 0.37
+        on 1
+        count 16
+
+node effects
+    effects
+        area 16 12
+        on 0
+
+benchmark
+    warmup 1
+    measure 3
+    step "Cubes 250"
+        grid count 250
+    step "Cubes 1000"
+        grid count 1000
+    step "Cubes 4000"
+        grid count 4000
+    step "Cubes 8000"
+        grid count 8000
+    step "Cubes 16000"
+        grid count 16000
+    step "Crowd 8"
+        crowd count 8
+    step "Crowd 32"
+        crowd count 32
+    step "Crowd 60"
+        crowd count 60
+    step "Crowd 120"
+        crowd count 120
+    step "Crowd 200"
+        crowd count 200
+    step "Particles 250k"
+        effects particles 250000
+    step "Particles 1M"
+        effects particles 1000000
+    step "Particles 2M"
+        effects particles 2000000
+    step "Missiles 500"
+        effects missiles 500
+    step "Missiles 2000"
+        effects missiles 2000
+    step "Beams 500"
+        effects beams 500
