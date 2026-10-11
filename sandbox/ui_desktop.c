@@ -136,6 +136,7 @@ internal void top_bar(Sandbox* sandbox)
     ui_pop_play_tint(tint);
     b32 open_reset = 0;
     if (open && igBeginMenuBar()) {
+        ui_logo(sandbox);
         file_menu(sandbox, &open_reset);
         if (igBeginMenu(TL("Edit"), true)) {
             undo_menu_items(sandbox);

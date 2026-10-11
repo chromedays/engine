@@ -730,6 +730,8 @@ void ui_inspector_tab(Sandbox* sandbox);
 void ui_view_tab(Sandbox* sandbox);
 // The Play / Stop button, `size` wide and high (0 = natural), at the cursor. Records its box in sandbox->play_box.
 void ui_play_button(Sandbox* sandbox, ImVec2_c size);
+// The mark at the start of the desktop top bar's menu row (a pixel icon).
+void ui_logo(Sandbox* sandbox);
 // The line telling that edits are lost on Stop, while the scene plays.
 void ui_playing_note(Sandbox* sandbox);
 // Begins the Console tab item with its unseen count and color; if true, draw console_tab and

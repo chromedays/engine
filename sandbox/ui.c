@@ -711,6 +711,25 @@ global const char* const icon_stop[PIXEL_ICON_SIZE] = {
     "................",
 };
 
+global const char* const icon_cthulhu[PIXEL_ICON_SIZE] = {
+    "................",
+    ".....######.....",
+    "...##########...",
+    "..############..",
+    "..############..",
+    "..##..####..##..",
+    "..##..####..##..",
+    "..############..",
+    "..############..",
+    "..###.####.###..",
+    "..##..#..#..##..",
+    ".##..##..##..##.",
+    ".##..#....#..##.",
+    ".#..##....##..#.",
+    "....#......#....",
+    "................",
+};
+
 internal void draw_pixel_icon(Sandbox* sandbox, const char* const* rows, ImVec2_c min, ImVec2_c max, ImU32 color)
 {
     f32 ratio = nv_window_pixel_ratio(&sandbox->window);
@@ -736,6 +755,15 @@ internal void draw_pixel_icon(Sandbox* sandbox, const char* const* rows, ImVec2_
             x = end;
         }
     }
+}
+
+// The sandbox's mark, at the start of the top bar's menu row: a green Cthulhu as tall as the row.
+void ui_logo(Sandbox* sandbox)
+{
+    ImVec2_c pos = igGetCursorScreenPos();
+    f32 side = igGetFrameHeight();
+    igDummy((ImVec2_c){side + 6.0f, side});
+    draw_pixel_icon(sandbox, icon_cthulhu, pos, (ImVec2_c){pos.x + side, pos.y + side}, 0xFF80D090u); // ABGR: a sea green
 }
 
 void ui_play_button(Sandbox* sandbox, ImVec2_c size)
