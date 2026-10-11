@@ -1,17 +1,12 @@
 # Scene file spec
 
-- [한국어](#한국어)
-- [English](#english)
-
-## 한국어
-
 상태: 제안 (2026-10-11). 구현 전이다. 이 스펙의 변경은 먼저 합의한다.
 
-### 목표
+## 목표
 
 샌드박스의 씬을 텍스트 파일로 기술하고 로더 하나로 만든다. 모든 씬을 한 벌의 코드와 한 벌의 규칙으로 돌린다.
 
-### 원칙
+## 원칙
 
 - **규칙은 모든 씬에 같다.** Edit/Play, undo, 자동 저장, 선택, 저장 형식, 씬 전환, 오류 처리가 어느 씬에서나 같다.
 - **씬마다 다른 것은 씬 파일이 정한다.** 어떤 오브젝트가 있는지, 각 오브젝트가 어떤 타입인지(메시, 카메라, 빛, 모델, 동작의 종류),
@@ -19,7 +14,7 @@
 - **코드는 씬을 알아보지 않는다.** 코드에는 특정 씬, 특정 파일 이름, 특정 노드 id를 보고 분기하는 곳이 없다. 씬 파일의 목록만
   데이터로 있다.
 
-### 지금 코드에서 이 원칙을 어기는 곳 (이 스펙이 고치는 것)
+## 지금 코드에서 이 원칙을 어기는 곳 (이 스펙이 고치는 것)
 
 - `build_world`, `build_character`(`sandbox/main.c`)와 `stress_build`(`sandbox/stress.c`)가 씬을 C로 만든다. 이름, 위치, 메시, 색이
   모두 코드의 상수다.
@@ -29,7 +24,7 @@
 - 규칙이 씬마다 다르다: 지금은 쇼케이스만 Edit/Play, undo, 자동 저장이 있고, 스트레스 씬은 항상 돌며 저장되지 않는다. `frame`, UI,
   undo, 저장이 `SceneKind`로 분기한다(`shown == SCENE_SHOWCASE`).
 
-### 바뀐 뒤
+## 바뀐 뒤
 
 - `sandbox/data/showcase.nvscene`과 `sandbox/data/stress.nvscene`이 각 씬을 기술한다. 노드, 메시, 팔레트, 모델, 뷰, 그리고 노드
   위에서 도는 **동작**(behavior)이 들어 있다.
@@ -39,7 +34,7 @@
 - 모든 씬이 Edit/Play(`play.md`), undo, 자동 저장을 똑같이 따른다.
 - `SceneKind`와 `shown == SCENE_SHOWCASE` 같은 검사는 모두 없어진다.
 
-### 정한 것
+## 정한 것
 
 | 주제 | 결정 |
 |---|---|
@@ -47,13 +42,13 @@
 | 씬의 규칙 | 모든 씬에 같다. 씬마다 다른 것은 씬 파일(오브젝트, 타입, 값)뿐이다 |
 | Planet orbit | View 탭의 슬라이더가 행성 Inspector의 **Spin** 섹션으로 옮겨 간다 |
 
-### 이 스펙에 없는 것
+## 이 스펙에 없는 것
 
 - 에디터에서 노드를 추가하고 제거하는 것, 그리고 노드의 구조까지 담는 저장("나중" 절).
 - 사용자 컴퓨터의 `.nvscene` 파일을 열고 저장하는 것(`local_file.h`).
 - 리더를 엔진으로 옮기는 것. `shared.md`에 따라 두 번째 앱이 쓸 때 옮긴다.
 
-### 형식 후보 (AGENTS.md에 따라 서드파티부터)
+## 형식 후보 (AGENTS.md에 따라 서드파티부터)
 
 | 후보 | 라이브러리 (라이선스) | 장점 | 단점 |
 |---|---|---|---|
@@ -63,7 +58,7 @@
 | TOML | tomlc99 (MIT) | 주석, 읽기 쉬움 | 새 의존성, 깊은 트리가 어색하다 |
 | 청크 바이너리 (`engine/chunk.h`) | 없음 | 저장과 같은 코드 | 손으로 고칠 수 없다 |
 
-### 파일
+## 파일
 
 | 파일 | 패키지 안의 경로 | 내용 |
 |---|---|---|
@@ -79,7 +74,7 @@
 - `sandbox/CMakeLists.txt`: `nv_setup_executable(sandbox ROOT ASSETS ... PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")`.
 - `nv_file_read`로 임시 아레나에 읽고, `SceneDesc`(GPU 없는 평범한 데이터)로 파싱한 뒤 만든다.
 
-### 문법
+## 문법
 
 `.abproj`와 같다(`abproj.md`, "문법"): UTF-8, 한 줄에 문장 하나, `#` 주석, 공백 들여쓰기가 중첩을 정함, 탭은 오류, 모르는 키나 값의
 개수가 틀린 줄은 파일과 줄 번호가 붙은 오류. 더하는 것:
@@ -91,17 +86,17 @@
 - **계산으로 나온 값**(태양의 회전, 칼의 오프셋)은 유효숫자 9자리로 써서 같은 float로 읽힌다.
 - **최상위 문장의 순서:** `nvscene_version` → `title` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
 
-### 구조
+## 구조
 
-#### `nvscene_version <정수>`
+### `nvscene_version <정수>`
 
 첫 문장. 지금은 `1`. 규칙은 `abproj_version`과 같다.
 
-#### `title <텍스트>`
+### `title <텍스트>`
 
 씬 콤보와 팔레트에 보이는 이름(`T()`를 거친다; 한국어 행은 `sandbox/strings.c`). 쇼케이스 `"Showcase"`, 스트레스 `"Stress"`.
 
-#### `view`
+### `view`
 
 | 키 | 값 | |
 |---|---|---|
@@ -122,7 +117,7 @@
 | focus | `character` | `grid` |
 | select | `character` | 없음 |
 
-#### `mesh <id>`
+### `mesh <id>`
 
 블록 안의 프리미티브 문장 하나 이상을 메시 하나에 이어 붙인다. 값 순서는 `engine/mesh.h`의 함수를 따른다.
 
@@ -139,7 +134,7 @@
 중심 (0,0.1,0) 반경 (0.09,0.012,0.025), 중심 (0,0.52,0) 반경 (0.025,0.41,0.006)), `target`(box 반경 0.06). 스트레스 `cube`(반경 0.5),
 `small_cube`(반경 0.06).
 
-#### `palette <id>`
+### `palette <id>`
 
 생성기가 쓰는 머티리얼 묶음. 지금 `stress.c`의 `colors[]`다.
 
@@ -151,7 +146,7 @@
 색상환(`color_wheel`): 색 `i`의 h = i / count × 6, x = 1 − |h mod 2 − 1|, `floor(h) mod 6`에 따라 (r,g,b)가 (1,x,0), (x,1,0), (0,1,x),
 (0,x,1), (x,0,1), (1,0,x). 결과는 0.15 + 0.8 × 채널. 스트레스: `base 0.6 0.62 0.66`, `wheel 200`.
 
-#### `model <id> <텍스트: 경로>`
+### `model <id> <텍스트: 경로>`
 
 | 키 | 값 | |
 |---|---|---|
@@ -160,7 +155,7 @@
 
 지금: `/assets/quaternius/character.glb`, `clips.glb`, `clips_rm.glb`(관절 `root`). 모델을 어디에 읽어 두는지는 열린 질문 1이다.
 
-#### `node <id>`
+### `node <id>`
 
 블록 안의 `node` 블록이 자식이다. 파일의 순서가 트리의 순서다.
 
@@ -184,7 +179,7 @@
 - 스트레스 트리: `camera`, `sun`, `ground`(cube를 (260, 0.1, 260)로 키워 (0, −0.05, −50)에 둔다, 색 0.28 0.3 0.34), `grid`,
   `chain`(14, 0.5, 8), `crowd`(0, 0, 4).
 
-#### `benchmark`
+### `benchmark`
 
 ```
 benchmark
@@ -198,7 +193,7 @@ benchmark
 
 세부는 "벤치마크" 절.
 
-### 모든 씬의 Edit과 Play
+## 모든 씬의 Edit과 Play
 
 `play.md`의 규칙이 모든 씬에 적용된다. Edit 모드에서는 아무것도 씬을 스스로 움직이지 않는다. 노드를 만들고 지우는 것(생성기의 수)은
 구조의 편집이므로 Edit 모드에서도 바로 따른다.
@@ -224,7 +219,7 @@ benchmark
 - Play: 그 씬의 스냅샷(저장 형식)을 쓰고, 재생 시간을 0으로 하고, 이펙트를 모두 지우고(`effects_clear`), 각 동작의 Play 시작을
   부른다. Stop: 스냅샷으로 그 씬을 되돌리고, 이펙트를 지우고, 각 동작의 Stop을 부른다.
 
-### 동작의 세부
+## 동작의 세부
 
 각 종류는 C `switch`의 한 갈래다. 함수 포인터나 vtable은 쓰지 않는다. 동작은 다음 단계를 갖는다:
 
@@ -238,7 +233,7 @@ benchmark
 float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표가 파일 읽기, 위젯, `search_row`, 저장(`BHVR`), undo 이름표를 만든다.
 **구조** 키는 파일에만 있고 실행 중에 바뀌지 않는다. **파라미터**는 UI가 바꾸고, 저장되고, undo된다.
 
-#### `spin`
+### `spin`
 
 지금: `update_showcase`(`sandbox/main.c:730`)의 행성과 달, `sandbox_start_playing`의 `planet_rotation`/`moon_rotation`.
 
@@ -256,7 +251,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 - 지금의 달은 `play_time × 2`로 각을 구하고 행성은 속도를 쌓는다. 둘 다 쌓는 방식이 되므로 달의 각은 float 반올림만큼 다를 수 있다.
 - 달의 속도는 지금 편집할 수 없었다. 이제 행성과 같이 편집된다.
 
-#### `character`
+### `character`
 
 지금: `sandbox_play`, `sandbox_jump`, `update_jump`, `update_blend`, `apply_turn`, `update_look_target`, `restart_clip`,
 `sandbox_back_to_center`(`sandbox/main.c`), `animator_section`, `attach_section`(`sandbox/ui.c`), `read_character_fields`(`sandbox/save.c`).
@@ -362,7 +357,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 **Inspector:** 선택한 노드(또는 첫 자식)의 애니메이터가 `character` 동작의 애니메이터면 위의 섹션 전체를 보인다. 다른 애니메이터
 (군중)는 "Playing: 클립 시간 / 길이"만 보인다. 지금과 같다.
 
-#### `visible` (노드 키, 동작이 아님)
+### `visible` (노드 키, 동작이 아님)
 
 - 지금은 칼만 있다: `show_sword`가 켜졌을 때만 칼 노드의 메시를 그린다(`update_showcase`). "Visible" 체크박스는 칼의 Attach 섹션에
   있다.
@@ -371,7 +366,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
   trs(grip, axis_angle(X, π/2), 1), 로컬 = H⁻¹ × desired)을 9자리로 파일에 쓴 것이다. 색 (0.75, 0.77, 0.8), 양면.
 - 시선 타깃: box 0.06, 색 (1, 0.75, 0.2), 최상위 노드 "look target".
 
-#### `grid`
+### `grid`
 
 지금: `add_grid_cube`, `update_grid`, `churn`(`sandbox/stress.c`).
 
@@ -394,7 +389,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 - churn (Play만, churn_on): n = min(churn, 만든 수). n번: i = 커서 mod 만든 수, 커서 += 1. 큐브 i를 지우고 같은 자리에 새로 만든다.
   새 노드는 새 슬롯과 세대를 받고 그리드의 마지막 자식이 된다.
 
-#### `chain`
+### `chain`
 
 지금: `update_chain`.
 
@@ -413,7 +408,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 - 흔들림: 각 = twist + wobble × sin(체인 시간). 모든 고리의 회전 = axis_angle(Y, 각). 체인 시간은 Play에서만 dt만큼 늘고, Play 시작과
   Stop에서 0이 된다. 그래서 Edit에서는 각 = twist다. 지금은 체인 시간이 항상 는다.
 
-#### `crowd`
+### `crowd`
 
 지금: `update_crowd`.
 
@@ -433,7 +428,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
   메시를 준다. 밖의 것은 애니메이터의 씬을 비워(멈춤) 메시를 0으로 한다(숨김).
 - 애니메이션: 모두 제자리 클립이므로 Edit에서는 미리보기로, Play에서는 그대로 돈다. 지금과 같다.
 
-#### `effects`
+### `effects`
 
 지금: `effects_stress_update`, `field_point`, `new_flight`(`sandbox/effects.c`).
 
@@ -466,7 +461,7 @@ Play에서만 돈다. dt는 0.1 s로 자른다. 들판의 점 = 궤도 중심 ±
 - 비행 목록과 세 개의 몫은 이 동작의 실행 상태다(지금은 `Effects.stress_*`). `effects_clear`(Play, Stop, 벤치마크 단계)가 비운다.
 - 시험 이펙트 버튼과 그 미사일(`Effects.flights`)은 동작이 아니라 View 탭의 도구로 `effects.c`에 남는다.
 
-#### 노드 예산과 생성기의 순서
+### 노드 예산과 생성기의 순서
 
 - 지금(`stress_update`): 애니메이터 여유 = `NV_MAX_ANIMATORS` − 2, 군중 = min(원하는 수, max, 애니메이터 여유), 군중 노드 =
   max(군중, 만든 캐릭터) × 4, 예산 = `NV_MAX_NODES` − 1 − 6 − 군중 노드, 체인 = min(원하는 수, 예산), 그리드 = min(원하는 수, max,
@@ -478,14 +473,14 @@ Play에서만 돈다. dt는 0.1 s로 자른다. 들판의 점 = 궤도 중심 ±
 - 생성기가 만든 노드: 저장하지 않고, undo하지 않는다. 선택하고 Inspector로 볼 수 있지만, 편집은 남지 않는다는 줄
   ("Made by grid: edits are not saved")을 보인다. 생성기 노드는 언제나 부모의 파일 자식들 뒤에 오므로 파일 노드의 경로가 바뀌지 않는다.
 
-#### 뼈 표시
+### 뼈 표시
 
 - 씬마다 "Show bones"(View 탭, 저장 `BONE`). 지금 쇼케이스의 `show_bones`와 Stress 탭의 "Crowd bones"가 합쳐진다.
 - 이 씬에서 갱신되는 모든 애니메이터에 대해 관절마다 부모에서 자식으로 선(1, 0.8, 0.2)을 그린다(소유 노드의 월드 행렬 × 관절 모델 행렬).
 - 시선이 켜진 애니메이터: 머리의 forward 축 0.6 m 초록(0.2, 1, 0.3)과 머리에서 타깃까지 빨강(1, 0.2, 0.2). 지금은 쇼케이스
   캐릭터만 그린다.
 
-### 벤치마크
+## 벤치마크
 
 지금: `start_step`, `start_benchmark`, `stop_benchmark`, `stress_after_frame`, `benchmark_section`, `copy_results`(`sandbox/stress.c`).
 씬에 `benchmark` 블록이 있으면 Stress 탭에 Benchmark 섹션이 보인다.
@@ -523,7 +518,7 @@ GPU sc/sh/up, GPU bl/pt, Alive), 그림자/MSAA/해상도, "Copy results"(커밋
 
 **통계:** Stress 탭의 "Frame (1 s average, ms)" 표는 지금과 같고 보이는 씬을 센다.
 
-### 바뀐 뒤의 코드
+## 바뀐 뒤의 코드
 
 ```c
 typedef struct ParamDef {
@@ -582,7 +577,7 @@ typedef struct SceneDoc {
   - 팔레트 명령 `SC_SCENE_SHOWCASE`, `SC_SCENE_STRESS`는 씬 목록의 씬마다 하나인 "Show the <title> scene"이 된다.
   - 디버그 내보내기(`_sandbox_debug_set_effects`, 그리드와 체인 설정)는 보이는 씬의 그 타입의 첫 동작에 값을 넣는다.
 
-### 저장
+## 저장
 
 `SAVE_VERSION`과 기존 태그의 뜻은 그대로다. 태그를 더하는 것은 버전을 올리지 않는다(`save.md`).
 
@@ -612,7 +607,7 @@ typedef struct SceneDoc {
 - 샌드박스는 씬 목록의 첫 씬에서 시작한다.
 - 저장 뷰어는 `FILE`, `BHVR`, `PARM`을 이름으로 보인다.
 
-### Undo
+## Undo
 
 - 기록은 하나다. 단계마다 씬을 지닌다.
 - 범위(보이는 씬에 대해):
@@ -624,7 +619,7 @@ typedef struct SceneDoc {
   같은 이유다. 그 씬이 재생 중이면 버튼이 꺼진다.
 - 씬을 바꾸면 그 씬의 지금 바이트를 단계 없이 커밋한다.
 
-### 사용자가 보는 변화
+## 사용자가 보는 변화
 
 - 스트레스 씬에 Play/Stop, undo, 자동 저장이 생긴다.
   - Edit 모드에서는 churn, 체인의 흔들림, 이펙트 워크로드가 돌지 않는다. 그리드, 체인, 군중의 수는 바로 따른다.
@@ -636,7 +631,7 @@ typedef struct SceneDoc {
 - 스트레스 씬의 그룹 노드는 생성기 섹션을 보인다(Stress 탭의 행과 같은 값).
 - undo 이름표가 "노드 + 파라미터"가 된다(예: "Planet orbit" → "planet Speed", "Sword" → "sword Visible").
 
-### 한계
+## 한계
 
 | 항목 | 한계 |
 |---|---|
@@ -648,21 +643,21 @@ typedef struct SceneDoc {
 | 벤치마크 단계 | 16 |
 | id, 이름 | 31바이트 |
 
-### 오류
+## 오류
 
 - 패키지의 파일이 읽히지 않는 것은 버그다. 오류는 파일과 줄을 붙여 `nv_log`(source `"scene"`)로 남긴다. 16개까지다.
 - 읽히지 않는 씬은 보일 수 없다(어느 씬이든 같다). 그 씬으로의 전환은 거절되고 View 탭이 첫 오류를 보인다.
 - 시작할 때 첫 씬이 읽히지 않으면 보일 씬이 없으므로 `fatal`로 멈춘다(지금 캐릭터를 읽지 못할 때와 같다).
 - ctest가 두 파일이 읽히는지 확인한다. 형식의 각 규칙은 테스트 자신의 텍스트로 시험한다.
 
-### 엔진 변경
+## 엔진 변경
 
 - `engine/text.h`, `engine/text.c`: `autobattler/defs.c`의 줄 기반 텍스트 읽기를 옮긴다. `defs.c`가 그것을 쓰고, `.abproj`의 읽기와
   오류 문구는 그대로다.
 - `nv_gltf_instantiate`: 메시 노드의 로컬 트랜스폼을 복사하지 않는다. 캐릭터의 메시 노드가 단위 트랜스폼인지 확인하고, 아니면 복사하게
   고친다.
 
-### 단계
+## 단계
 
 1. **텍스트 리더:** `engine/text.*`. 확인: ctest, 오토배틀러 테스트가 그대로 통과한다.
 2. **씬 파일 리더:** `sandbox/scene_file.c`, 파라미터 표, `tests/scene_file_test.c`.
@@ -683,14 +678,14 @@ typedef struct SceneDoc {
 
 모든 단계는 헤드리스 Chromium에서 Release와 Debug 빌드로 확인한다.
 
-### 나중
+## 나중
 
 - **노드 추가와 제거:** 지금 저장은 파일이 만든 노드에 값을 덮어쓴다. 노드를 더하거나 지우려면 저장이 노드의 구조(어떤 메시, 모델,
   동작인지와 부모)까지 담아 읽을 때 노드를 만들어야 한다(`SAVE_VERSION` 2). 그러면 `LAYT`와 경로 맞추기가 필요 없어진다.
 - `.nvscene` 열기와 저장(`local_file.h`).
 - 오토배틀러가 스테이지를 씬 파일로 만들 때 리더와 빌더를 엔진으로 옮긴다.
 
-### 열린 질문
+## 열린 질문
 
 1. **모델을 어디에 읽어 두는가.** 같은 캐릭터 glb를 두 씬이 쓴다. `nv_gltf_load_model`은 모델을 읽으면서 노드와 애니메이터를 어떤
    씬에 하나 만든다.
@@ -698,734 +693,3 @@ typedef struct SceneDoc {
      쓰이지 않은 채 남는다(256개 중 1개, 메모리 조금).
    - (나) **지금처럼** 처음 쓰는 씬(쇼케이스)에 읽고, 다른 씬(스트레스)은 그것을 복제한다. 낭비는 없지만, 스트레스 씬이 쇼케이스가 먼저
      만들어져 있어야 하는 순서 의존이 남는다.
-
-## English
-
-Status: proposal (2026-10-11). Not implemented. Changes to this spec are agreed first.
-
-### Goal
-
-Describe the sandbox's scenes in text files and build them with one loader. Run every scene with one set of code and one set of
-rules.
-
-### Principles
-
-- **The rules are the same in every scene.** Edit/Play, undo, autosave, selection, the save format, switching scenes and error
-  handling work the same in any scene.
-- **What differs between scenes is set by the scene file:** which objects there are, what type each object is (mesh, camera, light,
-  model, behavior type) and what values it has. If an object has to move differently, that is written as its type (a behavior type)
-  and its values.
-- **The code does not recognize scenes.** No code branches on a particular scene, file name or node id. Only the list of scene files
-  is data in code.
-
-### Where today's code breaks these principles (what this spec fixes)
-
-- `build_world` and `build_character` (`sandbox/main.c`) and `stress_build` (`sandbox/stress.c`) build the scenes in C. Every name,
-  position, mesh and color is a constant in code.
-- How objects move lives in different code per scene.
-  - Showcase: fields of `Sandbox` (planet, moon, character, clips, jump, sword, look target) and `update_showcase`.
-  - Stress: `Stress` and `stress_update`. The effects workload lives in `Effects`.
-- The rules differ per scene: today only the showcase has Edit/Play, undo and autosave; the stress scene always runs and is not saved.
-  `frame`, the UI, undo and the save branch on `SceneKind` (`shown == SCENE_SHOWCASE`).
-
-### After
-
-- `sandbox/data/showcase.nvscene` and `sandbox/data/stress.nvscene` describe each scene: nodes, meshes, palettes, models, the view,
-  and the **behaviors** that run on nodes.
-- Behaviors are a fixed set of types written in C (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`), with values from the
-  file.
-  - Each type's parameters are defined by one table. That table makes the file reading, the UI, search, the save and the undo labels.
-  - One update runs every behavior of the shown scene.
-- Every scene follows Edit/Play (`play.md`), undo and autosave the same way.
-- `SceneKind` and checks such as `shown == SCENE_SHOWCASE` all go.
-
-### Decided
-
-| Topic | Decision |
-|---|---|
-| Format | Our own line-based text, like `.abproj`. No new third-party code ("Format candidates" below) |
-| Scene rules | The same in every scene. What differs is only the scene file (objects, types, values) |
-| Planet orbit | The View tab's slider moves to the planet's Inspector, in a **Spin** section |
-
-### Not in this spec
-
-- Adding and removing nodes in the editor, and a save that holds nodes' structure too ("Later").
-- Opening and saving `.nvscene` files on the user's computer (`local_file.h`).
-- Moving the reader into the engine. Per `shared.md`, it moves when a second app uses it.
-
-### Format candidates (third-party first, per AGENTS.md)
-
-| Candidate | Library (license) | Pros | Cons |
-|---|---|---|---|
-| **Our own line-based text, like `.abproj`** (decided) | None (the tokenizer moves from `autobattler/defs.c` into the engine) | A syntax we already know. Diffs show in Git. Errors carry a file and line. The tokenizer gets its second user | We write the reader |
-| glTF 2.0 + `extras` | cgltf (MIT; already used) | Standard, Blender opens it | Primitives, model references, joint attachments, behaviors and the view would all be extras |
-| JSON | jsmn (MIT; inside cgltf) | Familiar | Noisy to edit by hand, no comments |
-| TOML | tomlc99 (MIT) | Comments, readable | A new dependency; deep trees are awkward |
-| Chunk binary (`engine/chunk.h`) | None | The same code as the save | Not editable by hand |
-
-### Files
-
-| File | Path in the package | Contents |
-|---|---|---|
-| `sandbox/data/showcase.nvscene` | `/data/showcase.nvscene` | The showcase |
-| `sandbox/data/stress.nvscene` | `/data/stress.nvscene` | The stress scene and its benchmark steps |
-
-- **The scene list** is the only scene information in code: an array of file names,
-  `SCENE_FILES[] = {"showcase.nvscene", "stress.nvscene"}` (`sandbox/scenes.c`).
-  - The View tab's scene combo and the palette's "Show the ... scene" commands come from this list. The names are the files' `title`s.
-  - The sandbox starts on the first scene in the list.
-  - Adding a scene is adding a file and one line to the list.
-- Text, so plain Git.
-- `sandbox/CMakeLists.txt`: `nv_setup_executable(sandbox ROOT ASSETS ... PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")`.
-- Read with `nv_file_read` into scratch, parsed into a `SceneDesc` (plain data, no GPU), then built.
-
-### Syntax
-
-As `.abproj` (`abproj.md`, "Syntax"): UTF-8, one statement per line, `#` comments, indentation with spaces sets nesting, a tab is an
-error, an unknown key or a line with the wrong number of values is an error with its file and line. Additions:
-
-- **Text:** a double-quoted string of up to 31 bytes (`"look target"`). No escapes.
-- **Units:** in the file, angles are degrees and angular speeds degrees per second; they become radians when read. Run-time values,
-  the save and the UI stay in radians, as today (the UI's "rad/s" sliders are unchanged).
-- **Rotations:** `rotation x y z w` (a quaternion, exact) or `euler pitch yaw roll` (degrees).
-- **Computed values** (the sun's rotation, the sword's offset) are written with 9 significant digits, so they read back as the same
-  float.
-- **Top-level order:** `nvscene_version` → `title` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
-
-### Structure
-
-#### `nvscene_version <integer>`
-
-The first statement. Now `1`. The same rules as `abproj_version`.
-
-#### `title <text>`
-
-The name shown in the scene combo and the palette (through `T()`; Korean rows in `sandbox/strings.c`). Showcase `"Showcase"`, stress `"Stress"`.
-
-#### `view`
-
-| Key | Value | |
-|---|---|---|
-| `camera <id>` | A node with a camera | Required |
-| `target x y z` | The orbit's center, m | Default 0 0 0 |
-| `yaw`, `pitch` | Degrees | Required |
-| `distance` | m | Required |
-| `focus <id>` | Orbited while nothing is selected | Optional |
-| `select <id>` | Selected at start | Optional |
-
-`ORBIT_LIMITS` is the editor's limit, so it stays in code.
-
-| | Showcase (today's `build_world`) | Stress (today's `stress_build`) |
-|---|---|---|
-| camera | `camera` | `camera` |
-| target | 0 0.92 0 (the character's head height) | 0 0 0 |
-| yaw, pitch, distance | 0.35, 0.12 rad, 5 m | 0.45, 0.42 rad, 28 m |
-| focus | `character` | `grid` |
-| select | `character` | None |
-
-#### `mesh <id>`
-
-One or more primitive statements in the block, appended into one mesh. Value order follows the functions in `engine/mesh.h`.
-
-| Key | Values |
-|---|---|
-| `box` | cx cy cz hx hy hz |
-| `plane` | hx hz |
-| `sphere` | cx cy cz radius segments rings |
-| `cylinder`, `cone` | cx cy cz radius half_height segments |
-| `capsule` | cx cy cz radius half_height segments rings |
-| `torus` | cx cy cz major minor segments tube_segments |
-
-Today's meshes: showcase `cube` (box, half 0.5), `ground` (plane 30×30), `sword` (three boxes: center (0,0,0) half (0.018,0.09,0.018),
-center (0,0.1,0) half (0.09,0.012,0.025), center (0,0.52,0) half (0.025,0.41,0.006)), `target` (box, half 0.06). Stress `cube` (half
-0.5), `small_cube` (half 0.06).
-
-#### `palette <id>`
-
-A set of materials generators use: today's `colors[]` in `stress.c`.
-
-| Key | Value | |
-|---|---|---|
-| `base r g b` | Color 0: the grid's color while colors are off | Required |
-| `wheel <count>` | Colors 1 to count-1: a color wheel | Required |
-
-The color wheel (`color_wheel`): for color `i`, h = i / count × 6 and x = 1 − |h mod 2 − 1|; by `floor(h) mod 6`, (r,g,b) is
-(1,x,0), (x,1,0), (0,1,x), (0,x,1), (x,0,1) or (1,0,x). The result is 0.15 + 0.8 × channel. Stress: `base 0.6 0.62 0.66`, `wheel 200`.
-
-#### `model <id> <text: path>`
-
-| Key | Value | |
-|---|---|---|
-| `clips <text: path>` | The in-place clip file (up to `SANDBOX_MAX_CLIPS`, 16) | Optional |
-| `root_motion_clips <text: path> <joint>` | The root-motion copies and their root joint | Optional |
-
-Today: `/assets/quaternius/character.glb`, `clips.glb`, `clips_rm.glb` (joint `root`). Where models are loaded is open question 1.
-
-#### `node <id>`
-
-`node` blocks inside the block are its children. The file's order is the tree's order.
-
-| Key | Value | |
-|---|---|---|
-| `name <text>` | The shown name | Default: the id |
-| `position x y z`, `rotation`/`euler`, `scale x y z` | | 0, identity, 1 |
-| `mesh <id>` | | |
-| `color r g b` | The node's own material | The default material |
-| `double_sided <0/1>` | | 0 |
-| `visible <0/1>` | Whether its mesh is drawn | 1 |
-| `camera perspective <fov> <near> <far>` | fov in degrees | |
-| `light directional`, `light_color r g b`, `light_intensity x` | | |
-| `model <id>` | The node becomes the model's root. The model's mesh nodes (named as in the glTF) are made as its first children, then the file's children follow | |
-| `attach <joint>` | Follows that joint of the nearest ancestor model's animator | |
-| Behavior blocks | Below | |
-
-- An id is a name unique in its file. Behaviors, the view, the benchmark and the save's mapping refer to nodes by id. It is not the
-  name (the Inspector renames nodes).
-- The showcase tree is today's: `camera`, `sun`, `ground`, `planet` > `moon`, `character` (the model's mesh nodes, `sword`),
-  `look target`.
-- The stress tree: `camera`, `sun`, `ground` (the cube scaled to (260, 0.1, 260) at (0, −0.05, −50), color 0.28 0.3 0.34), `grid`,
-  `chain` (14, 0.5, 8), `crowd` (0, 0, 4).
-
-#### `benchmark`
-
-```
-benchmark
-    warmup 1
-    measure 3
-    step "Cubes 250"
-        grid count 250
-    step "Particles 1M"
-        effects particles 1000000
-```
-
-Details are under "Benchmark".
-
-### Edit and Play in every scene
-
-`play.md`'s rules apply to every scene: in Edit mode nothing moves the scene by itself. Making and removing nodes (a generator's
-count) is an edit of structure, so it follows at once in Edit mode too.
-
-| Behavior | Edit | Play |
-|---|---|---|
-| `spin` | Still, at the authored rotation | Turns on top of the authored rotation |
-| `character`: clips, crossfades, blend | Previews in place | Runs |
-| `character`: root motion, turning | Off (the in-place clip) | On when ticked |
-| `character`: jump | Off | On |
-| `character`: look target | Stays where it is put | Sweeps in front of the head |
-| `grid`: count, colors | Follow at once | Follow at once |
-| `grid`: churn | Off | On |
-| `chain`: count | Follows at once | Follows at once |
-| `chain`: wobble | Still (angle 0.25 rad) | Runs |
-| `crowd`: count | Follows at once | Follows at once |
-| `crowd`: animation | Previews in place | Runs |
-| `effects` workload | Off | On |
-| The View tab's test effect buttons | Work as today | Work |
-
-- Play/Stop acts on the shown scene. Each scene has its own playing state and snapshot.
-- Leaving a playing scene leaves it paused in Play mode, as the showcase is today (only the shown scene's animators update).
-- Play: writes that scene's snapshot (the save format), sets play time to 0, clears every effect (`effects_clear`) and calls each
-  behavior's Play start. Stop: restores that scene from the snapshot, clears effects and calls each behavior's Stop.
-
-### Behaviors in detail
-
-Each kind is one branch of a C `switch`; no function pointers or vtables. A behavior has these stages:
-
-- **Build:** once, when the scene is built.
-- **Apply:** when parameters changed, after the file, a save or undo put values in.
-- **Frame:** every frame, following the Edit/Play rules.
-- **Play start, Stop.**
-- **UI:** an Inspector section. Generators also show in the Stress tab.
-
-**Parameter tables.** Each kind has one `ParamDef` table: key (the file's and the save's name), label (UI and undo), search keywords,
-type (bool, int, float, angle, angular speed, clip), range, and where it lives in the struct. The table makes the file reading, the
-widgets, `search_row`, the save (`BHVR`) and the undo labels. **Structure** keys are only in the file and do not change while running.
-**Parameters** are changed by the UI, saved and undone.
-
-#### `spin`
-
-Today: the planet and moon in `update_showcase` (`sandbox/main.c:730`), and `planet_rotation`/`moon_rotation` in
-`sandbox_start_playing`.
-
-| Key | Kind | Type, range | UI | Showcase values |
-|---|---|---|---|---|
-| `axis x y z` | Structure | Normalized when read | | Planet (0,1,0), moon (1,1,0) |
-| `speed` | Parameter | Angular speed, ±3 rad/s | Spin section, "Speed" slider, "%.2f rad/s" | Planet 0.7 rad/s (40.107 deg/s), moon 2 rad/s (114.592 deg/s) |
-
-- **Play start:** records the node's rotation as the authored one and sets the angle to 0.
-- **Frame (Play):** angle += speed × dt; rotation = axis_angle(axis, angle) × authored rotation. A speed changed while playing adds
-  up at the new speed from then on (as the planet does today).
-- **Edit:** does nothing. The rotation is edited with the gizmo and the Inspector, and undone.
-- **Stop:** the snapshot puts the rotation back; the angle is 0.
-- The moon is the planet's child, so it goes around with it.
-- Today the moon's angle is `play_time × 2` while the planet adds up its speed. Both now add up, so the moon's angle can differ by
-  float rounding.
-- The moon's speed could not be edited; now it is edited like the planet's.
-
-#### `character`
-
-Today: `sandbox_play`, `sandbox_jump`, `update_jump`, `update_blend`, `apply_turn`, `update_look_target`, `restart_clip`,
-`sandbox_back_to_center` (`sandbox/main.c`), `animator_section`, `attach_section` (`sandbox/ui.c`), `read_character_fields`
-(`sandbox/save.c`).
-
-**Structure keys**
-
-| Key | Value | Showcase |
-|---|---|---|
-| `look_target <joint> <node id>` | The aim IK's joint and target node | `Head look_target` |
-| `jump <start> <air> <land> <air time>` | The jump's three clips and air time (s) | `Jump_Start Jump_Loop Jump_Land 0.35` |
-
-**Parameters**
-
-| Key | Type, range | UI ("Animator" section) | Default | Save tag (old) |
-|---|---|---|---|---|
-| `clip` | Clip name | The clip list (selectable rows) | `Idle_Loop` | `CLIP` |
-| `speed` | 0–2 | "Speed", "%.2fx" | 1 | `SPED` |
-| `fade` | 0–1 s | "Fade", "%.2f s" | 0.3 | `FADE` |
-| `blend` | Clip name | "Blend" combo | The first clip | `BLND` |
-| `blend_weight` | 0–1 | "Weight" | 0 | `BLDW` |
-| `root_motion` | bool | "Root motion" | 0 | `RMOT` |
-| `turn` | ±1.5 rad/s | "Turn", "%.2f rad/s" | 0.6 rad/s (34.377 deg/s) | `TURN` |
-| `look_at` | bool | "Look at target" | 0 | `LOOK` |
-
-**Build**
-
-- Uses the model node's animator. The clips are the model's `clips` (in place) and `root_motion_clips` (the copies).
-- Aim IK: from the `Head` joint's rest-pose model matrix, `joint_axis_towards` picks the axis closest to +Z as `forward` and the one
-  closest to +Y as `up`. `weight` is 1 and `target_node` is the target. The axis is the ± of the matrix's three normalized columns with
-  the largest dot product with the direction.
-- Then plays `clip` ("Playing a clip" below, without a crossfade).
-
-**Playing a clip** (today's `sandbox_play`)
-
-1. Pick the root-motion copy: if `root_motion` is on, the scene is playing and a copy with the same name exists, the copy plays. So
-   Edit mode always plays the in-place clip.
-2. End the jump (phase = none).
-3. `nv_anim_play(animator, clip, fade, loop)`, with loop when the name contains `_Loop`.
-
-What `nv_anim_play` does (`engine/anim.cpp`):
-
-- If layer 0 already plays that clip, only its loop flag changes; it does not restart.
-- If fade > 0 and layer 0 has a clip, layer 1 becomes the old layer 0 and layer 0 starts at weight 0. `nv_anim_update` moves layer 0
-  to t and layer 1 to 1 − t linearly over the fade, then clears layer 1.
-- Otherwise it cuts (layer 1 cleared, weight 1).
-- Time starts at 0; speed keeps layer 0's (1 if it was 0).
-- Layer 0 is the current clip, 1 the one fading out, 2 the blend clip.
-
-**The clip list** shows this skeleton's clips that are not root-motion copies, in clip order. The current one is layer 0's clip (its
-in-place clip of the same name if a copy plays). Picking one is "Playing a clip". Under it, a bar per layer shows "name weight"
-(only without a search, as a share of the weights' total).
-
-**Blend** (today's `update_blend`, Edit and Play, every frame)
-
-- On when: blend_weight > 0, layer 0 has a clip, the blend clip's id differs from layer 0's, no crossfade is running, no jump is
-  running. A copy on layer 0 has a different id from its in-place clip of the same name, so the blend turns on; that is today's
-  behavior, kept.
-- Off: clears layer 2, and sets layer 0's weight to 1 unless a crossfade runs.
-- On: layer 2 = {the blend clip, time = layer 0 time / layer 0 length × blend length, speed = layer 0 speed × blend length / layer 0
-  length, weight = blend_weight, loop}; layer 0's weight = 1 − blend_weight. The time is matched every frame, so feet stay in step.
-
-**Root motion and turning**
-
-- Changing "Root motion" while no jump runs plays layer 0's in-place clip ("Playing a clip"). So while playing, the fade switches
-  between the copy and the in-place clip.
-- Movement: `nv_anim_update_scene` adds the clip's root movement (turned by the owner's rotation) to the model's root node. Only the
-  copies move.
-- Turning (Play, root_motion on): root rotation = axis_angle(Y, turn × dt) × root rotation. It turns in place even on a standing clip.
-- The "Turn" slider and the "Back to center" button are disabled while root_motion is off. "Back to center" sets the root to (0,0,0)
-  and the identity rotation; it works in Edit mode too.
-
-**Jump** (today's `sandbox_jump`, `update_jump`)
-
-- The "Jump" button is enabled only while playing. It does nothing during a jump.
-- Start: the clip to return to = layer 0's clip (it may be a copy); play the start clip with fade 0.1 and no loop → phase start.
-- Frame (Play): finished = layer 0 has a clip and time ≥ length − 0.001.
-  - Start phase, finished: the air clip, fade 0.05, loop; air time 0 → air phase.
-  - Air phase: air time += dt. At 0.35 s or more: the land clip, fade 0.05, no loop → land phase.
-  - Land phase, finished: the clip to return to, fade 0.2, loop when its name has `_Loop` → no phase.
-- Jump clips are found among the in-place clips and played with `nv_anim_play` directly (no copy is picked).
-- The blend is off during a jump.
-
-**Look-at** (today's `update_look_target`, every frame)
-
-- The animator's `look_at.enabled` = look_at. While look_at is off the target is not drawn (its mesh is not drawn; separate from
-  `visible`, and not saved).
-- Play with look_at on: t = play time, angle = sin(0.7 t) × 1.3, local = (sin(angle) × 1.2, 1.75 + 0.3 sin(1.3 t), cos(angle) × 1.2).
-  Target position = root position + local turned by the root rotation; target rotation = axis_angle(Y, 2 t).
-- Edit: the target stays where it is put (it starts at (0, 1.75, 1.2)). It is edited and undone like any node.
-
-**Play start and Stop** (today's `restart_clip`)
-
-- Play start: play time 0. The clip = the clip to return to during a jump, otherwise layer 0's clip. Its in-place clip plays with no
-  fade after layer 0 is cleared (so the same clip restarts too), at time 0. Since the scene is playing, the copy is picked when root
-  motion is on.
-- Stop: ends the jump; the snapshot puts the parameters back ("Apply" below); the clip restarts the same way.
-
-**Apply** (after the file, a save or undo put parameters in; today's `read_character_fields`)
-
-- Puts in root_motion, turn, look_at, blend_weight (clamped to 0–1) and blend (found by name; unchanged if missing).
-- If clip came in: the clip of that name, or `Idle_Loop` if there is none. Fade is set to 0 for a moment and it is played ("Playing a
-  clip"); the same clip keeps playing.
-- Puts in fade (clamped to 0–1) and speed (layer 0's speed).
-- An old save's `CTIM` is read as layer 0's time (never written).
-
-**What the saved state means:** during a jump, `clip` is the clip to return to. While a copy plays, it is the in-place clip of the same
-name. No time is saved.
-
-**Inspector:** when the selected node's animator (or its first child's) is a `character` behavior's animator, the whole section above
-shows. Other animators (the crowd) show only "Playing: clip time / length". As today.
-
-#### `visible` (a node key, not a behavior)
-
-- Today only the sword has it: the sword node's mesh is drawn only while `show_sword` is on (`update_showcase`). The "Visible"
-  checkbox is in the sword's Attach section.
-- After: every node with a mesh has "Visible" in its Mesh section. When off, the renderer gets mesh 0 (the node's mesh id is kept).
-- The sword: `attach hand_r`. Its local transform is today's computed value (H = `hand_r`'s rest-pose matrix, grip = H's position +
-  (−0.08, −0.02, 0), desired = trs(grip, axis_angle(X, π/2), 1), local = H⁻¹ × desired) written to the file with 9 digits. Color (0.75,
-  0.77, 0.8), double-sided.
-- The look target: box 0.06, color (1, 0.75, 0.2), a top-level node named "look target".
-
-#### `grid`
-
-Today: `add_grid_cube`, `update_grid`, `churn` (`sandbox/stress.c`).
-
-| Key | Kind | Type, range | UI (Stress tab "Workloads") | Stress value |
-|---|---|---|---|---|
-| `max` | Structure | | | 16000 |
-| `columns`, `spacing`, `height`, `scale` | Structure | | | 128, 0.9, 0.25, 0.5 |
-| `mesh`, `palette` | Structure | | | `cube`, `wheel` |
-| `on` | Parameter | bool | "Cube grid" | 1 |
-| `count` | Parameter | 0–max, logarithmic slider | "Cubes" | 1000 |
-| `colors_on` | Parameter | bool | "Many colors" | 0 |
-| `colors` | Parameter | 2 to the palette's colors − 1 | "Colors" | 16 |
-| `churn_on` | Parameter | bool | "Churn" | 0 |
-| `churn` | Parameter | 1–256 | "Cubes / frame" | 32 |
-
-- Cube i: named "cube", a child of the grid node, at ((i mod columns − (columns − 1)/2) × spacing, height, −floor(i / columns) ×
-  spacing), scale (s, s, s), the mesh, and material = palette color 1 + (i mod colors) while colors are on, otherwise palette color 0.
-- Frame (Edit and Play): target = on ? count : 0 (cut by the budget). When the painted count (colors_on ? colors : 0) changes, every
-  built cube is repainted. Above the target, cubes are removed from the end; below it, added at the end.
-- Churn (Play only, churn_on): n = min(churn, built). n times: i = cursor mod built, cursor += 1; cube i is removed and made again in
-  the same place. The new node gets a new slot and generation and becomes the grid's last child.
-
-#### `chain`
-
-Today: `update_chain`.
-
-| Key | Kind | Type, range | UI | Stress value |
-|---|---|---|---|---|
-| `max` | Structure | | | 1000 |
-| `mesh`, `palette`, `stride` | Structure | | | `small_cube`, `wheel`, 7 |
-| `link x y z` | Structure | | | 0.12 0.03 0 |
-| `twist`, `wobble` | Structure | Degrees | | 14.324 (0.25 rad), 2.292 (0.04 rad) |
-| `on` | Parameter | bool | "Deep chain" | 0 |
-| `count` | Parameter | 1–max | "Links" | 300 |
-
-- Link i: named "link", its parent is link i − 1 (the first link's is the chain node), at (0,0,0) for the first and `link` after.
-  The mesh, and material = palette color 1 + (i × stride) mod (the palette's colors − 1).
-- Frame: target = on ? count : 0 (cut by the budget). Links are removed from or added at the end (removing a link removes those below).
-- Wobble: angle = twist + wobble × sin(chain time); every link's rotation = axis_angle(Y, angle). Chain time grows by dt only in Play
-  and is 0 at Play start and Stop, so in Edit the angle is twist. Today chain time always grows.
-
-#### `crowd`
-
-Today: `update_crowd`.
-
-| Key | Kind | Type, range | UI | Stress value |
-|---|---|---|---|---|
-| `max` | Structure | | | 200 |
-| `model`, `columns`, `spacing`, `offset` | Structure | | | `character`, 20, 1.6, 0.37 s |
-| `on` | Parameter | bool | "Crowd" | 1 |
-| `count` | Parameter | 1–max | "Characters" | 16 |
-
-- Characters are made when first needed and never removed, since an animator cannot be.
-- Making character i: `nv_gltf_instantiate` of the model under the crowd node. Root at ((i mod columns − (columns − 1)/2) × spacing, 0,
-  floor(i / columns) × spacing), named "character N" (N = i + 1).
-- Clip: from the model's in-place clips whose names contain `_Loop`, in clip order, the (i mod count)-th. It plays with fade 0 and
-  loop, at time = (i × offset) mod length.
-- Frame: target = on ? count : 0 (cut by the budget). Built characters inside the target get this scene as their animator's scene and
-  their mesh nodes' meshes back; the rest get no scene (paused) and mesh 0 (hidden).
-- Animation: every clip is in place, so it previews in Edit and runs in Play, as today.
-
-#### `effects`
-
-Today: `effects_stress_update`, `field_point`, `new_flight` (`sandbox/effects.c`).
-
-| Key | Kind | Type, range | UI | Stress value |
-|---|---|---|---|---|
-| `area x z` | Structure | m | | 16 12 |
-| `on` | Parameter | bool | "Fire effects" | 0 |
-| `particles` | Parameter | 0–4,000,000, logarithmic | "Live particles" | 0 |
-| `explosions` | Parameter | 0–200 /s | "Explosions / s" | 0 |
-| `missiles` | Parameter | 0–2000 | "Missiles in flight" | 0 |
-| `beams` | Parameter | 0–500 | "Beams" | 0 |
-| `decals` | Parameter | 0–2000 /s | "Decals / s" | 0 |
-
-It runs only in Play. dt is cut to 0.1 s. A field point = the orbit center ± area.x (x), a given height, the orbit center ± area.z
-(z), at random (`Effects.rng`, seeded 0x9E3779B9, shared with the test effects).
-
-1. **Missiles:** target = on ? missiles : 0. Extra flights are dropped from the end. Missing ones are added: angle = random × 2π,
-   speed 6–10, position = a field point (height 0.3), velocity = (cos angle × speed, 3–5, sin angle × speed), life 1.2–2.0 s. A new
-   flight's life is multiplied by a random number, so they are out of step.
-   - Every frame: velocity.y −= 4 dt, position += velocity dt, life −= dt.
-   - With dt > 0, (length × 12 + 1) missile particles are emitted along the step and a trail segment is added.
-   - A flight whose life ran out or whose height is below 0.05 starts again as a new flight.
-2. **Beams:** target = on ? beams : 0. Beam i: four 0–1 values drawn from h = i × 2654435761 + 12345 set its start (the orbit center ±
-   area, height 7) and end (height 0.05). It is held every frame in the laser style with life dt × 1.5 + 0.02.
-3. If on is off, stop here.
-4. **Particles:** carry += (particles / 2.5) × dt / 512. While the carry is 1 or more, subtract 1 and fire one swarm burst (512) at a
-   field point (height 0.05). At most 4000 a frame; the rest of the carry is dropped.
-5. **Explosions:** carry += explosions × dt. At most 300 explosions a frame at field points; then a carry above 1 becomes 0.
-6. **Decals:** carry += decals × dt. At most 2000 scorch marks a frame at field points (height 0), size 0.6–1.8, angle from the vfx
-   random number.
-
-- The flight list and the three carries are this behavior's run-time state (today `Effects.stress_*`). `effects_clear` (Play, Stop,
-  a benchmark step) empties them.
-- The test effect buttons and their missiles (`Effects.flights`) are a View tab tool, not a behavior, and stay in `effects.c`.
-
-#### The node budget and the generators' order
-
-- Today (`stress_update`): animators left = `NV_MAX_ANIMATORS` − 2, crowd = min(wanted, max, animators left), crowd nodes =
-  max(crowd, built characters) × 4, budget = `NV_MAX_NODES` − 1 − 6 − crowd nodes, chain = min(wanted, budget), grid = min(wanted, max,
-  budget − chain).
-- After: counts instead of constants. Animators left = `NV_MAX_ANIMATORS` − animators in use; nodes left = `NV_MAX_NODES` − 1 − live
-  nodes not generated. One character's nodes = 1 + the model's mesh nodes. The order stays crowd, chain, grid.
-- The frame's order also stays: shrink the grid, shrink the chain, the crowd, grow the chain (with the wobble), grow the grid (with
-  the colors), churn, effects. Shrinking first keeps the node count under the limit.
-- Generated nodes are not saved and not undone. They can be selected and inspected, but the Inspector shows a line saying edits do
-  not stay ("Made by grid: edits are not saved"). A generator's nodes always come after their parent's file children, so file nodes'
-  paths do not change.
-
-#### Bones overlay
-
-- "Show bones" per scene (View tab, saved as `BONE`). Today's showcase `show_bones` and the Stress tab's "Crowd bones" merge.
-- For every animator this scene updates, a line from each joint's parent to the joint (1, 0.8, 0.2) (owner's world matrix × joint
-  model matrix).
-- An animator with look-at on also gets the head's forward axis, 0.6 m in green (0.2, 1, 0.3), and a red line (1, 0.2, 0.2) from the
-  head to the target. Today only the showcase character gets these.
-
-### Benchmark
-
-Today: `start_step`, `start_benchmark`, `stop_benchmark`, `stress_after_frame`, `benchmark_section`, `copy_results`
-(`sandbox/stress.c`). A scene with a `benchmark` block shows the Benchmark section in the Stress tab.
-
-**Steps:** the file's `step` blocks (at most 16). A line `<node id> <key> <value>` in a step turns that node's generator on and sets
-the value. Today's table:
-
-| Steps | Line |
-|---|---|
-| Cubes 250, 1000, 4000, 8000, 16000 | `grid count N` |
-| Crowd 8, 32, 60, 120, 200 | `crowd count N` |
-| Particles 250k, 1M, 2M | `effects particles N` |
-| Missiles 500, 2000 | `effects missiles N` |
-| Beams 500 | `effects beams N` |
-
-**A run**
-
-1. "Run benchmark": if the scene is in Edit mode, Play starts (a Play the run started). The parameters before the run are kept. The
-   shadow settings, the MSAA sample count and the resolution text are recorded. Results are cleared.
-2. Step start: every generator's parameters are set to **the file's values**, all generators are turned off, and the step's lines are
-   applied. `effects_clear`. The start time is recorded. Today the color, link and churn counts come from before the run, but those
-   generators are off in every step, so the results are the same. Starting from the file's values makes every run start in the same
-   place, whatever the saved settings are.
-3. At the end of each frame (once its times are known): while elapsed < warmup (1 s), skip. Otherwise add up the frame, CPU
-   anim/scene/draw/ui and GPU scene/shadow/upscale/bloom/particles times and the live particle count, and track the worst frame and
-   the frame count.
-4. When elapsed ≥ warmup + measure (4 s), take the averages and go to the next step, or end after the last.
-5. End: if the run started Play, Stop (the snapshot puts the parameters back too). Otherwise put back the parameters from before the
-   run and keep playing.
-
-**Stopping**
-
-- The "Stop" button: ends as in 5.
-- Touching a generator parameter during a run: stops only the run and keeps the touched value. Playing goes on (Stop then drops it, as
-  any edit made in Play).
-- Leaving the scene during a run: ends as in 5.
-
-**Table and copy:** as today. The step line "Step i/n: name (warming up | measuring)", the table (Step, Avg ms, Load %, Worst,
-CPU a/s/d, GPU sc/sh/up, GPU bl/pt, Alive), shadows/MSAA/resolution, and "Copy results" (commit, build, user agent, canvas, whether
-there are timestamps, and the table).
-
-**Stats:** the Stress tab's "Frame (1 s average, ms)" table is unchanged and counts the shown scene.
-
-### The code after the change
-
-```c
-typedef struct ParamDef {
-    const char* key;      // file key and save name ("count")
-    const char* label;    // UI and undo label ("Cubes")
-    const char* keywords; // search
-    ParamType type;       // bool, int, float, angle, angle rate, clip
-    f32 min, max;
-    u32 offset;           // into the behavior's parameters
-} ParamDef;
-
-typedef struct Behavior {
-    BehaviorKind kind;
-    NvNodeId node;
-    union { Spin spin; Character character; Grid grid; Chain chain; Crowd crowd; EffectsLoad effects; };
-} Behavior;
-
-typedef struct SceneDoc {
-    b32 built;
-    NvScene* scene;
-    SceneView view;
-    FileNode nodes[SCENE_MAX_FILE_NODES]; // the file's nodes: id and NvNodeId
-    u32 node_count;
-    Behavior behaviors[SCENE_MAX_BEHAVIORS];
-    u32 behavior_count;
-    BenchmarkStep steps[STRESS_MAX_STEPS];
-    u32 step_count;
-    bool show_bones;
-    b32 playing;
-    f32 play_time;
-    u8* play_snapshot; // [SAVE_MAX_SIZE]
-    u32 play_snapshot_size;
-    u32 layout;        // LAYT, taken after the file's nodes are built
-} SceneDoc;
-```
-
-- Generators' large arrays (16000 grid nodes, 2000 flights and so on) come from the permanent arena at build, sized by `max`.
-
-| File | Does |
-|---|---|
-| `sandbox/scene_file.c` (new) | Text → `SceneDesc`. No GPU. Tested under Node |
-| `sandbox/scenes.c` (new) | `SceneDesc` → `NvScene` + `SceneDoc`, models, switching scenes, Play/Stop |
-| `sandbox/behaviors.c` (new) | Parameter tables, the behavior stages (a `switch`), Inspector sections |
-| `sandbox/stress.c` | Stats, the benchmark, the Stress tab (generator rows drawn from the parameter tables) |
-| `sandbox/effects.c` | Only the effect definitions and the test fires |
-| `sandbox/main.c` | Only startup and the frame's order |
-
-- What leaves `Sandbox`: `planet`, `moon`, `orbit_*`, `character`, `animator`, `clips`, `root_motion_clips`, `fade_seconds`,
-  `blend_*`, `jump*`, `show_sword`, `sword*`, `root_motion`, `turn_rate`, `look_at`, `target*`, `planet_rotation`, `moon_rotation`,
-  `show_bones`, `playing`, `play_time`, `play_snapshot*`, the workloads in `stress`, `effects.stress_*`, and `views[]` (→
-  `SceneDoc.view`).
-- Frame: `behaviors_update(sandbox, doc, dt)` (the behaviors), `effects_update` (vfx and the test missiles), `nv_anim_update_scene`,
-  `nv_scene_update`, in that order, as today.
-- `SceneKind` and every `shown == SCENE_SHOWCASE` check go. The shown scene is an index into the scene list.
-  - The Play button, the tint and the "Playing" label are in every scene.
-  - The Stress tab shows while the shown scene has generators or a benchmark (decided by its objects' types).
-  - The palette commands `SC_SCENE_SHOWCASE` and `SC_SCENE_STRESS` become one "Show the <title> scene" per scene in the list.
-  - Debug exports (`_sandbox_debug_set_effects`, the grid and chain setters) set the shown scene's first behavior of that type.
-
-### Save
-
-`SAVE_VERSION` and the meaning of every existing tag stay. Adding tags does not raise the version (`save.md`).
-
-- **One `SCNE` per scene** (repeated): every scene is saved the same way. `FILE` (a string, the file name in the scene list), then
-  today's `SCNE` children (`LAYT`, `VIEW`, `BONE`, `NODE`) and the new `BHVR`. Written in the scene list's order.
-- **New `BHVR`** (in a scene, repeated): one behavior's parameters. `PATH` (the node's path), `KIND` (a string), and a `PARM` per
-  parameter {`NAME` string, `VALU` f32[] or `TEXT` string}. Values are in run-time units (radians). Unknown names are skipped; a missing
-  name keeps its current value; a different type is skipped. After reading, the behavior's "Apply" runs.
-- **New `VISI`** (in `NODE`, u32): `visible` of a node with a mesh.
-- **Compatibility with old saves** (one rule for every scene; no particular scene, file or id is looked at):
-  - An `SCNE` without `FILE` (an old save has only one `SCNE`) belongs to the first scene in the list.
-  - Old builds read only the first `SCNE` and skip tags they do not know (`FILE`, `BHVR`, `VISI`). The first scene is written first,
-    so old builds read new saves too.
-  - Old tags reach their values by type. They are read only when the scene has no new tags, and still written when the scene has that
-    type (for old builds).
-
-| Old tag | New home |
-|---|---|
-| `PLNT` | `speed` of the scene's first `spin` behavior (file order) |
-| `CHAR` (`CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`) | The parameters of the scene's first `character` behavior |
-| `SWRD` (in `CHAR`) | `visible` of the first `attach` node under that `character`'s model |
-
-- **Generated nodes** are not written as `NODE`. A selected generated node is left out of `SELN`/`SELO`.
-- **`LAYT`** is taken from the tree right after the file's nodes are built, before any generator runs. The showcase file builds
-  today's tree, so existing saves' `LAYT` matches.
-- **Scenes built later:** every scene is built the first time it is shown. `SCNE` bytes read before that are kept and applied when it
-  is built. A save written before it is built writes those bytes back unchanged.
-- **While playing:** the autosave writes the playing scene's snapshot.
-- The sandbox starts on the first scene in the list.
-- The save viewer shows `FILE`, `BHVR` and `PARM` by name.
-
-### Undo
-
-- There is one history. Each step carries its scene.
-- Scopes (of the shown scene):
-  - **Node:** the selected file nodes' fields (`VISI` included). Generated nodes are left out.
-  - **Behaviors:** every `BHVR` of the scene. It replaces today's Character scope.
-  - **Scene:** `BONE`. The undo-only `ORBS` goes (the planet's speed is in `BHVR`).
-- Labels: "node name + parameter label" (for example "planet Speed", "grid Cubes").
-- Undo and Redo are off while the shown scene plays. Undoing a step of another scene shows that scene first, for the same reason a
-  node step selects its node. If that scene is playing, the buttons are off.
-- Switching scenes commits that scene's current bytes without a step.
-
-### Changes users see
-
-- The stress scene gets Play/Stop, undo and autosave.
-  - In Edit mode, churn, the chain's wobble and the effects workload do not run. Grid, chain and crowd counts follow at once.
-  - The benchmark runs in Play.
-  - The stress scene's settings and edits are still there after a reload.
-- "Planet orbit" moves to the planet's Inspector, in a **Spin** section. The moon's spin speed becomes editable.
-- "Show bones" is in the View tab for both scenes; the Stress tab's "Crowd bones" merges into it. It draws the look-at lines too.
-- Every node with a mesh gets "Visible".
-- The stress scene's group nodes show their generator section (the same values as the Stress tab's rows).
-- Undo labels become "node + parameter" (for example "Planet orbit" → "planet Speed", "Sword" → "sword Visible").
-
-### Limits
-
-| Item | Limit |
-|---|---|
-| File nodes | 256 per file |
-| Meshes | 32 per file, each at most 4096 vertices |
-| Palettes | 4 per file, each at most 256 colors (within `NV_MAX_MATERIALS`, 256) |
-| Models | 8 for the whole sandbox |
-| Behaviors | 64 per scene |
-| Benchmark steps | 16 |
-| Ids, names | 31 bytes |
-
-### Errors
-
-- A packaged file that does not read is a bug. Errors are logged with their file and line through `nv_log` (source `"scene"`), at
-  most 16.
-- A scene that does not read cannot be shown (the same for every scene). Switching to it is refused and the View tab shows the first
-  error.
-- If the first scene does not read at start, there is no scene to show, so the sandbox stops with `fatal` (as today when the character
-  fails to load).
-- ctest checks that the two files read. Each rule of the format is tested with the test's own text.
-
-### Engine changes
-
-- `engine/text.h`, `engine/text.c`: the line-based text reading moves from `autobattler/defs.c`. `defs.c` uses it, and `.abproj`
-  reads and reports errors exactly as before.
-- `nv_gltf_instantiate` does not copy mesh nodes' local transforms. Check that the character's mesh nodes have identity transforms;
-  if not, make it copy them.
-
-### Phases
-
-1. **Text reader:** `engine/text.*`. Check: ctest and the auto-battler's tests pass unchanged.
-2. **Scene file reader:** `sandbox/scene_file.c`, the parameter tables, `tests/scene_file_test.c`.
-3. **The showcase from its file:** `showcase.nvscene`, `spin`, `character`, `visible`, the Inspector sections, `BHVR`/`VISI`. Remove
-   `build_world`, `build_character`, `update_showcase` and the showcase fields of `Sandbox`. Check:
-   - `LAYT` equals today's value.
-   - A save written by today's build (a fixed file made before the change) loads into the same scene.
-   - `_sandbox_debug_save_crc` before Play equals the one after Stop.
-   - First-visit node values match today's within 1e-5 (degree conversions may change the last bit).
-4. **The stress scene from its file, under Edit/Play:** `stress.nvscene`, the four generator kinds, the benchmark, an `SCNE` per scene, per-scene
-   playing state, undo's scene. Remove `stress_build`'s node code, `StressWorkloads` and `effects_stress_update`. Check:
-   - Every workload at its maximum without asserts.
-   - A benchmark started in Edit mode runs to the end and comes back through Stop.
-   - The stress scene's edits survive a reload.
-   - The stress scene's CRC before Play equals the one after Stop.
-   - Existing Playwright tests that use workloads press Play where they look for motion.
-5. **Docs:** `AGENTS.md`, `stress.md`, `save.md`, `undo.md`, `play.md`, and the top comment of `sandbox.h`.
-
-Every phase is checked in Release and Debug builds in headless Chromium.
-
-### Later
-
-- **Adding and removing nodes:** today's save writes values onto the nodes the file made. To add or remove nodes, the save has to
-  hold nodes' structure too (which mesh, model and behaviors, and the parent) and make the nodes when read (`SAVE_VERSION` 2). Then
-  `LAYT` and matching by path are no longer needed.
-- Opening and saving `.nvscene` files (`local_file.h`).
-- When the auto-battler builds its stage from a scene file, the reader and builder move into the engine.
-
-### Open question
-
-1. **Where models are loaded.** Both scenes use the same character glb. `nv_gltf_load_model` makes nodes and one animator in some
-   scene as it loads.
-   - (a) Load it once into a **library scene** that is never drawn, and have both scenes copy it from there. Symmetric, but the
-     library scene's animator stays unused (1 of 256, and a little memory).
-   - (b) **As today:** load it into the first scene that uses it (the showcase), and have other scenes (the stress scene) copy it from
-     there. Nothing is wasted, but the stress scene still depends on the showcase being built first.
