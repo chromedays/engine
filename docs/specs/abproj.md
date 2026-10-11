@@ -116,6 +116,10 @@
   `cost`다. 체력, 무기, 능력 같은 나머지 키는 분대의 유닛 하나하나의 것이다. 두 키가 없으면 한 칸에 유닛 하나다(버전 1과 같다).
 - `footprint`가 구역의 행 수나 격자 너비보다 크면 `footprint` 줄에 `'footprint' must be at most 14 (a zone's rows and width)`. 규칙에
   오류가 있으면 따지지 않는다.
+- 분대의 유닛은 놓일 때 서로 겹치면 안 된다. 같은 행에 나란히 선 유닛이 가장 가깝고(행이 열보다 많지 않다), 그 간격은
+  `footprint × cell_size / 열 수`(열 수는 그 제곱이 유닛 수 이상인 가장 작은 수)다. 이 간격이 유닛의 폭(`2 × radius`)보다 작으면
+  `squad` 줄에 `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. 맞닿는 것(간격 = 폭)은 된다. 규칙이나 그 유닛에
+  다른 오류가 있으면 따지지 않는다(실수 하나가 오류 하나).
 
 #### `stage`
 
@@ -276,7 +280,7 @@ stage
   (footprint가 구역 밖이거나 공급을 넘는 분대는 빠진다). 전장 평면은 새로 맞추고, 카메라는 전장 크기가 바뀔 때만 처음 자리로 간다(`view_apply_rules`).
   유닛 메시는 그대로다. 놓인 프로젝트 수(`project_loads`)는 늘지 않는다.
 - **나쁘면 아무것도 바꾸지 않는다:** "Not changed: <첫 오류>"를 빨강으로 보인다. 예: `zone_rows`가 격자 길이의 반을 넘음, 격자를 줄여
-  스테이지의 `place`가 적 구역 밖으로 나감, `zone_rows`를 어느 유닛의 `footprint`보다 작게 함. 다음에 받아들여진 고침이 이 알림을 지운다.
+  스테이지의 `place`가 적 구역 밖으로 나감, `zone_rows`를 어느 유닛의 `footprint`보다 작게 함, `cell_size`를 줄여 분대의 유닛이 겹침. 다음에 받아들여진 고침이 이 알림을 지운다.
 - **배치 단계에서만:** 라운드가 시작되면 위젯이 꺼진다("Rules change only in deployment"). 되감기(`battle_seek`)는 라운드를 처음부터 다시
   돌리므로, 규칙이 라운드 중에 바뀌면 그 라운드를 재현할 수 없다. 로컬 파일을 읽거나 쓰는 중에도 꺼진다(저장이 보낸 글과 "저장됨"
   표시가 맞도록).
@@ -300,7 +304,7 @@ stage
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
   `stop_fraction`, `gravity`(포탄이 어느 중력에서도 목표점에 떨어지고 약하면 오래 난다), `min_damage_fraction` 0과 1.
 - 분대(버전 2): `squad`와 `footprint`를 읽고 없으면 1, 버전 1 파일의 두 키는 오류, 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 큰
-  footprint와 그렇게 줄이는 규칙 고치기의 거절, `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
+  footprint와 그렇게 줄이는 규칙 고치기의 거절, 겹치는 분대(맞닿음은 된다, 다른 오류가 있으면 더하지 않는다, `cell_size`를 줄이는 고침의 거절), `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
   유닛 2048 초과.
 - **황금 해시:** `full_project`로 시드 1–4의 라운드를 돌린 틱 수, 결과, 300틱의 해시, 끝의 해시, 남은 적 수가 규칙을 코드에서 파일로 옮기기
   전의 값과 같다. 규칙의 계산을 바꿔서 라운드가 달라졌다면 이 값이 바뀌는 것이 맞고, 그때 일부러 고친다.
@@ -446,6 +450,10 @@ Every key is required. No defaults live in code, so the rules' values are only i
   in version 1).
 - A `footprint` larger than a zone's rows or the grid's width is reported at the `footprint` line: `'footprint' must be at most 14 (a
   zone's rows and width)`. It is not judged when the rules have an error.
+- A squad's units must not overlap where they are placed. Units side by side in a row are the nearest (there are never more rows than
+  columns), `footprint × cell_size / columns` apart (the columns are the fewest whose square holds the units). When that is less than a
+  unit's width (`2 × radius`), the `squad` line says `16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)`. Touching (the
+  gap equal to the width) is fine. It is not judged when the rules or that unit have another error (one mistake, one error).
 
 #### `stage`
 
@@ -615,7 +623,8 @@ once, without a text editor, and Save writes it to the file.
   the camera starts over only when the field's size changed (`view_apply_rules`). The unit meshes stay. It does not count as a
   project put in place (`project_loads`).
 - **A bad change changes nothing:** the panel says "Not changed: <the first error>" in red; for example, `zone_rows` over half the
-  grid's length, a smaller grid that leaves a stage `place` outside the enemy zone, or `zone_rows` under a unit's `footprint`. The next change made clears that message.
+  grid's length, a smaller grid that leaves a stage `place` outside the enemy zone, `zone_rows` under a unit's `footprint`, or a smaller `cell_size` that makes
+  a squad's units overlap. The next change made clears that message.
 - **Only in deployment:** once a round starts the widgets are disabled ("Rules change only in deployment"). Stepping back
   (`battle_seek`) plays the round again from its start, so a rule changed during a round would make that round impossible to
   replay. They are also disabled while a local file is read or written (so the text a save sends matches what it marks as saved).
@@ -643,7 +652,8 @@ once, without a text editor, and Save writes it to the file.
   that tick, `retarget_interval`, `stop_fraction`, `gravity` (a shell lands on its aim point under any pull, and flies longer under
   less), `min_damage_fraction` 0 and 1.
 - Squads (version 2): `squad` and `footprint` read, 1 without them, the two keys wrong in a version 1 file, their ranges (0, over the
-  limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a `place`'s footprint
+  limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a squad whose units overlap (touching is fine, no error
+  on top of another, a `cell_size` edit that would make it so refused), a `place`'s footprint
   inside the enemy zone (the last x and row), overlap, an unknown unit's cell, supply by squad, and over 2048 enemy units.
 - **Golden hashes:** rounds of seeds 1 to 4 on `full_project` give the tick count, the outcome, the hash at tick 300, the hash at the
   end and the enemies left that they gave before the rules moved from code to the file. If a change to the rules' arithmetic changes

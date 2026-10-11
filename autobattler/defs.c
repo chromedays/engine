@@ -445,6 +445,8 @@ typedef struct ProjectReader {
     b32 unit_named; // its name is a good one, so what it lacks can be reported by name
     b32 unit_kept;  // there was room for it
     u32 footprint_line; // of the unit being read; 0 when it has none
+    u32 squad_line;     // the same for its `squad`
+    u32 unit_errors_start;
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
@@ -473,12 +475,20 @@ internal void close_block(ProjectReader* reader)
             if (!(block->seen & SEEN_WEAPON))
                 report(base, block->header_line, "unit '%s' needs a weapon", reader->unit.name);
         }
-        // A squad must fit in a zone (judged only against rules that were read right).
+        // A squad must fit in a zone, and its units must not stand on each other (judged only against rules that were read right,
+        // and for a unit read without an error, so one mistake is one error).
         if (reader->rules_ok && reader->footprint_line) {
             const BattleRules* rules = &defs->rules;
             u32 most = rules->zone_rows < rules->grid_width ? rules->zone_rows : rules->grid_width;
             if (reader->unit.footprint > most)
                 report(base, reader->footprint_line, "'footprint' must be at most %u (a zone's rows and width)", most);
+        }
+        if (reader->rules_ok && reader->squad_line && base->errors == reader->unit_errors_start) {
+            const UnitDef* unit = &reader->unit;
+            f32 apart = (f32)unit->footprint * defs->rules.cell_size / (f32)battle_squad_columns(unit->squad_size);
+            if (unit->squad_size > 1 && apart < 2.0f * unit->radius)
+                report(base, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
+                       unit->footprint, unit->footprint, apart, 2.0f * unit->radius);
         }
         if (reader->unit_kept)
             defs->units[defs->unit_count++] = reader->unit;
@@ -553,6 +563,8 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
     reader->unit_named = false;
     reader->unit_kept = false;
     reader->footprint_line = 0;
+    reader->squad_line = 0;
+    reader->unit_errors_start = base->errors;
     open_block(reader, BLOCK_UNIT, line);
     if (line->token_count != 2) {
         report(base, line->number, "'unit' takes a name");
@@ -668,6 +680,8 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
     read_field(base, line, field, (u32)(field - unit_fields), &reader->unit, &block->seen);
     if (token_is(key, "footprint") && base->errors == errors)
         reader->footprint_line = line->number;
+    if (token_is(key, "squad") && base->errors == errors)
+        reader->squad_line = line->number;
 }
 
 typedef struct UnitIndex {

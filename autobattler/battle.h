@@ -114,6 +114,11 @@ u32 battle_seconds_to_ticks(f32 seconds);
 // The first row of the enemy's zone.
 u32 battle_enemy_first_row(const BattleRules* rules);
 
+// The columns of the grid a squad of `squad_size` units stands in on its footprint: the fewest whose square holds them all (so
+// there are never more rows than columns, and units side by side in a row are the nearest). They are footprint * cell_size /
+// columns meters apart.
+u32 battle_squad_columns(u32 squad_size);
+
 // The simulation.
 
 typedef enum BattleTeam { TEAM_PLAYER, TEAM_ENEMY } BattleTeam;

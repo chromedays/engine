@@ -86,7 +86,9 @@ A의 틱 순서: 이전 위치 기록, 대상 다시 고르기, 이동과 분리
   단위다. 두 키가 없으면 한 칸에 하나다(전과 같다).
 - **자리:** 분대의 유닛은 footprint 위에 될 수 있는 대로 정사각형인 격자로 선다: 열은 `ceil(sqrt(squad))`, 행은 유닛 수를 열로 나눈
   올림. 유닛마다 자기 몫의 가운데에 서고, 다 차지 않은 마지막 행은 가운데로 모은다. 행은 +Z 쪽으로 늘고 유닛은 행 순으로 만든다
-  (2 × 2칸에 넷이면 네 칸의 중심, 여섯이면 3열 2행, 한 칸에 하나면 칸의 중심). 유닛 수는 칸 수와 같을 필요가 없다.
+  (2 × 2칸에 넷이면 네 칸의 중심, 여섯이면 3열 2행, 한 칸에 하나면 칸의 중심). 유닛 수는 칸 수와 같을 필요가 없다. 행이 열보다
+  많지 않으므로 가장 가까운 것은 같은 행의 이웃이고, 그 간격(`footprint × cell_size / 열 수`)이 유닛 폭(`2 × radius`)보다 작은 분대는
+  읽기에서 오류다(`abproj.md`의 `unit`). 그래서 분대는 겹치지 않고 놓인다(`battle_squad_columns`).
 - **전투:** 시작한 뒤 유닛은 각자 대상을 고르고 움직이고 싸운다(대형 없음, 열린 질문 4). 전투 중에는 분대가 따로 없다(`Squad` 배열 없음).
 - **남은 가치:** 유닛마다 `분대 비용 / 분대 크기 × 체력 / 최대 체력`.
 - **배치:** 분대는 footprint에서 원점에 가장 가까운 모서리 칸으로 놓인다(`battle_place(battle, def, x, row)`; `Battle.placed`에는 그
@@ -648,7 +650,9 @@ them (`abproj.md`, format version 2).
 - **Where its units stand:** on the footprint in a grid as near square as it gets: `ceil(sqrt(squad))` columns, and the units over
   that, rounded up, rows. Each unit stands in the middle of its share, and a last row that is not full is centered. Rows run toward
   +Z and the units are made row by row (four on 2 × 2 cells stand on the four cells' centers, six in 3 columns and 2 rows; one on one cell on the cell's center). A
-  squad's units need not match its cells.
+  squad's units need not match its cells. There are never more rows than columns, so the nearest units are neighbors in a row; a squad
+  whose gap there (`footprint × cell_size / columns`) is less than a unit's width (`2 × radius`) is an error when read (`abproj.md`,
+  `unit`). So a squad is placed without overlap (`battle_squad_columns`).
 - **Fighting:** once the round starts each unit picks its target, moves and fights on its own (no formation; open question 4). There
   is no squad during the fight (no `Squad` array).
 - **Remaining value:** per unit, `squad cost / squad size × health / max health`.

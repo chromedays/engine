@@ -43,6 +43,14 @@ internal void add_event(Battle* battle, BattleEventKind kind, const Unit* unit, 
     *event = (BattleEvent){.kind = kind, .team = unit->team, .def = unit->def, .position = position, .direction = direction, .size = size};
 }
 
+u32 battle_squad_columns(u32 squad_size)
+{
+    u32 columns = 1;
+    while (columns * columns < squad_size)
+        ++columns;
+    return columns;
+}
+
 NvVec3 battle_cell_center(const BattleRules* rules, u32 cell_x, u32 cell_row)
 {
     return nv_vec3(((f32)cell_x + 0.5f) * rules->cell_size, 0.0f, ((f32)cell_row + 0.5f) * rules->cell_size);
@@ -57,9 +65,7 @@ internal void make_squad(Battle* battle, u32 def_index, u32 team, u32 cell_x, u3
     const BattleRules* rules = &battle->defs->rules;
     NV_ASSERT(def->squad_size >= 1 && def->footprint >= 1);
     NV_ASSERT(battle->unit_count + def->squad_size < BATTLE_MAX_UNITS);
-    u32 columns = 1;
-    while (columns * columns < def->squad_size)
-        ++columns;
+    u32 columns = battle_squad_columns(def->squad_size);
     u32 rows = (def->squad_size + columns - 1) / columns;
     f32 footprint = (f32)def->footprint;
     NvVec3 corner = battle_cell_center(rules, cell_x, cell_row);

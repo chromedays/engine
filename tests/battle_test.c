@@ -1458,6 +1458,31 @@ internal void test_squad_file(void)
     CHECK(!read_units(squad_unit, "Crawler") && defs.error_count == 2);
     CHECK(first_error_at(13, "'squad' needs abproj_version 2 or newer") && log_has(FILE_NAME ":14: 'footprint' needs"));
 
+    // A squad's units must not stand on each other: side by side in a row they are footprint * cell_size / columns apart, and
+    // that is at least their width (2 * radius). Touching is fine: 16 on 2 x 2 cells of 2 m are 1 m apart, as wide as they are.
+    char overlap[4096];
+    CHECK(read_version_2(replaced(squad_unit, "squad 4", "squad 16"), SQUAD_STAGE));
+    snprintf(overlap, sizeof(overlap), "%s", replaced(squad_unit, "squad 4", "squad 16"));
+    CHECK(!read_version_2(replaced(overlap, "footprint 2", "footprint 1"), SQUAD_STAGE) && defs.error_count == 1);
+    CHECK(first_error_at(13, "16 units on 1x1 cells stand 0.5 m apart, under their width (1 m)"));
+    CHECK(!read_version_2(replaced(overlap, "radius 0.5", "radius 0.6"), SQUAD_STAGE) && defs.error_count == 1);
+    CHECK(first_error_at(13, "stand 1 m apart, under their width (1.2 m)"));
+    char pair[4096];
+    snprintf(pair, sizeof(pair), "%s", replaced(squad_unit, "squad 4", "squad 2"));
+    CHECK(read_version_2(replaced(pair, "footprint 2", "footprint 1"), SQUAD_STAGE)); // 2 on one cell: 1 m apart
+    // A unit with another error is not judged on top of it.
+    snprintf(overlap, sizeof(overlap), "%s", replaced(overlap, "footprint 2", "footprint 1"));
+    CHECK(!read_version_2(replaced(overlap, "health 120", "health 0"), SQUAD_STAGE) && defs.error_count == 1 && first_error_at(15, "'health'"));
+    // The rules editor cannot shrink the cells under a squad either: 4 on 2 x 2 cells of 0.4 m stand 0.4 m apart.
+    CHECK(read_version_2(squad_unit, SQUAD_STAGE));
+    {
+        char edited[8192];
+        f64 small = 0.4;
+        umm size = defs_rule_set(project_text, strlen(project_text), "cell_size", &small, 1, edited, sizeof(edited) - 1);
+        edited[size] = 0;
+        CHECK(size && !read_project(edited) && defs.error_count == 1 && first_error_has("stand 0.4 m apart, under their width (1 m)"));
+    }
+
     // Their ranges.
     const struct { const char* from; const char* to; u32 line; const char* message; } bad[] = {
         {"squad 4", "squad 0", 13, "'squad' must be >= 1 and <= 64"},
@@ -1499,6 +1524,7 @@ internal void test_squad_file(void)
     // At most BATTLE_MAX_TEAM_UNITS enemy units: 32 squads of 64 are 2048, a 33rd is one too many.
     snprintf(text, sizeof(text), "%s", replaced(squad_unit, "squad 4", "squad 64"));
     snprintf(text, sizeof(text), "%s", replaced(text, "footprint 2", "footprint 1"));
+    snprintf(text, sizeof(text), "%s", replaced(text, "radius 0.5", "radius 0.1")); // 64 on one cell stand 0.25 m apart
     char places[2048] = "supply 100000\n";
     for (u32 i = 0; i < 33; ++i) {
         char place[48];
