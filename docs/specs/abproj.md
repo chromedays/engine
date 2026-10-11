@@ -32,7 +32,7 @@
 - UTF-8 텍스트, 줄 끝은 LF나 CRLF.
 - 한 줄에 문장 하나: 키 하나와 그 값들을 스페이스로 나눈다. 빈 줄은 무시한다.
 - `#`부터 줄 끝까지는 주석이다.
-- **들여쓰기가 중첩을 정한다.** 블록을 여는 문장(`rules`, `unit`, `weapon`, `ability`, `stage`) 다음에 더 깊게 들여 쓴 줄들이 그
+- **들여쓰기가 중첩을 정한다.** 블록을 여는 문장(`rules`, `roles`, `unit`, `weapon`, `ability`, `stage`) 다음에 더 깊게 들여 쓴 줄들이 그
   블록에 속한다. 같은 블록의 줄은 들여쓰기가 같아야 한다. 들여쓰기는 스페이스만 쓴다(탭은 오류).
 - 값의 종류:
   - **수:** 10진수, 부호와 소수점 가능(`120`, `0.5`, `-3`). 지수 표기는 없다. 정수 자리에 소수가 오면 오류다.
@@ -42,7 +42,7 @@
 - 다음은 오류다: 모르는 키, 블록 밖에 온 블록 안 키, 같은 블록 안에서 두 번 나온 키, 빠진 필수 키, 값 개수가 틀린 줄, 범위를
   벗어난 값, 탭, 같은 이름의 유닛 두 개, 정해진 자리가 아닌 곳의 최상위 문장.
 - **최상위 문장의 순서가 정해져 있다.** 최상위 문장은 들여쓰지 않은 문장(`abproj_version`, `rules`, `unit`, `stage`)이고,
-  이 순서로 온다: `abproj_version` → `rules` → `unit` 하나 이상 → `stage`. 순서가 정해져 있으면 한 번 훑어 읽을 수 있고(유닛을
+  이 순서로 온다: `abproj_version` → `rules` → `roles`(선택) → `unit` 하나 이상 → `stage`. 순서가 정해져 있으면 한 번 훑어 읽을 수 있고(유닛을
   읽을 때 규칙이, 스테이지를 읽을 때 유닛이 이미 있다), 에디터가 쓰는 파일도 모양이 하나로 정해진다. 자리가 아닌 곳의 문장은
   오류 하나로 알리고 그 블록은 건너뛴다(두 블록을 바꿔 쓴 실수가 오류 하나가 되고, 거기에 기대는 것들의 오류가 줄줄이 따라오지
   않는다).
@@ -53,6 +53,7 @@
 |---|---|---|
 | `abproj_version <정수>` | 정확히 하나, 첫 문장 | 형식 버전("버전" 절). 지금은 `1` |
 | `rules` | 블록, 정확히 하나 | 규칙 상수 |
+| `roles` | 블록, 선택, 하나까지 | 유닛이 가질 수 있는 역할의 이름(사람이 분류하려고 쓴다) |
 | `unit <이름>` | 블록, 하나 이상, 최대 16 | 유닛 정의 |
 | `stage` | 블록, 정확히 하나 | 공급, 시드, 적 배치 |
 
@@ -86,6 +87,19 @@
   나온다. 분대의 상한도 매크로다: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, 그리고 한 편의 유닛 수
   `BATTLE_MAX_TEAM_UNITS 2048`.
 
+#### `roles`
+
+선택. 유닛이 가질 수 있는 **역할 태그**를 선언한다. 사람이 유닛을 분류하려고 다는 것이고, 규칙(`battle.c`)은 읽지 않는다. 그래서 역할은
+라운드를 바꾸지 않는다. 한 줄에 이름 하나(`[A-Za-z_][A-Za-z0-9_]*`, 31바이트까지)이고, 최대 32개다. 주석으로 뜻을 적는다.
+
+| 오류 | 예 |
+|---|---|
+| 한 줄에 이름 하나 | `a role line takes one name` |
+| 같은 이름을 두 번 선언 | `role 'frontline' is declared twice` |
+| 32개를 넘음 | `too many roles (at most 32)` |
+| 두 번 나옴, 값이 없음 | `'roles' is given twice`, `'roles' takes no value` |
+| 자리가 틀림(`rules` 앞, 유닛 뒤) | `'roles' must come after 'rules' and before the units` |
+
 #### `unit <이름>`
 
 | 키 | 값 | 필수 | 범위, 기본값 |
@@ -99,6 +113,7 @@
 | ├ `speed` | 수, m/s | 예 | ≥ 0 |
 | ├ `radius` | 수, m | 예 | > 0 |
 | ├ `height` | 수, m | 예 | > 0 |
+| ├ `roles` | 이름, 여럿 가능 | 아니오 | `roles` 블록에 선언한 이름. 한 줄에 여럿, 같은 이름 두 번은 오류(`unknown role 'x' (declare it under 'roles')`) |
 | ├ `weapon <이름>` | 블록 | 예, 정확히 하나 | |
 | │ ├ `range` | 수, m | 예 | > 0 |
 | │ ├ `damage` | 수 | 예 | ≥ 0 |
@@ -202,7 +217,7 @@ stage
 
 | 버전 | 바뀐 것 | 옛 파일 읽기 |
 |---|---|---|
-| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나 | — |
+| 1 | 첫 형식. 개발 중이라 버전을 올리지 않고 바뀐 것을 여기 적는다. 유닛의 `squad`, `footprint`(분대; `place`의 칸은 footprint의 모서리). 둘 다 없으면 한 칸에 유닛 하나. `roles` 블록과 유닛의 `roles`(역할 태그) | — |
 
 ### 읽기와 오류
 
@@ -303,6 +318,7 @@ stage
   아닌 `unit`, `stage`, `rules`, 두 번째 `stage`), 파일 전체의 모자람, 시간의 틱 변환(0.25 → 8, 60 → 1800, 0.01 → 1).
 - 규칙을 바꾼 장면: 다른 격자와 칸 크기(칸 중심, 구역 밖, 전장 가장자리), 짧은 `round_time`에서 그 틱에 끝난다, `retarget_interval`,
   `stop_fraction`, `gravity`(포탄이 어느 중력에서도 목표점에 떨어지고 약하면 오래 난다), `min_damage_fraction` 0과 1.
+- 역할: `roles` 블록의 오류(줄 하나에 이름 하나, 두 번 선언, 32개 초과, 자리)와 유닛의 `roles` 오류(선언되지 않은 역할, 두 번, 빈 줄)가 맞는 줄에 나온다. 마스크는 선언 순서의 비트다. 역할을 더해도 시드 1의 라운드 해시가 같다.
 - 분대: `squad`와 `footprint`를 읽고 없으면 1, 범위(0, 상한 초과, 정수 아님, 두 번), 구역보다 큰
   footprint와 그렇게 줄이는 규칙 고치기의 거절, 겹치는 분대(맞닿음은 된다, 다른 오류가 있으면 더하지 않는다, `cell_size`를 줄이는 고침의 거절), `place`의 footprint가 적 구역 안(x와 행의 끝), 겹침, 모르는 유닛의 칸, 분대 단위 공급, 적
   유닛 2048 초과.
@@ -375,7 +391,7 @@ outside this spec; see "Later").
 - These are errors: an unknown key, a block's key outside its block, a key twice in one block, a missing required key, a line with
   the wrong number of values, a value out of range, a tab, two units with the same name, a top-level statement out of its place.
 - **Top-level statements come in a fixed order.** Top-level statements are the unindented ones (`abproj_version`, `rules`,
-  `unit`, `stage`), and they come in this order: `abproj_version` → `rules` → one or more `unit` → `stage`. A fixed order lets one
+  `unit`, `stage`), and they come in this order: `abproj_version` → `rules` → `roles` (optional) → one or more `unit` → `stage`. A fixed order lets one
   pass read the file (the rules are there when units are read, the units when the stage is) and gives the files an editor writes one
   shape. A statement out of its place is one error and its block is skipped (a swap of two blocks is one error, and not the errors of
   everything that depends on them).
@@ -386,6 +402,7 @@ outside this spec; see "Later").
 |---|---|---|
 | `abproj_version <integer>` | Exactly one, the first statement | The format version ("Versions"). Now `1` |
 | `rules` | Block, exactly one | Rule constants |
+| `roles` | Block, optional, at most one | The names of the roles a unit may carry (for sorting units by people) |
 | `unit <name>` | Block, one or more, at most 16 | A unit definition |
 | `stage` | Block, exactly one | Supply, seed, the enemy deployment |
 
@@ -419,6 +436,19 @@ Every key is required. No defaults live in code, so the rules' values are only i
   ranges in the table above come from them. So do a squad's: `BATTLE_MAX_SQUAD_SIZE 64`, `BATTLE_MAX_FOOTPRINT 4`, and the units a
   side may have, `BATTLE_MAX_TEAM_UNITS 2048`.
 
+#### `roles`
+
+Optional. Declares the **role tags** a unit may carry. People use them to sort units; the rules (`battle.c`) never read them, so a role
+never changes a round. One name a line (`[A-Za-z_][A-Za-z0-9_]*`, up to 31 bytes), at most 32, with a comment for what each means.
+
+| Error | Example |
+|---|---|
+| more than one name on a line | `a role line takes one name` |
+| a name declared twice | `role 'frontline' is declared twice` |
+| more than 32 | `too many roles (at most 32)` |
+| given twice, or with a value | `'roles' is given twice`, `'roles' takes no value` |
+| out of place (before `rules`, after a unit) | `'roles' must come after 'rules' and before the units` |
+
 #### `unit <name>`
 
 | Key | Value | Required | Range, default |
@@ -432,6 +462,7 @@ Every key is required. No defaults live in code, so the rules' values are only i
 | ├ `speed` | Number, m/s | Yes | ≥ 0 |
 | ├ `radius` | Number, m | Yes | > 0 |
 | ├ `height` | Number, m | Yes | > 0 |
+| ├ `roles` | Names, several allowed | No | Names declared in the `roles` block. Several on a line; a name twice is an error (`unknown role 'x' (declare it under 'roles')`) |
 | ├ `weapon <name>` | Block | Yes, exactly one | |
 | │ ├ `range` | Number, m | Yes | > 0 |
 | │ ├ `damage` | Number | Yes | ≥ 0 |
@@ -538,7 +569,7 @@ stage
 
 | Version | What changed | Reading older files |
 |---|---|---|
-| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell | — |
+| 1 | The first format. Still in development, so the version is not raised: the changes are listed here. A unit's `squad` and `footprint` (squads; a `place`'s cell is the footprint's corner). Without them a unit is one on one cell. The `roles` block and a unit's `roles` (role tags) | — |
 
 ### Reading and errors
 
@@ -651,6 +682,7 @@ once, without a text editor, and Save writes it to the file.
 - Scenes on changed rules: another grid and cell size (cell centers, outside the zone, the field's edge), a short `round_time` ends at
   that tick, `retarget_interval`, `stop_fraction`, `gravity` (a shell lands on its aim point under any pull, and flies longer under
   less), `min_damage_fraction` 0 and 1.
+- Roles: the `roles` block's errors (one name a line, declared once, at most 32, its place) and a unit's `roles` errors (undeclared, given twice, no role) are at their lines. A mask is the bits in declaration order. A round with roles has the same hash as without.
 - Squads: `squad` and `footprint` read, 1 without them, their ranges (0, over the
   limit, not an integer, twice), a footprint larger than a zone and a rules edit that would make it so refused, a squad whose units overlap (touching is fine, no error
   on top of another, a `cell_size` edit that would make it so refused), a `place`'s footprint

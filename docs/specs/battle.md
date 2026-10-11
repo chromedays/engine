@@ -466,13 +466,14 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
   가까운 자리, 구역 가장자리에서는 안으로 밀어 맞춘 자리다. 놓인 분대의 아무 칸이나 탭하면 그 분대를 지운다. 탭이 채울(또는 비울)
   footprint를 된다면 초록, 안 되면 빨강으로 미리 보여 준다(마우스가 가리키는 곳만; 터치 화면에는 없다). 데스크톱과 폰 모두 같다. 배치
   단계에서만.
-- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x6 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
+- **Battle 패널:** 위에서 아래로: 단계, 언어 콤보, 프로젝트(파일 이름, Open..., Reload, Save, Save as...; `abproj.md`의 "불러오기와 저장"), 접힌 Rules 절(배치 중에 규칙을 고친다; `abproj.md`의 "규칙 고치기"), 역할 필터와 고른 유닛의 역할 줄(`roles`가 선언된 파일에서만; 켠 역할을 모두 가진 유닛 종류만 버튼으로 보인다), 유닛 종류 버튼(이름, 분대가 여럿이면 그 수(`Crawler x6 (100)`), 비용; 고른 것이 밝다), Start, Retry, Reset, 속도 버튼(Pause, 0.5x, 1x, 2x, 4x), `< Tick`과 `Tick >`, 남은 공급, 팀별
   살아 있는 유닛, 시간(초와 틱: 초는 틱 수 ÷ 30이라 느린 기기에서는 실제 시간보다 느리게 간다), (결과 단계에서) 결과와 남은 가치, 짧은 도움말. 버튼은 단계가 바뀌어도 제자리에 있다. 정의 파일을 읽지 못하면 패널은 첫 오류만 보인다. Start는 플레이어
   유닛이 있을 때, Retry는 배치 단계가 아닐 때 켜진다. Reset은 어느 단계에서든 배치를 비운다.
 - **디버그 내보내기(Debug 빌드):** `_battle_debug(n)`(0 단계, 1 틱, 2 결과, 3 아군 생존, 4 적 생존, 5 해시, 6 유닛 수, 7 포탄 수, 8 남은
   공급, 9 정의 읽기 성공, 10 고른 유닛 종류, 11 속도 × 100; 일시정지면 0, 12 그림자 맵 크기; 없으면 0, 13 그림자 거리(m)), `_battle_debug_set_speed(speed)`(0은 일시정지), `_battle_debug_step(direction)`(+1 앞, -1 뒤; 일시정지), `_battle_debug_deploy(def, x, row)`(분대의 footprint 모서리 칸), `_battle_debug_start()`, `_battle_debug_run(ticks)`,
   `_battle_debug_layout(region, component)`(0 뷰포트, 1 패널; 0 x, 1 y, 2 폭, 3 높이; CSS 픽셀), `_battle_debug_project(x, y, z, axis)`
   (월드 점이 화면 어디인가; 탭 시험용).
+- **역할 디버그 내보내기(Debug 빌드):** `_battle_debug(20)` 선언된 역할 수, `(21)` 역할 필터 마스크, `(22)` 그린 유닛 버튼 수, `_battle_debug_unit_roles(def)`(역할 마스크), `_battle_debug_set_role_filter(mask)`, `_battle_debug_load_test()`(페이지의 `/test.abproj`를 읽는다; 테스트가 `FS.writeFile`로 쓴다).
 - **크기:** Release의 패키지는 gzip으로 `autobattler.data` 1.18 MB(글꼴 대부분)와 `.wasm` 0.29 MB다.
 
 ### UI 문자열 (엔진으로 옮김)
@@ -1058,7 +1059,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   touch screen has no preview). The same on desktop and phone. Only while deploying.
 - **Battle panel:** top to bottom: the phase, a language combo, the project (its file name, Open..., Reload, Save, Save as...; "Loading and
   saving" in `abproj.md`), an open Rules section (the rules edited during deployment; "Editing the rules" in `abproj.md`), a
-  button per unit type (name, the squad's size when it is more than one (`Crawler x6 (100)`), and cost; the chosen one is
+  a role filter (when the file declares roles; a unit type shows when it has every lit role) and the chosen unit's roles, then a button per unit type (name, the squad's size when it is more than one (`Crawler x6 (100)`), and cost; the chosen one is
   lit), Start,
   Retry, Reset, the speed buttons (Pause, 0.5x, 1x, 2x, 4x), `< Tick` and `Tick >`, remaining supply, living units per team, the time (seconds and ticks: the seconds are the tick count over 30, so on a slow device they run behind real time), (in the result phase) the result and the value left, a short help
   text. The buttons stay where they are as the phase changes. When the
@@ -1069,6 +1070,7 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
   map's size, 0 without one, 13 the shadow distance in meters), `_battle_debug_set_speed(speed)` (0 pauses), `_battle_debug_step(direction)` (+1 forward, -1 back; it pauses), `_battle_debug_deploy(def, x, row)` (the squad's
   footprint corner), `_battle_debug_start()`, `_battle_debug_run(ticks)`, `_battle_debug_layout(region, component)` (region 0 viewport, 1 panel; 0 x,
   1 y, 2 width, 3 height; CSS pixels) and `_battle_debug_project(x, y, z, axis)` (where a world point is on screen, for tap tests).
+- **Role debug exports (Debug builds):** `_battle_debug(20)` declared roles, `(21)` the role filter mask, `(22)` unit buttons drawn, `_battle_debug_unit_roles(def)` (the role mask), `_battle_debug_set_role_filter(mask)`, `_battle_debug_load_test()` (reads `/test.abproj` from the page; a test writes it with `FS.writeFile`).
 - **Size:** the Release package is, gzipped, `autobattler.data` 1.18 MB (mostly the font) and the `.wasm` 0.29 MB.
 
 ### UI strings (moved to the engine)

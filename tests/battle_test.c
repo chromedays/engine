@@ -1743,6 +1743,102 @@ internal void test_seek(void)
     CHECK(battle.phase == BATTLE_RESULT && battle.tick == last && battle_hash(&battle) == hashes[last]);
 }
 
+// Roles (abproj.md, "Roles"): the names a file declares, each unit's mask over them, and the errors. A role does not change a round.
+
+// The line of the first match of `needle` in project_text, from 1.
+internal u32 line_of(const char* needle)
+{
+    const char* at = strstr(project_text, needle);
+    NV_ASSERT(at);
+    u32 line = 1;
+    for (const char* p = project_text; p < at; ++p)
+        line += *p == '\n';
+    return line;
+}
+
+// Makes project_text and reads it: the good header, `block` (the roles block, if any), and a Crawler with `unit_roles` (its roles
+// line, or "") and no other changes.
+internal b32 read_roles_project(const char* block, const char* unit_roles)
+{
+    snprintf(project_text, sizeof(project_text),
+             "%sunit Crawler\n%s    cost 100\n    health 120\n    speed 5\n    radius 0.5\n    height 0.8\n"
+             "    weapon Lobber\n        range 20\n        damage 30\n        cooldown 1.5\n        launch_angle 45\n"
+             "stage\n    supply 1000\n    place Crawler 12 36\n",
+             good_header, unit_roles);
+    // The block goes between the header and the unit.
+    static char text[32768];
+    snprintf(text, sizeof(text), "%s%s", good_header, block);
+    u32 used = (u32)strlen(text);
+    snprintf(text + used, sizeof(text) - used, "%s", strstr(project_text, "unit Crawler"));
+    snprintf(project_text, sizeof(project_text), "%s", text);
+    return read_project(project_text);
+}
+
+internal void test_roles(void)
+{
+    // A declared role, and a unit with two of them: its mask is its roles' bits, in the order the file declares them.
+    CHECK(read_roles_project("roles\n    frontline\n    backline\n", "    roles backline frontline\n"));
+    CHECK(defs.error_count == 0 && defs.role_count == 2 && strcmp(defs.roles[0], "frontline") == 0 && strcmp(defs.roles[1], "backline") == 0);
+    CHECK(defs.unit_roles[0] == 3);
+    // A unit without roles has none; a block with no roles, or no block, is fine.
+    CHECK(read_roles_project("roles\n    frontline\n", "") && defs.unit_roles[0] == 0 && defs.role_count == 1);
+    CHECK(read_roles_project("roles\n", "") && defs.role_count == 0);
+    CHECK(read_roles_project("", "") && defs.role_count == 0 && defs.unit_roles[0] == 0);
+
+    // A role the file does not declare, at the unit's line.
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles shielder\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles shielder"), "unknown role 'shielder' (declare it under 'roles')"));
+    // A unit's roles given twice, a role named twice in a line, and a line with no role.
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles frontline\n    roles frontline\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles frontline\n    roles frontline") + 1, "'roles' is given twice in this block"));
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles frontline frontline\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("roles frontline frontline"), "role 'frontline' is given twice"));
+    CHECK(!read_roles_project("roles\n    frontline\n", "    roles\n") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    roles\n"), "'roles' takes at least one role"));
+
+    // The block: each name once, at most 32, one name a line.
+    CHECK(!read_roles_project("roles\n    frontline\n    frontline\n", "") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    frontline\n    frontline") + 1, "role 'frontline' is declared twice"));
+    CHECK(!read_roles_project("roles\n    frontline backline\n", "") && defs.error_count == 1);
+    CHECK(first_error_at(line_of("    frontline backline"), "a role line takes one name"));
+    static char many[4096];
+    snprintf(many, sizeof(many), "roles\n");
+    for (u32 i = 0; i < 33; ++i) {
+        char one[32];
+        snprintf(one, sizeof(one), "    r%u\n", i);
+        strcat(many, one);
+    }
+    CHECK(!read_roles_project(many, "") && defs.error_count == 1 && first_error_has("too many roles (at most 32)"));
+
+    // Order: the block comes after the rules and before the units; given once.
+    snprintf(project_text, sizeof(project_text), "%s%sroles\n    frontline\nstage\n    supply 1000\n    place Crawler 12 36\n", good_header, good_units);
+    CHECK(!read_project(project_text) && defs.error_count == 1);
+    CHECK(first_error_at(GOOD_HEADER_LINES + GOOD_UNITS_LINES + 1, "'roles' must come after 'rules' and before the units"));
+    static char twice[8192];
+    snprintf(twice, sizeof(twice), "%s%s%s%s", good_header, "roles\n    frontline\nroles\n    backline\n", good_units,
+             "stage\n    supply 1000\n    place Crawler 12 36\n");
+    snprintf(project_text, sizeof(project_text), "%s", twice);
+    CHECK(!read_project(project_text) && defs.error_count == 1);
+    CHECK(first_error_at(GOOD_HEADER_LINES + 3, "'roles' is given twice"));
+
+    // The rules editor edits a rule in a text with a roles block, and the result reads.
+    static char with_roles[8192];
+    snprintf(with_roles, sizeof(with_roles), "%s", replaced(full_project, "unit Crawler\n", "roles\n    frontline\n\nunit Crawler\n    roles frontline\n"));
+    static char edited[8192];
+    f64 zone = 12.0; // the enemy's rows then start at 36, where the stage's places are
+    umm size = defs_rule_set(with_roles, strlen(with_roles), "zone_rows", &zone, 1, edited, sizeof(edited));
+    edited[size] = 0;
+    CHECK(size && read_project(edited) && defs.rules.zone_rows == 12 && defs.unit_roles[0] == 1);
+
+    // Roles do not change a round: full_project's round, with a roles block and a role on the Crawler, is the same round.
+    load_full_project();
+    b32 finished = false;
+    u32 plain = play_round(1, &finished);
+    CHECK(read_project(replaced(full_project, "unit Crawler\n", "roles\n    frontline\n    backline\n\nunit Crawler\n    roles backline\n")));
+    CHECK(defs.unit_roles[0] == 2 && defs.role_count == 2);
+    CHECK(play_round(1, &finished) == plain && finished);
+}
+
 int main(void)
 {
     test_project_file();
@@ -1763,6 +1859,7 @@ int main(void)
     test_squad_file();
     test_squad_deployment();
     test_squad_round();
+    test_roles();
     test_whole_round();
     test_golden_rounds();
     test_seek();

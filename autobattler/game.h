@@ -116,6 +116,9 @@ typedef struct Game {
     // What a tap under the mouse pointer would do (a touch screen has no pointer), and whether it can.
     DeployTarget hover;
     b32 hover_shown, hover_ok;
+    // The role filter (the Battle panel's toggles): a unit type shows when it has every role lit here. Not saved; a new project clears it.
+    u32 role_filter;
+    u32 unit_buttons_shown; // how many unit buttons the panel drew last frame (debug)
 } Game;
 
 // main.c

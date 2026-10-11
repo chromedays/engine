@@ -298,7 +298,7 @@ internal void frame(void* userdata)
 // in hundredths (0 while paused), 12 the shadow map's size (0 without one), 13 the shadow distance in meters, 14 projects put
 // in place (the packed one included), 15 whether Save would write the kept local file in place, 16 the grid's width, 17 the
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
-// length in ticks.
+// length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame.
 EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 {
     const Game* game = &game_state;
@@ -323,6 +323,9 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
     case 17: return (int)game->local_file.status;
     case 18: return game->project_edited;
     case 19: return (int)game->defs.rules.round_ticks;
+    case 20: return (int)game->defs.role_count;
+    case 21: return (int)game->role_filter;
+    case 22: return (int)game->unit_buttons_shown;
     default: return (int)game->selected_def;
     }
 }
@@ -348,6 +351,17 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_load(const char* name, const char* text)
     return game_load_project(&game_state, name, text, strlen(text));
 }
 
+// Loads /test.abproj from the page's file system as a local file would be (a test writes it with FS.writeFile, since a string
+// cannot be passed in); 1 when it was good.
+EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
+{
+    umm mark = game_state.scratch.used;
+    NvFileData data = nv_file_read(&game_state.scratch, "/test.abproj");
+    int ok = data.ok && game_load_project(&game_state, "test.abproj", (const char*)data.bytes, data.size);
+    game_state.scratch.used = mark;
+    return ok;
+}
+
 // Presses a project button of the panel (ProjectAction: 0 Open..., 1 Reload, 2 Save, 3 Save as...); 1 when it started, 0 when
 // the button is disabled.
 EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
@@ -366,6 +380,18 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double
 {
     f64 values[BATTLE_RULE_MAX_VALUES] = {a, b};
     return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
+}
+
+// The roles of unit type `def` as a bit mask (bit r is the r-th declared role), for tests.
+EMSCRIPTEN_KEEPALIVE int battle_debug_unit_roles(int def)
+{
+    return (u32)def < BATTLE_MAX_UNIT_DEFS ? (int)game_state.defs.unit_roles[def] : 0;
+}
+
+// Sets the Battle panel's role filter as its toggles do, for tests.
+EMSCRIPTEN_KEEPALIVE void battle_debug_set_role_filter(int mask)
+{
+    game_state.role_filter = (u32)mask;
 }
 
 // The project's text as Save would write it, for tests.

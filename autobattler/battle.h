@@ -19,6 +19,7 @@
 #define BATTLE_MAX_ZONE_ROWS   32
 #define BATTLE_MAX_PLACES      (BATTLE_MAX_ZONE_ROWS * BATTLE_MAX_GRID_WIDTH) // one squad per cell of a zone, at the most
 #define BATTLE_MAX_UNIT_DEFS   16
+#define BATTLE_MAX_ROLES       32 // the roles a file may declare: one bit each in a unit's mask
 #define BATTLE_NAME_SIZE       32 // a name is at most 31 bytes
 #define BATTLE_MAX_SQUAD_SIZE  64 // units in a squad
 #define BATTLE_MAX_FOOTPRINT   4  // cells on a side of the square a squad stands on
@@ -87,6 +88,11 @@ typedef struct BattleDefs {
     u32 seed;   // for the random numbers of the whole round
     StagePlace enemy[BATTLE_MAX_PLACES];
     u32 enemy_count;
+    // The roles of the `roles` block, for sorting units. The rules never read them, so they cannot change a round. unit_roles[i]
+    // is a bit mask over `roles`: bit r is set when unit def i has role r.
+    char roles[BATTLE_MAX_ROLES][BATTLE_NAME_SIZE];
+    u32 role_count;
+    u32 unit_roles[BATTLE_MAX_UNIT_DEFS];
     u32 error_count;        // errors found by the reads, all of them (only the first 20 are logged)
     char first_error[160];  // "default.abproj:12: unknown key 'healt'", for the panel
 } BattleDefs;

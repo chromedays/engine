@@ -225,6 +225,7 @@ void view_apply_project(Game* game)
         set_unit_mesh(game, i, &game->defs.units[i]);
     if (game->selected_def >= game->defs.unit_count)
         game->selected_def = 0;
+    game->role_filter = 0; // the bits are the new project's roles
 }
 
 void view_apply_rules(Game* game)
@@ -584,6 +585,27 @@ internal void rules_section(Game* game)
     }
 }
 
+// Keeps the next button, labeled `label` (up to its "###"), on this line when it fits, so a row of them wraps at the panel's width.
+internal void same_line_if_fits(const char* label)
+{
+    f32 width = igCalcTextSize(label, NULL, true, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
+    igSameLine(0.0f, -1.0f);
+    if (igGetContentRegionAvail().x < width)
+        igNewLine();
+}
+
+// The names of the roles in `mask`, joined with ", " into `out` ("" when there are none).
+internal void format_roles(const BattleDefs* defs, u32 mask, char* out, umm capacity)
+{
+    out[0] = 0;
+    for (u32 r = 0; r < defs->role_count; ++r) {
+        if (!((mask >> r) & 1u))
+            continue;
+        umm used = strlen(out);
+        snprintf(out + used, capacity - used, "%s%s", used ? ", " : "", defs->roles[r]);
+    }
+}
+
 internal void start_over(Game* game)
 {
     nv_vfx_clear(&game->vfx);
@@ -640,15 +662,38 @@ void view_panel(Game* game)
         }
 
         igSeparator();
-        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)").
+        // The role filter: a unit type shows when it has every role lit here. Only roles the file declares are offered.
+        if (battle->defs->role_count) {
+            igText("%s", T("Roles:"));
+            for (u32 r = 0; r < battle->defs->role_count; ++r) {
+                char label[BATTLE_NAME_SIZE + 8];
+                snprintf(label, sizeof(label), "%s###role%u", battle->defs->roles[r], r);
+                if (r)
+                    same_line_if_fits(label);
+                b32 lit = (game->role_filter >> r) & 1u;
+                if (lit)
+                    igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
+                if (igButton(label, (ImVec2_c){0, 0}))
+                    game->role_filter ^= 1u << r;
+                if (lit)
+                    igPopStyleColor(1);
+            }
+        }
+        // The unit types: one button each, the chosen one lit. A squad of several says how many ("Crawler x6 (100)"). A unit type that
+        // lacks a lit role is left out; the chosen one stays chosen.
         igBeginDisabled(battle->phase != BATTLE_DEPLOY);
+        u32 shown = 0;
         for (u32 i = 0; i < battle->defs->unit_count; ++i) {
+            if ((battle->defs->unit_roles[i] & game->role_filter) != game->role_filter)
+                continue;
             const UnitDef* def = &battle->defs->units[i];
             char label[BATTLE_NAME_SIZE + 32];
             if (def->squad_size > 1)
                 snprintf(label, sizeof(label), "%s x%u (%u)###unit%u", def->name, def->squad_size, def->cost, i);
             else
                 snprintf(label, sizeof(label), "%s (%u)###unit%u", def->name, def->cost, i);
+            if (shown++)
+                same_line_if_fits(label);
             b32 chosen = game->selected_def == i;
             if (chosen)
                 igPushStyleColor_Vec4(ImGuiCol_Button, igGetStyle()->Colors[ImGuiCol_ButtonActive]);
@@ -656,10 +701,14 @@ void view_panel(Game* game)
                 game->selected_def = i;
             if (chosen)
                 igPopStyleColor(1);
-            igSameLine(0.0f, -1.0f);
         }
-        igNewLine();
+        game->unit_buttons_shown = shown;
         igEndDisabled();
+        if (battle->defs->role_count) {
+            char names[BATTLE_MAX_ROLES * (BATTLE_NAME_SIZE + 2)];
+            format_roles(battle->defs, battle->defs->unit_roles[game->selected_def], names, sizeof(names));
+            igText(T("Roles: %s"), names[0] ? names : T("none"));
+        }
 
         b32 can_start = battle->phase == BATTLE_DEPLOY && battle_alive_count(battle, TEAM_PLAYER) > 0;
         igBeginDisabled(!can_start);

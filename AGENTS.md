@@ -286,7 +286,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
   `autobattler/strings.c`, like the sandbox's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
   `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
-  `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule` and `_battle_debug_project_text` for tests. Speed controls change only
+  `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule`, `_battle_debug_project_text`, `_battle_debug_unit_roles`, `_battle_debug_set_role_filter` and `_battle_debug_load_test` for tests. Roles (`roles`) are for people sorting units: `battle.c` never reads them, so no round depends on them. Speed controls change only
   how many ticks a frame runs (the game clock), never the tick, and the effects take the same game clock's dt. Stepping back is `battle_seek` (a replay from the start, which
   the deterministic rules make exact). A touch on a panel widget takes a few frames to
   count as a tap: tests that touch buttons wait about two seconds.

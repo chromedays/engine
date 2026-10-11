@@ -14,7 +14,7 @@
 #include <string.h>
 
 #define MAX_LOGGED_ERRORS 20
-#define MAX_TOKENS        8
+#define MAX_TOKENS        (1 + BATTLE_MAX_ROLES) // a line's words: its key, and up to a role for each declared role
 #define NO_LIMIT          1e30
 
 typedef struct Token {
@@ -401,9 +401,9 @@ internal LineText next_line(Lines* lines)
 
 // The project file
 
-typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
+typedef enum BlockKind { BLOCK_ROOT, BLOCK_RULES, BLOCK_ROLES, BLOCK_UNIT, BLOCK_WEAPON, BLOCK_SHIELD, BLOCK_STAGE, BLOCK_SKIP } BlockKind;
 
-enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17 }; // beyond the unit's own fields in Block.seen
+enum { SEEN_WEAPON = 1 << 16, SEEN_ABILITY = 1 << 17, SEEN_ROLES = 1 << 18 }; // beyond the unit's own fields in Block.seen
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
 typedef struct Block {
@@ -415,7 +415,7 @@ typedef struct Block {
 } Block;
 
 // The last top-level statement that was in its place; they come in this order (docs/specs/abproj.md, "Syntax").
-typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_UNIT, TOP_STAGE } Top;
+typedef enum Top { TOP_NONE, TOP_VERSION, TOP_RULES, TOP_ROLES, TOP_UNIT, TOP_STAGE } Top;
 
 typedef struct ProjectReader {
     Reader base;
@@ -431,6 +431,7 @@ typedef struct ProjectReader {
     u32 footprint_line; // of the unit being read; 0 when it has none
     u32 squad_line;     // the same for its `squad`
     u32 unit_errors_start;
+    u32 unit_roles;     // the roles of the unit being read, as a mask over BattleDefs.roles
 
     u32 rules_errors_start, zone_rows_line;
     b32 rules_ok;   // the rules block was read without an error, so the grid is known
@@ -474,8 +475,10 @@ internal void close_block(ProjectReader* reader)
                 report(base, reader->squad_line, "%u units on %ux%u cells stand %.3g m apart, under their width (%.3g m)", unit->squad_size,
                        unit->footprint, unit->footprint, apart, 2.0f * unit->radius);
         }
-        if (reader->unit_kept)
+        if (reader->unit_kept) {
+            defs->unit_roles[defs->unit_count] = reader->unit_roles;
             defs->units[defs->unit_count++] = reader->unit;
+        }
         break;
     case BLOCK_WEAPON:
         check_required(base, weapon_fields, FIELD_COUNT(weapon_fields), block->seen, block->header_line, "weapon", reader->unit.weapon.name);
@@ -500,6 +503,7 @@ internal void close_block(ProjectReader* reader)
         }
         break;
     case BLOCK_ROOT:
+    case BLOCK_ROLES:
     case BLOCK_SKIP:
         break;
     }
@@ -545,6 +549,7 @@ internal void read_unit_header(ProjectReader* reader, const Line* line)
     reader->unit_named = false;
     reader->unit_kept = false;
     reader->footprint_line = 0;
+    reader->unit_roles = 0;
     reader->squad_line = 0;
     reader->unit_errors_start = base->errors;
     open_block(reader, BLOCK_UNIT, line);
@@ -595,8 +600,18 @@ internal void read_top_line(ProjectReader* reader, const Line* line)
             report(base, line->number, "'rules' is given twice");
             open_block(reader, BLOCK_SKIP, line);
         }
+    } else if (token_is(key, "roles")) {
+        if (reader->last == TOP_RULES) {
+            if (line->token_count != 1)
+                report(base, line->number, "'roles' takes no value");
+            reader->last = TOP_ROLES;
+            open_block(reader, BLOCK_ROLES, line);
+        } else {
+            report(base, line->number, reader->last == TOP_ROLES ? "'roles' is given twice" : "'roles' must come after 'rules' and before the units");
+            open_block(reader, BLOCK_SKIP, line);
+        }
     } else if (token_is(key, "unit")) {
-        if (reader->last == TOP_RULES || reader->last == TOP_UNIT) {
+        if (reader->last == TOP_RULES || reader->last == TOP_ROLES || reader->last == TOP_UNIT) {
             reader->last = TOP_UNIT;
             read_unit_header(reader, line);
         } else {
@@ -625,6 +640,56 @@ internal void read_top_line(ProjectReader* reader, const Line* line)
 
 // Lines inside blocks
 
+// Reads the words of `line` from `first` on as names from a fixed list (`count` names, `stride` bytes apart) into `mask`: bit i is
+// name i. An unknown name (`hint` says what the names are) and a name given twice are reported; `mask` is then left as it was.
+internal b32 read_name_mask(Reader* reader, const Line* line, u32 first, const char* names, u32 count, u32 stride, const char* what,
+                            const char* hint, u32* mask)
+{
+    u32 bits = 0;
+    for (u32 t = first; t < line->token_count; ++t) {
+        Token word = line->tokens[t];
+        u32 i = 0;
+        while (i < count && !token_is(word, names + i * stride))
+            ++i;
+        if (i == count) {
+            report(reader, line->number, "unknown %s '%.*s' (%s)", what, shown(word), word.text, hint);
+            return false;
+        }
+        if (bits & (1u << i)) {
+            report(reader, line->number, "%s '%.*s' is given twice", what, shown(word), word.text);
+            return false;
+        }
+        bits |= 1u << i;
+    }
+    *mask = bits;
+    return true;
+}
+
+// A line of the `roles` block: one role's name, declared once.
+internal void read_role(ProjectReader* reader, const Line* line)
+{
+    Reader* base = &reader->base;
+    BattleDefs* defs = base->defs;
+    if (line->token_count != 1) {
+        report(base, line->number, "a role line takes one name");
+        return;
+    }
+    char role[BATTLE_NAME_SIZE];
+    if (!parse_name(base, line->number, line->tokens[0], role))
+        return;
+    for (u32 i = 0; i < defs->role_count; ++i) {
+        if (strcmp(defs->roles[i], role) == 0) {
+            report(base, line->number, "role '%s' is declared twice", role);
+            return;
+        }
+    }
+    if (defs->role_count == BATTLE_MAX_ROLES) {
+        report(base, line->number, "too many roles (at most %d)", BATTLE_MAX_ROLES);
+        return;
+    }
+    memcpy(defs->roles[defs->role_count++], role, BATTLE_NAME_SIZE);
+}
+
 internal void read_unit_line(ProjectReader* reader, const Line* line, Block* block)
 {
     Reader* base = &reader->base;
@@ -650,6 +715,22 @@ internal void read_unit_line(ProjectReader* reader, const Line* line, Block* blo
             if (!token_is(line->tokens[1], "shield"))
                 report(base, line->number, "unknown ability '%.*s' (kinds: shield)", shown(line->tokens[1]), line->tokens[1].text);
             open_block(reader, BLOCK_SKIP, line);
+        }
+        return;
+    }
+    if (token_is(key, "roles")) {
+        b32 repeated = (block->seen & SEEN_ROLES) != 0;
+        block->seen |= SEEN_ROLES;
+        if (repeated) {
+            report(base, line->number, "'roles' is given twice in this block");
+        } else if (line->token_count < 2) {
+            report(base, line->number, "'roles' takes at least one role");
+        } else {
+            u32 mask = 0;
+            BattleDefs* defs = base->defs;
+            if (read_name_mask(base, line, 1, (const char*)defs->roles, defs->role_count, BATTLE_NAME_SIZE, "role",
+                               "declare it under 'roles'", &mask))
+                reader->unit_roles = mask;
         }
         return;
     }
@@ -763,6 +844,9 @@ internal void read_project_line(ProjectReader* reader, const Line* line)
     switch (block->kind) {
     case BLOCK_ROOT:
         read_top_line(reader, line);
+        break;
+    case BLOCK_ROLES:
+        read_role(reader, line);
         break;
     case BLOCK_UNIT:
         read_unit_line(reader, line, block);
