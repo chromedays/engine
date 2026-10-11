@@ -1,156 +1,394 @@
 # Atmospheric scattering spec
 
-상태: 제안 (2026-10-11). 공부도 목적이다("공부를 위한 구성"). 아래 "합의할 것"이 정해지면 구현한다. 이 스펙의 변경은 먼저 합의한다.
+상태: 제안 (2026-10-11). 구현은 사용자가 시작하라고 할 때 시작한다. 이 스펙의 변경은 먼저 합의한다.
 
-## 목표
+이 스펙은 **공부가 첫 목적**이다. 사용자가 처음 구현해 보는 기술이므로, 기능을 빨리 끝내는 순서가 아니라 **개념을 하나씩 이해하며
+쌓는 순서**로 짠다. 결과물(샌드박스의 하늘과 대기 원근)은 그 과정의 산물이다.
+
+## 목차
+
+1. 목표 — 무엇을 만들고, 무엇을 배우나
+2. 공부의 원칙 — 이 스펙이 순서와 도구를 이렇게 정한 이유
+3. 단계를 진행하는 방법 — 단계마다 Claude와 사용자가 하는 일
+4. 이론 — 단계들이 가리키는 식 (0~10번)
+5. 단계 — 0~8단계, 단계마다 배울 것, 만드는 것, 볼 것, 실험, 확인 질문
+6. 공부 도구 — Study 섹션, 성분 보기, 차이 보기, 프로브, 그래프
+7. 설계 — 모델, LUT, 패스, 엔진 API, 샌드박스 (구현의 결정)
+8. 시험
+9. 합의할 것, 범위 밖, 용어, 읽을거리
+
+---
+
+## 1. 목표
+
+### 만드는 것
 
 샌드박스의 씬에 물리 기반 대기를 더한다.
 
 - **하늘**: 지금의 단색 배경(`NvRenderer.clear_color`) 대신 해의 방향에 따라 바뀌는 하늘. 낮에는 파랗고, 해가 낮으면 지평선이
-  붉어지고, 해 주변에 후광(Mie)이 있고, 해 원반이 보인다. 지평선 아래는 행성의 지면이다.
-- **대기 원근(aerial perspective)**: 먼 물체가 하늘 색으로 흐려지고 어두워진다(안개처럼 보이지만 해의 방향에 따라 색이 바뀐다).
-- **햇빛의 색**: 해가 지평선에 가까울수록 지면에 닿는 햇빛이 대기를 오래 지나 붉고 어두워진다.
-- **하늘의 주변광**(3단계): 고정된 `ambient` 0.15 대신 하늘에서 오는 빛.
+  붉어지고, 해 주변에 후광이 있고, 해 원반이 보인다. 지평선 아래는 행성의 지면이다.
+- **햇빛의 색**: 해가 낮을수록 지면에 닿는 햇빛이 붉고 어두워진다.
+- **대기 원근(aerial perspective)**: 먼 물체가 하늘 색으로 흐려진다.
+- **하늘의 주변광**: 고정된 `ambient` 0.15 대신 하늘에서 오는 빛.
 
-해는 지금처럼 씬의 첫 directional light다(`shadows.md`와 같다). 그 노드를 기즈모로 돌리면 시각이 바뀌고, 그 노드에 `spin`을 달면
-Play에서 하루가 흐른다. 새 시간 개념은 없다.
+해는 씬의 첫 directional light다(`shadows.md`와 같다). 그 노드를 기즈모로 돌리면 시각이 바뀌고, 그 노드에 `spin`을 달면 Play에서
+하루가 흐른다.
 
-## 지금
+### 배우는 것
 
-- 씬 패스는 `clear_color`(0.02, 0.02, 0.035)로 지우고 메시를 그린다(`engine/renderer.c`의 `nv_renderer_draw`).
-- 메시 셰이더의 조명은 `frame.ambient.rgb + frame.light_color.rgb * diffuse`이다. 확산 항에 1/π가 없다: 빛의 세기 1은 법선 방향의
-  흰 면을 1로 비춘다.
-- 씬은 선형 HDR(`NV_SCENE_FORMAT`, `RGBA16Float`)이고 노출, 톤 매핑, bloom이 업스케일 패스에 있다(`vfx.md`). 하늘이 1을 넘어도 된다.
-- 깊이는 reverse Z다: 0으로 지우고 `Greater`로 비교한다(`msaa.md`). 하늘처럼 "가장 먼 곳"은 깊이 0이다.
-- 카메라의 `far`는 쇼케이스와 스트레스 모두 100 m, 쇼케이스의 바닥은 60 m 정사각형이다. 실제 지구 대기에서 100 m의 대기 원근은
-  1% 남짓이라 거의 보이지 않는다(아래 "대기 원근의 거리 배율").
-- compute 패스는 파티클이 쓴다(`vfx.c`). 이 스펙은 렌더러에 compute 패스를 더 둔다.
+다 끝났을 때 사용자가 설명할 수 있어야 하는 것:
 
-## 서드파티 후보 (AGENTS.md에 따라 먼저 찾음)
+- 빛의 단위(radiance, irradiance)와 이 엔진의 단위가 그와 어떻게 다른가.
+- 참여 매질(participating media)의 세 계수(산란, 흡수, 소멸)와 위상 함수, Beer-Lambert 법칙.
+- 하늘이 왜 파랗고, 해질녘이 왜 붉고, 연무가 왜 희고, 해 주변이 왜 밝은가: 식으로.
+- 산란 적분을 수치로 푸는 방법(레이 마칭)과 걸음 수가 정확도와 비용에 주는 영향.
+- 다중 산란과 Hillaire의 근사가 무엇을 버리고 무엇을 얻는가.
+- LUT(look-up table)로 적분을 미리 계산하는 방법: 대칭성으로 차원 줄이기, 매개화(parametrization), 해상도와 오차.
+- 같은 적분이 하늘, 대기 원근, 주변광에 어떻게 다시 쓰이는가.
+- GPU에서: compute 패스로 텍스처 만들기, 3D 텍스처, 프레임마다/값이 바뀔 때만 다시 계산하는 판단.
 
-| 후보 | 무엇인가 | 언어, 라이선스 | 이 엔진에 맞음 | 장단점 |
-|---|---|---|---|---|
-| **직접 작성, Hillaire 2020 기법** (권장) | 아래 "접근법"의 LUT 네 장과 하늘 그리기를 C와 WGSL로 쓴다. 논문과 저자의 참조 구현(sebh/UnrealEngineSkyAtmosphere)을 따른다 | C17, WGSL | 렌더러의 패스, MSAA, 자체 해상도, reverse Z, HDR 규칙에 그대로 들어간다. 메시와 이펙트 셰이더에 대기 원근을 직접 넣을 수 있다. 약 800~1,000줄로 추정 | 우리가 쓰고 시험해야 한다. 참조 구현의 코드를 옮기면 MIT 고지를 남긴다(옮기지 않고 논문의 식으로 쓰는 것이 기본) |
-| sebh/UnrealEngineSkyAtmosphere | 위 기법의 저자 참조 구현(Unreal Engine의 SkyAtmosphere와 같은 방법) | C++/HLSL(D3D11), MIT | 그대로는 못 쓴다: D3D11 데모다 | 식, 상수, LUT 매개화의 기준으로 쓴다 |
-| webgpu-sky-atmosphere (JolifantoBambla) | 위 기법의 WebGPU 포팅. 렌더러 객체가 LUT를 만들고 하늘을 후처리로 그린다 | TypeScript/WGSL, MIT | JS에서 같은 `GPUDevice`를 받아 돌릴 수는 있다 | 장치와 패스가 wasm(emdawnwebgpu) 밖 JS에 생기고, 그리기 순서, MSAA 대상, 자체 해상도, reverse Z를 맞추는 접착 코드가 크다. 후처리 방식이라 깊이를 쓰지 않는 파티클과 데칼은 대기 원근이 틀린다. WGSL은 참고 자료로 쓸 수 있다 |
-| Bruneton 2017, precomputed_atmospheric_scattering | 4D 산란 LUT를 미리 계산하는 방법의 참조 구현 | C++/GLSL, BSD | 정확한 다중 산란, 우주에서 보는 시점까지 | 대기 값을 바꿀 때마다 무거운 재계산(데스크톱에서도 수백 ms 이상)과 큰 3D 텍스처. 슬라이더로 대기를 바꾸는 편집기와 폰에 맞지 않는다 |
-| Hosek-Wilkie 2012 analytic sky | 하늘 색을 맞춘 해석식(계수 표) | C, BSD-3 | 가장 싸다 | 지면 관찰자의 하늘 색뿐이다. 대기 원근, 햇빛의 색, 해가 지평선 아래인 경우가 없고, 대기 값을 바꿀 수 없다(탁도 하나) |
-| Preetham 1999 | 더 오래된 해석식 | 공식 | 단순 | 해질녘이 틀리고, Hosek-Wilkie의 단점을 모두 가진다 |
+---
 
-권장: **직접 작성, Hillaire 2020.** 새 라이브러리는 없다. 기법과 참고한 구현을 코드 주석과 이 스펙의 "참고 자료"에 남긴다.
+## 2. 공부의 원칙
 
-## 접근법
+1. **느린 정답부터, 최적화는 나중에.** 각 개념은 먼저 가장 곧은 형태(픽셀마다 적분)로 만든다. 식이 코드에 한 줄씩 그대로 보인다.
+   LUT는 그 뒤에 하나씩, **같은 답을 빠르게 내는 최적화**로 넣는다.
+2. **최적화는 끄고 켤 수 있다.** LUT마다 끄는 토글이 있어, 끄면 곧은 적분으로 돌아간다. 다 만든 뒤에도 남긴다. 토글과 차이
+   보기로 그 LUT가 무엇을 바꿨는지(오차가 어디에 몰리는지)와 얼마를 아꼈는지(GPU 시간)를 직접 본다.
+3. **정답의 사슬.** C 코드(CPU)가 첫 정답이다: 디버거로 따라가고, 값을 찍고, ctest로 손 계산과 맞출 수 있다. GPU의 곧은 적분은
+   C와 맞추고(프로브), GPU의 LUT 경로는 GPU의 곧은 적분과 맞춘다(차이 보기). 어느 고리가 틀렸는지 늘 좁힐 수 있다.
+4. **한 단계에 새 개념 하나.** 단계는 작게 나누고, 단계마다 화면에 새로 보이는 것이 있다.
+5. **예측하고 확인한다.** 실험은 "이렇게 바꾸면 어떻게 될까?"를 먼저 적고 확인하는 형태다. 예측이 틀린 곳이 공부할 곳이다.
+6. **식과 코드를 잇는다.** 함수마다 주석에 구현하는 식과 이 스펙 "이론"의 번호를 적는다. 이 모듈은 공부를 위해 코딩 표준보다
+   주석이 많다: 식 자체를 주석으로 쓴다.
 
-| 접근법 | 어떻게 | 장점 | 단점 |
+대가: 곧은 적분과 LUT 경로가 함께 있어 코드가 늘고(약 30%), 적분이 C와 WGSL 두 벌이다. 두 벌은 같은 구조와 이름으로 써서 나란히
+읽을 수 있게 한다. 이 대가는 공부와 시험(정답의 사슬) 둘 다에 쓰이므로 받아들인다.
+
+---
+
+## 3. 단계를 진행하는 방법
+
+정함(2026-10-11): **Claude가 단계마다 코드를 쓰고, 사용자가 읽고 질문한 뒤 다음 단계로 간다.** 한 단계는 이렇게 흐른다.
+
+1. **미리 읽기.** Claude가 그 단계의 "배울 것"과 이론 번호, 읽을거리의 해당 부분, 실험에서 예측해 볼 질문을 짧게 보낸다.
+   사용자가 원하면 여기서 먼저 질문한다.
+2. **구현.** Claude가 그 단계를 구현한다. 커밋은 읽는 순서대로 나눈다: C의 수학과 ctest → WGSL → 렌더러 연결 → 샌드박스와 공부 도구.
+3. **해설.** Claude가 이론과 코드의 대응(식 → 함수, 파일과 줄), 읽기 순서, 실행 방법을 보낸다. 배포된 Debug 빌드의 주소도 보낸다
+   (CI가 브랜치마다 Pages에 올린다).
+4. **실험과 질문.** 사용자가 실험을 해 보고 확인 질문에 답해 보며 묻는다. Claude가 답하고, 필요하면 실험 도구를 고친다.
+5. **기록.** 그 단계에서 배운 것, 틀렸던 곳, 예측과 달랐던 실험, GPU 시간을 이 스펙의 "구현 결과"에 짧게 적는다.
+6. **다음 단계.** 사용자가 넘어가자고 할 때 넘어간다.
+
+---
+
+## 4. 이론
+
+단계들이 번호로 가리킨다. 단위는 길이 km, 계수 1/km.
+
+**0. 빛의 단위.** radiance L은 한 방향에서 오는 빛의 세기(W/(m²·sr)), irradiance E는 면에 떨어지는 빛의 총량(W/m²). 해는 아주
+작아서 E_sun 하나로 쓴다. 흰 Lambert 면이 E를 정면으로 받으면 L = E / π로 빛난다. 이 엔진의 메시 셰이더에는 1/π가 없다
+(`light_color * diffuse`): 엔진의 값은 "π × radiance"다. 그래서 하늘의 radiance에도 π를 곱해야 메시와 같은 단위가 된다.
+
+**1. 기하.** 행성은 중심이 (0, −R_g, 0)인 공(R_g = 6360 km), 대기는 반지름 R_t = 6460 km까지. 점 p에서 방향 v로 가는 광선과
+반지름 r인 구의 교차는 t² + 2(p·v)t + (|p|² − r²) = 0의 근이다. 시선은 대기 안에 있는 구간만 적분하고, 행성에 닿으면 거기서 끝난다.
+높이 h = |p| − R_g, 천정각의 코사인 μ = (p·v) / |p|.
+
+**2. 매질.** 세 성분이 섞여 있다. 계수 = 지면의 값 × 밀도 d(h).
+- Rayleigh(공기 분자): 산란만, d = exp(−h / 8). 파장에 크게 의존한다(λ⁻⁴ 근사: 파랑이 빨강의 약 6배).
+- Mie(에어로졸, 연무): 산란과 약간의 흡수, d = exp(−h / 1.2). 파장에 거의 무관하다(회색).
+- 오존: 흡수만, d = max(0, 1 − |h − 25| / 15). 초록에서 주황까지를 흡수하고 파랑은 거의 흡수하지 않는다.
+H(8 km, 1.2 km)는 스케일 높이: H만큼 오를 때마다 밀도가 1/e가 된다.
+
+**3. 투과율 (Beer-Lambert).** 두 점 사이를 지나며 남는 빛의 비율. σ_t = σ_s + σ_a(소멸 = 산란 + 흡수).
+T(a, b) = exp(−τ), τ = ∫ₐᵇ σ_t(x) dx(광학 깊이). 천정 방향은 τ가 작고 지평선 방향은 Rayleigh 공기를 약 35배(√(πR_g / 2H)) 지나 τ가 크다: 파랑이 먼저
+빠져 해질녘의 햇빛이 붉다.
+
+**4. 위상 함수.** 산란된 빛이 각 θ만큼 꺾일 확률 밀도(모든 방향으로 적분하면 1).
+- Rayleigh: p_R(θ) = 3 / (16π) · (1 + cos²θ). 앞뒤가 대칭이다.
+- Mie(Cornette-Shanks): p_M(θ) = 3 / (8π) · (1 − g²)(1 + cos²θ) / ((2 + g²)(1 + g² − 2g·cosθ)^{3/2}). g가 클수록 앞쪽(해 주변)에 몰린다.
+
+**5. 단일 산란.** 시선 위의 각 점 x에서 햇빛이 한 번 꺾여 눈으로 오는 빛을 더한다.
+L₁ = ∫₀^{t_max} T(c, x) · Σ_i σ_s,i(x) p_i(θ) · T(x, 해) · V(x) · E_sun dt.
+V(x)는 x에서 해가 행성에 가려지면 0. 수치 적분은 구간을 N걸음으로 나눠 각 걸음 가운데에서 값을 구한다(중점 규칙). 걸음마다
+T(x, 해)도 적분이므로 곧은 구현의 비용은 픽셀 × N × M이다.
+
+**6. 지면과 해 원반.**
+- 지면(지평선 아래 시선): 행성의 표면이 반사율 a로 빛난다. L_ground = a / π · E_sun · T(지면, 해) · max(μ_sun, 0) (뒤에 하늘의 빛이 더해진다: 10번).
+  그 빛이 눈까지 오며 T(c, 지면)만큼 줄고, 그 사이의 공기가 5번의 산란을 더한다.
+- 해 원반: 시직경 α 안의 방향은 L_sun = E_sun · T(c, 해) / Ω, Ω = 2π(1 − cos(α / 2)). 가장자리로 갈수록 어둡게(limb darkening) 한다.
+  Ω가 아주 작아 L_sun은 하늘보다 수만 배 밝다.
+
+**7. 다중 산란 (Hillaire 2020).** 두 번 이상 꺾인 빛. 정확히 하려면 모든 방향의 적분이 겹겹이 필요하다. Hillaire의 근사:
+- 2차 이상의 산란은 방향에 거의 무관하다(등방)고 본다.
+- 한 점 주변이 다 같은 높이의 공기라고 보면, 빛이 한 번 더 산란될 때마다 같은 비율 f_ms가 돌아온다.
+- 그러면 모든 차수의 합은 등비급수다: L₂ + L₂·f_ms + L₂·f_ms² + … = L₂ / (1 − f_ms).
+다중 산란 LUT가 높이와 해의 천정각마다 Ψ_ms = L₂ / (1 − f_ms)를 담고, 5번의 적분 안에 σ_s(x) · Ψ_ms 항이 더해진다.
+버리는 것: 다중 산란의 방향성. 그래서 연무가 아주 짙으면 틀린다(선택 실험 4-b).
+
+**8. 대기 원근.** 물체까지의 시선에 5번(과 7번)을 t_max = 물체까지의 거리로 적분한 산란 S와 투과율 T. 화면 색 = 물체의 색 · T + S.
+하늘은 "물체가 없는 시선"의 대기 원근이다: 같은 적분이다.
+
+**9. LUT와 매개화.** 적분의 결과가 소수의 변수에만 달려 있으면 미리 계산해 텍스처에 담는다.
+- 대칭성: 행성이 공이므로 투과율은 위치와 방향 전체가 아니라 (h, μ) 두 값에만 달려 있다. 다중 산란은 (h, μ_sun).
+- 매개화: 텍스처의 uv를 그 값으로 어떻게 펼치나. 값이 빨리 변하는 곳(지평선 근처)에 텍셀을 많이 둔다. 균일하게 펼치면 지평선
+  근처의 오차가 커진다(실험 3-c).
+- 언제 다시 계산하나: 변수에 들어가지 않는 것이 바뀌면 다시 만든다. 투과율 LUT는 대기 값이 바뀔 때만, 하늘 뷰 LUT는 카메라 높이와
+  해 방향이 들어가므로 매 프레임.
+
+**10. 하늘의 조도(주변광).** 법선 n인 면이 하늘에서 받는 빛: E_sky(n) = ∫ L(ω) max(0, n·ω) dω(반구에서 코사인 가중 적분).
+위를 보는 면은 하늘 전체를, 아래를 보는 면은 지면에서 튄 빛을 받는다. 그늘 속이 파랗게 보이는 이유다.
+
+---
+
+## 5. 단계
+
+단계마다: **배울 것**, **이론**(4절의 번호), **만드는 것**, **볼 것**, **실험**(예측 → 확인), **확인 질문**(답할 수 있으면 이해한
+것), **읽기 순서**, **다음 단계의 동기**. 실험의 값은 Inspector의 Atmosphere 섹션과 그 아래 Study 섹션(6절)에서 바꾼다.
+
+### 0단계: 단위, 기하, 투과율 (CPU만)
+
+- **배울 것**: 엔진의 빛 단위, 광선-구 교차, 밀도와 스케일 높이, 광학 깊이와 투과율, 해질녘이 붉은 이유.
+- **이론**: 0, 1, 2, 3.
+- **만드는 것**:
+  - `engine/atmosphere.h`, `engine/atmosphere.c`: `NvAtmosphere`, 지구 기본값, 광선-구 교차, 밀도, 광학 깊이, `nv_atmosphere_transmittance`.
+  - `tests/atmosphere_test.c`(ctest).
+  - 렌더러: `frame.light_color`에 해 방향의 투과율을 곱한다(햇빛의 색).
+  - 샌드박스: `atmosphere` 동작(파라미터, Inspector), 쇼케이스의 `sun`에 단다. Study 섹션의 그래프 둘: 높이별 밀도, 해의 고도별 투과율.
+  - 하늘은 아직 `clear_color`다.
+- **볼 것**: 기즈모로 해를 낮추면 바닥과 캐릭터가 주황으로, 지평선 아래로 가면 검게 바뀐다. 그래프에서 파랑이 먼저 떨어진다.
+- **실험**:
+  - a. 해의 고도 90° → 10° → 2°. 예측: 어느 고도에서 바닥이 눈에 띄게 주황이 될까? 투과율 그래프에서 그 고도의 R, G, B를 읽는다.
+  - b. `rayleigh` 3배. 예측: 같은 고도에서 더 붉어질까, 더 어두워질까?
+  - c. `mie` 10배. 예측: 색이 바뀔까, 밝기만 바뀔까? (Mie는 회색이다)
+  - d. `ozone` 0. 예측: 바닥의 색에 차이가 클까? (작다: 오존은 6단계 하늘의 천정에서 보인다)
+- **확인 질문**:
+  1. 천정 방향 투과율이 (0.94, 0.87, 0.76)인 이유를 계수와 스케일 높이로 손 계산할 수 있나?
+  2. 공기의 절반이 몇 km 아래에 있나? (8 · ln 2 ≈ 5.5 km)
+  3. 해가 지평선에 닿기 전부터 바닥이 어두워지는 이유는?
+  4. 엔진의 `light_color`가 radiance가 아니라 "π × radiance"의 단위라는 것은 무슨 뜻인가?
+- **읽기 순서**: `NvAtmosphere`(필드의 단위) → 밀도 함수 → 광선-구 교차 → 광학 깊이 → `nv_atmosphere_transmittance` → ctest → 렌더러에서 쓰는 곳.
+- **다음의 동기**: 해에서 지면까지 오는 빛은 알았다. 그 빛의 일부가 시선 쪽으로 꺾이는 것이 하늘이다.
+
+### 1단계: 곧은 하늘, Rayleigh 단일 산란
+
+- **배울 것**: 산란 적분, Rayleigh 위상 함수, 중점 규칙과 걸음 수, 곧은 구현의 비용(픽셀 × N × M).
+- **이론**: 4(Rayleigh), 5.
+- **만드는 것**:
+  - C: 같은 적분의 CPU 판(`nv_atmosphere_sky_radiance`, 한 방향의 radiance와 성분).
+  - 하늘 패스: 화면 삼각형, 픽셀마다 시선을 N걸음, 걸음마다 해 방향을 M걸음 적분한다(LUT 없음). 행성에 닿는 시선은 거기서 멈춘다(지면은 아직 검다).
+  - Study 섹션: 걸음 수 슬라이더, 성분 보기(`FINAL`, `TRANSMITTANCE`, `SINGLE`), 프로브, 높이 오프셋, GPU 시간.
+- **볼 것**: 파란 하늘, 천정보다 밝고 흰 지평선. 해를 낮추면 해 쪽 지평선이 붉어진다. 해 주변은 아직 특별히 밝지 않다.
+- **실험**:
+  - a. 걸음 수 64 → 4. 예측: 어디부터 틀어질까? (지평선 근처: 공기를 오래 지나는 시선)
+  - b. 프로브를 천정과 지평선에 두고 GPU 값과 C 값을 비교한다. 차이가 1% 안이어야 한다(정답의 사슬 첫 고리).
+  - c. 높이 오프셋 0 → 10 → 40 km. 예측: 하늘의 밝기와 색은? (어두워지고 짙은 파랑으로)
+  - d. 해상도 Scale 1과 4에서 GPU 시간. 예측: 비용이 픽셀 수에 비례할까?
+- **확인 질문**:
+  1. 같은 Rayleigh 산란으로 하늘은 파랗고 해질녘의 지평선은 붉다. 둘을 한 식으로 설명할 수 있나?
+  2. 지평선이 천정보다 밝고 흰 이유는?
+  3. 왜 `T(x, 해)`가 적분 안에 있나? 빼면 무엇이 틀리나?
+  4. 1080p에서 N = 32, M = 16이면 프레임당 지수 함수를 몇 번 계산하나?
+- **읽기 순서**: C의 `nv_atmosphere_sky_radiance` → WGSL의 같은 이름의 함수(나란히) → 하늘 패스의 정점/프래그먼트 → 렌더러 연결.
+- **다음의 동기**: 해 주변의 후광, 연무, 지평선 아래가 없다. 그리고 비싸다(실험 d).
+
+### 2단계: Mie, 오존, 해 원반, 지면
+
+- **배울 것**: Mie 위상 함수와 비등방성 g, 산란과 흡수의 차이, 오존 층, 해 원반의 radiance, 지면의 반사.
+- **이론**: 2, 4(Mie), 6.
+- **만드는 것**: 적분에 Mie와 오존, 해 원반, 지면. C와 WGSL 둘 다. 성분 보기 `RAYLEIGH`, `MIE`. 그래프: 위상 함수(각도별, 로그 축).
+- **볼 것**: 해 주변의 흰 후광, 해 원반(bloom으로 빛난다), 지평선 아래의 지면.
+- **실험**:
+  - a. `mie_anisotropy` 0 → 0.95. 예측: 후광의 크기와 밝기는? 위상 함수 그래프와 비교한다.
+  - b. `mie` 10배. 예측: 하늘이 더 파래질까, 희어질까?
+  - c. 해 고도 2°에서 `ozone` 1과 0의 천정 색. 예측: 오존이 없으면 해질녘 천정은 무슨 색일까?
+  - d. `sun_disk` 0.545° → 5°. 예측: 원반이 커지면 원반의 밝기는? (같은 E를 큰 Ω로 나눈다)
+- **확인 질문**:
+  1. 연무가 하늘을 희게 만드는 이유를 계수의 파장 의존으로 설명할 수 있나?
+  2. 오존은 흡수만 하는데 왜 해질녘에만 눈에 띄나?
+  3. 해 원반의 radiance가 하늘보다 수만 배 큰 이유는?
+  4. 지면의 식에 왜 1/π가 있고, 엔진 단위에서는 어떻게 되나?
+- **다음의 동기**: 정답이 생겼다. 이제 같은 답을 빠르게: 가장 안쪽의 적분(해 방향 투과율)부터.
+
+### 3단계: 투과율 LUT
+
+- **배울 것**: 미리 계산, 대칭성으로 차원 줄이기, (h, μ)의 매개화, 선형 필터의 오차, LUT를 다시 만드는 조건.
+- **이론**: 3, 9.
+- **만드는 것**: 투과율 LUT compute 패스, 토글 "Transmittance LUT", 차이 보기, Textures 탭 항목, 대기 compute의 타임스탬프. 공부용
+  분기 "균일 매핑"(지평선을 촘촘히 하지 않는 매핑).
+- **볼 것**: 그림은 거의 같고 GPU 시간이 준다. 차이 보기에서 오차가 지평선 근처에 모인다. Textures 탭에서 LUT의 모양.
+- **실험**:
+  - a. 토글을 끄고 켜며 GPU 시간. 예측: 얼마나 줄까? (M번의 지수 계산이 텍스처 한 번)
+  - b. 차이 보기의 배율을 키워 오차가 어디 있는지 본다.
+  - c. "균일 매핑"을 켠다. 예측: 오차가 어디서 커질까?
+  - d. 해를 돌린다 / `rayleigh`를 바꾼다. Study 섹션의 "LUT를 만든 횟수"가 언제 오르나?
+- **확인 질문**:
+  1. 투과율이 위치 3개와 방향 2개가 아니라 (h, μ) 두 값에만 달린 이유는?
+  2. 해를 돌려도 LUT를 다시 만들지 않아도 되는 이유는?
+  3. LUT의 v축(μ)을 지평선 근처에서 촘촘히 하는 이유는?
+- **다음의 동기**: 하늘이 실제보다 어둡다(특히 해에서 먼 쪽, 해가 진 뒤). 한 번만 꺾인 빛만 셌기 때문이다.
+
+### 4단계: 다중 산란 LUT
+
+- **배울 것**: 산란의 차수, 등방 근사, 등비급수, 근사의 한계.
+- **이론**: 7.
+- **만드는 것**: 다중 산란 LUT compute 패스(텍셀마다 방향 64개를 workgroup이 나눠 적분), 적분에 Ψ_ms 항, 토글 "Multiple scattering",
+  성분 보기 `MULTIPLE`. C 판에도 같은 항.
+- **볼 것**: 하늘이 밝아진다. 해가 진 직후에도 하늘이 완전히 검지 않다. 짙은 연무에서 차이가 크다.
+- **실험**:
+  - a. 토글을 끄고 켠다. 예측: 어느 쪽 하늘이 가장 많이 바뀔까?
+  - b. `mie` 20배에서 토글. 예측: 단일 산란만으로는 짙은 안개가 어떻게 보일까?
+  - c. 해 고도 −3°에서 `SINGLE`과 `MULTIPLE` 보기.
+  - (선택) 4-b. C의 몬테카를로 경로 추적(한 방향, Debug 빌드만)과 근사를 프로브 방향에서 비교한다. 연무를 짙게 할수록 차이가 커지는지 본다(합의할 것 7).
+- **확인 질문**:
+  1. 2차 이상의 산란을 등방이라 봐도 되는 이유는? 언제 안 되나?
+  2. f_ms는 무엇의 비율이고, 1 / (1 − f_ms)는 왜 나오나?
+  3. 이 LUT가 해의 천정각과 높이 두 값에만 달린 이유는?
+- **다음의 동기**: 하늘은 맞지만 여전히 픽셀마다 N걸음을 적분한다.
+
+### 5단계: 하늘 뷰 LUT
+
+- **배울 것**: 시점에 따른 LUT, 지평선을 촘촘히 한 위도 매핑, 방위각을 해 기준으로 재는 이유, 고주파(해 원반)를 LUT 밖에 두는 이유,
+  비용이 해상도와 무관해지는 것.
+- **이론**: 9.
+- **만드는 것**: 하늘 뷰 LUT compute(192 × 108, 매 프레임), 하늘 패스가 LUT를 읽는다. 토글 "Sky-view LUT". 하늘 뷰 LUT를 만드는
+  compute와 곧은 하늘 패스는 같은 WGSL 함수를 부른다.
+- **볼 것**: 그림은 거의 같고, GPU 시간이 해상도에 덜 의존한다.
+- **실험**:
+  - a. 토글을 끄고 켜며 Scale 1과 4에서 GPU 시간(1단계 실험 d와 비교).
+  - b. 차이 보기: 오차가 해 주변과 지평선에 모이는지.
+  - c. 높이 오프셋 40 km에서 차이 보기. 예측: 매개화가 높은 곳에서도 맞을까?
+- **확인 질문**:
+  1. 이 LUT는 왜 매 프레임 다시 만드나? 무엇이 변수에 들어가나?
+  2. 해 원반을 LUT에 넣으면 어떻게 될까?
+  3. 방위각을 북쪽이 아니라 해 기준으로 재면 무엇이 좋아지나?
+- **다음의 동기**: 하늘은 끝났다. 하지만 물체는 대기 밖에 있는 것처럼 선명하다.
+
+### 6단계: 대기 원근
+
+- **배울 것**: 유한한 거리까지의 같은 적분, color · T + S, 프러스텀 볼륨(froxel)과 깊이 분포, 거리 배율.
+- **이론**: 8.
+- **만드는 것**: 먼저 프래그먼트마다 곧은 적분, 그 다음 32 × 32 × 32 볼륨 compute와 메시 셰이더. 토글 "Aerial volume",
+  `aerial_scale` 파라미터. 쇼케이스의 `aerial_scale`과 노출을 정한다.
+- **볼 것**: 먼 바닥과 행성 모형이 하늘 색으로 흐려진다. 해질녘엔 붉게.
+- **실험**:
+  - a. `aerial_scale` 1 → 100 → 1000. 예측: 1에서 보일까? (100 m의 실제 공기는 거의 투명하다)
+  - b. 토글로 곧은 적분과 볼륨 비교, 차이 보기.
+  - c. 해를 등지고 볼 때와 해를 향해 볼 때 먼 곳의 색.
+- **확인 질문**:
+  1. 하늘과 대기 원근이 "같은 적분"이라는 것은 무슨 뜻인가?
+  2. 볼륨이 투과율을 RGB가 아니라 회색 하나로 담는 근사는 무엇을 잃나?
+  3. 거리 칸을 제곱 분포로 나누는 이유는?
+- **다음의 동기**: 그늘 속이 여전히 고정된 회색이다.
+
+### 7단계: 하늘의 주변광
+
+- **배울 것**: radiance에서 irradiance로(코사인 가중 반구 적분), 지면에서 튀는 빛.
+- **이론**: 10.
+- **만드는 것**: 하늘 뷰 LUT를 반구 적분하는 compute(위 조도, 아래 조도), 메시 셰이더가 법선의 y로 섞는다. 토글 "Sky ambient"(끄면
+  지금의 `ambient`). 그래프 대신 Study 섹션에 두 조도의 색 견본.
+- **볼 것**: 한낮에 그늘이 푸르스름하고, 해질녘엔 전체가 붉고 어두워진다.
+- **실험**:
+  - a. 토글을 끄고 켜며 그늘 속 색. 예측: 한낮의 그늘은 무슨 색일까?
+  - b. `ground_albedo` 0 → 1. 예측: 무엇의 어느 쪽이 밝아질까?
+- **확인 질문**:
+  1. 위를 보는 면과 옆을 보는 면의 하늘 조도가 다른 이유는?
+  2. 하늘의 radiance에 π를 곱한 것(0번)이 여기서 왜 맞아떨어지나?
+
+### 8단계: 마무리 (새 개념 없음)
+
+이펙트(알파 파티클, 데칼, 선분)의 대기 원근, 쇼케이스 다듬기, AGENTS.md 정리, "구현 결과"에 단계별 GPU 시간 표. 공학 작업이라
+사용자가 원하면 건너뛰거나 나중에 한다(합의할 것 3).
+
+---
+
+## 6. 공부 도구
+
+모두 해 노드의 Inspector, Atmosphere 섹션 아래 **Study** 섹션에 있다(데스크톱과 폰 같다). 편집기 도구라 저장하지 않고 undo도 없다.
+엔진 쪽 설정은 `NvAtmosphereStudy`이고 0이 "모든 최적화 켬, 최종 보기"다.
+
+| 도구 | 하는 일 | 생기는 단계 |
+|---|---|---|
+| 그래프: 밀도 | 높이 0~60 km의 Rayleigh, Mie, 오존 밀도(`igPlotLines`, C 함수로 그린다) | 0 |
+| 그래프: 투과율 | 해의 고도 −5°~90°에 따른 R, G, B 투과율, 지금 해의 고도 표시 | 0 |
+| 그래프: 위상 함수 | 각도 0~180°의 p_R, p_M(지금의 g), 로그 축 | 2 |
+| 걸음 수 | 곧은 적분의 N(시선), M(해 방향): 4~128 | 1 |
+| 높이 오프셋 | 대기 계산에서만 카메라를 0~50 km 올린다 | 1 |
+| 성분 보기 | `FINAL`, `TRANSMITTANCE`, `SINGLE`, `MULTIPLE`, `RAYLEIGH`, `MIE`, `DIFFERENCE` | 1부터 하나씩 |
+| 최적화 토글 | Transmittance LUT, Multiple scattering, Sky-view LUT, Aerial volume, Sky ambient. 끄면 곧은 적분(다중 산란과 주변광은 끄면 빠진다) | 3부터 하나씩 |
+| 차이 보기 | 하늘 픽셀마다 LUT 경로와 곧은 경로를 둘 다 계산해 \|차이\| / 값 × 배율을 보인다(배율 1~1000) | 3 |
+| 프로브 | "Place probe"를 누른 뒤 뷰포트를 탭하면 그 픽셀에 십자가 남는다. 그 픽셀의 시선(해 기준 고도, 방위), GPU의 HDR 값(노출 전, 씬 색 텍셀 하나를 읽어 온다), 같은 시선의 C 값과 성분(Rayleigh, Mie, 다중), 상대 차이. 메시가 있는 픽셀은 GPU 값만 | 1 |
+| LUT를 만든 횟수 | 투과율/다중 산란, 하늘 뷰, 볼륨 | 3 |
+| GPU 시간 | 대기 compute 패스, 씬 패스(하늘 포함) | 1 |
+| 경로 추적 (선택) | C의 몬테카를로 경로 추적으로 프로브 방향의 radiance(수 초 걸림, Debug 빌드만) | 4 (합의할 것 7) |
+
+- 프로브의 읽기는 타임스탬프와 같은 규칙을 따른다: 다른 읽기가 진행 중이 아닐 때 시작하고, 값은 몇 프레임 늦게 온다.
+- 프로브의 십자는 뷰포트에 그리는 편집기 UI의 예외다(빌드 표시, 기즈모와 같이). AGENTS.md에 예외로 적는다.
+- 프로브가 기다리는 동안의 탭은 선택하지 않는다(배지 탭처럼 `pick`이 먼저 가로챈다).
+
+---
+
+## 7. 설계
+
+### 서드파티 (AGENTS.md에 따라 먼저 찾음)
+
+| 후보 | 무엇인가 | 언어, 라이선스 | 장단점 |
 |---|---|---|---|
-| **LUT 네 장, Hillaire 2020** (권장) | 투과율 LUT와 다중 산란 LUT는 대기 값이 바뀔 때만, 하늘 뷰 LUT와 대기 원근 볼륨은 매 프레임 compute로 만든다. 하늘과 대기 원근은 그 LUT를 읽는다 | 프레임당 비용이 작고 해상도와 무관하다(논문: PS4에서 LUT와 하늘 합쳐 약 0.3 ms). 다중 산란이 근사로 들어가 해질녘과 두꺼운 연무가 그럴듯하다. 모든 값을 실시간으로 바꿀 수 있다 | LUT 해상도가 낮아 해 원반 주변 같은 고주파는 따로 그린다(해 원반은 하늘 패스에서 직접). 대기 원근 볼륨은 거리 방향 32 칸이라 먼 곳의 경계가 부드럽다 |
-| 픽셀마다 레이 마칭 (Nishita식 단일 산란) | 하늘 픽셀마다 시선을 따라 적분한다 | 코드가 가장 짧다 | 픽셀마다 수십 걸음 × 해 방향 적분. 폰과 큰 해상도에 비싸고, 다중 산란이 없어 해질녘이 어둡다 |
-| 미리 계산한 4D 산란 (Bruneton) | 위 후보 | 정확 | 위 후보의 단점 |
-| 해석식 하늘 (Hosek-Wilkie) | 위 후보 | 가장 쌈 | 대기 원근과 햇빛 색이 없다 |
-
-## 공부를 위한 구성
-
-이 기능은 처음 구현하는 기술이라 공부도 목적이다. 그래서 순서와 도구를 다음처럼 정한다.
-
-- **느린 정답부터.** 첫 단계는 LUT 없이 픽셀마다 시선을 적분하는 하늘(기준, reference)이다. 식이 코드에 한 줄씩 그대로 보인다.
-  LUT는 그 다음에 하나씩, **같은 답을 빠르게 내는 최적화**로 넣는다. LUT를 하나 넣을 때마다 기준과 화면을 비교해 그 LUT가
-  무엇을 바꿨는지(또는 틀렸는지) 본다.
-- **기준 모드는 남긴다.** 다 만든 뒤에도 View 탭에서 하늘을 기준(픽셀마다 적분)으로 그릴 수 있다. 다중 산란을 빼면 기준과
-  LUT 결과가 가까워야 하고(시험), 다중 산란이 무엇을 더하는지는 둘을 번갈아 보면 보인다.
-- **성분 보기.** View 탭의 "Atmosphere view"가 하늘과 대기 원근의 한 항만 보여 준다: 최종, 투과율, 단일 산란, 다중 산란,
-  Rayleigh만, Mie만. 저장하지 않는 편집기 도구다.
-- **LUT를 눈으로.** Textures 탭이 투과율, 다중 산란, 하늘 뷰 LUT를 보여 준다. 각 LUT의 축이 무엇인지 스펙의 표와 셰이더 주석에 적는다.
-- **식과 코드를 잇는다.** 셰이더의 각 함수 위 주석에 아래 "이론 요약"의 번호와 논문의 해당 절을 적는다.
-- **CPU에도 한 벌.** 투과율은 C로도 있어(`nv_atmosphere_transmittance`) ctest로 값을 손으로 계산한 답과 맞춘다. 셰이더를 의심할 때
-  비교할 기준이다.
-
-## 이론 요약
-
-기호: 시선 위의 점 x, 거리 t, 높이 h(x). σ_s 산란 계수, σ_a 흡수 계수, σ_t = σ_s + σ_a 소멸 계수(1/km). 각 성분의 계수는 지면 값 ×
-밀도 d(h)이다: Rayleigh와 Mie는 d = exp(−h / H)(H는 각각 8 km, 1.2 km), 오존은 max(0, 1 − |h − 25| / 15).
-
-1. **투과율.** 두 점 사이를 지나며 남는 빛의 비율. T(a, b) = exp(−∫ₐᵇ σ_t(x) dx). 적분 안의 값을 광학 깊이라 한다.
-   파랑의 Rayleigh 계수가 빨강의 약 6배라 긴 경로(해질녘)에서는 빨강이 남는다.
-2. **위상 함수.** 빛이 θ만큼 꺾여 산란될 확률 밀도. Rayleigh: p_R(θ) = 3/(16π) (1 + cos²θ). Mie: Cornette-Shanks
-   p_M(θ) = 3/(8π) · (1 − g²)(1 + cos²θ) / ((2 + g²)(1 + g² − 2g cosθ)^{3/2}). g가 클수록 앞쪽(해 주변)에 몰린다.
-3. **단일 산란.** 시선 위 각 점에서 햇빛이 한 번 꺾여 눈으로 오는 빛의 합.
-   L₁ = ∫₀ᵗᵐᵃˣ T(c, x) · Σ_i σ_s,i(x) p_i(θ) · T(x, 해) · E_sun · V(x) dt. V는 행성이 해를 가리는지(0 또는 1).
-   기준 모드가 이것을 그대로 적분한다(시선 위 수십 걸음, 각 걸음에서 T(x, 해)는 투과율로).
-4. **다중 산란 (Hillaire 근사).** 두 번 이상 꺾인 빛은 방향에 거의 무관하다고 보고(등방), 한 점에서 모든 방향으로 한 번 더
-   산란되는 비율 f_ms가 매번 같다고 보면 무한 등비급수가 된다: Ψ_ms = L₂ / (1 − f_ms). 다중 산란 LUT가 높이와 해의 천정각마다
-   이 값을 담고, 3번의 적분에 σ_s(x) · Ψ_ms 항이 더해진다(논문의 다중 산란 절).
-5. **대기 원근.** 물체까지의 시선에 대해 3, 4번을 적분한 산란 S와 투과율 T. 화면 색은 color · T + S.
-6. **지면.** 지평선 아래 시선은 행성에서 끝나고, 그곳의 지면이 반사율 × (햇빛 + 하늘) / π로 빛난다.
-
-LUT는 이 적분들의 결과를 낮은 해상도로 미리 담는 것이다: 투과율 LUT는 1번(해 방향 T를 걸음마다 다시 적분하지 않게), 다중
-산란 LUT는 4번, 하늘 뷰 LUT는 3+4번을 시선 방향마다, 대기 원근 볼륨은 5번을 화면 칸과 거리마다.
-
-## 결정 (제안)
+| **직접 작성, Hillaire 2020** (권장) | 이 스펙 | C17, WGSL | 공부가 목적이므로 가장 맞다: 모든 식을 우리가 쓴다. 렌더러의 패스, MSAA, 자체 해상도, reverse Z, HDR에 그대로 들어간다 |
+| sebh/UnrealEngineSkyAtmosphere | 저자의 참조 구현 | C++/HLSL(D3D11), MIT | 직접 쓰지는 못한다. 식, 상수, 매개화를 확인하는 자료. 코드를 옮기면 MIT 고지를 남긴다(기본은 옮기지 않고 식으로 쓴다) |
+| webgpu-sky-atmosphere (JolifantoBambla) | Hillaire 기법의 WebGPU 포팅 | TypeScript/WGSL, MIT | 장치와 패스가 wasm 밖 JS에 생기고, 후처리 방식이라 파티클의 대기 원근이 틀린다. 무엇보다 공부가 되지 않는다. WGSL은 참고 자료 |
+| Bruneton 2017, precomputed_atmospheric_scattering | 4D 산란 LUT를 미리 계산 | C++/GLSL, BSD | 값을 바꿀 때마다 무거운 재계산. 해설이 아주 좋은 코드라 읽을거리로 쓴다 |
+| Hosek-Wilkie 2012, Preetham 1999 | 해석식 하늘 | C, BSD-3 / 공식 | 하늘 색뿐이고 물리를 배우지 못한다 |
 
 ### 모델
 
 | 주제 | 결정 |
 |---|---|
-| 행성 | 반지름 6360 km의 공, 대기의 꼭대기 6460 km. 월드의 y = 0이 지면이고 행성의 중심은 (0, −6360 km, 0)이다. 씬의 1 단위는 1 m |
-| 카메라 높이 | 6360 km + max(카메라 y, 0) / 1000 + 0.01 km. 0.01 km(10 m)를 더해 지면에 붙은 카메라에서 LUT 매개화가 무너지지 않게 한다(참조 구현의 `PLANET_RADIUS_OFFSET`) |
-| 매질 | Rayleigh(지수 분포, 높이 8 km), Mie(지수 분포, 높이 1.2 km, 산란과 흡수), 오존(흡수만, 25 km를 중심으로 폭 30 km의 삼각 분포). 계수는 엔진 구조체에 물리 값(1/km)으로 둔다. 아래 "지구 기본값" |
-| 위상 함수 | Rayleigh: 3/(16π)(1 + cos²θ). Mie: Cornette-Shanks, `g` 하나 |
-| 다중 산란 | Hillaire의 근사: 등방 2차 이상 산란을 32 × 32 LUT 하나로(해의 천정각, 높이) |
-| 해 | 첫 directional light. 방향은 그 노드의 −Z, 해의 조도는 `light.color × light.intensity`. 그런 빛이 없으면 해가 없는 대기다(하늘이 검다) |
-| 단위 | 하늘의 radiance에 **π를 곱한다.** 엔진의 확산 조명에 1/π가 없으므로, 그래야 흰 면(albedo 1)과 하늘이 같은 단위로 비교된다. 하늘이 너무 밝거나 어두운 것은 노출로 맞춘다 |
-| 해 원반 | 하늘 패스가 직접 그린다: 시직경 안이면 해의 조도 × 투과율 / 원반의 입체각(× π, 위와 같은 단위), 가장자리 어두워짐(limb darkening) 포함. 밝기가 매우 커서 bloom이 빛나게 한다 |
+| 행성 | 반지름 6360 km, 대기의 꼭대기 6460 km. 월드의 y = 0이 지면, 행성의 중심은 (0, −6360 km, 0). 씬의 1 단위는 1 m |
+| 카메라 높이 | 6360 km + max(카메라 y, 0) / 1000 + 0.01 km + Study의 높이 오프셋. 0.01 km는 지면에 붙은 카메라에서 매개화가 무너지지 않게 한다(참조 구현의 `PLANET_RADIUS_OFFSET`) |
+| 매질 | 이론 2. 계수는 엔진 구조체에 물리 값(1/km)으로 둔다 |
+| 위상 함수 | 이론 4 |
+| 다중 산란 | 이론 7, 32 × 32 LUT |
+| 해 | 첫 directional light. 방향은 노드의 −Z, E_sun = `light.color × light.intensity`. 그런 빛이 없으면 하늘이 검다 |
+| 단위 | 이론 0: 하늘의 radiance에 π를 곱한다. 밝기는 노출로 맞춘다 |
 
-**지구 기본값** (Hillaire 2020, 참조 구현과 같음; 1/km)
-
-| 값 | R | G | B |
-|---|---|---|---|
-| Rayleigh 산란 | 5.802e-3 | 13.558e-3 | 33.1e-3 |
-| Mie 산란 | 3.996e-3 | 3.996e-3 | 3.996e-3 |
-| Mie 흡수 | 0.444e-3 | 0.444e-3 | 0.444e-3 |
-| 오존 흡수 | 0.650e-3 | 1.881e-3 | 0.085e-3 |
-
-Mie `g` 0.8, 지면 반사율 0.3.
+**지구 기본값** (Hillaire 2020; 1/km): Rayleigh 산란 (5.802, 13.558, 33.1)e-3, Mie 산란 3.996e-3, Mie 흡수 0.444e-3,
+오존 흡수 (0.650, 1.881, 0.085)e-3, Mie g 0.8, 지면 반사율 0.3.
 
 ### LUT와 패스
 
-모든 LUT는 `RGBA16Float`(compute에서 쓰기 전용 스토리지 텍스처로 쓰고, 셰이더에서는 선형 필터로 읽는다. 둘 다 WebGPU 코어에서 된다).
+LUT는 `RGBA16Float`: compute에서 쓰기 전용 스토리지 텍스처로 쓰고, 셰이더에서 선형 필터로 읽는다(둘 다 WebGPU 코어).
 
-| LUT | 크기 | 매개화 | 언제 만드나 |
-|---|---|---|---|
-| 투과율 | 256 × 64 | (높이, 시선의 천정각), 참조 구현의 비선형 매핑 | 대기 값이 바뀐 프레임 |
-| 다중 산란 | 32 × 32 | (해의 천정각, 높이). 화소마다 방향 64개를 workgroup 하나가 나눠 적분 | 대기 값이 바뀐 프레임, 투과율 다음 |
-| 하늘 뷰 | 192 × 108 | (방위각, 지평선 근처를 촘촘히 한 고도각), 카메라 높이와 해 방향 기준 | 매 프레임 |
-| 대기 원근 | 32 × 32 × 32 (3D) | 화면 uv × 거리 칸. rgb는 카메라부터 그 칸까지 산란된 빛, a는 투과율(회색 하나) | 매 프레임, 대기 원근이 켜진 동안 |
+| LUT | 크기 | 변수 | 언제 만드나 | 단계 |
+|---|---|---|---|---|
+| 투과율 | 256 × 64 | (h, μ), 지평선 근처를 촘촘히 | 대기 값이 바뀐 프레임 | 3 |
+| 다중 산란 | 32 × 32 | (h, μ_sun) | 대기 값이 바뀐 프레임, 투과율 다음 | 4 |
+| 하늘 뷰 | 192 × 108 | (해 기준 방위각, 지평선 근처를 촘촘히 한 고도각), 카메라 높이와 해 방향 | 매 프레임 | 5 |
+| 대기 원근 | 32 × 32 × 32 | 화면 uv × 거리 칸(제곱 분포). rgb 산란, a 투과율(회색) | 매 프레임 | 6 |
+| 하늘 조도 | 버퍼, 색 둘 | 위 반구, 아래 반구 | 매 프레임 | 7 |
 
 - "대기 값이 바뀌었다"는 `NvAtmosphere`의 매질 필드를 지난번과 비교해 안다(그림자 맵이 크기와 형식을 비교하는 것과 같다).
-  해의 방향과 카메라는 투과율과 다중 산란에 들어가지 않으므로 해를 돌려도 그 둘은 다시 만들지 않는다.
-- 네 compute 패스는 파티클 패스와 함께 그림자 패스 전에 기록한다. LUT는 렌더러가 대기를 처음 켤 때 만들고 다시 만들지 않는다
-  (크기가 고정이다). 꺼진 동안은 1 × 1 텍스처가 묶인다(bloom의 `bloom_dummy`와 같다).
-- 대기 원근의 거리 칸은 Hillaire 데모처럼 제곱 분포다(가까운 곳이 촘촘하다): 칸 k의 끝은 `aerial_distance × ((k + 1) / 32)²`.
+- compute 패스는 파티클 패스와 함께 그림자 패스 전에 기록한다. 대기가 꺼진 동안은 1 × 1 텍스처가 묶인다(`bloom_dummy`와 같다).
+- 토글로 꺼진 LUT는 만들지 않는다(비용 비교가 정직하도록).
 
 ### 씬 패스
 
-그리기 순서: 불투명 메시, **하늘**, 데칼, 디버그 라인, 선분, 알파 파티클, 가산 파티클(`vfx.md`의 순서에 하늘이 끼어든다).
+그리기 순서: 불투명 메시, **하늘**, 데칼, 디버그 라인, 선분, 알파 파티클, 가산 파티클.
 
 | 주제 | 결정 |
 |---|---|
-| 하늘 | 화면을 덮는 삼각형 하나, 깊이 0(가장 먼 곳)에 두고 비교 `GreaterEqual`, 깊이 쓰기 없음: 메시가 그리지 않은 픽셀만 남는다. 픽셀의 시선(역 view-projection)으로 하늘 뷰 LUT를 읽고 해 원반을 더한다. 대기가 꺼지면 그리지 않고 지금처럼 `clear_color`가 보인다 |
-| 파이프라인 | 씬 패스의 다른 파이프라인처럼 `NV_SCENE_FORMAT`, `renderer->scene_samples`. MSAA가 바뀌면 함께 다시 만든다 |
-| 대기 원근: 메시 | `fs_main`의 끝에서 `color × T + S`. (T, S)는 대기 원근 볼륨을 화면 uv(프래그먼트 위치 / 씬 해상도: 씬은 큰 타깃의 왼쪽 위에 그려지므로 타깃 크기가 아니다)와 카메라로부터의 거리로 읽는다. 첫 칸보다 가까우면 칸 0까지 선형으로 줄인다 |
-| 대기 원근: 이펙트 | 알파 파티클, 데칼, 알파 선분은 `color × T + S × alpha`, 가산 파티클과 가산 선분은 `color × T`(빛이 더해지는 것이라 산란을 두 번 더하지 않는다). 디버그 라인은 그대로 둔다(편집 도구다) |
-| 햇빛의 색 | 해의 조도에 카메라 높이에서 해 방향으로의 투과율을 곱해 `frame.light_color`에 넣는다. 그림자의 빛과 같은 값이다. CPU가 계산한다(아래 `nv_atmosphere_transmittance`): 씬이 100 m 안이라 높이에 따른 차이가 없고, 셰이더가 LUT를 읽지 않아도 되며 ctest로 시험할 수 있다 |
-| 주변광 (3단계) | compute 패스 하나가 하늘 뷰 LUT를 위쪽 반구에서 코사인 가중으로 적분해 하늘 조도(색 하나)를, 지면 반사율 × (햇빛 + 하늘 조도) / π로 아래쪽 조도를 만든다. 메시는 법선의 y로 둘을 섞는다. 1, 2단계 동안 주변광은 지금의 `ambient`다 |
-| 그림자 패스 | 바뀌지 않는다: `shadow_frame_group`은 LUT를 묶지 않는다 |
-| 업스케일 패스 | 바뀌지 않는다. 노출, 톤 매핑, bloom이 하늘에도 그대로 적용된다 |
-
-대기 원근의 거리 배율: 쇼케이스의 100 m는 실제 대기에서 거의 투명하다. `NvAtmosphere.aerial_scale`이 대기 원근에서만 거리에 곱해져
-(Unreal의 "Aerial Perspective View Distance Scale"과 같다) 작은 씬에서도 먼 곳이 흐려진다. 하늘 자체는 배율과 무관하다.
-볼륨이 덮는 거리 `aerial_distance`는 카메라의 `far × aerial_scale`이다(km로).
+| 하늘 | 화면 삼각형, 깊이 0(reverse Z의 가장 먼 곳), 비교 `GreaterEqual`, 깊이 쓰기 없음: 메시가 그리지 않은 픽셀만 남는다. 시선은 역 view-projection으로. 대기가 꺼지면 그리지 않고 `clear_color`가 보인다 |
+| 파이프라인 | `NV_SCENE_FORMAT`, `renderer->scene_samples`. MSAA가 바뀌면 함께 다시 만든다 |
+| 햇빛의 색 | `frame.light_color` = E_sun × 카메라 높이에서 해 방향의 투과율(C가 계산). 씬이 100 m 안이라 높이 차이는 버린다 |
+| 대기 원근: 메시 | `fs_main`의 끝에서 color · T + S. 볼륨을 화면 uv(프래그먼트 위치 / 씬 해상도: 씬은 큰 타깃의 왼쪽 위에 그려진다)와 거리로 읽는다 |
+| 대기 원근: 이펙트 (8단계) | 알파: color · T + S · alpha, 가산: color · T. 디버그 라인은 그대로 |
+| 거리 배율 | `aerial_scale`이 대기 원근에서만 거리에 곱해진다(Unreal의 "Aerial Perspective View Distance Scale"). 볼륨이 덮는 거리는 카메라 `far` × 배율 |
+| 그림자, 업스케일 패스 | 바뀌지 않는다 |
 
 ### 엔진
 
-새 모듈 `engine/atmosphere.h`, `engine/atmosphere.c`: 설정 구조체, 지구 기본값, GPU가 필요 없는 수학(ctest 대상). GPU 쪽(LUT,
-파이프라인, 패스)은 bloom처럼 `renderer.c`에 둔다.
+새 모듈 `engine/atmosphere.h`, `engine/atmosphere.c`: 설정, 지구 기본값, CPU의 적분(정답, ctest와 프로브와 그래프가 쓴다). GPU 쪽은
+bloom처럼 `renderer.c`에 둔다. WGSL의 적분 함수는 C 함수와 같은 이름, 같은 순서로 쓴다.
 
 ```c
 // engine/atmosphere.h
@@ -169,153 +407,165 @@ typedef struct NvAtmosphere {
     f32 aerial_scale;           // distances count this many times in aerial perspective; 0 = no aerial perspective
 } NvAtmosphere;
 
-// Earth's values (Hillaire 2020), with `on` set.
-NvAtmosphere nv_atmosphere_earth(void);
-
-// The light that reaches a point `altitude` km above the ground from a direction `cos_zenith` from straight up,
-// per channel, 0..1. 0 where the ray hits the planet.
-NvVec3 nv_atmosphere_transmittance(const NvAtmosphere* atmosphere, f32 altitude, f32 cos_zenith);
-```
-
-`NvRenderer`에 `NvAtmosphere atmosphere`(앱이 매 프레임 설정, `shadows`, `post`와 같다), LUT 텍스처와 뷰, compute 파이프라인 넷,
-하늘 파이프라인, 그리고 지난 매질 값이 생긴다. `FrameUniforms`에 `inverse_view_proj`와 `atmosphere`(x 켜짐, y 대기 원근 거리(m,
-배율 포함), z 씬 폭, w 씬 높이)가 더해지고, 프레임 bind group에 대기 원근 볼륨과 그 샘플러가 더해진다. `vfx.c`의 이펙트
-셰이더도 같은 두 바인딩을 받는다.
-
-공부와 검증용 보기(`NvRenderer.atmosphere_view`, 앱이 설정, 0이 최종):
-
-```c
 typedef enum NvAtmosphereView {
-    NV_ATMOSPHERE_VIEW_FINAL,         // the sky and aerial perspective as drawn
-    NV_ATMOSPHERE_VIEW_REFERENCE,     // the sky integrated per pixel, no LUT (single scattering, then multiple from the LUT if on)
-    NV_ATMOSPHERE_VIEW_TRANSMITTANCE, // T along each view ray, to the planet or the top of the atmosphere
+    NV_ATMOSPHERE_VIEW_FINAL,
+    NV_ATMOSPHERE_VIEW_TRANSMITTANCE, // T along each view ray
     NV_ATMOSPHERE_VIEW_SINGLE,        // single scattering only
     NV_ATMOSPHERE_VIEW_MULTIPLE,      // multiple scattering only
-    NV_ATMOSPHERE_VIEW_RAYLEIGH,      // the Rayleigh term only
-    NV_ATMOSPHERE_VIEW_MIE,           // the Mie term only
+    NV_ATMOSPHERE_VIEW_RAYLEIGH,
+    NV_ATMOSPHERE_VIEW_MIE,
+    NV_ATMOSPHERE_VIEW_DIFFERENCE,    // |LUT path - direct path| / direct path, times difference_gain
     NV_ATMOSPHERE_VIEW_COUNT,
 } NvAtmosphereView;
+
+// Study tools (docs/specs/atmosphere.md, "공부 도구"). Zeroed: every optimization on, the final image.
+typedef struct NvAtmosphereStudy {
+    NvAtmosphereView view;
+    b32 no_transmittance_lut;   // integrate toward the sun at every step instead
+    b32 uniform_transmittance;  // map the transmittance LUT evenly, without crowding the horizon
+    b32 no_multiple_scattering;
+    b32 no_sky_view_lut;        // integrate every sky pixel
+    b32 no_aerial_volume;       // integrate every fragment's ray
+    b32 no_sky_ambient;         // the renderer's fixed ambient instead
+    u32 view_steps, sun_steps;  // of the direct integrals; 0 = 32, 16
+    f32 altitude;               // km added to the camera's, for the atmosphere only
+    f32 difference_gain;        // 0 = 10
+} NvAtmosphereStudy;
+
+// One view ray's light, split as the study tools show it (radiance times pi: the engine's units).
+typedef struct NvSkySample {
+    NvVec3 rayleigh, mie, multiple, ground, sun_disk;
+    NvVec3 transmittance;
+} NvSkySample;
+
+NvAtmosphere nv_atmosphere_earth(void); // Earth's values (Hillaire 2020), with `on` set
+
+// The light that reaches a point `altitude` km above the ground from a direction `cos_zenith` from straight up, 0..1 per
+// channel; 0 where the ray hits the planet.
+NvVec3 nv_atmosphere_transmittance(const NvAtmosphere* atmosphere, f32 altitude, f32 cos_zenith);
+
+// The sky along `view` (unit, world) seen from `altitude` km with the sun toward `sun` (unit) giving `sun_illuminance`: the
+// direct integral the GPU's reference path does too.
+NvSkySample nv_atmosphere_sky(const NvAtmosphere* atmosphere, f32 altitude, NvVec3 view, NvVec3 sun, NvVec3 sun_illuminance,
+                              u32 view_steps, u32 sun_steps);
 ```
 
-기준 모드의 레이 마칭은 하늘 패스의 셰이더 안 함수 하나이고(시선 위 32걸음, 걸음마다 해 방향 투과율), 하늘 뷰 LUT의 compute도
-같은 함수를 부른다: 정답과 최적화가 같은 식을 쓴다. 성분 보기는 셰이더의 분기 하나로, 하늘과 메시의 대기 원근 모두에 적용된다
-(메시는 성분 보기에서 S만 보인다).
-
-타임스탬프: 대기 compute 패스에 쌍 하나(`NV_TIMESTAMP_COUNT` 12 → 14), `NvRenderer.gpu_atmosphere_ms`. Stress 탭의 GPU 줄과
-벤치마크 표에 열 하나(`at`)가 더해진다.
+`NvRenderer`에 `NvAtmosphere atmosphere`, `NvAtmosphereStudy atmosphere_study`(앱이 매 프레임 설정, `shadows`, `post`와 같다), LUT,
+파이프라인, 프로브 요청과 결과, 만든 횟수, `gpu_atmosphere_ms`가 생긴다. `FrameUniforms`에 `inverse_view_proj`와 대기 값이 더해진다.
+타임스탬프 쌍 하나(`NV_TIMESTAMP_COUNT` 12 → 14).
 
 ### 샌드박스
 
 | 주제 | 결정 |
 |---|---|
-| 어디에 적나 | **해 노드의 동작 `atmosphere`**(`scene_file.md`의 동작 종류에 하나 더함). 씬 파일이 정하고, 동작의 규칙(파라미터 표가 읽기, Inspector, 검색, 저장 `BHVR`, undo를 만든다)을 그대로 따른다. 해를 고르면 Inspector에 Light와 Atmosphere 섹션이 함께 보인다 |
-| 제약 | 씬에 `atmosphere`는 많아야 하나이고, 그 노드는 씬의 첫 directional light여야 한다. 아니면 씬 파일 오류다(줄 번호와 함께, 다른 오류와 같다) |
-| 매 프레임 | `behaviors.c`의 `atmosphere` 분기가 파라미터에서 `NvAtmosphere`를 만들어 `renderer.atmosphere`에 넣는다. 시간으로 움직이는 것이 없으므로 Edit와 Play가 같다. 동작이 없는 씬은 `atmosphere`를 0으로 둔다 |
-| Play | 하루의 흐름은 해 노드의 `spin`이다(새 코드 없음). Stop이 해의 회전을 되돌린다(노드의 `ROT`가 저장에 있다) |
-| 저장, undo | 새 태그 없음: 파라미터는 `BHVR`의 `PARM`으로 저장되고 Behaviors 범위로 undo된다. `SAVE_VERSION`은 그대로다. 옛 저장에 그 `BHVR`가 없으면 파일의 값이다 |
-| 쇼케이스 | `sun` 노드에 `atmosphere`를 단다. `aerial_scale`과 노출은 구현할 때 보며 정하고 이 표에 적는다 |
-| 스트레스 | 그대로(대기 없음). 벤치마크의 기존 결과와 비교할 수 있게 둔다 |
-| View 탭 | "Atmosphere view" 콤보(위의 보기들). 편집기 도구라 저장하지 않고 undo도 없다. 보이는 씬에 대기가 없으면 숨긴다 |
-| Textures 탭 | 투과율, 다중 산란, 하늘 뷰 LUT를 목록(`gather`)에 더한다. 대기 원근 볼륨은 3D라 미리보기가 없다("나중") |
+| 어디에 적나 | 해 노드의 동작 `atmosphere`(`scene_file.md`의 동작 종류에 하나 더함). 파라미터 표가 읽기, Inspector, 검색, 저장(`BHVR`), undo를 만든다 |
+| 제약 | 씬에 많아야 하나, 그 노드는 씬의 첫 directional light. 아니면 씬 파일 오류 |
+| 매 프레임 | `behaviors.c`의 `atmosphere` 분기가 `renderer.atmosphere`를 채운다. 시간으로 움직이는 것이 없어 Edit와 Play가 같다. 동작이 없는 씬은 0 |
+| Study | `Sandbox.atmosphere_study`(저장 안 함)를 `renderer.atmosphere_study`에 넣는다. UI는 6절 |
+| Play | 하루의 흐름은 해 노드의 `spin`. Stop이 해의 회전을 되돌린다 |
+| 저장, undo | 새 태그 없음, `SAVE_VERSION` 그대로 |
+| 쇼케이스 | `sun`에 `atmosphere`. `aerial_scale`과 노출은 6단계에서 정한다 |
+| 스트레스 | 대기 없음 |
+| Textures 탭 | 투과율, 다중 산란, 하늘 뷰 LUT(`gather`) |
 | 문자열 | 새 UI 문자열은 `sandbox/strings.c`에 한국어 행 |
 
 **`atmosphere` 동작의 키** (모두 파라미터, 모두 선택. 배율은 지구 기본값에 곱한다)
 
-| 키 | 값 | 범위 | 기본 | 뜻 | Inspector 이름표 |
+| 키 | 범위 | 기본 | 뜻 | 이름표 | 단계 |
 |---|---|---|---|---|---|
-| `rayleigh <배율>` | | 0–10 | 1 | Rayleigh 산란: 하늘의 파란색, 해질녘의 붉은색 | "Rayleigh" |
-| `mie <배율>` | | 0–20 | 1 | Mie 산란과 흡수: 연무, 해 주변의 흰 빛 | "Haze" |
-| `mie_anisotropy <g>` | | 0–0.99 | 0.8 | 해 주변 후광이 얼마나 좁은가 | "Haze glow" |
-| `ozone <배율>` | | 0–10 | 1 | 오존 흡수: 해질녘 천정의 파란색 | "Ozone" |
-| `ground_albedo r g b` | | 0–1 각각 | 0.3 0.3 0.3 | 행성 지면의 반사율: 지평선 아래의 색, 다중 산란, 3단계의 아래쪽 주변광 | "Ground albedo" |
-| `sun_disk <도>` | 도 | 0–10 | 0.545 | 해 원반의 시직경, 0이면 원반 없음 | "Sun disk" |
-| `aerial_scale <배율>` | | 0–1000 | 1 | 대기 원근의 거리 배율, 0이면 대기 원근 없음 | "Aerial distance" |
+| `rayleigh <배율>` | 0–10 | 1 | Rayleigh 산란 | "Rayleigh" | 0 |
+| `mie <배율>` | 0–20 | 1 | Mie 산란과 흡수 | "Haze" | 0 |
+| `ozone <배율>` | 0–10 | 1 | 오존 흡수 | "Ozone" | 0 |
+| `mie_anisotropy <g>` | 0–0.99 | 0.8 | 해 주변 후광의 좁기 | "Haze glow" | 2 |
+| `ground_albedo r g b` | 0–1 | 0.3 0.3 0.3 | 행성 지면의 반사율 | "Ground albedo" | 2 |
+| `sun_disk <도>` | 0–10 | 0.545 | 해 원반의 시직경, 0이면 없음 | "Sun disk" | 2 |
+| `aerial_scale <배율>` | 0–1000 | 1 | 대기 원근의 거리 배율, 0이면 없음 | "Aerial distance" | 6 |
 
 검색 키워드: sky, atmosphere, scattering, fog, haze, sunset, rayleigh, mie, ozone.
 
-```
-node sun
-    rotation ...
-    light
-        type directional
-        color 1 0.96 0.9
-        intensity 1.1
-    atmosphere
-        aerial_scale 50
-```
+---
 
-### 디버그 내보내기와 시험
+## 8. 시험
 
-Debug 빌드가 내보낸다:
+Debug 빌드가 내보낸다: `_sandbox_debug_set_atmosphere(rayleigh, mie, anisotropy, ozone, sun_disk, aerial_scale)`(보이는 씬의 `atmosphere`
+동작), `_sandbox_debug_set_sun(elevation_degrees, azimuth_degrees)`, `_sandbox_debug_set_atmosphere_study(view, flags, view_steps,
+sun_steps, altitude)`, `_sandbox_debug_atmosphere(n)`(0 켜짐, 1~3 LUT를 만든 횟수), `_sandbox_debug_set_probe(x, y)`,
+`_sandbox_debug_probe(i)`(0 준비됨, 1~3 GPU 값, 4~6 C 값).
 
-- `Module._sandbox_debug_set_atmosphere(rayleigh, mie, anisotropy, ozone, sun_disk, aerial_scale)`: 보이는 씬의 `atmosphere` 동작
-  (`_set_grid` 등과 같은 규칙).
-- `Module._sandbox_debug_atmosphere(n)`: 0 켜짐, 1 투과율/다중 산란 LUT를 만든 횟수, 2 하늘 뷰 LUT를 만든 횟수.
-- `Module._sandbox_debug_set_sun(elevation_degrees, azimuth_degrees)`: 첫 directional light 노드의 회전을 바꾼다.
-- `Module._sandbox_debug_set_atmosphere_view(view)`: `NvAtmosphereView`.
+**ctest** (`tests/atmosphere_test.c`, `engine/atmosphere.c`만):
 
-ctest (`tests/atmosphere_test.c`, `engine/atmosphere.c`만 링크):
+- 천정 투과율이 손 계산(약 0.940, 0.868, 0.762)과 1% 안. 고도가 낮을수록 줄고 파랑이 먼저 준다. 행성을 맞히면 0, 대기 밖은 1. (0단계)
+- 하늘: 천정이 파랗고(b > r), 해가 2°일 때 해 쪽 지평선이 붉고(r > b), 걸음 수를 늘리면 값이 수렴한다(64와 128의 차이 < 0.5%). (1단계)
+- 위상 함수를 구 위에서 적분하면 1(수치 적분, 1%). Mie가 있으면 해 쪽이 반대쪽보다 밝다. (2단계)
 
-- 지면에서 천정 방향 투과율이 지구 기본값의 광학 깊이로 계산한 값(약 0.940, 0.868, 0.762)과 1% 안에서 같다.
-- 투과율은 고도각이 낮아질수록 줄고, 파랑이 빨강보다 빨리 준다. 행성을 맞히는 방향은 0이다.
-- 대기 꼭대기 밖에서는 1이다.
+**Playwright** (Release와 Debug, swiftshader). 단계마다 그 단계의 줄이 더해진다.
 
-Playwright (Release와 Debug 둘 다, swiftshader):
+| 시험 | 단계 |
+|---|---|
+| 해를 낮추면 바닥 픽셀이 붉어진다. 파라미터를 바꾸면 undo 한 걸음, 저장 왕복이 같다. Play와 Stop 뒤 `save_crc`가 같다 | 0 |
+| 하늘 픽셀이 파랗다. **프로브: GPU의 곧은 적분과 C가 하늘 픽셀 셋(천정 근처, 해 반대편, 지평선)에서 1% 안** | 1, 2 |
+| MSAA 끔/4x, Scale 2, Fixed에서 같은 결과, WebGPU 오류 없음, 성분 보기마다 오류 없음 | 1 |
+| **LUT 경로와 곧은 경로가 해의 고도 45°, 10°, 2°에서 하늘 픽셀 셋에서 상대 5% 안**(해 원반 근처 제외). 해를 돌려도 투과율 LUT 횟수가 그대로, `rayleigh`를 바꾸면 1 오름 | 3, 4, 5 |
+| `aerial_scale` 1000에서 먼 바닥이 1보다 하늘 색에 가깝다. 볼륨과 프래그먼트별 곧은 적분이 5% 안 | 6 |
 
-1. 쇼케이스: 뷰포트 위쪽(하늘) 픽셀이 파랗다(b > r). `_sandbox_debug_atmosphere(0)`이 1.
-2. `_sandbox_debug_set_sun(2, 0)`: 해 쪽 지평선 픽셀이 붉어진다(r > b). 해를 돌려도 `_sandbox_debug_atmosphere(1)`은 그대로이고,
-   `_sandbox_debug_set_atmosphere`로 `rayleigh`를 바꾸면 1 오른다.
-3. `aerial_scale` 1과 1000에서 바닥의 먼 쪽 픽셀을 비교한다: 1000이 하늘 색에 더 가깝다.
-4. 파라미터를 바꾼 뒤 `_sandbox_debug_undo_steps()`가 1 오르고, undo가 되돌리며, `_sandbox_debug_save_round_trip()`이 같다.
-5. Play와 Stop 뒤 `_sandbox_debug_save_crc()`가 같다(해에 `spin`을 단 시험용 씬 텍스트 없이, 노드의 회전으로).
-6. MSAA 끔/4x, 해상도 Scale 2, Fixed에서 1번이 같다. WebGPU 검증 오류가 없다(`_sandbox_debug_wgpu_error`).
-7. **기준과 LUT 비교**: 해의 고도 45°, 10°, 2°마다 최종과 기준(`REFERENCE`)의 하늘 픽셀 몇 개(천정, 해 반대편, 지평선)가 상대 오차
-   5% 안이다. 해 원반 근처는 빼고 본다(하늘 뷰 LUT의 해상도 한계). LUT를 넣는 단계마다 이 시험이 그 LUT를 검사한다.
-8. 성분 보기마다 WebGPU 오류가 없고, `SINGLE` + `MULTIPLE`의 픽셀이 `FINAL`의 하늘 픽셀과 가깝다(해 원반 제외).
+정답의 사슬: ctest(손 계산 ↔ C) → 프로브 시험(C ↔ GPU 곧은 적분) → 차이 시험(GPU 곧은 적분 ↔ GPU LUT).
 
-## 단계
+---
 
-각 단계는 화면에 무언가 새로 보이고, 앞 단계의 결과와 비교할 수 있게 나눈다. 단계마다 그 단계의 이론(위 "이론 요약"의 번호)을 적는다.
+## 9. 합의할 것
 
-0. **바탕** (이론 1): `engine/atmosphere.c`, `NvAtmosphere`, 지구 기본값, CPU 투과율과 ctest. 햇빛의 색(해가 낮으면 바닥이 붉어진다).
-   샌드박스의 `atmosphere` 동작과 Inspector, 쇼케이스. 하늘은 아직 `clear_color`다.
-1. **기준 하늘** (이론 2, 3, 6): 하늘 패스, 픽셀마다 단일 산란을 적분한다. 해의 방향도 걸음마다 직접 적분한다(LUT 없음). 해 원반.
-   성분 보기의 `TRANSMITTANCE`, `SINGLE`, `RAYLEIGH`, `MIE`. 시험 1, 2, 4, 5, 6. 느려도 된다: 이것이 정답이다.
-2. **투과율 LUT** (이론 1): 해 방향의 적분을 LUT 한 번의 읽기로 바꾼다. Textures 탭에 보인다. 기준 모드는 계속 직접 적분해 둘을 비교한다.
-3. **다중 산란 LUT** (이론 4): 하늘이 밝아지고 해질녘의 색이 바뀐다. `MULTIPLE` 보기. 이 단계부터 기준도 다중 산란 LUT를 더한다.
-4. **하늘 뷰 LUT**: 하늘 패스가 픽셀마다 적분하지 않고 LUT를 읽는다. 기준은 `REFERENCE` 보기로 남는다. 시험 7, 8. 타임스탬프로 1단계와
-   GPU 시간을 비교해 이 LUT가 얼마를 아꼈는지 "구현 결과"에 적는다.
-5. **대기 원근** (이론 5): 볼륨 compute, 메시와 이펙트 셰이더. 시험 3.
-6. **하늘의 주변광**: 반구 조도 compute와 메시 셰이더. 쇼케이스의 노출을 다시 맞춘다.
-
-각 단계가 끝나면 `AGENTS.md`(모듈 목록, 규칙)와 이 스펙의 "구현 결과"를 고친다. "구현 결과"에는 단계마다 배운 것(틀렸던 곳, 기준과
-달랐던 곳과 그 이유)도 짧게 적는다.
-
-## 합의할 것
-
-1. **직접 작성(Hillaire 2020), 새 라이브러리 없음.** (권장)
-2. **씬 파일에서 어디에 적나.** 해 노드의 동작 `atmosphere`(권장: 저장, undo, Inspector, 검색이 공짜다), 또는 최상위 블록
-   `atmosphere` + View 탭의 섹션(씬 설정으로는 더 자연스럽지만 새 저장 태그와 undo의 Scene settings 범위 행이 필요하다).
-3. **대기 원근을 이펙트에도 넣나.** 넣는다(권장: 파티클이 먼 곳에서 떠 보이지 않는다), 또는 메시에만.
-4. **주변광(3단계)을 이 스펙에 넣나.** 넣는다(권장: 해질녘에 그림자 속이 파랗게 남는 것이 대기의 큰 몫이다), 또는 "나중".
-5. **스트레스 씬**: 대기 없음(권장, 벤치마크 비교 유지), 또는 켬.
-6. ~~누가 코드를 쓰나~~ **정함 (2026-10-11): Claude가 단계마다 쓰고, 사용자가 읽고 질문한 뒤 다음 단계로 간다.** 구현은 사용자가
-   시작하라고 할 때 시작한다. 단계마다 커밋을 나누고, 그 단계의 이론과 코드의 대응을 짧게 설명한다.
+1. **직접 작성(Hillaire 2020), 새 라이브러리 없음.** (권장: 공부가 목적이다)
+2. **씬 파일에서 어디에 적나.** 해 노드의 동작 `atmosphere`(권장), 또는 최상위 블록과 View 탭.
+3. **8단계(이펙트의 대기 원근)를 이 스펙에 두나.** 새 개념이 없으므로 "나중"으로 미뤄도 된다(권장: 7단계까지 하고 그때 정한다).
+4. **7단계(주변광)를 두나.** 둔다(권장: irradiance라는 새 개념이고, 그늘의 색으로 결과가 크게 보인다).
+5. **스트레스 씬**: 대기 없음(권장).
+6. ~~누가 코드를 쓰나~~ **정함 (2026-10-11): Claude가 단계마다 쓰고 사용자가 읽고 질문한 뒤 넘어간다**(3절).
+7. **4단계의 선택 실험(C의 몬테카를로 경로 추적)**: 한다(약 150줄, Debug 빌드의 공부 도구), 또는 하지 않는다. 다중 산란 근사를 정답과
+   직접 비교하는 유일한 방법이다.
+8. **공부 도구를 끝까지 남기나.** 남긴다(권장: 시험이 쓰고, 나중에 다시 공부할 때 쓴다), 또는 8단계에서 걷어 낸다.
+9. **프로브의 십자**를 뷰포트에 그리는 편집기 UI의 예외로 두나(권장), 또는 프로브를 Study 섹션의 고도/방위 슬라이더로만 정하나
+   (그러면 GPU 값과의 비교가 없다).
 
 ## 범위 밖 (나중)
 
-- 볼류메트릭 그림자(빛줄기): 대기 원근 볼륨이 그림자 맵을 읽어야 한다.
-- 구름, 별, 달, 밤하늘. 해가 지평선 아래면 하늘이 검다(다중 산란이 남기는 약한 빛뿐).
-- 높이 안개(지면 근처의 짙은 안개), 우주에서 행성을 보는 시점(카메라 높이는 수 m~수 km를 가정한다).
+- 볼류메트릭 그림자(빛줄기), 구름, 별, 달, 밤하늘, 높이 안개.
+- 대기 밖(우주)에서 보는 시점: 높이 오프셋은 50 km까지.
 - 대기 원근 볼륨의 Textures 탭 미리보기(3D 텍스처의 단면).
 - Inspector의 해 고도/방위 슬라이더(지금은 기즈모의 회전).
-- 하늘의 반사(반사 프로브): 엔진에 반사가 없다.
 
-## 참고 자료
+## 용어
 
-- Sébastien Hillaire, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique", EGSR 2020. 참조 구현:
-  https://github.com/sebh/UnrealEngineSkyAtmosphere (MIT).
-- Eric Bruneton, Fabrice Neyret, "Precomputed Atmospheric Scattering", EGSR 2008; 구현 https://github.com/ebruneton/precomputed_atmospheric_scattering (BSD).
-- webgpu-sky-atmosphere: https://github.com/JolifantoBambla/webgpu-sky-atmosphere (MIT), Hillaire 기법의 WebGPU 포팅.
-- Lukas Hosek, Alexander Wilkie, "An Analytic Model for Full Spectral Sky-Dome Radiance", SIGGRAPH 2012.
-- Unreal Engine 문서, "Sky Atmosphere Component" (Aerial Perspective View Distance Scale).
+| 한국어 | 영어 | 뜻 |
+|---|---|---|
+| 복사휘도 | radiance (L) | 한 방향에서 오는 빛의 세기 |
+| 복사조도 | irradiance (E) | 면에 떨어지는 빛의 총량 |
+| 참여 매질 | participating media | 빛을 흡수하고 산란하는 기체, 연무 |
+| 산란 / 흡수 / 소멸 계수 | scattering / absorption / extinction coefficient (σ_s, σ_a, σ_t) | 단위 거리당 빛이 꺾이는 / 사라지는 / 둘을 합친 비율 |
+| 광학 깊이 | optical depth (τ) | 경로를 따라 적분한 소멸 계수 |
+| 투과율 | transmittance (T) | exp(−τ), 경로를 지나 남는 비율 |
+| 위상 함수 | phase function (p) | 꺾이는 각도의 분포 |
+| 비등방성 | anisotropy (g) | 앞쪽으로 꺾이는 정도 |
+| 스케일 높이 | scale height (H) | 밀도가 1/e가 되는 높이 |
+| 단일 / 다중 산란 | single / multiple scattering | 한 번 / 여러 번 꺾인 빛 |
+| 대기 원근 | aerial perspective | 먼 물체가 대기에 흐려지는 것 |
+| 레이 마칭 | ray marching | 시선을 걸음으로 나눠 적분하는 것 |
+| 매개화 | parametrization | 변수를 텍스처 좌표로 펼치는 방법 |
+| 프록셀 | froxel | 화면 칸 × 깊이 칸의 볼륨 셀 |
+
+## 읽을거리 (단계별)
+
+| 자료 | 무엇 | 언제 |
+|---|---|---|
+| Sebastian Lague, "Coding Adventure: Atmosphere" (YouTube, 2020) | 단일 산란 하늘을 처음부터 만드는 영상. 직관을 먼저 잡기에 좋다 | 0 전 |
+| Scratchapixel, "Simulating the Colors of the Sky" | 이론 1~5의 단계별 해설과 코드 | 0, 1 |
+| GPU Gems 2, 16장 "Accurate Atmospheric Scattering" (Sean O'Neil) | 실시간 단일 산란의 고전 | 1 |
+| Physically Based Rendering 4판, 11장 "Volume Scattering" (pbr-book.org) | 참여 매질, 위상 함수의 엄밀한 정의 | 2 |
+| Sébastien Hillaire, "Physically Based Sky, Atmosphere and Cloud Rendering in Frostbite" (SIGGRAPH 2016 course) | 매질 모델과 단위, 실무 | 2 |
+| Eric Bruneton, "Precomputed Atmospheric Scattering: a New Implementation" (2017, 해설이 붙은 코드) | 투과율 LUT의 매개화(지평선을 촘촘히) | 3 |
+| Sébastien Hillaire, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique" (EGSR 2020) | 이 스펙의 기법: 다중 산란 근사, 하늘 뷰 LUT, 대기 원근 볼륨 | 4~6 |
+| sebh/UnrealEngineSkyAtmosphere (MIT) | 위 논문의 참조 구현 | 3~6 |
+| Unreal Engine 문서, "Sky Atmosphere Component" | 파라미터의 실무 의미, 거리 배율 | 6 |
+
+## 구현 결과
+
+(단계마다 채운다: 배운 것, 틀렸던 곳, 예측과 달랐던 실험, GPU 시간.)
