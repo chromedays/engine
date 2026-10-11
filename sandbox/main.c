@@ -503,6 +503,8 @@ internal void frame(void* userdata)
     t = now_ms();
     // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
     sandbox->renderer.depth_sampled = sandbox->textures.shown_now;
+    // The shown scene's ambient light (chess_scene.md): the renderer takes it from the renderer, which the scene does not know.
+    memcpy(sandbox->renderer.ambient, sandbox_doc(sandbox)->ambient, sizeof(sandbox->renderer.ambient));
     nv_renderer_draw(&sandbox->renderer, scene, nv_anim_skins(), layout->scene, encoder, target);
     times->draw = now_ms() - t;
     times->gpu = sandbox->renderer.gpu_ms;

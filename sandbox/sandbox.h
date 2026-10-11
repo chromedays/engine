@@ -525,6 +525,7 @@ typedef struct SceneDoc {
     NvMaterialId palette_materials[SCENE_MAX_PALETTES][SCENE_MAX_PALETTE_COLORS];
     u32 layout; // save_scene_layout of the tree as built (before any generator)
     bool show_bones;
+    f32 ambient[3]; // the ambient light the scene is drawn with (chess_scene.md): from its file, then the save and the View tab
 } SceneDoc;
 
 // The effects the sandbox fires (effects.c).

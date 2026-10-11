@@ -385,6 +385,7 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
     // Taken before anything can rename or move nodes: saves apply to nodes by their place in this tree, and only while it is the
     // same tree. What exists now is what the file made; a generator's nodes come later.
     doc->layout = save_scene_layout(scene);
+    memcpy(doc->ambient, desc->lighting.ambient, sizeof(doc->ambient));
     for (u32 i = 1; i <= scene->node_count; ++i) {
         if (scene->nodes[i].gen & 1) {
             doc->authored[i] = 1;

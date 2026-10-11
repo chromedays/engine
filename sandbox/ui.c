@@ -602,6 +602,8 @@ void ui_view_tab(Sandbox* sandbox)
         igCheckbox(TL("Camera follows selection"), &view->follow_selection);
     if (search_row(sandbox, "Show bones", "skeleton debug lines"))
         igCheckbox(TL("Show bones"), &sandbox_doc(sandbox)->show_bones);
+    if (search_row(sandbox, "Ambient", "lighting light fill"))
+        igColorEdit3(TL("Ambient"), sandbox_doc(sandbox)->ambient, ImGuiColorEditFlags_Float);
     msaa_ui(sandbox);
     post_ui(sandbox);
     effects_ui(sandbox);

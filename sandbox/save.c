@@ -42,6 +42,7 @@
 #define TAG_VIEW NV_TAG('V', 'I', 'E', 'W')
 #define TAG_PLNT NV_TAG('P', 'L', 'N', 'T')
 #define TAG_BONE NV_TAG('B', 'O', 'N', 'E')
+#define TAG_AMBI NV_TAG('A', 'M', 'B', 'I') // the scene's ambient light, f32[3] linear RGB (chess_scene.md)
 #define TAG_CHAR NV_TAG('C', 'H', 'A', 'R')
 #define TAG_NODE NV_TAG('N', 'O', 'D', 'E')
 #define TAG_BHVR NV_TAG('B', 'H', 'V', 'R') // a behavior's parameters (docs/specs/scene_file.md)
@@ -301,6 +302,7 @@ internal void write_old_tags(NvChunkWriter* w, SceneDoc* doc)
         nv_chunk_f32s(w, TAG_PLNT, planet, 2);
     }
     nv_chunk_u32(w, TAG_BONE, doc->show_bones);
+    nv_chunk_f32s(w, TAG_AMBI, doc->ambient, 3);
     if (!character)
         return;
     const CharacterDesc* c = &character->desc.character;
@@ -839,6 +841,11 @@ internal void read_scene(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 
     read_bool(r, scene, TAG_BONE, &bones);
     if (apply_scene)
         doc->show_bones = bones;
+    f32 ambient[3];
+    memcpy(ambient, doc->ambient, sizeof(ambient));
+    if (nv_chunk_read_f32s(r, scene, TAG_AMBI, ambient, 3) && apply_scene)
+        for (u32 i = 0; i < 3; ++i)
+            doc->ambient[i] = nv_clamp_f32(ambient[i], 0.0f, 1.0f);
     // The older tags are read only without the behaviors that replace them.
     read_old_tags(r, scene, sandbox, doc, apply_scene && !has_behaviors);
     // Nodes are read even when they will not be applied, so a damaged one still fails the load.
@@ -961,6 +968,7 @@ NvChunkWritten save_write_scope(Sandbox* sandbox, SaveScope scope, const NvNodeI
         break;
     case SAVE_SCOPE_SCENE:
         nv_chunk_u32(&w, TAG_BONE, doc->show_bones);
+        nv_chunk_f32s(&w, TAG_AMBI, doc->ambient, 3);
         break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -995,8 +1003,14 @@ internal b32 read_scope(NvChunk chunk, Sandbox* sandbox, SaveScope scope, const 
     case SAVE_SCOPE_SCENE: {
         bool bones = doc->show_bones;
         read_bool(&r, chunk, TAG_BONE, &bones);
-        if (apply)
+        f32 ambient[3];
+        memcpy(ambient, doc->ambient, sizeof(ambient));
+        nv_chunk_read_f32s(&r, chunk, TAG_AMBI, ambient, 3);
+        if (apply) {
             doc->show_bones = bones;
+            for (u32 i = 0; i < 3; ++i)
+                doc->ambient[i] = nv_clamp_f32(ambient[i], 0.0f, 1.0f);
+        }
     } break;
     case SAVE_SCOPE_COUNT:
         NV_INVALID_CODE_PATH;
@@ -1032,6 +1046,7 @@ const char* save_field_label(u32 tag)
     case TAG_LINT: return "Intensity";
     case TAG_VISI: return "Visible";
     case TAG_BONE: return "Show bones";
+    case TAG_AMBI: return "Ambient";
     }
     return "Edit";
 }
@@ -1159,6 +1174,8 @@ internal TagKind tag_kind(u32 container, u32 tag)
         return TAG_KIND_U32;
     case TAG_BONE: // a u32 in SCNE (show bones)
         return TAG_KIND_U32;
+    case TAG_AMBI:
+        return TAG_KIND_F32;
     case TAG_YAW: case TAG_PTCH: case TAG_DIST: case TAG_ORBT: case TAG_PAN: case TAG_PLNT: case TAG_CTIM:
     case TAG_SPED: case TAG_FADE: case TAG_BLDW: case TAG_TURN: case TAG_POS: case TAG_ROT: case TAG_SCL:
     case TAG_COLR: case TAG_CFOV: case TAG_LCOL: case TAG_LINT: case TAG_EXPO: case TAG_BLMI: case TAG_VALU:
