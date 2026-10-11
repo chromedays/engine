@@ -106,24 +106,36 @@
 
 ## 구조
 
-### `nvscene_version <정수>`
+**표 읽는 법.** 모든 블록의 키 표는 같은 열을 쓴다: 키, 값, **필수**, 기본, 뜻.
 
-첫 문장. 지금은 `1`. 규칙은 `abproj_version`과 같다.
+- **필수:** 없으면 오류다.
+- **선택:** 없으면 "기본" 열의 값을 쓴다. 기본이 "없음"이면 그 기능이 꺼진다.
+- **조건부:** 열에 적힌 조건일 때만 필수다. 조건이 아닐 때 쓰면 오류다.
+- **선택; …일 때만:** 그 조건일 때 쓸 수 있고 없어도 된다. 조건이 아닐 때 쓰면 오류다.
+- 한 블록에 같은 키를 두 번 쓰면 오류다. "여러 개"라고 적힌 키(`node`, 도형 줄, `step`, 단계의 줄)만 예외다.
 
-### `title <텍스트>`
+### 최상위 문장
 
-씬 콤보와 팔레트에 보이는 이름(`T()`를 거친다; 한국어 행은 `sandbox/strings.c`). 쇼케이스 `"Showcase"`, 스트레스 `"Stress"`.
+| 문장 | 값 | 필수 | 개수 | 뜻 |
+|---|---|---|---|---|
+| `nvscene_version <정수>` | 지금 `1` | 필수 | 하나, 첫 문장 | 형식 버전. 규칙은 `abproj_version`과 같다 |
+| `title <텍스트>` | | 필수 | 하나 | 씬 콤보와 팔레트에 보이는 이름. `T()`를 거친다(한국어 행은 `sandbox/strings.c`). 쇼케이스 `"Showcase"`, 스트레스 `"Stress"` |
+| `view` | 블록 | 필수 | 하나 | 시작할 때의 카메라 뷰 |
+| `palette <id>` | 블록 | 선택 | 여러 개 | 생성기의 머티리얼 묶음 |
+| `model <id>` | 블록 | 선택 | 여러 개 | 노드와 생성기가 붙이는 모양 |
+| `node <id>` | 블록 | 필수 | 하나 이상 | 최상위 노드 |
+| `benchmark` | 블록 | 선택 | 0 또는 1 | 벤치마크 단계 |
 
 ### `view`
 
-| 키 | 값 | |
-|---|---|---|
-| `camera <id>` | 카메라가 있는 노드 | 필수 |
-| `target x y z` | 궤도 중심, m | 기본 0 0 0 |
-| `yaw`, `pitch` | 도 | 필수 |
-| `distance` | m | 필수 |
-| `focus <id>` | 아무것도 선택되지 않았을 때 도는 중심 | 선택 |
-| `select <id>` | 시작할 때 선택된 노드 | 선택 |
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `camera <노드 id>` | | 필수 | | 씬의 활성 카메라. `camera` 컴포넌트가 있는 노드여야 한다 |
+| `yaw <도>`, `pitch <도>` | | 필수 | | 궤도 카메라의 각 |
+| `distance <m>` | | 필수 | | 궤도 카메라의 거리 |
+| `target x y z` | m | 선택 | 0 0 0 | 궤도 중심 |
+| `focus <노드 id>` | | 선택 | 없음 | 아무것도 선택되지 않았을 때 도는 중심 |
+| `select <노드 id>` | | 선택 | 없음 | 시작할 때 선택된 노드 |
 
 `ORBIT_LIMITS`는 에디터의 한계이므로 코드에 남는다.
 
@@ -139,10 +151,10 @@
 
 생성기가 쓰는 머티리얼 묶음. 지금 `stress.c`의 `colors[]`다.
 
-| 키 | 값 | |
-|---|---|---|
-| `base r g b` | 색 0. 색을 끈 그리드의 색 | 필수 |
-| `wheel <count>` | 색 1부터 count-1까지: 색상환 | 필수 |
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `base r g b` | 0–1 | 필수 | | 색 0. 색을 끈 그리드의 색 |
+| `wheel <count>` | 2–256 | 필수 | | 색 1부터 count − 1까지: 색상환 |
 
 색상환(`color_wheel`): 색 `i`의 h = i / count × 6, x = 1 − |h mod 2 − 1|, `floor(h) mod 6`에 따라 (r,g,b)가 (1,x,0), (x,1,0), (0,1,x),
 (0,x,1), (x,0,1), (1,0,x). 결과는 0.15 + 0.8 × 채널. 스트레스: `base 0.6 0.62 0.66`, `wheel 200`.
@@ -150,27 +162,27 @@
 ### `model <id>`
 
 모델은 노드에 붙이는 모양(과 애니메이션)의 단위다. **파트**(`NvMeshId` + 머티리얼)의 목록이고, 스켈레톤과 클립을 가질 수 있다. 소스는
-둘 중 하나다. 한 블록에 둘을 함께 쓰면 오류다.
+둘 중 하나다. 도형 줄과 `file`을 한 블록에 함께 쓰면 오류다.
 
-**도형 모델:** 블록 안의 도형 줄 하나 이상을 합쳐 **파트 하나**(GPU 메시 하나)를 만든다. 머티리얼은 없다(노드나 팔레트가 준다).
-값 순서는 `engine/mesh.h`의 함수를 따른다. `c`는 중심, `h`는 각 축의 반 길이다.
+**도형 모델:** 블록 안의 도형 줄을 합쳐 **파트 하나**(GPU 메시 하나)를 만든다. 머티리얼은 없다(노드나 팔레트가 준다). 값 순서는
+`engine/mesh.h`의 함수를 따른다. `c`는 중심, `h`는 각 축의 반 길이다.
 
-| 키 | 값 |
-|---|---|
-| `box` | cx cy cz hx hy hz |
-| `plane` | hx hz |
-| `sphere` | cx cy cz radius segments rings |
-| `cylinder`, `cone` | cx cy cz radius half_height segments |
-| `capsule` | cx cy cz radius half_height segments rings |
-| `torus` | cx cy cz major minor segments tube_segments |
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `box` | cx cy cz hx hy hz | 도형 줄 중 하나 이상 필수, 여러 개 | | 상자 |
+| `plane` | hx hz | ″ | | y = 0의 +Y를 보는 사각형 |
+| `sphere` | cx cy cz radius segments rings | ″ | | 구 |
+| `cylinder`, `cone` | cx cy cz radius half_height segments | ″ | | 원기둥, 원뿔 |
+| `capsule` | cx cy cz radius half_height segments rings | ″ | | 캡슐 |
+| `torus` | cx cy cz major minor segments tube_segments | ″ | | 토러스 |
 
 **파일 모델:** glTF를 읽는다. glTF 프리미티브마다 파트 하나(그 머티리얼과 텍스처와 함께), 스킨이 있으면 스켈레톤.
 
-| 키 | 값 | |
-|---|---|---|
-| `file <텍스트: 경로>` | glb 파일 | 필수 |
-| `clips <텍스트: 경로>` | 제자리 클립 파일(`SANDBOX_MAX_CLIPS` 16개까지) | 선택; 스켈레톤이 있을 때만 |
-| `root_motion_clips <텍스트: 경로> <관절>` | 루트 모션 사본과 그 루트 관절 | 선택; 스켈레톤이 있을 때만 |
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `file <텍스트>` | glb 경로 | 필수 | | 읽을 파일 |
+| `clips <텍스트>` | glb 경로 | 선택; 스켈레톤이 있을 때만 | 없음 | 제자리 클립(`SANDBOX_MAX_CLIPS` 16개까지) |
+| `root_motion_clips <텍스트> <관절>` | glb 경로, 관절 이름 | 선택; 스켈레톤이 있을 때만 | 없음 | 루트 모션 사본과 그 루트 관절 |
 
 같은 경로의 glb는 샌드박스 전체에서 한 번만 읽는다. 어디에 읽어 두는지는 열린 질문 1이다.
 
@@ -183,9 +195,9 @@
 
 **머티리얼**
 
-- 도형 파트: 노드의 `color`(와 `double_sided`)가 그 노드만의 머티리얼을 만든다(Inspector가 노드마다 색을 바꾸므로). 없으면 기본
-  머티리얼. 생성기에서는 팔레트가 준다.
-- 파일 파트: 그 파트의 glTF 머티리얼. 파일 모델을 단 노드에 `color`를 쓰거나 생성기에 `palette`를 주면 오류다.
+- 도형 파트: 노드의 `model` 컴포넌트의 `color`(와 `double_sided`)가 그 노드만의 머티리얼을 만든다(Inspector가 노드마다 색을
+  바꾸므로). 없으면 기본 머티리얼. 생성기에서는 팔레트가 준다.
+- 파일 파트: 그 파트의 glTF 머티리얼. 파일 모델에 `color`나 `double_sided`를 쓰거나 생성기에 `palette`를 주면 오류다.
 
 **GPU 메시:** 모델의 파트는 한 번만 올라간다. 같은 모델을 쓰는 노드는 같은 `NvMeshId`를 함께 쓴다(지금 행성과 달이 `cube` 하나를 함께
 쓰듯).
@@ -202,48 +214,125 @@
 | 스트레스 | `cube` | `box 0 0 0 0.5 0.5 0.5` |
 | 스트레스 | `small_cube` | `box 0 0 0 0.06 0.06 0.06` |
 
+### `node <id>`
+
+노드는 트랜스폼(위치, 회전, 크기)과 트리에서의 자리를 갖고, 그 위에 **컴포넌트**를 0개 이상 붙인다. 엔진의 `NvNode`가 그런
+구조다(`engine/scene.h`: `mesh`/`material`, `camera`, `light`, `attach`가 노드의 필드이고, 0이면 없음). 카메라와 빛도 위치와 방향이
+필요하므로 노드에 붙는 컴포넌트다. 카메라는 노드의 −Z를 보고, 빛은 노드의 −Z로 비춘다.
+
+**공통 키** (모든 노드)
+
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `name <텍스트>` | | 선택 | id | 보이는 이름(`NvNode.name`) |
+| `position x y z` | m | 선택 | 0 0 0 | 부모 기준 위치 |
+| `rotation x y z w` | 쿼터니언 | 선택; `euler`와 둘 중 하나까지 | 단위 회전 | 부모 기준 회전 |
+| `euler pitch yaw roll` | 도 | 선택; `rotation`과 둘 중 하나까지 | 단위 회전 | 부모 기준 회전 |
+| `scale x y z` | | 선택 | 1 1 1 | 부모 기준 크기 |
+| `node <id>` | 블록 | 선택, 여러 개 | 없음 | 자식 노드. 파일의 순서가 트리의 순서다 |
+
+**컴포넌트** (노드 하나에 종류마다 하나까지)
+
+| 컴포넌트 | 쓰는 법 | 뜻 |
+|---|---|---|
+| 모델 | `model <모델 id>` 줄, 그 아래 선택 키 | 모양을 붙인다(위 "파트를 노드에 붙이는 규칙") |
+| 카메라 | `camera` 블록 | 카메라 |
+| 빛 | `light` 블록 | 빛 |
+| 부착 | `attach <관절>` 줄 | 가장 가까운 조상 모델의 애니메이터에서 그 관절을 따라간다. 그런 조상이 없거나 관절이 없으면 오류 |
+| 동작 | `spin`, `character`, `grid`, `chain`, `crowd`, `effects` 블록 | "동작의 세부" 절 |
+
+**모델 컴포넌트의 키** (`model <모델 id>` 아래)
+
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `color r g b` | 0–1 | 선택; 도형 모델만 | 기본 머티리얼 | 이 노드만의 머티리얼의 색 |
+| `double_sided <0/1>` | | 선택; 도형 모델만 | 0 | 그 머티리얼의 뒷면도 그린다 |
+| `visible <0/1>` | | 선택 | 1 | 노드 자신의 메시를 그리는지 |
+
+**카메라 컴포넌트의 키** (`camera` 아래)
+
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `projection <단어>` | `perspective`, `orthographic` | 필수 | | 투영 |
+| `fov <도>` | 1–179 | 조건부: `perspective`일 때 필수 | | 세로 시야각 |
+| `height <m>` | | 조건부: `orthographic`일 때 필수 | | 세로로 보이는 높이 |
+| `near <m>`, `far <m>` | near < far | 필수 | | 클립 거리 |
+
+**빛 컴포넌트의 키** (`light` 아래)
+
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `type <단어>` | `directional`, `point`, `spot` | 필수 | | 빛의 종류 |
+| `color r g b` | 선형 RGB | 선택 | 1 1 1 | 색 |
+| `intensity <x>` | | 선택 | 1 | 세기 |
+| `range <m>` | | 조건부: `point`, `spot`일 때 필수 | | 닿는 거리 |
+| `cone <안 도> <밖 도>` | | 조건부: `spot`일 때 필수 | | 원뿔의 안쪽과 바깥쪽 각 |
+
+**지금 코드의 노드**
+
+| 씬 | 노드 | 공통 키 | 컴포넌트 |
+|---|---|---|---|
+| 쇼케이스 | `camera` | | 카메라: perspective, fov 45, near 0.05, far 100 |
+| 쇼케이스 | `sun` | rotation = Y축 0.5 rad × X축 −0.8 rad | 빛: directional, color 1 0.96 0.9, intensity 1.1 |
+| 쇼케이스 | `ground` | | 모델 `ground`, color 0.32 0.34 0.38 |
+| 쇼케이스 | `planet` > `moon` | planet (−4.5, 1.6, −4); moon (2.4, 0, 0), scale 0.45 | 모델 `cube`, color 0.95 0.55 0.25 / 0.55 0.70 0.95; 동작 `spin` |
+| 쇼케이스 | `character` > `sword` | sword: 계산값(`visible` 절) | 모델 `character`, 동작 `character`; sword: 모델 `sword`, color 0.75 0.77 0.8, double_sided 1, 부착 `hand_r` |
+| 쇼케이스 | `look_target`(이름 `"look target"`) | (0, 1.75, 1.2) | 모델 `target`, color 1 0.75 0.2 |
+| 스트레스 | `camera` | | 카메라: perspective, fov 50, near 0.1, far 300 |
+| 스트레스 | `sun` | 쇼케이스와 같다 | 빛: 쇼케이스와 같다 |
+| 스트레스 | `ground` | (0, −0.05, −50), scale 260 0.1 260 | 모델 `cube`, color 0.28 0.3 0.34 |
+| 스트레스 | `grid`, `chain`, `crowd`, `effects` | chain (14, 0.5, 8), crowd (0, 0, 4) | 각각 동작 `grid`, `chain`, `crowd`, `effects`. `effects` 노드는 지금 없던 빈 노드다(스트레스 씬은 지금 저장되지 않으므로 맞출 `LAYT`가 없다) |
+
+- 쇼케이스 트리는 지금과 같다: `camera`, `sun`, `ground`, `planet` > `moon`, `character`(모델의 메시 노드 셋, `sword`), `look target`.
+  행성, 달, 바닥, 칼, 타깃은 파트 하나인 도형 모델이라 자식이 생기지 않는다.
+
 예:
 
 ```
-model sword
-    box 0 0    0   0.018 0.09  0.018   # 손잡이
-    box 0 0.1  0   0.09  0.012 0.025   # 가드
-    box 0 0.52 0   0.025 0.41  0.006   # 날
+model cube
+    box 0 0 0  0.5 0.5 0.5
 
-model character
-    file "/assets/quaternius/character.glb"
-    clips "/assets/quaternius/clips.glb"
-    root_motion_clips "/assets/quaternius/clips_rm.glb" root
+node camera
+    camera
+        projection perspective
+        fov 45
+        near 0.05
+        far 100
+
+node sun
+    rotation -0.377312273 0.227874145 0.0963436365 0.892427444   # Y축 0.5 rad × X축 −0.8 rad, 9자리 (구현 때 C로 다시 찍는다)
+    light
+        type directional
+        color 1 0.96 0.9
+        intensity 1.1
 
 node planet
     position -4.5 1.6 -4
     model cube
-    color 0.95 0.55 0.25
+        color 0.95 0.55 0.25
+    spin
+        axis 0 1 0
+        speed 40.107
+    node moon
+        position 2.4 0 0
+        scale 0.45 0.45 0.45
+        model cube
+            color 0.55 0.70 0.95
+        spin
+            axis 1 1 0
+            speed 114.592
 ```
 
-### `node <id>`
-
-블록 안의 `node` 블록이 자식이다. 파일의 순서가 트리의 순서다.
-
-| 키 | 값 | |
-|---|---|---|
-| `name <텍스트>` | 보이는 이름 | 기본: id |
-| `position x y z`, `rotation`/`euler`, `scale x y z` | | 0, 단위, 1 |
-| `color r g b` | 도형 모델의 노드만의 머티리얼("`model <id>`"의 머티리얼 규칙) | 기본 머티리얼 |
-| `double_sided <0/1>` | | 0 |
-| `visible <0/1>` | 노드 자신의 메시를 그리는지 | 1 |
-| `camera perspective <fov> <near> <far>` | fov는 도 | |
-| `light directional`, `light_color r g b`, `light_intensity x` | | |
-| `model <id>` | 노드에 모델을 붙인다("`model <id>`"의 파트 규칙) | |
-| `attach <관절>` | 가장 가까운 조상 모델의 애니메이터에서 그 관절을 따라간다 | |
-| 동작 블록 | 아래 | |
-
-- 쇼케이스 트리는 지금과 같다: `camera`, `sun`, `ground`, `planet` > `moon`, `character`(모델의 메시 노드 셋, `sword`), `look target`.
-  행성, 달, 바닥, 칼, 타깃은 파트 하나인 도형 모델이라 자식이 생기지 않는다.
-- 스트레스 트리: `camera`, `sun`, `ground`(모델 `cube`를 (260, 0.1, 260)로 키워 (0, −0.05, −50)에 둔다, 색 0.28 0.3 0.34), `grid`,
-  `chain`(14, 0.5, 8), `crowd`(0, 0, 4).
-
 ### `benchmark`
+
+| 키 | 값 | 필수 | 기본 | 뜻 |
+|---|---|---|---|---|
+| `warmup <초>` | | 필수 | | 단계마다 재지 않고 기다리는 시간 |
+| `measure <초>` | | 필수 | | 단계마다 재는 시간 |
+| `step <텍스트>` | 블록 | 필수, 하나 이상 16개까지 | | 단계. 이름이 표에 보인다 |
+
+`step` 블록 안: `<노드 id> <키> <값>` 줄, 필수, 하나 이상, 여러 개. 그 노드의 생성기를 켜고 그 파라미터를 값으로 둔다. 그래서
+노드 하나에는 생성기(`grid`, `chain`, `crowd`, `effects`)가 하나까지다.
 
 ```
 benchmark
@@ -295,16 +384,20 @@ benchmark
 
 **파라미터 표.** 종류마다 `ParamDef` 표 하나가 있다. 열은 키(파일과 저장의 이름), 이름표(UI와 undo), 검색 키워드, 형(bool, int,
 float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표가 파일 읽기, 위젯, `search_row`, 저장(`BHVR`), undo 이름표를 만든다.
-**구조** 키는 파일에만 있고 실행 중에 바뀌지 않는다. **파라미터**는 UI가 바꾸고, 저장되고, undo된다.
+
+**키의 두 종류.** **구조** 키는 파일에만 있고 실행 중에 바뀌지 않는다. **파라미터**는 UI가 바꾸고, 저장되고, undo된다. 아래 표의 열은
+키, 종류, 값과 범위, 필수, 기본, UI, 지금 값이다. 필수와 기본은 "구조"의 표 읽는 법을 따른다.
+
+**붙는 조건.** 노드 하나에 같은 동작은 하나까지, 생성기(`grid`, `chain`, `crowd`, `effects`)는 모두 합쳐 하나까지다.
 
 ### `spin`
 
 지금: `update_showcase`(`sandbox/main.c:730`)의 행성과 달, `sandbox_start_playing`의 `planet_rotation`/`moon_rotation`.
 
-| 키 | 종류 | 형, 범위 | UI | 쇼케이스 값 |
-|---|---|---|---|---|
-| `axis x y z` | 구조 | 읽을 때 정규화 | | 행성 (0,1,0), 달 (1,1,0) |
-| `speed` | 파라미터 | 각속도, ±3 rad/s | Spin 섹션 "Speed" 슬라이더, "%.2f rad/s" | 행성 0.7 rad/s (40.107 도/초), 달 2 rad/s (114.592 도/초) |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI | 지금 값 |
+|---|---|---|---|---|---|---|
+| `axis x y z` | 구조 | 0이 아닌 벡터, 읽을 때 정규화 | 필수 | | | 행성 (0,1,0), 달 (1,1,0) |
+| `speed` | 파라미터 | 도/초, ±171.9 (±3 rad/s) | 필수 | | Spin 섹션 "Speed", "%.2f rad/s" | 행성 40.107 (0.7 rad/s), 달 114.592 (2 rad/s) |
 
 - **Play 시작:** 노드의 지금 회전을 저작한 회전으로 기록하고 각을 0으로 한다.
 - **프레임 (Play):** 각 += speed × dt. 회전 = axis_angle(axis, 각) × 저작한 회전. 속도를 재생 중에 바꾸면 그 순간부터 새 속도로
@@ -320,25 +413,20 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 지금: `sandbox_play`, `sandbox_jump`, `update_jump`, `update_blend`, `apply_turn`, `update_look_target`, `restart_clip`,
 `sandbox_back_to_center`(`sandbox/main.c`), `animator_section`, `attach_section`(`sandbox/ui.c`), `read_character_fields`(`sandbox/save.c`).
 
-**구조 키**
+**붙는 조건:** 노드에 스켈레톤이 있는 파일 모델이 붙어 있어야 한다. 아니면 오류.
 
-| 키 | 값 | 쇼케이스 |
-|---|---|---|
-| `look_target <관절> <노드 id>` | 시선 IK의 관절과 타깃 노드 | `Head look_target` |
-| `jump <시작> <공중> <착지> <공중 시간>` | 점프의 세 클립과 공중 시간(초) | `Jump_Start Jump_Loop Jump_Land 0.35` |
-
-**파라미터**
-
-| 키 | 형, 범위 | UI ("Animator" 섹션) | 기본 | 저장 태그 (옛) |
-|---|---|---|---|---|
-| `clip` | 클립 이름 | 클립 목록(선택 가능 행) | `Idle_Loop` | `CLIP` |
-| `speed` | 0–2 | "Speed", "%.2fx" | 1 | `SPED` |
-| `fade` | 0–1 s | "Fade", "%.2f s" | 0.3 | `FADE` |
-| `blend` | 클립 이름 | "Blend" 콤보 | 첫 클립 | `BLND` |
-| `blend_weight` | 0–1 | "Weight" | 0 | `BLDW` |
-| `root_motion` | bool | "Root motion" | 0 | `RMOT` |
-| `turn` | ±1.5 rad/s | "Turn", "%.2f rad/s" | 0.6 rad/s (34.377 도/초) | `TURN` |
-| `look_at` | bool | "Look at target" | 0 | `LOOK` |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI ("Animator" 섹션) | 지금 값 (옛 저장 태그) |
+|---|---|---|---|---|---|---|
+| `look_target <관절> <노드 id>` | 구조 | 스켈레톤의 관절, 이 파일의 노드 | 선택 | 없음: 시선 IK가 없고 "Look at target"이 보이지 않는다 | | `Head look_target` |
+| `jump <시작> <공중> <착지> <공중 시간>` | 구조 | 모델의 제자리 클립 셋, 초 | 선택 | 없음: "Jump" 버튼이 없다 | | `Jump_Start Jump_Loop Jump_Land 0.35` |
+| `clip <이름>` | 파라미터 | 모델의 제자리 클립 | 선택 | 이름에 `_Loop`가 든 첫 클립 | 클립 목록(선택 가능 행) | `Idle_Loop` (`CLIP`) |
+| `speed` | 파라미터 | 0–2 | 선택 | 1 | "Speed", "%.2fx" | 1 (`SPED`) |
+| `fade` | 파라미터 | 0–1 초 | 선택 | 0.3 | "Fade", "%.2f s" | 0.3 (`FADE`) |
+| `blend <이름>` | 파라미터 | 모델의 제자리 클립 | 선택 | 첫 클립 | "Blend" 콤보 | 첫 클립 (`BLND`) |
+| `blend_weight` | 파라미터 | 0–1 | 선택 | 0 | "Weight" | 0 (`BLDW`) |
+| `root_motion <0/1>` | 파라미터 | | 선택 | 0 | "Root motion" | 0 (`RMOT`) |
+| `turn` | 파라미터 | 도/초, ±85.9 (±1.5 rad/s) | 선택 | 34.377 (0.6 rad/s) | "Turn", "%.2f rad/s" | 34.377 (`TURN`) |
+| `look_at <0/1>` | 파라미터 | `look_target`이 있을 때만 | 선택 | 0 | "Look at target" | 0 (`LOOK`) |
 
 **만들기**
 
@@ -421,7 +509,7 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 **Inspector:** 선택한 노드(또는 첫 자식)의 애니메이터가 `character` 동작의 애니메이터면 위의 섹션 전체를 보인다. 다른 애니메이터
 (군중)는 "Playing: 클립 시간 / 길이"만 보인다. 지금과 같다.
 
-### `visible` (노드 키, 동작이 아님)
+### `visible` (모델 컴포넌트의 키, 동작이 아님)
 
 - 지금은 칼만 있다: `show_sword`가 켜졌을 때만 칼 노드의 메시를 그린다(`update_showcase`). "Visible" 체크박스는 칼의 Attach 섹션에
   있다.
@@ -434,17 +522,20 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 
 지금: `add_grid_cube`, `update_grid`, `churn`(`sandbox/stress.c`).
 
-| 키 | 종류 | 형, 범위 | UI (Stress 탭 "Workloads") | 스트레스 값 |
-|---|---|---|---|---|
-| `max` | 구조 | | | 16000 |
-| `columns`, `spacing`, `height`, `scale` | 구조 | | | 128, 0.9, 0.25, 0.5 |
-| `model`, `palette` | 구조 | | | `cube`, `wheel` |
-| `on` | 파라미터 | bool | "Cube grid" | 1 |
-| `count` | 파라미터 | 0–max, 로그 슬라이더 | "Cubes" | 1000 |
-| `colors_on` | 파라미터 | bool | "Many colors" | 0 |
-| `colors` | 파라미터 | 2–팔레트 색 수 − 1 | "Colors" | 16 |
-| `churn_on` | 파라미터 | bool | "Churn" | 0 |
-| `churn` | 파라미터 | 1–256 | "Cubes / frame" | 32 |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI (Stress 탭 "Workloads") | 지금 값 |
+|---|---|---|---|---|---|---|
+| `model <모델 id>` | 구조 | 이 파일의 모델 | 필수 | | | `cube` |
+| `palette <팔레트 id>` | 구조 | 이 파일의 팔레트; 도형 모델일 때만 | 조건부: 도형 모델일 때 필수 | | | `wheel` |
+| `max` | 구조 | 1–16000 | 필수 | | | 16000 |
+| `columns` | 구조 | 1 이상 | 필수 | | | 128 |
+| `spacing`, `height` | 구조 | m | 필수 | | | 0.9, 0.25 |
+| `scale` | 구조 | | 필수 | | | 0.5 |
+| `on <0/1>` | 파라미터 | | 선택 | 1 | "Cube grid" | 1 |
+| `count` | 파라미터 | 0–max, 로그 슬라이더 | 필수 | | "Cubes" | 1000 |
+| `colors_on <0/1>` | 파라미터 | | 선택 | 0 | "Many colors" | 0 |
+| `colors` | 파라미터 | 2–팔레트 색 수 − 1 | 선택 | 16 | "Colors" | 16 |
+| `churn_on <0/1>` | 파라미터 | | 선택 | 0 | "Churn" | 0 |
+| `churn` | 파라미터 | 1–256 | 선택 | 32 | "Cubes / frame" | 32 |
 
 - 큐브 i: 이름 "cube", 그리드 노드의 자식, 위치 ((i mod columns − (columns − 1)/2) × spacing, height, −floor(i / columns) × spacing),
   scale (s, s, s), 모델, 머티리얼 = 색이 켜졌으면 팔레트 색 1 + (i mod colors), 아니면 팔레트 색 0.
@@ -457,14 +548,16 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 
 지금: `update_chain`.
 
-| 키 | 종류 | 형, 범위 | UI | 스트레스 값 |
-|---|---|---|---|---|
-| `max` | 구조 | | | 1000 |
-| `model`, `palette`, `stride` | 구조 | | | `small_cube`, `wheel`, 7 |
-| `link x y z` | 구조 | | | 0.12 0.03 0 |
-| `twist`, `wobble` | 구조 | 도 | | 14.324 (0.25 rad), 2.292 (0.04 rad) |
-| `on` | 파라미터 | bool | "Deep chain" | 0 |
-| `count` | 파라미터 | 1–max | "Links" | 300 |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI | 지금 값 |
+|---|---|---|---|---|---|---|
+| `model <모델 id>` | 구조 | 이 파일의 모델 | 필수 | | | `small_cube` |
+| `palette <팔레트 id>` | 구조 | 도형 모델일 때만 | 조건부: 도형 모델일 때 필수 | | | `wheel` |
+| `stride` | 구조 | 1 이상 | 선택 | 1 | | 7 |
+| `max` | 구조 | 1–1000 | 필수 | | | 1000 |
+| `link x y z` | 구조 | m | 필수 | | | 0.12 0.03 0 |
+| `twist`, `wobble` | 구조 | 도 | 필수 | | | 14.324 (0.25 rad), 2.292 (0.04 rad) |
+| `on <0/1>` | 파라미터 | | 선택 | 1 | "Deep chain" | 0 |
+| `count` | 파라미터 | 1–max | 필수 | | "Links" | 300 |
 
 - 고리 i: 이름 "link", 부모는 고리 i − 1(첫 고리는 체인 노드), 위치는 첫 고리 (0,0,0), 그 뒤 `link`. 모델, 머티리얼 = 팔레트 색
   1 + (i × stride) mod (팔레트 색 수 − 1).
@@ -476,12 +569,15 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 
 지금: `update_crowd`.
 
-| 키 | 종류 | 형, 범위 | UI | 스트레스 값 |
-|---|---|---|---|---|
-| `max` | 구조 | | | 200 |
-| `model`, `columns`, `spacing`, `offset` | 구조 | | | `character`, 20, 1.6, 0.37 s |
-| `on` | 파라미터 | bool | "Crowd" | 1 |
-| `count` | 파라미터 | 1–max | "Characters" | 16 |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI | 지금 값 |
+|---|---|---|---|---|---|---|
+| `model <모델 id>` | 구조 | 스켈레톤과 `_Loop` 클립이 있는 파일 모델 | 필수 | | | `character` |
+| `max` | 구조 | 1–200 | 필수 | | | 200 |
+| `columns` | 구조 | 1 이상 | 필수 | | | 20 |
+| `spacing` | 구조 | m | 필수 | | | 1.6 |
+| `offset` | 구조 | 초 | 선택 | 0 | | 0.37 |
+| `on <0/1>` | 파라미터 | | 선택 | 1 | "Crowd" | 1 |
+| `count` | 파라미터 | 1–max | 필수 | | "Characters" | 16 |
 
 - 캐릭터는 처음 필요할 때 만들고 지우지 않는다. 애니메이터를 없앨 수 없기 때문이다.
 - 캐릭터 i 만들기: 모델을 군중 노드 아래에 `nv_gltf_instantiate`. 루트 위치 ((i mod columns − (columns − 1)/2) × spacing, 0,
@@ -496,15 +592,15 @@ float, 각도, 각속도, 클립), 범위, 구조체 안의 위치다. 이 표�
 
 지금: `effects_stress_update`, `field_point`, `new_flight`(`sandbox/effects.c`).
 
-| 키 | 종류 | 형, 범위 | UI | 스트레스 값 |
-|---|---|---|---|---|
-| `area x z` | 구조 | m | | 16 12 |
-| `on` | 파라미터 | bool | "Fire effects" | 0 |
-| `particles` | 파라미터 | 0–4,000,000, 로그 | "Live particles" | 0 |
-| `explosions` | 파라미터 | 0–200 /s | "Explosions / s" | 0 |
-| `missiles` | 파라미터 | 0–2000 | "Missiles in flight" | 0 |
-| `beams` | 파라미터 | 0–500 | "Beams" | 0 |
-| `decals` | 파라미터 | 0–2000 /s | "Decals / s" | 0 |
+| 키 | 종류 | 값, 범위 | 필수 | 기본 | UI | 지금 값 |
+|---|---|---|---|---|---|---|
+| `area x z` | 구조 | m | 필수 | | | 16 12 |
+| `on <0/1>` | 파라미터 | | 선택 | 1 | "Fire effects" | 0 |
+| `particles` | 파라미터 | 0–4,000,000, 로그 | 선택 | 0 | "Live particles" | 0 |
+| `explosions` | 파라미터 | 0–200 /초 | 선택 | 0 | "Explosions / s" | 0 |
+| `missiles` | 파라미터 | 0–2000 | 선택 | 0 | "Missiles in flight" | 0 |
+| `beams` | 파라미터 | 0–500 | 선택 | 0 | "Beams" | 0 |
+| `decals` | 파라미터 | 0–2000 /초 | 선택 | 0 | "Decals / s" | 0 |
 
 Play에서만 돈다. dt는 0.1 s로 자른다. 들판의 점 = 궤도 중심 ± area.x(x), 지정한 높이, 궤도 중심 ± area.z(z), 난수(`Effects.rng`,
 시드 0x9E3779B9, 시험 이펙트와 같이 쓴다).
