@@ -1,6 +1,6 @@
 # Atmospheric scattering spec
 
-상태: 제안 (2026-10-11). 아래 "합의할 것"이 정해지면 구현한다. 이 스펙의 변경은 먼저 합의한다.
+상태: 제안 (2026-10-11). 공부도 목적이다("공부를 위한 구성"). 아래 "합의할 것"이 정해지면 구현한다. 이 스펙의 변경은 먼저 합의한다.
 
 ## 목표
 
@@ -47,6 +47,43 @@ Play에서 하루가 흐른다. 새 시간 개념은 없다.
 | 픽셀마다 레이 마칭 (Nishita식 단일 산란) | 하늘 픽셀마다 시선을 따라 적분한다 | 코드가 가장 짧다 | 픽셀마다 수십 걸음 × 해 방향 적분. 폰과 큰 해상도에 비싸고, 다중 산란이 없어 해질녘이 어둡다 |
 | 미리 계산한 4D 산란 (Bruneton) | 위 후보 | 정확 | 위 후보의 단점 |
 | 해석식 하늘 (Hosek-Wilkie) | 위 후보 | 가장 쌈 | 대기 원근과 햇빛 색이 없다 |
+
+## 공부를 위한 구성
+
+이 기능은 처음 구현하는 기술이라 공부도 목적이다. 그래서 순서와 도구를 다음처럼 정한다.
+
+- **느린 정답부터.** 첫 단계는 LUT 없이 픽셀마다 시선을 적분하는 하늘(기준, reference)이다. 식이 코드에 한 줄씩 그대로 보인다.
+  LUT는 그 다음에 하나씩, **같은 답을 빠르게 내는 최적화**로 넣는다. LUT를 하나 넣을 때마다 기준과 화면을 비교해 그 LUT가
+  무엇을 바꿨는지(또는 틀렸는지) 본다.
+- **기준 모드는 남긴다.** 다 만든 뒤에도 View 탭에서 하늘을 기준(픽셀마다 적분)으로 그릴 수 있다. 다중 산란을 빼면 기준과
+  LUT 결과가 가까워야 하고(시험), 다중 산란이 무엇을 더하는지는 둘을 번갈아 보면 보인다.
+- **성분 보기.** View 탭의 "Atmosphere view"가 하늘과 대기 원근의 한 항만 보여 준다: 최종, 투과율, 단일 산란, 다중 산란,
+  Rayleigh만, Mie만. 저장하지 않는 편집기 도구다.
+- **LUT를 눈으로.** Textures 탭이 투과율, 다중 산란, 하늘 뷰 LUT를 보여 준다. 각 LUT의 축이 무엇인지 스펙의 표와 셰이더 주석에 적는다.
+- **식과 코드를 잇는다.** 셰이더의 각 함수 위 주석에 아래 "이론 요약"의 번호와 논문의 해당 절을 적는다.
+- **CPU에도 한 벌.** 투과율은 C로도 있어(`nv_atmosphere_transmittance`) ctest로 값을 손으로 계산한 답과 맞춘다. 셰이더를 의심할 때
+  비교할 기준이다.
+
+## 이론 요약
+
+기호: 시선 위의 점 x, 거리 t, 높이 h(x). σ_s 산란 계수, σ_a 흡수 계수, σ_t = σ_s + σ_a 소멸 계수(1/km). 각 성분의 계수는 지면 값 ×
+밀도 d(h)이다: Rayleigh와 Mie는 d = exp(−h / H)(H는 각각 8 km, 1.2 km), 오존은 max(0, 1 − |h − 25| / 15).
+
+1. **투과율.** 두 점 사이를 지나며 남는 빛의 비율. T(a, b) = exp(−∫ₐᵇ σ_t(x) dx). 적분 안의 값을 광학 깊이라 한다.
+   파랑의 Rayleigh 계수가 빨강의 약 6배라 긴 경로(해질녘)에서는 빨강이 남는다.
+2. **위상 함수.** 빛이 θ만큼 꺾여 산란될 확률 밀도. Rayleigh: p_R(θ) = 3/(16π) (1 + cos²θ). Mie: Cornette-Shanks
+   p_M(θ) = 3/(8π) · (1 − g²)(1 + cos²θ) / ((2 + g²)(1 + g² − 2g cosθ)^{3/2}). g가 클수록 앞쪽(해 주변)에 몰린다.
+3. **단일 산란.** 시선 위 각 점에서 햇빛이 한 번 꺾여 눈으로 오는 빛의 합.
+   L₁ = ∫₀ᵗᵐᵃˣ T(c, x) · Σ_i σ_s,i(x) p_i(θ) · T(x, 해) · E_sun · V(x) dt. V는 행성이 해를 가리는지(0 또는 1).
+   기준 모드가 이것을 그대로 적분한다(시선 위 수십 걸음, 각 걸음에서 T(x, 해)는 투과율로).
+4. **다중 산란 (Hillaire 근사).** 두 번 이상 꺾인 빛은 방향에 거의 무관하다고 보고(등방), 한 점에서 모든 방향으로 한 번 더
+   산란되는 비율 f_ms가 매번 같다고 보면 무한 등비급수가 된다: Ψ_ms = L₂ / (1 − f_ms). 다중 산란 LUT가 높이와 해의 천정각마다
+   이 값을 담고, 3번의 적분에 σ_s(x) · Ψ_ms 항이 더해진다(논문의 다중 산란 절).
+5. **대기 원근.** 물체까지의 시선에 대해 3, 4번을 적분한 산란 S와 투과율 T. 화면 색은 color · T + S.
+6. **지면.** 지평선 아래 시선은 행성에서 끝나고, 그곳의 지면이 반사율 × (햇빛 + 하늘) / π로 빛난다.
+
+LUT는 이 적분들의 결과를 낮은 해상도로 미리 담는 것이다: 투과율 LUT는 1번(해 방향 T를 걸음마다 다시 적분하지 않게), 다중
+산란 LUT는 4번, 하늘 뷰 LUT는 3+4번을 시선 방향마다, 대기 원근 볼륨은 5번을 화면 칸과 거리마다.
 
 ## 결정 (제안)
 
@@ -145,6 +182,25 @@ NvVec3 nv_atmosphere_transmittance(const NvAtmosphere* atmosphere, f32 altitude,
 배율 포함), z 씬 폭, w 씬 높이)가 더해지고, 프레임 bind group에 대기 원근 볼륨과 그 샘플러가 더해진다. `vfx.c`의 이펙트
 셰이더도 같은 두 바인딩을 받는다.
 
+공부와 검증용 보기(`NvRenderer.atmosphere_view`, 앱이 설정, 0이 최종):
+
+```c
+typedef enum NvAtmosphereView {
+    NV_ATMOSPHERE_VIEW_FINAL,         // the sky and aerial perspective as drawn
+    NV_ATMOSPHERE_VIEW_REFERENCE,     // the sky integrated per pixel, no LUT (single scattering, then multiple from the LUT if on)
+    NV_ATMOSPHERE_VIEW_TRANSMITTANCE, // T along each view ray, to the planet or the top of the atmosphere
+    NV_ATMOSPHERE_VIEW_SINGLE,        // single scattering only
+    NV_ATMOSPHERE_VIEW_MULTIPLE,      // multiple scattering only
+    NV_ATMOSPHERE_VIEW_RAYLEIGH,      // the Rayleigh term only
+    NV_ATMOSPHERE_VIEW_MIE,           // the Mie term only
+    NV_ATMOSPHERE_VIEW_COUNT,
+} NvAtmosphereView;
+```
+
+기준 모드의 레이 마칭은 하늘 패스의 셰이더 안 함수 하나이고(시선 위 32걸음, 걸음마다 해 방향 투과율), 하늘 뷰 LUT의 compute도
+같은 함수를 부른다: 정답과 최적화가 같은 식을 쓴다. 성분 보기는 셰이더의 분기 하나로, 하늘과 메시의 대기 원근 모두에 적용된다
+(메시는 성분 보기에서 S만 보인다).
+
 타임스탬프: 대기 compute 패스에 쌍 하나(`NV_TIMESTAMP_COUNT` 12 → 14), `NvRenderer.gpu_atmosphere_ms`. Stress 탭의 GPU 줄과
 벤치마크 표에 열 하나(`at`)가 더해진다.
 
@@ -159,6 +215,7 @@ NvVec3 nv_atmosphere_transmittance(const NvAtmosphere* atmosphere, f32 altitude,
 | 저장, undo | 새 태그 없음: 파라미터는 `BHVR`의 `PARM`으로 저장되고 Behaviors 범위로 undo된다. `SAVE_VERSION`은 그대로다. 옛 저장에 그 `BHVR`가 없으면 파일의 값이다 |
 | 쇼케이스 | `sun` 노드에 `atmosphere`를 단다. `aerial_scale`과 노출은 구현할 때 보며 정하고 이 표에 적는다 |
 | 스트레스 | 그대로(대기 없음). 벤치마크의 기존 결과와 비교할 수 있게 둔다 |
+| View 탭 | "Atmosphere view" 콤보(위의 보기들). 편집기 도구라 저장하지 않고 undo도 없다. 보이는 씬에 대기가 없으면 숨긴다 |
 | Textures 탭 | 투과율, 다중 산란, 하늘 뷰 LUT를 목록(`gather`)에 더한다. 대기 원근 볼륨은 3D라 미리보기가 없다("나중") |
 | 문자열 | 새 UI 문자열은 `sandbox/strings.c`에 한국어 행 |
 
@@ -195,6 +252,7 @@ Debug 빌드가 내보낸다:
   (`_set_grid` 등과 같은 규칙).
 - `Module._sandbox_debug_atmosphere(n)`: 0 켜짐, 1 투과율/다중 산란 LUT를 만든 횟수, 2 하늘 뷰 LUT를 만든 횟수.
 - `Module._sandbox_debug_set_sun(elevation_degrees, azimuth_degrees)`: 첫 directional light 노드의 회전을 바꾼다.
+- `Module._sandbox_debug_set_atmosphere_view(view)`: `NvAtmosphereView`.
 
 ctest (`tests/atmosphere_test.c`, `engine/atmosphere.c`만 링크):
 
@@ -211,15 +269,27 @@ Playwright (Release와 Debug 둘 다, swiftshader):
 4. 파라미터를 바꾼 뒤 `_sandbox_debug_undo_steps()`가 1 오르고, undo가 되돌리며, `_sandbox_debug_save_round_trip()`이 같다.
 5. Play와 Stop 뒤 `_sandbox_debug_save_crc()`가 같다(해에 `spin`을 단 시험용 씬 텍스트 없이, 노드의 회전으로).
 6. MSAA 끔/4x, 해상도 Scale 2, Fixed에서 1번이 같다. WebGPU 검증 오류가 없다(`_sandbox_debug_wgpu_error`).
+7. **기준과 LUT 비교**: 해의 고도 45°, 10°, 2°마다 최종과 기준(`REFERENCE`)의 하늘 픽셀 몇 개(천정, 해 반대편, 지평선)가 상대 오차
+   5% 안이다. 해 원반 근처는 빼고 본다(하늘 뷰 LUT의 해상도 한계). LUT를 넣는 단계마다 이 시험이 그 LUT를 검사한다.
+8. 성분 보기마다 WebGPU 오류가 없고, `SINGLE` + `MULTIPLE`의 픽셀이 `FINAL`의 하늘 픽셀과 가깝다(해 원반 제외).
 
 ## 단계
 
-1. **LUT와 하늘**: `engine/atmosphere.c`(구조체, 기본값, CPU 투과율과 ctest), 투과율, 다중 산란, 하늘 뷰 compute, 하늘 패스,
-   햇빛의 색. 샌드박스의 `atmosphere` 동작, Inspector, 쇼케이스. 시험 1, 2, 4, 5, 6.
-2. **대기 원근**: 볼륨 compute, 메시와 이펙트 셰이더. 시험 3. Textures 탭의 LUT, 타임스탬프.
-3. **하늘의 주변광**: 반구 조도 compute와 메시 셰이더. 쇼케이스의 노출을 다시 맞춘다.
+각 단계는 화면에 무언가 새로 보이고, 앞 단계의 결과와 비교할 수 있게 나눈다. 단계마다 그 단계의 이론(위 "이론 요약"의 번호)을 적는다.
 
-각 단계가 끝나면 `AGENTS.md`(모듈 목록, 규칙)와 이 스펙의 "구현 결과"를 고친다.
+0. **바탕** (이론 1): `engine/atmosphere.c`, `NvAtmosphere`, 지구 기본값, CPU 투과율과 ctest. 햇빛의 색(해가 낮으면 바닥이 붉어진다).
+   샌드박스의 `atmosphere` 동작과 Inspector, 쇼케이스. 하늘은 아직 `clear_color`다.
+1. **기준 하늘** (이론 2, 3, 6): 하늘 패스, 픽셀마다 단일 산란을 적분한다. 해의 방향도 걸음마다 직접 적분한다(LUT 없음). 해 원반.
+   성분 보기의 `TRANSMITTANCE`, `SINGLE`, `RAYLEIGH`, `MIE`. 시험 1, 2, 4, 5, 6. 느려도 된다: 이것이 정답이다.
+2. **투과율 LUT** (이론 1): 해 방향의 적분을 LUT 한 번의 읽기로 바꾼다. Textures 탭에 보인다. 기준 모드는 계속 직접 적분해 둘을 비교한다.
+3. **다중 산란 LUT** (이론 4): 하늘이 밝아지고 해질녘의 색이 바뀐다. `MULTIPLE` 보기. 이 단계부터 기준도 다중 산란 LUT를 더한다.
+4. **하늘 뷰 LUT**: 하늘 패스가 픽셀마다 적분하지 않고 LUT를 읽는다. 기준은 `REFERENCE` 보기로 남는다. 시험 7, 8. 타임스탬프로 1단계와
+   GPU 시간을 비교해 이 LUT가 얼마를 아꼈는지 "구현 결과"에 적는다.
+5. **대기 원근** (이론 5): 볼륨 compute, 메시와 이펙트 셰이더. 시험 3.
+6. **하늘의 주변광**: 반구 조도 compute와 메시 셰이더. 쇼케이스의 노출을 다시 맞춘다.
+
+각 단계가 끝나면 `AGENTS.md`(모듈 목록, 규칙)와 이 스펙의 "구현 결과"를 고친다. "구현 결과"에는 단계마다 배운 것(틀렸던 곳, 기준과
+달랐던 곳과 그 이유)도 짧게 적는다.
 
 ## 합의할 것
 
@@ -229,6 +299,8 @@ Playwright (Release와 Debug 둘 다, swiftshader):
 3. **대기 원근을 이펙트에도 넣나.** 넣는다(권장: 파티클이 먼 곳에서 떠 보이지 않는다), 또는 메시에만.
 4. **주변광(3단계)을 이 스펙에 넣나.** 넣는다(권장: 해질녘에 그림자 속이 파랗게 남는 것이 대기의 큰 몫이다), 또는 "나중".
 5. **스트레스 씬**: 대기 없음(권장, 벤치마크 비교 유지), 또는 켬.
+6. **누가 코드를 쓰나.** 공부가 목적이므로: (가) 사용자가 단계마다 직접 쓰고 Claude는 설명, 리뷰, 시험을 맡는다, (나) Claude가 단계마다
+   쓰고 사용자가 읽고 질문한 뒤 다음 단계로 간다, (다) 섞는다(예: 셰이더의 적분은 사용자가, 패스와 샌드박스 연결은 Claude가).
 
 ## 범위 밖 (나중)
 
