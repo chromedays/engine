@@ -9,33 +9,42 @@
 
 ### 목표
 
-샌드박스의 씬을 텍스트 파일로 기술하고 로더 하나로 만든다. 그리고 두 씬을 한 벌의 코드와 한 벌의 규칙으로 돌린다.
+샌드박스의 씬을 텍스트 파일로 기술하고 로더 하나로 만든다. 모든 씬을 한 벌의 코드와 한 벌의 규칙으로 돌린다.
 
-지금은:
+### 원칙
+
+- **규칙은 모든 씬에 같다.** Edit/Play, undo, 자동 저장, 선택, 저장 형식, 씬 전환, 오류 처리가 어느 씬에서나 같다.
+- **씬마다 다른 것은 씬 파일이 정한다.** 어떤 오브젝트가 있는지, 각 오브젝트가 어떤 타입인지(메시, 카메라, 빛, 모델, 동작의 종류),
+  어떤 값을 갖는지. 오브젝트가 다르게 움직여야 하면 그것은 타입(동작의 종류)과 그 값으로 적는다.
+- **코드는 씬을 알아보지 않는다.** 코드에는 특정 씬, 특정 파일 이름, 특정 노드 id를 보고 분기하는 곳이 없다. 씬 파일의 목록만
+  데이터로 있다.
+
+### 지금 코드에서 이 원칙을 어기는 곳 (이 스펙이 고치는 것)
 
 - `build_world`, `build_character`(`sandbox/main.c`)와 `stress_build`(`sandbox/stress.c`)가 씬을 C로 만든다. 이름, 위치, 메시, 색이
   모두 코드의 상수다.
-- 무엇이 도는지가 씬마다 다르다.
+- 오브젝트의 움직임이 씬마다 다른 코드에 있다.
   - 쇼케이스: `Sandbox`의 필드(행성, 달, 캐릭터, 클립, 점프, 칼, 시선 타깃)와 `update_showcase`.
   - 스트레스: `Stress`와 `stress_update`. 이펙트 워크로드는 `Effects` 안에 있다.
-- 규칙도 씬마다 다르다. 쇼케이스만 Edit/Play, undo, 자동 저장이 있고, 스트레스 씬은 항상 돌며 저장되지 않는다.
-  `frame`, UI, undo, 저장이 `SceneKind`로 분기한다.
+- 규칙이 씬마다 다르다: 지금은 쇼케이스만 Edit/Play, undo, 자동 저장이 있고, 스트레스 씬은 항상 돌며 저장되지 않는다. `frame`, UI,
+  undo, 저장이 `SceneKind`로 분기한다(`shown == SCENE_SHOWCASE`).
 
-바뀐 뒤에는:
+### 바뀐 뒤
 
 - `sandbox/data/showcase.nvscene`과 `sandbox/data/stress.nvscene`이 각 씬을 기술한다. 노드, 메시, 팔레트, 모델, 뷰, 그리고 노드
   위에서 도는 **동작**(behavior)이 들어 있다.
-- 동작은 C로 쓴 고정된 종류(`spin`, `character`, `grid`, `chain`, `crowd`, `effects`)이고, 파라미터는 파일에서 온다.
-  - 각 종류의 파라미터는 표 하나로 정의된다. 그 표가 파일 읽기, UI, 검색, 저장, undo 이름표를 모두 만든다.
-  - 업데이트 하나가 보이는 씬의 동작을 모두 돌린다. 어느 씬인지 따지지 않는다.
-- **모든 씬이 Edit/Play를 따른다**(`play.md`). 스트레스 씬도 Play/Stop, undo, 자동 저장을 갖는다. 씬마다 다른 규칙은 없다.
+- 동작은 C로 쓴 고정된 타입(`spin`, `character`, `grid`, `chain`, `crowd`, `effects`)이고, 값은 파일에서 온다.
+  - 각 타입의 파라미터는 표 하나로 정의된다. 그 표가 파일 읽기, UI, 검색, 저장, undo 이름표를 모두 만든다.
+  - 업데이트 하나가 보이는 씬의 동작을 모두 돌린다.
+- 모든 씬이 Edit/Play(`play.md`), undo, 자동 저장을 똑같이 따른다.
+- `SceneKind`와 `shown == SCENE_SHOWCASE` 같은 검사는 모두 없어진다.
 
 ### 정한 것
 
 | 주제 | 결정 |
 |---|---|
 | 형식 | `.abproj`와 같은 줄 기반 자체 텍스트. 새 서드파티 코드는 없다(아래 "형식 후보") |
-| 씬의 규칙 | 모든 씬이 Edit/Play를 따른다. 스트레스 씬만의 "항상 돎, 저장 안 함, undo 없음"은 없어진다 |
+| 씬의 규칙 | 모든 씬에 같다. 씬마다 다른 것은 씬 파일(오브젝트, 타입, 값)뿐이다 |
 | Planet orbit | View 탭의 슬라이더가 행성 Inspector의 **Spin** 섹션으로 옮겨 간다 |
 
 ### 이 스펙에 없는 것
@@ -61,6 +70,11 @@
 | `sandbox/data/showcase.nvscene` | `/data/showcase.nvscene` | 쇼케이스 |
 | `sandbox/data/stress.nvscene` | `/data/stress.nvscene` | 스트레스 씬과 벤치마크 단계 |
 
+- **씬 목록**은 코드에 있는 유일한 씬 정보이고, 파일 이름의 배열이다:
+  `SCENE_FILES[] = {"showcase.nvscene", "stress.nvscene"}`(`sandbox/scenes.c`).
+  - View 탭의 씬 콤보와 팔레트의 "Show the ... scene" 명령은 이 목록에서 나온다. 이름은 파일의 `title`이다.
+  - 샌드박스는 목록의 첫 씬에서 시작한다.
+  - 씬을 더하는 것은 파일을 더하고 목록에 한 줄을 더하는 것이다.
 - 텍스트이므로 일반 Git에 둔다.
 - `sandbox/CMakeLists.txt`: `nv_setup_executable(sandbox ROOT ASSETS ... PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")`.
 - `nv_file_read`로 임시 아레나에 읽고, `SceneDesc`(GPU 없는 평범한 데이터)로 파싱한 뒤 만든다.
@@ -75,13 +89,17 @@
   기준이다(UI의 "rad/s" 슬라이더는 그대로).
 - **회전:** `rotation x y z w`(쿼터니언, 정확) 또는 `euler pitch yaw roll`(도).
 - **계산으로 나온 값**(태양의 회전, 칼의 오프셋)은 유효숫자 9자리로 써서 같은 float로 읽힌다.
-- **최상위 문장의 순서:** `nvscene_version` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
+- **최상위 문장의 순서:** `nvscene_version` → `title` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
 
 ### 구조
 
 #### `nvscene_version <정수>`
 
 첫 문장. 지금은 `1`. 규칙은 `abproj_version`과 같다.
+
+#### `title <텍스트>`
+
+씬 콤보와 팔레트에 보이는 이름(`T()`를 거친다; 한국어 행은 `sandbox/strings.c`). 쇼케이스 `"Showcase"`, 스트레스 `"Stress"`.
 
 #### `view`
 
@@ -558,36 +576,41 @@ typedef struct SceneDoc {
   `show_bones`, `playing`, `play_time`, `play_snapshot*`, `stress`의 워크로드, `effects.stress_*`, `views[]`(→ `SceneDoc.view`).
 - 프레임: `behaviors_update(sandbox, doc, dt)`(동작), `effects_update`(vfx와 시험 미사일), `nv_anim_update_scene`, `nv_scene_update`
   순서. 지금의 순서와 같다.
-- `shown == SCENE_SHOWCASE` 검사는 모두 없어진다. Play 버튼, 색조, "Playing" 표시는 모든 씬에 있다. Stress 탭은 보이는 씬에 생성기나
-  벤치마크가 있을 때 보인다.
+- `SceneKind`와 `shown == SCENE_SHOWCASE` 검사는 모두 없어진다. 보이는 씬은 씬 목록의 인덱스다.
+  - Play 버튼, 색조, "Playing" 표시는 모든 씬에 있다.
+  - Stress 탭은 보이는 씬에 생성기나 벤치마크가 있을 때 보인다(오브젝트의 타입으로 정해진다).
+  - 팔레트 명령 `SC_SCENE_SHOWCASE`, `SC_SCENE_STRESS`는 씬 목록의 씬마다 하나인 "Show the <title> scene"이 된다.
+  - 디버그 내보내기(`_sandbox_debug_set_effects`, 그리드와 체인 설정)는 보이는 씬의 그 타입의 첫 동작에 값을 넣는다.
 
 ### 저장
 
 `SAVE_VERSION`과 기존 태그의 뜻은 그대로다. 태그를 더하는 것은 버전을 올리지 않는다(`save.md`).
 
-- **`SCNE`**(쇼케이스)는 지금처럼 쓴다. 트리가 지금과 같으므로 `LAYT`가 같고 기존 저장이 모두 읽힌다.
-- **새 최상위 `SCNX`**(반복): 쇼케이스가 아닌 씬 하나. `FILE`(문자열, `"stress.nvscene"`) 다음에 `SCNE`과 같은 자식(`LAYT`, `VIEW`,
-  `BONE`, `NODE`, `BHVR`).
+- **씬마다 `SCNE` 하나**(반복): 모든 씬이 같은 방식으로 저장된다. `FILE`(문자열, 씬 목록의 파일 이름) 다음에 지금 `SCNE`의 자식
+  (`LAYT`, `VIEW`, `BONE`, `NODE`)과 새 `BHVR`. 씬 목록의 순서로 쓴다.
 - **새 `BHVR`**(씬 안, 반복): 동작 하나의 파라미터. `PATH`(노드 경로), `KIND`(문자열), 그리고 파라미터마다 `PARM`
   {`NAME` 문자열, `VALU` f32[] 또는 `TEXT` 문자열}. 값은 실행 중의 단위(라디안)다. 모르는 이름은 건너뛰고, 없는 이름은 지금 값을
-  지닌다. 종류가 다르면 건너뛴다. 읽은 뒤 그 동작의 "적용"을 부른다.
+  지닌다. 타입이 다르면 건너뛴다. 읽은 뒤 그 동작의 "적용"을 부른다.
 - **새 `VISI`**(`NODE` 안, u32): 메시가 있는 노드의 `visible`.
-- **옛 태그:** 옛 빌드가 새 저장을 읽도록 계속 쓴다. 읽기는 새 태그가 없을 때만이다.
+- **옛 저장과의 호환** (모든 씬에 같은 규칙; 특정 씬, 파일, id를 보지 않는다):
+  - `FILE`이 없는 `SCNE`(옛 저장은 `SCNE` 하나뿐이다)는 씬 목록의 첫 씬의 것이다.
+  - 옛 빌드는 첫 `SCNE`만 읽고 모르는 태그(`FILE`, `BHVR`, `VISI`)는 건너뛴다. 첫 씬이 맨 앞에 쓰이므로 옛 빌드도 새 저장을 읽는다.
+  - 옛 태그는 타입으로 찾아간다. 읽기는 그 씬에 새 태그가 없을 때만이고, 쓰기는 그 타입이 씬에 있을 때 계속한다(옛 빌드를 위해).
 
 | 옛 태그 | 새 자리 |
 |---|---|
-| `PLNT` | id `planet`의 `spin` `speed` |
-| `CHAR`(`CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`) | id `character`의 `character` 파라미터 |
-| `SWRD`(`CHAR` 안) | id `sword`의 `visible` |
+| `PLNT` | 씬의 첫 `spin` 동작(파일 순서)의 `speed` |
+| `CHAR`(`CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`) | 씬의 첫 `character` 동작의 파라미터 |
+| `SWRD`(`CHAR` 안) | 그 `character` 모델 아래의 첫 `attach` 노드의 `visible` |
 
-- 파일에 그 id가 없으면 그 태그는 건너뛴다.
 - **생성된 노드:** `NODE`로 쓰지 않는다. 선택된 생성 노드는 `SELN`/`SELO`에서 빠진다.
-- **`LAYT`:** 파일의 노드를 만든 직후, 생성기가 돌기 전의 트리에서 잰다.
-- **늦게 만들어지는 씬:** 스트레스 씬은 처음 보일 때 만들어진다. 그 전에 읽은 `SCNX` 바이트는 지녀 두었다가 만들 때 적용한다. 만들기
+- **`LAYT`:** 파일의 노드를 만든 직후, 생성기가 돌기 전의 트리에서 잰다. 쇼케이스 파일이 만드는 트리는 지금과 같으므로 기존 저장의
+  `LAYT`가 맞는다.
+- **늦게 만들어지는 씬:** 모든 씬은 처음 보일 때 만들어진다. 그 전에 읽은 `SCNE` 바이트는 지녀 두었다가 만들 때 적용한다. 만들기
   전에 저장하면 그 바이트를 그대로 다시 쓴다.
 - **재생 중:** 자동 저장은 재생 중인 씬의 스냅샷을 쓴다.
-- 샌드박스는 지금처럼 언제나 쇼케이스에서 시작한다.
-- 저장 뷰어는 `SCNX`, `BHVR`, `PARM`을 이름으로 보인다.
+- 샌드박스는 씬 목록의 첫 씬에서 시작한다.
+- 저장 뷰어는 `FILE`, `BHVR`, `PARM`을 이름으로 보인다.
 
 ### Undo
 
@@ -628,8 +651,8 @@ typedef struct SceneDoc {
 ### 오류
 
 - 패키지의 파일이 읽히지 않는 것은 버그다. 오류는 파일과 줄을 붙여 `nv_log`(source `"scene"`)로 남긴다. 16개까지다.
-- 쇼케이스 파일이 읽히지 않으면 지금 캐릭터를 읽지 못할 때처럼 `fatal`로 멈춘다.
-- 스트레스 파일이 읽히지 않으면 씬 전환이 거절되고 View 탭이 첫 오류를 보인다.
+- 읽히지 않는 씬은 보일 수 없다(어느 씬이든 같다). 그 씬으로의 전환은 거절되고 View 탭이 첫 오류를 보인다.
+- 시작할 때 첫 씬이 읽히지 않으면 보일 씬이 없으므로 `fatal`로 멈춘다(지금 캐릭터를 읽지 못할 때와 같다).
 - ctest가 두 파일이 읽히는지 확인한다. 형식의 각 규칙은 테스트 자신의 텍스트로 시험한다.
 
 ### 엔진 변경
@@ -649,7 +672,7 @@ typedef struct SceneDoc {
    - 지금 빌드가 쓴 저장(변경 전에 만든 고정 파일)이 같은 씬으로 읽힌다.
    - Play 전과 Stop 뒤의 `_sandbox_debug_save_crc`가 같다.
    - 첫 방문의 노드 값이 지금과 1e-5 안에서 같다(도 변환이 마지막 비트를 바꿀 수 있다).
-4. **스트레스를 파일로, Edit/Play로:** `stress.nvscene`, 생성기 네 종류, 벤치마크, `SCNX`, 씬마다의 재생 상태, undo의 씬. `stress_build`의
+4. **스트레스를 파일로, Edit/Play로:** `stress.nvscene`, 생성기 네 종류, 벤치마크, 씬마다의 `SCNE`, 씬마다의 재생 상태, undo의 씬. `stress_build`의
    노드 코드, `StressWorkloads`, `effects_stress_update`를 지운다. 확인:
    - 각 워크로드가 최대에서 assert 없이 돈다.
    - 벤치마크가 Edit에서 시작해 끝까지 돌고 Stop으로 돌아온다.
@@ -682,35 +705,46 @@ Status: proposal (2026-10-11). Not implemented. Changes to this spec are agreed 
 
 ### Goal
 
-Describe the sandbox's scenes in text files and build them with one loader. Then run the two scenes with one set of code and one
-set of rules.
+Describe the sandbox's scenes in text files and build them with one loader. Run every scene with one set of code and one set of
+rules.
 
-Today:
+### Principles
+
+- **The rules are the same in every scene.** Edit/Play, undo, autosave, selection, the save format, switching scenes and error
+  handling work the same in any scene.
+- **What differs between scenes is set by the scene file:** which objects there are, what type each object is (mesh, camera, light,
+  model, behavior type) and what values it has. If an object has to move differently, that is written as its type (a behavior type)
+  and its values.
+- **The code does not recognize scenes.** No code branches on a particular scene, file name or node id. Only the list of scene files
+  is data in code.
+
+### Where today's code breaks these principles (what this spec fixes)
 
 - `build_world` and `build_character` (`sandbox/main.c`) and `stress_build` (`sandbox/stress.c`) build the scenes in C. Every name,
   position, mesh and color is a constant in code.
-- What runs differs per scene.
+- How objects move lives in different code per scene.
   - Showcase: fields of `Sandbox` (planet, moon, character, clips, jump, sword, look target) and `update_showcase`.
   - Stress: `Stress` and `stress_update`. The effects workload lives in `Effects`.
-- The rules differ too. Only the showcase has Edit/Play, undo and autosave; the stress scene always runs and is not saved. `frame`,
-  the UI, undo and the save branch on `SceneKind`.
+- The rules differ per scene: today only the showcase has Edit/Play, undo and autosave; the stress scene always runs and is not saved.
+  `frame`, the UI, undo and the save branch on `SceneKind` (`shown == SCENE_SHOWCASE`).
 
-After:
+### After
 
 - `sandbox/data/showcase.nvscene` and `sandbox/data/stress.nvscene` describe each scene: nodes, meshes, palettes, models, the view,
   and the **behaviors** that run on nodes.
-- Behaviors are a fixed set of kinds written in C (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`), with parameters from
-  the file.
-  - Each kind's parameters are defined by one table. That table makes the file reading, the UI, search, the save and the undo labels.
-  - One update runs every behavior of the shown scene, without asking which scene it is.
-- **Every scene follows Edit/Play** (`play.md`). The stress scene gets Play/Stop, undo and autosave too. No rule differs per scene.
+- Behaviors are a fixed set of types written in C (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`), with values from the
+  file.
+  - Each type's parameters are defined by one table. That table makes the file reading, the UI, search, the save and the undo labels.
+  - One update runs every behavior of the shown scene.
+- Every scene follows Edit/Play (`play.md`), undo and autosave the same way.
+- `SceneKind` and checks such as `shown == SCENE_SHOWCASE` all go.
 
 ### Decided
 
 | Topic | Decision |
 |---|---|
 | Format | Our own line-based text, like `.abproj`. No new third-party code ("Format candidates" below) |
-| Scene rules | Every scene follows Edit/Play. The stress scene's "always runs, not saved, no undo" goes away |
+| Scene rules | The same in every scene. What differs is only the scene file (objects, types, values) |
 | Planet orbit | The View tab's slider moves to the planet's Inspector, in a **Spin** section |
 
 ### Not in this spec
@@ -736,6 +770,11 @@ After:
 | `sandbox/data/showcase.nvscene` | `/data/showcase.nvscene` | The showcase |
 | `sandbox/data/stress.nvscene` | `/data/stress.nvscene` | The stress scene and its benchmark steps |
 
+- **The scene list** is the only scene information in code: an array of file names,
+  `SCENE_FILES[] = {"showcase.nvscene", "stress.nvscene"}` (`sandbox/scenes.c`).
+  - The View tab's scene combo and the palette's "Show the ... scene" commands come from this list. The names are the files' `title`s.
+  - The sandbox starts on the first scene in the list.
+  - Adding a scene is adding a file and one line to the list.
 - Text, so plain Git.
 - `sandbox/CMakeLists.txt`: `nv_setup_executable(sandbox ROOT ASSETS ... PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")`.
 - Read with `nv_file_read` into scratch, parsed into a `SceneDesc` (plain data, no GPU), then built.
@@ -751,13 +790,17 @@ error, an unknown key or a line with the wrong number of values is an error with
 - **Rotations:** `rotation x y z w` (a quaternion, exact) or `euler pitch yaw roll` (degrees).
 - **Computed values** (the sun's rotation, the sword's offset) are written with 9 significant digits, so they read back as the same
   float.
-- **Top-level order:** `nvscene_version` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
+- **Top-level order:** `nvscene_version` → `title` → `view` → `mesh`* → `palette`* → `model`* → `node`+ → `benchmark`?.
 
 ### Structure
 
 #### `nvscene_version <integer>`
 
 The first statement. Now `1`. The same rules as `abproj_version`.
+
+#### `title <text>`
+
+The name shown in the scene combo and the palette (through `T()`; Korean rows in `sandbox/strings.c`). Showcase `"Showcase"`, stress `"Stress"`.
 
 #### `view`
 
@@ -1258,36 +1301,43 @@ typedef struct SceneDoc {
   `SceneDoc.view`).
 - Frame: `behaviors_update(sandbox, doc, dt)` (the behaviors), `effects_update` (vfx and the test missiles), `nv_anim_update_scene`,
   `nv_scene_update`, in that order, as today.
-- Every `shown == SCENE_SHOWCASE` check goes. The Play button, the tint and the "Playing" label are in every scene. The Stress tab
-  shows while the shown scene has generators or a benchmark.
+- `SceneKind` and every `shown == SCENE_SHOWCASE` check go. The shown scene is an index into the scene list.
+  - The Play button, the tint and the "Playing" label are in every scene.
+  - The Stress tab shows while the shown scene has generators or a benchmark (decided by its objects' types).
+  - The palette commands `SC_SCENE_SHOWCASE` and `SC_SCENE_STRESS` become one "Show the <title> scene" per scene in the list.
+  - Debug exports (`_sandbox_debug_set_effects`, the grid and chain setters) set the shown scene's first behavior of that type.
 
 ### Save
 
 `SAVE_VERSION` and the meaning of every existing tag stay. Adding tags does not raise the version (`save.md`).
 
-- **`SCNE`** (the showcase) is written as today. The tree is today's, so `LAYT` is equal and every existing save loads.
-- **New top-level `SCNX`** (repeated): one scene other than the showcase. `FILE` (a string, `"stress.nvscene"`), then the same
-  children as `SCNE` (`LAYT`, `VIEW`, `BONE`, `NODE`, `BHVR`).
+- **One `SCNE` per scene** (repeated): every scene is saved the same way. `FILE` (a string, the file name in the scene list), then
+  today's `SCNE` children (`LAYT`, `VIEW`, `BONE`, `NODE`) and the new `BHVR`. Written in the scene list's order.
 - **New `BHVR`** (in a scene, repeated): one behavior's parameters. `PATH` (the node's path), `KIND` (a string), and a `PARM` per
   parameter {`NAME` string, `VALU` f32[] or `TEXT` string}. Values are in run-time units (radians). Unknown names are skipped; a missing
-  name keeps its current value; a different kind is skipped. After reading, the behavior's "Apply" runs.
+  name keeps its current value; a different type is skipped. After reading, the behavior's "Apply" runs.
 - **New `VISI`** (in `NODE`, u32): `visible` of a node with a mesh.
-- **Old tags** are still written, so older builds read new saves. They are read only when the new tags are missing.
+- **Compatibility with old saves** (one rule for every scene; no particular scene, file or id is looked at):
+  - An `SCNE` without `FILE` (an old save has only one `SCNE`) belongs to the first scene in the list.
+  - Old builds read only the first `SCNE` and skip tags they do not know (`FILE`, `BHVR`, `VISI`). The first scene is written first,
+    so old builds read new saves too.
+  - Old tags reach their values by type. They are read only when the scene has no new tags, and still written when the scene has that
+    type (for old builds).
 
 | Old tag | New home |
 |---|---|
-| `PLNT` | `spin` `speed` of id `planet` |
-| `CHAR` (`CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`) | `character` parameters of id `character` |
-| `SWRD` (in `CHAR`) | `visible` of id `sword` |
+| `PLNT` | `speed` of the scene's first `spin` behavior (file order) |
+| `CHAR` (`CLIP`, `SPED`, `FADE`, `BLND`, `BLDW`, `RMOT`, `TURN`, `LOOK`) | The parameters of the scene's first `character` behavior |
+| `SWRD` (in `CHAR`) | `visible` of the first `attach` node under that `character`'s model |
 
-- If the file has no such id, the tag is skipped.
 - **Generated nodes** are not written as `NODE`. A selected generated node is left out of `SELN`/`SELO`.
-- **`LAYT`** is taken from the tree right after the file's nodes are built, before any generator runs.
-- **A scene built later:** the stress scene is built the first time it is shown. `SCNX` bytes read before that are kept and applied
-  when it is built. A save written before it is built writes those bytes back unchanged.
+- **`LAYT`** is taken from the tree right after the file's nodes are built, before any generator runs. The showcase file builds
+  today's tree, so existing saves' `LAYT` matches.
+- **Scenes built later:** every scene is built the first time it is shown. `SCNE` bytes read before that are kept and applied when it
+  is built. A save written before it is built writes those bytes back unchanged.
 - **While playing:** the autosave writes the playing scene's snapshot.
-- The sandbox always starts on the showcase, as today.
-- The save viewer shows `SCNX`, `BHVR` and `PARM` by name.
+- The sandbox starts on the first scene in the list.
+- The save viewer shows `FILE`, `BHVR` and `PARM` by name.
 
 ### Undo
 
@@ -1329,8 +1379,10 @@ typedef struct SceneDoc {
 
 - A packaged file that does not read is a bug. Errors are logged with their file and line through `nv_log` (source `"scene"`), at
   most 16.
-- If the showcase file does not read, the sandbox stops with `fatal`, as it does today when the character fails to load.
-- If the stress file does not read, switching to it is refused and the View tab shows the first error.
+- A scene that does not read cannot be shown (the same for every scene). Switching to it is refused and the View tab shows the first
+  error.
+- If the first scene does not read at start, there is no scene to show, so the sandbox stops with `fatal` (as today when the character
+  fails to load).
 - ctest checks that the two files read. Each rule of the format is tested with the test's own text.
 
 ### Engine changes
@@ -1350,7 +1402,7 @@ typedef struct SceneDoc {
    - A save written by today's build (a fixed file made before the change) loads into the same scene.
    - `_sandbox_debug_save_crc` before Play equals the one after Stop.
    - First-visit node values match today's within 1e-5 (degree conversions may change the last bit).
-4. **The stress scene from its file, under Edit/Play:** `stress.nvscene`, the four generator kinds, the benchmark, `SCNX`, per-scene
+4. **The stress scene from its file, under Edit/Play:** `stress.nvscene`, the four generator kinds, the benchmark, an `SCNE` per scene, per-scene
    playing state, undo's scene. Remove `stress_build`'s node code, `StressWorkloads` and `effects_stress_update`. Check:
    - Every workload at its maximum without asserts.
    - A benchmark started in Edit mode runs to the end and comes back through Stop.
