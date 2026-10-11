@@ -25,14 +25,20 @@
 | 버전 | `v2026.19` (2026-10-11 기준 최신 태그). 올리는 것은 의도적인 변경이고, 아래 "검증"을 다시 통과해야 한다 |
 | 기록 | `docs/CODING_STANDARD.md`의 의존성 절 |
 
-호스트별 묶음 (`slang-<version>-<host>.tar.gz`, 릴리스에 있는 것을 확인함):
+호스트별 묶음 (`slang-<version>-<host>.tar.gz`, 릴리스에 있는 것을 확인함). `slangc`는 **빌드를 하는 호스트**에서 일반 프로그램으로
+돈다. 그래서 각 호스트마다 네이티브 묶음이 있어야 하고, Emscripten으로 빌드하지 않는다. 타깃(WGSL, HLSL, DXIL)은 호스트와 별개다:
+`slangc`는 텍스트를 쓰므로 결과는 컴파일한 곳과 무관하다.
 
-| 호스트 | 묶음 |
-|---|---|
-| Linux x86_64 (CI, 클라우드 세션) | `linux-x86_64` (약 80 MB, 풀면 약 250 MB) |
-| Linux arm64 | `linux-aarch64` |
-| Windows x64 / arm64 | `windows-x86_64` / `windows-aarch64` |
-| macOS arm64 | `macos-aarch64` |
+| 호스트 | 묶음 | 필요한 곳 |
+|---|---|---|
+| Linux x86_64 | `linux-x86_64` (약 80 MB, 풀면 약 250 MB) | CI(`ubuntu-24.04`), 클라우드 세션. **필수** |
+| Windows x64 | `windows-x86_64` | Windows에서 개발하는 사람, 나중의 D3D12 작업 |
+| macOS arm64 | `macos-aarch64` | Apple Silicon에서 개발하는 사람 |
+| Linux arm64 | `linux-aarch64` | arm64 Linux에서 개발하는 사람 |
+| Windows arm64 | `windows-aarch64` | Windows on Arm에서 개발하는 사람 |
+
+검증 상태: 다섯 묶음 모두 `v2026.19` 릴리스에 있음을 확인했다(묶음 존재 확인). 내려받아 푼 것은 `linux-x86_64` 하나뿐이고, 나머지
+넷의 내용(실행 여부, 호환성)은 아직 확인하지 않았다. 각 호스트에서 `slangc -v`와 시험 컴파일이 통과하는 것을 단계 1에서 확인한다.
 
 ### 빌드
 
