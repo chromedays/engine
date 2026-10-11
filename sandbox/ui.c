@@ -573,7 +573,7 @@ void ui_view_tab(Sandbox* sandbox)
     }
     // A scene that could not be built cannot be shown: the first error says why.
     for (u32 i = 0; i < sandbox->scene_count; ++i) {
-        if (!sandbox->docs[i].built && search_plain(sandbox)) {
+        if (sandbox->docs[i].error[0] && search_plain(sandbox)) {
             igPushStyleColor_Vec4(ImGuiCol_Text, (ImVec4_c){1.0f, 0.45f, 0.4f, 1.0f});
             igTextWrapped("%s", sandbox->docs[i].error);
             igPopStyleColor(1);

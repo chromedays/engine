@@ -415,6 +415,57 @@ internal void write_scene(NvChunkWriter* w, Sandbox* sandbox, SceneDoc* doc)
     nv_chunk_end(w);
 }
 
+internal SceneDoc* scene_of(Sandbox* sandbox, NvChunkReader* r, NvChunk chunk);
+
+// The loaded save, as the chunks of its file (an empty chunk when there is none).
+internal NvChunk loaded_root(Sandbox* sandbox, NvChunkFile* file)
+{
+    *file = nv_chunk_file_open(sandbox->loaded_save, sandbox->loaded_save_size, SAVE_MAGIC, SAVE_VERSION);
+    return file->ok ? file->root : (NvChunk){0};
+}
+
+// A scene not built yet is written as it was saved (no change can have been made to it).
+internal void copy_loaded_scene(NvChunkWriter* w, Sandbox* sandbox, u32 index)
+{
+    NvChunkFile file;
+    NvChunk root = loaded_root(sandbox, &file);
+    NvChunkReader r = {0};
+    NvChunk child = {0};
+    while (root.data && nv_chunk_next(&r, root, &child)) {
+        NvChunkReader fr = {0};
+        if (child.tag == TAG_SCNE && scene_of(sandbox, &fr, child) == &sandbox->docs[index]) {
+            nv_chunk_copy(w, child);
+            return;
+        }
+    }
+}
+
+internal b32 asset_is_loaded(Sandbox* sandbox, const char* path)
+{
+    for (u32 i = 0; i < sandbox->asset_count; ++i)
+        if (sandbox->assets[i].loaded && strcmp(sandbox->assets[i].path, path) == 0)
+            return 1;
+    return 0;
+}
+
+// The saved materials of glbs no scene has loaded yet stay in the save, so that the scene which loads one has them.
+internal void copy_unloaded_assets(NvChunkWriter* w, Sandbox* sandbox)
+{
+    NvChunkFile file;
+    NvChunk root = loaded_root(sandbox, &file);
+    NvChunkReader r = {0};
+    NvChunk child = {0};
+    while (root.data && nv_chunk_next(&r, root, &child)) {
+        if (child.tag != TAG_ASET)
+            continue;
+        char path[SCENE_PATH_SIZE] = "";
+        NvChunkReader fr = {0};
+        nv_chunk_read_string(&fr, child, TAG_FILE, path, sizeof(path));
+        if (!asset_is_loaded(sandbox, path))
+            nv_chunk_copy(w, child);
+    }
+}
+
 NvChunkWritten save_write(Sandbox* sandbox, void* buffer, u32 capacity)
 {
     NvChunkWriter w;
@@ -451,12 +502,16 @@ NvChunkWritten save_write(Sandbox* sandbox, void* buffer, u32 capacity)
 
     // Scenes in the order of the list, the first first: an older build reads only the first SCNE. A scene that could not be built has
     // nothing to save.
-    for (u32 i = 0; i < sandbox->scene_count; ++i)
+    for (u32 i = 0; i < sandbox->scene_count; ++i) {
         if (sandbox->docs[i].built)
             write_scene(&w, sandbox, &sandbox->docs[i]);
+        else
+            copy_loaded_scene(&w, sandbox, i);
+    }
 
     for (u32 i = 0; i < sandbox->asset_count; ++i)
         write_asset(&w, sandbox, &sandbox->assets[i]);
+    copy_unloaded_assets(&w, sandbox);
 
     return nv_chunk_file_end(&w);
 }
@@ -809,13 +864,14 @@ internal void read_node(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, Scene
 }
 
 // The scene a SCNE is of: the one whose file its FILE names; without one, the first's (older saves have a single SCNE).
+// The scene a SCNE is of, built or not. Without a FILE it is the first scene's (older saves).
 internal SceneDoc* scene_of(Sandbox* sandbox, NvChunkReader* r, NvChunk chunk)
 {
     char file[SCENE_PATH_SIZE] = "";
     if (!nv_chunk_read_string(r, chunk, TAG_FILE, file, sizeof(file)))
-        return sandbox->docs[0].built ? &sandbox->docs[0] : NULL;
+        return &sandbox->docs[0];
     for (u32 i = 0; i < sandbox->scene_count; ++i)
-        if (sandbox->docs[i].built && strcmp(sandbox->docs[i].file, file) == 0)
+        if (strcmp(sandbox->docs[i].file, file) == 0)
             return &sandbox->docs[i];
     return NULL;
 }
@@ -823,7 +879,8 @@ internal SceneDoc* scene_of(Sandbox* sandbox, NvChunkReader* r, NvChunk chunk)
 internal void read_scene(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, b32 apply, u32 parts)
 {
     SceneDoc* doc = scene_of(sandbox, r, scene);
-    if (!doc) {
+    // A scene not built yet has nothing to apply to: its saved bytes stay in loaded_save until it is built (save_apply_loaded).
+    if (!doc || !doc->built) {
         // A scene this build does not have: skipped, but whole.
         NvChunk skipped = {0};
         while (nv_chunk_next(r, scene, &skipped)) {
@@ -1308,6 +1365,7 @@ void save_init(Sandbox* sandbox)
 {
     sandbox->saved = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
     sandbox->next_save = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
+    sandbox->loaded_save = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
     nv_storage_init(&sandbox->storage, SAVE_DIR);
     if (!sandbox->storage.available)
         return;
@@ -1318,6 +1376,10 @@ void save_init(Sandbox* sandbox)
     if (file.ok) {
         SaveLoad load = save_load(sandbox, file.bytes, (u32)file.size);
         problem = load.error;
+        if (!problem) {
+            memcpy(sandbox->loaded_save, file.bytes, file.size);
+            sandbox->loaded_save_size = (u32)file.size;
+        }
     } else if (nv_storage_exists(&sandbox->storage, SAVE_FILE)) {
         problem = "empty, unreadable or too large";
     }
@@ -1410,5 +1472,38 @@ void save_ui(Sandbox* sandbox)
             save_show_viewer(sandbox);
         if (sandbox->show_save)
             save_viewer(sandbox);
+    }
+}
+
+void save_apply_loaded(Sandbox* sandbox, u32 index, u32 assets_before)
+{
+    if (!sandbox->loaded_save_size)
+        return;
+    NvChunkFile file;
+    NvChunk root = loaded_root(sandbox, &file);
+    NvChunkReader r = {0};
+    NvChunk child = {0};
+    while (root.data && nv_chunk_next(&r, root, &child)) {
+        NvChunkReader fr = {0};
+        if (child.tag == TAG_SCNE && scene_of(sandbox, &fr, child) == &sandbox->docs[index]) {
+            NvChunkReader sr = {0};
+            read_scene(&sr, child, sandbox, 1, SAVE_PART_SCENE | SAVE_PART_VIEW);
+        }
+    }
+    // Only the glbs this build loaded: the others have their own, possibly edited, materials.
+    child = (NvChunk){0};
+    r = (NvChunkReader){0};
+    while (root.data && nv_chunk_next(&r, root, &child)) {
+        if (child.tag != TAG_ASET)
+            continue;
+        char path[SCENE_PATH_SIZE] = "";
+        NvChunkReader fr = {0};
+        nv_chunk_read_string(&fr, child, TAG_FILE, path, sizeof(path));
+        for (u32 i = assets_before; i < sandbox->asset_count; ++i) {
+            if (sandbox->assets[i].loaded && strcmp(sandbox->assets[i].path, path) == 0) {
+                NvChunkReader ar = {0};
+                read_asset(&ar, child, sandbox, 1);
+            }
+        }
     }
 }

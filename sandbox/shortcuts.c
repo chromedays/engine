@@ -302,7 +302,7 @@ void shortcuts_help(Sandbox* sandbox)
 b32 command_listed(Sandbox* sandbox, u32 id)
 {
     if (id >= SC_SCENE_FIRST && id < SC_SCENE_FIRST + SANDBOX_MAX_SCENES)
-        return id - SC_SCENE_FIRST < sandbox->scene_count && sandbox->docs[id - SC_SCENE_FIRST].built;
+        return id - SC_SCENE_FIRST < sandbox->scene_count && sandbox->docs[id - SC_SCENE_FIRST].desc;
     return shortcuts[id].run && id != SC_PALETTE && id != SC_FIND;
 }
 

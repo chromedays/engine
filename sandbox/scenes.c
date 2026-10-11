@@ -215,25 +215,17 @@ internal void make_palette(Sandbox* sandbox, const PaletteDesc* palette, NvMater
 // Building a scene
 //
 
+// Makes the scene's nodes, meshes, materials and behaviors from its parsed file (scenes_init read it). Fails (logged) when a
+// glb or a joint the file names does not load.
 internal b32 build_scene(Sandbox* sandbox, u32 index)
 {
     SceneDoc* doc = &sandbox->docs[index];
-    const char* path = scene_files[index];
-    memset(doc, 0, sizeof(*doc)); // not a compound literal: SceneDoc is larger than the stack
-    doc->file = path;
+    const SceneDesc* desc = doc->desc;
     NvArena* scratch = &sandbox->scratch;
-    NvFileData file = nv_file_read(scratch, path);
-    if (!file.ok) {
-        nv_log(NV_LOG_ERROR, "scene", "cannot read the scene file %s", path);
-        snprintf(doc->error, sizeof(doc->error), "cannot read the scene file %s", path);
-        return 0;
-    }
-    SceneDesc* desc = NV_PUSH_STRUCT(&sandbox->permanent, SceneDesc);
-    SceneRead read = scene_read(desc, path, (const char*)file.bytes, file.size);
-    if (!read.ok) {
-        snprintf(doc->error, sizeof(doc->error), "%s", read.first_error); // scene_read logged every error with its line
-        return 0;
-    }
+    // The file's name and its parsed description stay; everything made from them starts empty.
+    const char* file = doc->file;
+    memset(doc, 0, sizeof(*doc)); // not a compound literal: SceneDoc is larger than the stack
+    doc->file = file;
     doc->desc = desc;
     NvScene* scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
     doc->scene = scene;
@@ -396,22 +388,52 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
     return 1;
 }
 
+// Reads every scene file (their titles and their errors are known at start); builds only the first, which the sandbox starts with.
+// A scene is built when it is first shown (scenes_ensure). Fails when the first cannot be read or built.
 b32 scenes_init(Sandbox* sandbox)
 {
     sandbox->scene_count = (u32)NV_ARRAY_COUNT(scene_files);
     NV_ASSERT(sandbox->scene_count <= SANDBOX_MAX_SCENES);
     for (u32 i = 0; i < sandbox->scene_count; ++i) {
+        SceneDoc* doc = &sandbox->docs[i];
+        doc->file = scene_files[i];
         umm mark = sandbox->scratch.used;
-        if (!build_scene(sandbox, i)) {
-            SceneDoc* doc = &sandbox->docs[i];
-            if (!doc->error[0])
-                snprintf(doc->error, sizeof(doc->error), "%s: could not be built (see the Console)", scene_files[i]);
-            nv_log(NV_LOG_ERROR, "scene", "the scene %s is not available: %s", scene_files[i], doc->error);
-            doc->built = 0;
+        NvFileData file = nv_file_read(&sandbox->scratch, scene_files[i]);
+        if (!file.ok) {
+            nv_log(NV_LOG_ERROR, "scene", "cannot read the scene file %s", scene_files[i]);
+            snprintf(doc->error, sizeof(doc->error), "cannot read the scene file %s", scene_files[i]);
+        } else {
+            SceneDesc* desc = NV_PUSH_STRUCT(&sandbox->permanent, SceneDesc);
+            SceneRead read = scene_read(desc, scene_files[i], (const char*)file.bytes, file.size); // logs every error with its line
+            if (read.ok)
+                doc->desc = desc;
+            else
+                snprintf(doc->error, sizeof(doc->error), "%s", read.first_error);
         }
         sandbox->scratch.used = mark;
     }
-    return sandbox->docs[0].built;
+    return sandbox->docs[0].desc && scenes_ensure(sandbox, 0);
+}
+
+b32 scenes_ensure(Sandbox* sandbox, u32 index)
+{
+    SceneDoc* doc = &sandbox->docs[index];
+    if (doc->built)
+        return 1;
+    if (!doc->desc)
+        return 0;
+    u32 assets_before = sandbox->asset_count;
+    umm mark = sandbox->scratch.used;
+    b32 built = build_scene(sandbox, index);
+    sandbox->scratch.used = mark;
+    if (!built) {
+        if (!doc->error[0])
+            snprintf(doc->error, sizeof(doc->error), "%s: could not be built (see the Console)", scene_files[index]);
+        nv_log(NV_LOG_ERROR, "scene", "the scene %s is not available: %s", scene_files[index], doc->error);
+        return 0;
+    }
+    save_apply_loaded(sandbox, index, assets_before); // the saved state of this scene, and of the glbs it loaded for the first time
+    return 1;
 }
 
 SceneDoc* sandbox_doc(Sandbox* sandbox)
