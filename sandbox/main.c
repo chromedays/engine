@@ -741,6 +741,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_fixed_dt(float dt)
         effects_clear(&sandbox_state);
         sandbox_state.vfx.time = 1.0f;
         sandbox_state.vfx.random = 0x2545F491u;
+        nv_random_seed(&sandbox_state.effects.rng, 0x9E3779B9u, 1); // what the behaviors' random points come from
     }
 }
 

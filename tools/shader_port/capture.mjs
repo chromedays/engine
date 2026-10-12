@@ -263,11 +263,12 @@ async function vfxCase(context, id, spec, out) {
         await page.mouse.move(x + w / 2, y + h / 2);
         await page.mouse.down(); await sleep(120); await page.mouse.up();
         await page.waitForFunction(() => Module._sandbox_debug_playing() === 1, null, { timeout: 60000 });
-        await page.evaluate((n) => Module._sandbox_debug_set_effects(n, 0, 0, 0, 0), spec.play[0]);
     }
     if (spec.fast) await page.evaluate(() => { Module._sandbox_debug_set_resolution(0, 4, 0); Module._sandbox_debug_set_msaa(1); });
     await page.waitForTimeout(500);
     await call(page, 'fixed_dt', spec.dt); // clears the effects, so everything below is counted from here
+    // The behavior starts only now, under the stopped clock: before, it would emit by the real time passed.
+    if (spec.play) await page.evaluate((n) => Module._sandbox_debug_set_effects(n, 0, 0, 0, 0), spec.play[0]);
     const fireList = (list) => page.evaluate((l) => { for (const [effect, count] of l) Module._sandbox_debug_vfx_fire_n(effect, count); }, list);
     const events = new Map(); // frame -> { fire, dump, shot }
     const at = (frame) => { if (!events.has(frame)) events.set(frame, {}); return events.get(frame); };
