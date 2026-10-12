@@ -357,6 +357,18 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
   WGSL 문자열을 대신한다. `vfx.c`의 문자열과 이어 붙이기(`create_module`)는 없어졌다. `CORNERS`는 `var<private>`이 되어 동적 인덱스가 된다.
 - V1–V4, V7, V11의 덤프와 화면이 기준선과 일치한다(V1, V3은 블록 0.01, V4는 0.00, V2 16, V11 15). WebGPU 오류 0.
 
+### 단계 4의 결과 (2026-10-12)
+
+- `renderer_frame.slang`(공용), `mesh.slang`, `shadow.slang`, `debug_lines.slang`, `upscale.slang`, `bloom.slang`이 renderer.c의 문자열을 대신한다.
+  구조체는 224(프레임), 80(오브젝트), 16(재질), 64(upscale)로 `shader_layout_test`와 `_Static_assert`가 맞춘다. 저장소의 행렬은
+  `array<vec4<f32>, 4>`로 읽어 `mat4x4`로 다시 만든다(수학적으로 같다).
+- **브라우저 실행이 잡은 버그:** `slangc`는 WGSL의 정점 입력에서 `[[vk::location(n)]]`을 무시하고 빈틈을 메워 번호를 매긴다.
+  스킨 그림자 셰이더의 위치 0, 3, 4가 0, 1, 2가 되어 "skinned shadow" 파이프라인이 만들어지지 않았다("Vertex attribute slot 2 ... is not
+  present in the VertexState"). `slangc`와 Tint는 둘 다 통과시켰다. `TEXCOORD<n>` 시맨틱의 번호가 위치가 되므로 모든 정점 입력과
+  varying을 그렇게 쓴다. `shader_layout_test`는 이제 생성된 WGSL에서 각 정점 엔트리 포인트의 입력 위치를 읽고(리플렉션은 순서대로
+  번호를 매겨 믿을 수 없다), 위치가 어긋난 WGSL을 일부러 만들어 이 시험이 잡는 것을 확인했다.
+- S1–S8의 22장이 기준선과 **픽셀까지 같다**(모두 가장 큰 채널 차이 0/255). WebGPU 오류 0.
+
 ### 열린 질문
 
 - DXIL: 언제 DXC로 컴파일과 검증을 시작할지(DXC도 빌드 도구 의존성이므로 따로 승인). RHI 스펙에서 정하자는 것이 제안이다.
