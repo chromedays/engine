@@ -369,6 +369,14 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
   번호를 매겨 믿을 수 없다), 위치가 어긋난 WGSL을 일부러 만들어 이 시험이 잡는 것을 확인했다.
 - S1–S8의 22장이 기준선과 **픽셀까지 같다**(모두 가장 큰 채널 차이 0/255). WebGPU 오류 0.
 
+### 단계 5의 결과 (2026-10-12)
+
+- `preview_common.slang`, `preview_color.slang`, `preview_depth.slang`, `preview_depth_ms.slang`이 imgui.c의 마지막 WGSL 문자열을 대신한다.
+  **`slangc`는 입력으로 준 파일의 엔트리 포인트만 컴파일하고 import한 파일의 것은 컴파일하지 않는다**: 처음에 `vs_main`을 공용 모듈에 두었더니 WGSL에
+  없었다(Tint는 통과). 그래서 모듈에는 `preview_vertex`가 있고 세 파일이 각자 `vs_main`을 갖는다. 텍스처 미리보기의 다중 샘플 깊이는
+  `DepthTexture2DMS`(`GetDimensions(w, h, samples)`, `Load(int2, 0)`)로 같은 WGSL(`texture_depth_multisampled_2d`, `textureLoad`)이 된다.
+- S9(컬러, 깊이, 다중 샘플 깊이)와 S10(데스크톱, 메뉴, 폰)이 기준선과 픽셀까지 같다.
+
 ### 열린 질문
 
 - DXIL: 언제 DXC로 컴파일과 검증을 시작할지(DXC도 빌드 도구 의존성이므로 따로 승인). RHI 스펙에서 정하자는 것이 제안이다.

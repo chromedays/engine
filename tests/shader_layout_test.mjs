@@ -99,6 +99,34 @@ const EXPECTED = {
             '0:2': { name: 'samp', kind: 'samplerState' },
         },
     },
+    preview_color: {
+        entryPoints: ['vs_main', 'fs_main'],
+        inputs: { vs_main: [0, 1, 2] },
+        bindings: {
+            '0:0': { name: 'u', kind: 'constantBuffer', size: 64 }, // NvMat4
+            '0:3': { name: 'p', kind: 'constantBuffer', size: 32 }, // PreviewParams
+            '0:1': { name: 's', kind: 'samplerState' },
+            '0:2': { name: 't', kind: 'resource', shape: 'texture2D' },
+        },
+    },
+    preview_depth: {
+        entryPoints: ['vs_main', 'fs_main'],
+        inputs: { vs_main: [0, 1, 2] },
+        bindings: {
+            '0:0': { name: 'u', kind: 'constantBuffer', size: 64 }, // NvMat4
+            '0:3': { name: 'p', kind: 'constantBuffer', size: 32 }, // PreviewParams
+            '0:2': { name: 'd', kind: 'resource', shape: 'texture2D' },
+        },
+    },
+    preview_depth_ms: {
+        entryPoints: ['vs_main', 'fs_main'],
+        inputs: { vs_main: [0, 1, 2] },
+        bindings: {
+            '0:0': { name: 'u', kind: 'constantBuffer', size: 64 }, // NvMat4
+            '0:3': { name: 'p', kind: 'constantBuffer', size: 32 }, // PreviewParams
+            '0:2': { name: 'd', kind: 'resource', shape: 'texture2D', multisample: true },
+        },
+    },
 };
 
 let failures = 0;
@@ -130,6 +158,7 @@ for (const [shader, expected] of Object.entries(EXPECTED)) {
         const type = p.type;
         if (type.kind !== want.kind) { fail(shader, `${want.name}: ${type.kind}, not ${want.kind}`); continue; }
         if (want.shape && type.baseShape !== want.shape) fail(shader, `${want.name}: ${type.baseShape}, not ${want.shape}`);
+        if (!!want.multisample !== !!type.multisample) fail(shader, `${want.name}: multisample is ${!!type.multisample}, not ${!!want.multisample}`);
         if (want.size && type.kind === 'resource') {
             const size = uniform(type.resultType || {});
             if (!size || size.value !== want.size) fail(shader, `${want.name}: element size ${size && size.value}, not ${want.size}`);

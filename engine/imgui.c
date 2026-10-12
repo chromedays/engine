@@ -4,6 +4,9 @@
 #include "engine/math.h"
 #include "engine/window.h"
 #include "shaders/imgui_wgsl.h"
+#include "shaders/preview_color_wgsl.h"
+#include "shaders/preview_depth_ms_wgsl.h"
+#include "shaders/preview_depth_wgsl.h"
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -17,7 +20,6 @@
 #define IMGUI_RESET_RENDER_STATE ((ImDrawCallback)(intptr_t)-8)
 
 // The shader is engine/shaders/imgui.slang: the build makes imgui_wgsl from it.
-global const char* imgui_shader = imgui_wgsl;
 _Static_assert(sizeof(NvMat4) == 64, "shaders/imgui.slang reads a 64-byte uniform block");
 
 //
@@ -666,97 +668,13 @@ internal void hook_input(NvImgui* imgui, NvWindow* window)
 // Engine textures in the UI (nv_imgui_preview). Same vertex stage; the fragment stage shows the
 // texture as the slot's Params say. Colors reach an sRGB-encoding view, so a value meant to show
 // as stored is linearized first: channels of non-sRGB textures, alpha, and depth grays.
-#define PREVIEW_COMMON \
-    "struct Uniforms {\n" \
-    "    mvp: mat4x4f,\n" \
-    "};\n" \
-    "struct Params {\n" \
-    "    range: vec4f, // min, max, near, far\n" \
-    "    mode: vec4u,  // NvImguiPreviewMode, linearize, NvImguiDepth\n" \
-    "};\n" \
-    "@group(0) @binding(0) var<uniform> u: Uniforms;\n" \
-    "@group(0) @binding(3) var<uniform> p: Params;\n" \
-    "struct VsIn {\n" \
-    "    @location(0) pos: vec2f,\n" \
-    "    @location(1) uv: vec2f,\n" \
-    "    @location(2) col: vec4f,\n" \
-    "};\n" \
-    "struct VsOut {\n" \
-    "    @builtin(position) pos: vec4f,\n" \
-    "    @location(0) uv: vec2f,\n" \
-    "    @location(1) col: vec4f,\n" \
-    "};\n" \
-    "@vertex\n" \
-    "fn vs_main(in: VsIn) -> VsOut {\n" \
-    "    var out: VsOut;\n" \
-    "    out.pos = u.mvp * vec4f(in.pos, 0.0, 1.0);\n" \
-    "    out.uv = in.uv;\n" \
-    "    out.col = vec4f(pow(in.col.rgb, vec3f(2.2)), in.col.a);\n" \
-    "    return out;\n" \
-    "}\n" \
-    "fn gray(v: f32) -> vec4f {\n" \
-    "    return vec4f(vec3f(v), 1.0);\n" \
-    "}\n"
-
-global const char* preview_color_shader =
-    PREVIEW_COMMON
-    "@group(0) @binding(1) var s: sampler;\n"
-    "@group(0) @binding(2) var t: texture_2d<f32>;\n"
-    "@fragment\n"
-    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
-    "    let raw = textureSample(t, s, in.uv);\n"
-    "    var c = raw;\n"
-    "    if (p.mode.y != 0u) {\n"
-    "        c = vec4f(pow(raw.rgb, vec3f(2.2)), raw.a);\n"
-    "    }\n"
-    "    var out = c;\n"
-    "    switch p.mode.x {\n"
-    "        case 1u: { out = vec4f(c.rgb, 1.0); }\n"
-    "        case 2u: { out = gray(c.r); }\n"
-    "        case 3u: { out = gray(c.g); }\n"
-    "        case 4u: { out = gray(c.b); }\n"
-    "        case 5u: { out = gray(pow(raw.a, 2.2)); }\n"
-    "        default: {}\n"
-    "    }\n"
-    "    return out * in.col;\n"
-    "}\n";
-
-// Depth cannot be filtered, so it is read texel by texel. Reverse Z turns back into distance t:
-// the standard depth s = 1 - d is far (t - near) / ((far - near) t) for a perspective camera, and
-// (t - near) / (far - near) for an orthographic one (nv_mat4_perspective, nv_mat4_orthographic).
-#define PREVIEW_DEPTH_FRAGMENT \
-    "@fragment\n" \
-    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n" \
-    "    let size = textureDimensions(d);\n" \
-    "    let texel = min(vec2u(clamp(in.uv, vec2f(0.0), vec2f(1.0)) * vec2f(size)), size - vec2u(1u));\n" \
-    "    let z = textureLoad(d, texel, 0);\n" \
-    "    let near = p.range.z;\n" \
-    "    let far = p.range.w;\n" \
-    "    var v = z;\n" \
-    "    if (p.mode.z == 1u) {\n" \
-    "        v = far * near / (far - (1.0 - z) * (far - near));\n" \
-    "    } else if (p.mode.z == 2u) {\n" \
-    "        v = near + (1.0 - z) * (far - near);\n" \
-    "    }\n" \
-    "    let g = clamp((v - p.range.x) / max(p.range.y - p.range.x, 1e-6), 0.0, 1.0);\n" \
-    "    return vec4f(vec3f(pow(g, 2.2)), 1.0) * in.col;\n" \
-    "}\n"
-
-global const char* preview_depth_shader =
-    PREVIEW_COMMON
-    "@group(0) @binding(2) var d: texture_depth_2d;\n"
-    PREVIEW_DEPTH_FRAGMENT;
-
-// The same for a multisampled depth texture (the scene's with MSAA on): it shows sample 0.
-global const char* preview_depth_ms_shader =
-    PREVIEW_COMMON
-    "@group(0) @binding(2) var d: texture_depth_multisampled_2d;\n"
-    PREVIEW_DEPTH_FRAGMENT;
+// The shaders are engine/shaders/preview_*.slang: the build makes preview_color_wgsl and the others from them.
 
 typedef struct PreviewParams {
     f32 range[4];
     u32 mode[4];
 } PreviewParams;
+_Static_assert(sizeof(PreviewParams) == 32, "the preview shaders read 32 bytes of parameters");
 
 internal WGPURenderPipeline create_pipeline(WGPUDevice device, WGPUTextureFormat format, const char* code, const char* label)
 {
@@ -932,10 +850,10 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     style->FontScaleMain = imgui->ui_scale;
 
     WGPUDevice device = gpu->device;
-    imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_shader, "imgui");
-    imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_shader, "imgui preview");
-    imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_shader, "imgui depth preview");
-    imgui->depth_ms_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_ms_shader, "imgui multisampled depth preview");
+    imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_wgsl, "imgui");
+    imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_wgsl, "imgui preview");
+    imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_wgsl, "imgui depth preview");
+    imgui->depth_ms_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_ms_wgsl, "imgui multisampled depth preview");
     imgui->uniform_buffer = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(NvMat4));
     imgui->vertex_buffer = create_buffer(device, WGPUBufferUsage_Vertex, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
     imgui->index_buffer = create_buffer(device, WGPUBufferUsage_Index, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
