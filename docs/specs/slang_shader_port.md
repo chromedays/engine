@@ -351,6 +351,12 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
 - 멈춘 일: 병렬로 돌린 캡처 중 둘에서 장치가 사라지는("A valid external Instance reference no longer exists") 일이 있었다(세 실행이
   2M 파티클 버퍼를 동시에 잡아서). 그런 실행은 쓰지 않고 다시 돌린다(`problems.json`이 알려 준다).
 
+### 단계 3의 결과 (2026-10-12)
+
+- `vfx_shapes.slang`(공용; `__exported import vfx_common`: Slang의 import는 이어지지 않는다), `vfx_particles.slang`, `vfx_marks.slang`이 마지막
+  WGSL 문자열을 대신한다. `vfx.c`의 문자열과 이어 붙이기(`create_module`)는 없어졌다. `CORNERS`는 `var<private>`이 되어 동적 인덱스가 된다.
+- V1–V4, V7, V11의 덤프와 화면이 기준선과 일치한다(V1, V3은 블록 0.01, V4는 0.00, V2 16, V11 15). WebGPU 오류 0.
+
 ### 열린 질문
 
 - DXIL: 언제 DXC로 컴파일과 검증을 시작할지(DXC도 빌드 도구 의존성이므로 따로 승인). RHI 스펙에서 정하자는 것이 제안이다.
