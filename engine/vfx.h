@@ -169,6 +169,9 @@ typedef struct NvVfx {
     NvVfxStats stats;
     b32 stats_mapping;
     b32 stats_copied;
+#if !defined(NDEBUG)
+    struct NvVfxDump* dump; // the debug dump in progress or ready
+#endif
 } NvVfx;
 
 // `capacity.particles` zero is NV_VFX_DEFAULT_PARTICLES. Allocates the CPU tables from `arena` and
@@ -208,6 +211,30 @@ void nv_vfx_clear(NvVfx* vfx);
 
 // The latest numbers the GPU reported.
 NvVfxStats nv_vfx_stats(const NvVfx* vfx);
+
+#if !defined(NDEBUG)
+// Debug builds only, for the shader port's regression tests (docs/specs/slang_shader_port.md): reads the particle
+// buffers back without stalling the frame. Start a dump between frames; it is ready a few frames later.
+// `full` also reads the particles and the free and alive lists, checks the invariants and sorts the live
+// particles by (emitter, seed); without it only the counters and the indirect arguments are read.
+typedef enum NvVfxDumpState { NV_VFX_DUMP_IDLE, NV_VFX_DUMP_MAPPING, NV_VFX_DUMP_READY } NvVfxDumpState;
+
+void nv_vfx_debug_dump_start(NvVfx* vfx, b32 full);
+NvVfxDumpState nv_vfx_debug_dump_state(const NvVfx* vfx);
+// Valid while READY. The counters buffer entry `index` (0 to 15).
+u32 nv_vfx_debug_dump_counter(const NvVfx* vfx, u32 index);
+// The indirect arguments: which 0 simulate (3 words), 1 draw (8 words).
+u32 nv_vfx_debug_dump_args(const NvVfx* vfx, u32 which, u32 index);
+// Bits of the invariants that failed (0 when all hold; always 0 unless `full`): 1 free + alive != capacity,
+// 2 a slot twice or in neither list, 4 visible > alive, 8 a live particle past its life, 16 draw arguments
+// that do not match the counters, 32 reported stats that do not match the counters.
+u32 nv_vfx_debug_dump_violations(const NvVfx* vfx);
+u32 nv_vfx_debug_dump_particle_count(const NvVfx* vfx);
+// The live particle `index` of the sorted list: field 0 emitter, 1 seed, 2 to 4 position, 5 age, 6 to 8 velocity,
+// 9 life, 10 scale, 11 rotation.
+f64 nv_vfx_debug_dump_particle(const NvVfx* vfx, u32 index, u32 field);
+void nv_vfx_debug_dump_finish(NvVfx* vfx); // frees the result; the state is IDLE again
+#endif
 
 // Called by the renderer. Records the emit, simulate and prepare passes (`timestamps`, when not
 // NULL, times them) after uploading what the CPU queued, and remakes the draw pipelines when the
