@@ -1,6 +1,6 @@
 # D3D12 포팅 스펙 (Windows 네이티브 빌드, 엔진의 GPU API)
 
-상태: 초안 (2026-10-12). 아래 "합의할 것"을 정한 뒤 구현한다. 이 스펙의 변경은 먼저 합의한다.
+상태: 초안 (2026-10-12). "합의할 것"은 모두 정했다(2026-10-12). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
 
@@ -44,7 +44,16 @@ Emscripten)는 그대로 남고 지금처럼 주 배포물이다(CI, Pages; 합�
 
 ### 합의할 것
 
-AGENTS.md의 "Third-party libraries" 규칙에 따라 후보를 적고 추천한다. 확인을 받기 전에는 아무것도 더하지 않는다.
+AGENTS.md의 "Third-party libraries" 규칙에 따라 후보를 적고 추천했다. 네 가지 모두 정했다(합의함, 2026-10-12):
+
+| 항목 | 정한 것 |
+|---|---|
+| 1. GPU API | 직접 작성(`engine/gpu.h`) |
+| 2. 플랫폼 계층 | Win32 직접 |
+| 3. DXIL 컴파일러 | DXC, 빌드 시점 도구로만 |
+| 4. 그 밖 | **Agility SDK를 들인다**(추천과 다름). 나머지(D3D12 Memory Allocator, WinPixEventRuntime, stb_image)는 들이지 않는다 |
+
+받아들인 것은 단계 3에서 실제로 더할 때 `CODING_STANDARD.md`의 의존성 절에 까닭과 함께 적는다.
 
 #### 1. GPU API (RHI)
 
@@ -72,16 +81,43 @@ D3D12는 DXIL(셰이더 모델 6) 또는 DXBC(셰이더 모델 5.1) 바이트코
 | **DXC (추천)** | Microsoft의 DirectXShaderCompiler. 공식 GitHub 릴리스의 미리 빌드된 묶음(`dxc.exe`, `dxcompiler.dll`, 서명용 `dxil.dll`)을 Slang, Tint와 같은 조건으로 쓴다: **빌드 시점 도구로만 실행하고 어디에도 링크하지 않으며, 버전과 SHA-256을 고정한다.** 라이선스는 `dxil.dll`이 Microsoft 라이선스, 나머지가 LLVM(University of Illinois)이다. 묶음 안의 라이선스 파일을 단계 3에서 확인해 `CODING_STANDARD.md`에 적는다. 셰이더 모델 6.6을 쓴다 |
 | FXC (Windows SDK의 `d3dcompiler_47`) | SM 5.1까지만 컴파일한다. 최소 사양이 SM 6.6이므로(아래 "최소 사양") 쓸 수 없다 |
 
-#### 4. 그 밖 (추천: 들이지 않는다)
+#### 4. 그 밖 (정함: Agility SDK만 들인다)
 
 | 후보 | 판단 |
 |---|---|
 | D3D12 Memory Allocator (MIT, C++) | 리소스가 적고(텍스처 최대 256개, 타깃 십여 개, 버퍼 수십 개) 크기가 정해져 있어 커밋된 리소스(`CreateCommittedResource`)로 충분하다. C++이라 래퍼도 필요하다 |
-| Agility SDK | Windows 11에 기본으로 들어 있는 D3D12 런타임이 셰이더 모델 6.6을 받으면 필요 없다. 단계 3에서 확인하고, 받지 않거나 향상된 배리어 또는 더 새 셰이더 모델이 필요해지면 그때 후보로 올린다 |
+| **Agility SDK (들인다, 합의함 2026-10-12)** | Microsoft의 D3D12 런타임(`D3D12Core.dll`, Debug의 `d3d12SDKLayers.dll`)을 실행 파일 옆에 두어, OS에 들어 있는 런타임 대신 쓴다. 그래서 런타임의 기능(셰이더 모델, 디버그 레이어)이 Windows 업데이트가 아니라 우리가 고정한 버전으로 정해진다. 아래 "Agility SDK" |
 | WinPixEventRuntime | 패스 이름은 `ID3D12GraphicsCommandList::BeginEvent`로 PIX에 보인다. 형식 있는 마커가 필요해지면 다시 본다 |
 | stb_image (공개 도메인/MIT) | JPEG 디코딩은 Windows Imaging Component(WIC, OS 내장)로 된다. 웹에서 브라우저가 디코딩하듯 네이티브는 OS가 한다. 스크린숏의 PNG 인코딩도 WIC로 된다 |
 
-플랫폼이 요구하는 것으로 의존성 절에 더하는 것: Windows SDK(D3D12, DXGI, WIC 헤더), Visual Studio의 MSVC(아래 "빌드").
+플랫폼이 요구하는 것으로 의존성 절에 더하는 것: Windows SDK(DXGI, WIC 헤더), Visual Studio의 MSVC(아래 "빌드"). D3D12 헤더는
+Agility SDK의 것을 쓴다(런타임과 버전이 맞는다).
+
+#### Agility SDK
+
+- **받기:** NuGet 패키지 `Microsoft.Direct3D.D3D12`(`.nupkg`는 zip이다)를 `cmake/shaders.cmake`가 DXC처럼 받는다: 버전과 SHA-256을
+  고정하고, `NV_TOOLS_DIR`에 풀고, `NV_AGILITY_SDK`로 대신할 수 있다. Windows 호스트의 네이티브 빌드에서만 받는다. 버전은 단계 3에서
+  그때의 마지막 정식(프리뷰가 아닌) 버전으로 고정하고 여기 적는다.
+- **쓰기:** 헤더(`include/d3d12.h` 등)를 Windows SDK의 것보다 먼저 찾게 한다. 실행 파일이 런타임에게 두 기호를 내보낸다
+  (`engine/gpu_d3d12.c`):
+
+  ```c
+  // The D3D12 loader reads these from the executable and loads D3D12Core.dll from that folder instead of the OS's runtime.
+  __declspec(dllexport) extern const UINT D3D12SDKVersion = NV_AGILITY_SDK_VERSION;
+  __declspec(dllexport) extern const char* D3D12SDKPath = ".\\D3D12\\";
+  ```
+
+  `NV_AGILITY_SDK_VERSION`은 CMake가 고정한 버전에서 정의한다. 헤더와 DLL과 이 숫자가 한 버전이다.
+- **설치:** `nv_setup_executable`이 `bin/x64/D3D12Core.dll`을 실행 파일 옆의 `D3D12\`에 복사한다. Debug 빌드는 `d3d12SDKLayers.dll`도
+  (디버그 레이어가 런타임과 버전이 맞아야 한다). 링크하는 것은 없다: 런타임이 그 폴더에서 읽는다.
+- **확인:** 시작할 때 런타임이 우리 `D3D12Core.dll`을 읽었는지 로그에 남긴다(`ID3D12SDKConfiguration` 또는 그 모듈의 경로). 읽지
+  못하면 OS의 런타임으로 돌아가는 대신 알리고 끝낸다: 두 런타임에서 달리 도는 것을 디버깅하지 않기 위해서다.
+- **라이선스:** Microsoft의 라이선스(DirectX SDK EULA). 실행 파일과 함께 재배포를 허용한다. 네이티브 빌드는 어디에도 내놓지 않지만,
+  단계 3에서 패키지 안의 라이선스 파일을 읽고 `CODING_STANDARD.md`에 적는다.
+- **바뀌지 않는 것:** 최소 사양(셰이더 모델 6.6, 기능 수준 12_2)과 1:1 포팅의 범위. Agility SDK가 셰이더 모델 6.8(`SV_StartInstanceLocation`)과
+  향상된 배리어를 열어 주지만 그것들은 드라이버도 받아야 하는 기능이므로 쓰지 않는다: first instance는 아래 루트 상수 그대로이고, 배리어는
+  기존 전이 배리어다. 런타임 쪽 셰이더 모델 6.6이 보장되므로 "기본 런타임이 6.6을 받는가"라는 열린 질문은 없어진다(드라이버는 여전히
+  `CheckFeatureSupport`로 확인한다).
 
 ### 최소 사양 (합의함, 2026-10-12)
 
@@ -357,7 +393,8 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
   코딩 표준의 "언어와 파일"에 "우리 코드는 emcc(clang)와 MSVC 둘 다에서 컴파일된다"고 적는다.
 - `nv_setup_executable`이 네이티브에서는 실행 파일과 매니페스트, `assets/`(또는 `PRELOAD`의 폴더)를 설치한다. `.data`, `.js`, 페이지는
   웹에서만 만든다.
-- `cmake/shaders.cmake`가 Windows 호스트에서 DXC 묶음을 받는다(버전과 SHA-256 고정, `NV_DXC`로 대신할 수 있다).
+- `cmake/shaders.cmake`가 Windows 호스트에서 DXC 묶음과 Agility SDK를 받는다(버전과 SHA-256 고정, `NV_DXC`, `NV_AGILITY_SDK`로
+  대신할 수 있다. 위 "Agility SDK").
 - ctest: 네이티브 빌드에서는 C 테스트가 그냥 실행 파일로 돈다(Node 없이). `.mjs` 테스트(`strings_test`, `shader_layout_test`)는 Node를
   찾으면 돌고, 없으면 경고하고 건너뛴다. 웹 CI가 어차피 돌린다.
 - CI는 지금처럼 웹만 빌드한다. 네이티브 빌드는 CI에서 빌드하지도 내놓지도 않는다(합의함, 2026-10-12). 그래서 웹만 고친 변경이
@@ -415,7 +452,7 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
 2. **GPU API (웹만):** `engine/gpu.h`와 `gpu_webgpu.c`. `renderer.c`, `vfx.c`, `imgui.c`, `sandbox/textures.c`, 두 앱의 `main.c`를 옮긴다.
    끝 조건: `gpu_webgpu.c` 밖에 `wgpu`와 `WGPU`가 없다. 기준선과 픽셀까지 같고 효과 덤프도 같다. **가장 큰 단계이고, 여기까지는 D3D12
    없이 웹에서 모두 검증된다.**
-3. **Windows 껍데기:** MSVC 빌드(`NV_TRAP`, `NV_PRINTF_FORMAT`과 웹 빌드가 그대로인 것도 확인), 매니페스트, Win32 플랫폼 계층 전부, DXC와 DXIL 헤더, `register` 주석. GPU는 장치, 스왑체인과
+3. **Windows 껍데기:** MSVC 빌드(`NV_TRAP`, `NV_PRINTF_FORMAT`과 웹 빌드가 그대로인 것도 확인), 매니페스트, Win32 플랫폼 계층 전부, DXC와 DXIL 헤더, Agility SDK(받기, 내보내는 기호, `D3D12\` 설치), `register` 주석. GPU는 장치, 스왑체인과
    ImGui(`imgui.slang`)만. 확인: 데스크톱 UI가 마우스, 키보드, 한국어 IME, 클립보드로 동작하고, 저장과 다시 열기, 로컬 파일 열기와 저장이
    되고, 디버그 레이어 오류가 0개다.
 4. **D3D12 렌더러:** 메시, 그림자, 디버그 선, 업스케일, bloom, MSAA, 타임스탬프, 텍스처 미리보기. S1–S10.
@@ -439,9 +476,8 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
 
 ### 열린 질문
 
-- 위 "합의할 것" 1–4.- Chromium이 하이브리드 그래픽 노트북에서 외장 GPU로 WebGPU를 돌리게 하는 방법(단계 0): 엔진은 이미 `HighPerformance`를 청하지만
+- Chromium이 하이브리드 그래픽 노트북에서 외장 GPU로 WebGPU를 돌리게 하는 방법(단계 0): 엔진은 이미 `HighPerformance`를 청하지만
   브라우저가 따르는지, 따르지 않으면 실행 옵션(예: `--force-high-performance-gpu`)이나 Windows의 앱별 그래픽 설정이 필요한지.
-- 기본으로 들어 있는 D3D12 런타임이 셰이더 모델 6.6을 받는지(단계 3). 아니면 Agility SDK가 필요하다.
 
 ### 찾은 것
 
