@@ -19,6 +19,23 @@ const EXPECTED = {
             2: { name: 't', kind: 'resource', shape: 'texture2D' },
         },
     },
+    vfx_compute: {
+        entryPoints: ['init_free', 'emit', 'prepare_a', 'simulate', 'prepare_b'],
+        bindings: {
+            0: { name: 'frame', kind: 'constantBuffer', size: 240 }, // VfxFrameUniforms
+            1: { name: 'particles', kind: 'resource', element: 'Particle', size: 32 }, // PARTICLE_BYTES
+            2: { name: 'free_list', kind: 'resource', size: 4 },
+            3: { name: 'alive_cur', kind: 'resource', size: 4 },
+            4: { name: 'alive_next', kind: 'resource', size: 4 },
+            5: { name: 'visible', kind: 'resource', size: 4 },
+            6: { name: 'counters', kind: 'resource', size: 4 },
+            7: { name: 'emitters', kind: 'resource', element: 'Emitter', size: 128 }, // EMITTER_BYTES
+            8: { name: 'bursts', kind: 'resource', element: 'Burst', size: 64 }, // NvVfxBurst
+            9: { name: 'jobs', kind: 'resource', size: 8 },
+            10: { name: 'sim_args', kind: 'resource', size: 4 },
+            11: { name: 'draw_args', kind: 'resource', size: 4 },
+        },
+    },
 };
 
 let failures = 0;
@@ -39,10 +56,15 @@ for (const [shader, expected] of Object.entries(EXPECTED)) {
         const type = p.type;
         if (type.kind !== want.kind) { fail(shader, `${want.name}: ${type.kind}, not ${want.kind}`); continue; }
         if (want.shape && type.baseShape !== want.shape) fail(shader, `${want.name}: ${type.baseShape}, not ${want.shape}`);
+        if (want.size && type.kind === 'resource') {
+            const size = uniform(type.resultType || {});
+            if (!size || size.value !== want.size) fail(shader, `${want.name}: element size ${size && size.value}, not ${want.size}`);
+            if (want.element && type.resultType.name !== want.element) fail(shader, `${want.name}: element ${type.resultType.name}, not ${want.element}`);
+        }
         if (want.kind === 'constantBuffer') {
             const size = uniform(type.elementType);
             if (!size || size.value !== want.size) fail(shader, `${want.name}: size ${size && size.value}, not ${want.size}`);
-            for (const field of type.elementType.fields) {
+            for (const field of want.fields ? type.elementType.fields : []) {
                 const offset = uniform(field.type) ? field.binding.offset : undefined;
                 if (!(field.name in want.fields)) fail(shader, `${want.name}.${field.name} is not expected`);
                 else if (offset !== want.fields[field.name]) fail(shader, `${want.name}.${field.name} at ${offset}, not ${want.fields[field.name]}`);
