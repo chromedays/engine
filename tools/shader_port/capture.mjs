@@ -152,10 +152,18 @@ async function texturesScreens(context, wanted, out) {
         // The list is the materials, then the render targets in gather's order: the shadow map, the depth target, ...
         const materials = await page.evaluate(() => Module._sandbox_debug_texture_count());
         const index = pick.kind === 0 ? 0 : materials + 1;
-        const row = await page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_row(i, c)), index);
-        await press((row[0] + row[2]) / 2, (row[1] + row[3]) / 2);
-        const selected = await page.evaluate(() => Module._sandbox_debug_textures_selected());
-        const found = Math.floor(selected / 1000) === pick.kind;
+        // A press on a slow frame can be missed: try again a few times, holding longer.
+        let found = false;
+        for (let attempt = 0; attempt < 4 && !found; ++attempt) {
+            const row = await page.evaluate((i) => [0, 1, 2, 3].map((c) => Module._sandbox_debug_textures_row(i, c)), index);
+            await page.mouse.move((row[0] + row[2]) / 2, (row[1] + row[3]) / 2);
+            await page.mouse.down();
+            await sleep(250 * (attempt + 1));
+            await page.mouse.up();
+            await sleep(600);
+            const selected = await page.evaluate(() => Module._sandbox_debug_textures_selected());
+            found = Math.floor(selected / 1000) === pick.kind;
+        }
         if (!found) throw new Error(`S9: no row of kind ${pick.kind} (${pick.name})`);
         await stillScreen(page);
         await sleep(800);
