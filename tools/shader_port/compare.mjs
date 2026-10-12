@@ -12,10 +12,12 @@ const [baseline, current] = process.argv.slice(2).filter((a) => !a.startsWith('-
 if (!baseline || !current) { console.error('usage: compare.mjs <baseline dir> <current dir>'); process.exit(2); }
 
 const CHANNEL_TOLERANCE = 2, PIXEL_FRACTION = 0.001;
-// The effects' screens, by case: about twice what two runs of the same baseline differ by (the particle dumps of the two runs
-// are identical, so this is only the order in which the unsorted translucent particles are blended). V4's smoke is large
-// and mostly translucent: its screen only shows that something is drawn.
-const BLOCK_TOLERANCE = { V1: 3, V2: 40, V3: 20, V4: 200, V11: 20 };
+// The effects' screens, by case. Most of what two builds differ by is the order in which the unsorted translucent particles
+// are blended: SwiftShader schedules the compute passes the same way every run of a build, so one build repeats itself exactly,
+// but any change of the shader moves the order in which the groups append to the visible lists (the particle dumps still
+// agree). Measured against the baseline: V1, V3 0.01 (additive, or few), V2 16, V11 12, V4 92 (large smoke). V4's screen only
+// shows that something is drawn.
+const BLOCK_TOLERANCE = { V1: 3, V2: 40, V3: 3, V4: 200, V11: 30 };
 const FIELD_NAMES = ['emitter', 'seed', 'x', 'y', 'z', 'age', 'vx', 'vy', 'vz', 'life', 'scale', 'rotation'];
 const HALF_FIELDS = new Set([6, 7, 8, 9, 10, 11]);
 
