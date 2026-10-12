@@ -267,6 +267,7 @@ async function vfxCase(context, id, spec, out) {
     if (spec.fast) await page.evaluate(() => { Module._sandbox_debug_set_resolution(0, 4, 0); Module._sandbox_debug_set_msaa(1); });
     await page.waitForTimeout(500);
     await call(page, 'fixed_dt', spec.dt); // clears the effects, so everything below is counted from here
+    await call(page, 'restart_clips'); // the pose in the screens is then the clip's time at the fixed steps, not the real time before
     // The behavior starts only now, under the stopped clock: before, it would emit by the real time passed.
     if (spec.play) await page.evaluate((n) => Module._sandbox_debug_set_effects(n, 0, 0, 0, 0), spec.play[0]);
     const fireList = (list) => page.evaluate((l) => { for (const [effect, count] of l) Module._sandbox_debug_vfx_fire_n(effect, count); }, list);
