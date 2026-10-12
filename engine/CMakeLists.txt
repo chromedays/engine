@@ -23,7 +23,9 @@ add_library(nv STATIC
 # "shaders/<name>_wgsl.h" (docs/specs/slang_shader_port.md).
 nv_add_shader(imgui imgui.slang NV_IMGUI_WGSL)
 nv_add_shader(vfx_compute vfx_compute.slang NV_VFX_COMPUTE_WGSL)
-target_sources(nv PRIVATE ${NV_IMGUI_WGSL} ${NV_VFX_COMPUTE_WGSL})
+nv_add_shader(vfx_particles vfx_particles.slang NV_VFX_PARTICLES_WGSL)
+nv_add_shader(vfx_marks vfx_marks.slang NV_VFX_MARKS_WGSL)
+target_sources(nv PRIVATE ${NV_IMGUI_WGSL} ${NV_VFX_COMPUTE_WGSL} ${NV_VFX_PARTICLES_WGSL} ${NV_VFX_MARKS_WGSL})
 target_include_directories(nv PRIVATE ${CMAKE_BINARY_DIR})
 
 # Engine headers are included as <engine/name.h>, from the repository root.

@@ -36,6 +36,23 @@ const EXPECTED = {
             11: { name: 'draw_args', kind: 'resource', size: 4 },
         },
     },
+    vfx_particles: {
+        entryPoints: ['vs_add', 'vs_alpha', 'fs_add', 'fs_alpha'],
+        bindings: {
+            0: { name: 'frame', kind: 'constantBuffer', size: 240 },
+            1: { name: 'particles', kind: 'resource', element: 'Particle', size: 32 },
+            2: { name: 'visible', kind: 'resource', size: 4 },
+            3: { name: 'emitters', kind: 'resource', element: 'Emitter', size: 128 },
+        },
+    },
+    vfx_marks: {
+        entryPoints: ['vs_segment', 'fs_segment', 'vs_decal', 'fs_decal'],
+        bindings: {
+            0: { name: 'frame', kind: 'constantBuffer', size: 240 },
+            1: { name: 'segments', kind: 'resource', element: 'Segment', size: 80 }, // NvVfxGpuSegment
+            2: { name: 'decals', kind: 'resource', element: 'Decal', size: 48 }, // NvVfxGpuDecal
+        },
+    },
 };
 
 let failures = 0;
