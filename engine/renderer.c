@@ -159,7 +159,7 @@ internal void create_pipelines(NvRenderer* renderer)
     };
 
     WGPUColorTargetState color_target = WGPU_COLOR_TARGET_STATE_INIT;
-    color_target.format = NV_SCENE_FORMAT;
+    color_target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
     WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
     fragment.module = module;
     fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
@@ -167,7 +167,7 @@ internal void create_pipelines(NvRenderer* renderer)
     fragment.targets = &color_target;
 
     WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    depth.format = WGPUTextureFormat_Depth32Float;
+    depth.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
     depth.depthWriteEnabled = WGPUOptionalBool_True;
     depth.depthCompare = WGPUCompareFunction_Greater; // reverse Z: near is 1, far is 0
 
@@ -215,7 +215,7 @@ internal void create_pipelines(NvRenderer* renderer)
     blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
     blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
     WGPUColorTargetState debug_target = WGPU_COLOR_TARGET_STATE_INIT;
-    debug_target.format = NV_SCENE_FORMAT;
+    debug_target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
     debug_target.blend = &blend;
     WGPUFragmentState debug_fragment = WGPU_FRAGMENT_STATE_INIT;
     debug_fragment.module = debug_module;
@@ -224,7 +224,7 @@ internal void create_pipelines(NvRenderer* renderer)
     debug_fragment.targets = &debug_target;
 
     WGPUDepthStencilState debug_depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    debug_depth.format = WGPUTextureFormat_Depth32Float;
+    debug_depth.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
     debug_depth.depthWriteEnabled = WGPUOptionalBool_False;
     debug_depth.depthCompare = WGPUCompareFunction_Always;
 
@@ -244,9 +244,9 @@ internal void create_pipelines(NvRenderer* renderer)
     wgpuPipelineLayoutRelease(debug_layout);
 }
 
-internal WGPUTextureFormat shadow_texture_format(NvShadowFormat format)
+internal NvGpuFormat shadow_texture_format(NvShadowFormat format)
 {
-    return format == NV_SHADOW_FORMAT_DEPTH16 ? WGPUTextureFormat_Depth16Unorm : WGPUTextureFormat_Depth32Float;
+    return format == NV_SHADOW_FORMAT_DEPTH16 ? NV_GPU_FORMAT_DEPTH16 : NV_GPU_FORMAT_DEPTH32F;
 }
 
 internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat format)
@@ -269,7 +269,7 @@ internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat forma
         {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvSkinnedVertex, weights), .shaderLocation = 4},
     };
     WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    depth.format = shadow_texture_format(format);
+    depth.format = nv_gpu_wgpu_format(shadow_texture_format(format));
     depth.depthWriteEnabled = WGPUOptionalBool_True;
     depth.depthCompare = WGPUCompareFunction_Less;
     depth.depthBias = shadow_bias_constant[format];
@@ -319,7 +319,7 @@ internal void update_shadow_map(NvRenderer* renderer)
     desc.label = (WGPUStringView){"shadow map", WGPU_STRLEN};
     desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
     desc.size = (WGPUExtent3D){size, size, 1};
-    desc.format = shadow_texture_format(format);
+    desc.format = nv_gpu_wgpu_format(shadow_texture_format(format));
     renderer->shadow_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->shadow_view = wgpuTextureCreateView(renderer->shadow_texture, NULL);
     renderer->shadow_size = size;
@@ -620,7 +620,7 @@ internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 
     desc.label = (WGPUStringView){label, WGPU_STRLEN};
     desc.usage = usage;
     desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = NV_SCENE_FORMAT;
+    desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
     desc.sampleCount = samples;
     *texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     *view = wgpuTextureCreateView(*texture, NULL);
@@ -636,7 +636,7 @@ internal void create_upscale_pipeline(NvRenderer* renderer)
     NvGpu* gpu = renderer->gpu;
     WGPUShaderModule module = create_shader(gpu->device, upscale_wgsl);
     WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-    target.format = gpu->surface_format;
+    target.format = nv_gpu_wgpu_format(gpu->surface_format);
     WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
     fragment.module = module;
     fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
@@ -708,7 +708,7 @@ internal void create_bloom_pipelines(NvRenderer* renderer)
         add.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
         add.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_One};
         WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = NV_SCENE_FORMAT;
+        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
         target.blend = i == 2 ? &add : NULL;
         WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
         fragment.module = module;
@@ -739,7 +739,7 @@ internal void create_bloom_pipelines(NvRenderer* renderer)
     dummy_desc.label = (WGPUStringView){"bloom placeholder", WGPU_STRLEN};
     dummy_desc.usage = WGPUTextureUsage_TextureBinding;
     dummy_desc.size = (WGPUExtent3D){1, 1, 1};
-    dummy_desc.format = NV_SCENE_FORMAT;
+    dummy_desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
     renderer->bloom_dummy = wgpuDeviceCreateTexture(device, &dummy_desc);
     renderer->bloom_dummy_view = wgpuTextureCreateView(renderer->bloom_dummy, NULL);
 }
@@ -804,7 +804,7 @@ internal void update_bloom(NvRenderer* renderer)
     desc.label = (WGPUStringView){"bloom", WGPU_STRLEN};
     desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
     desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = NV_SCENE_FORMAT;
+    desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
     desc.mipLevelCount = NV_BLOOM_LEVELS;
     renderer->bloom_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i) {
@@ -968,7 +968,7 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
     if (renderer->depth_sampled)
         desc.usage |= WGPUTextureUsage_TextureBinding;
     desc.size = (WGPUExtent3D){renderer->target_width, renderer->target_height, 1};
-    desc.format = WGPUTextureFormat_Depth32Float;
+    desc.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
     desc.sampleCount = samples;
     renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
     renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
@@ -977,7 +977,7 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
     renderer->depth_texture_sampled = renderer->depth_sampled;
     renderer->depth_samples = samples;
     nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s x%u samples (%.1f MB), reverse Z (cleared to 0, compare Greater)%s",
-           renderer->target_width, renderer->target_height, nv_gpu_format_name(WGPUTextureFormat_Depth32Float), samples,
+           renderer->target_width, renderer->target_height, nv_gpu_format_name(NV_GPU_FORMAT_DEPTH32F), samples,
            target_megabytes(renderer->target_width, renderer->target_height, samples),
            renderer->depth_sampled ? ", samplable (texture viewer)" : "");
 }

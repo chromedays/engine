@@ -1,8 +1,8 @@
 #include "engine/gltf.h"
+#include "engine/image.h"
 #include "engine/log.h"
 
 #include <cgltf.h>
-#include <emscripten/emscripten.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -41,31 +41,8 @@ internal Parsed parse_file(const char* path, NvArena* scratch)
 }
 
 //
-// Images: decoded by the browser (JPEG, PNG and WebP all work) instead of a C image library.
+// Images
 //
-
-EM_ASYNC_JS(int, js_decode_image, (const u8* data, int size, const char* mime, int* width, int* height), {
-    const bytes = HEAPU8.slice(data, data + size);
-    try {
-        const bitmap = await createImageBitmap(new Blob([bytes], {type: UTF8ToString(mime)}),
-                                               {colorSpaceConversion: "none", premultiplyAlpha: "none"});
-        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-        const context = canvas.getContext("2d");
-        context.drawImage(bitmap, 0, 0);
-        Module.nvDecodedImage = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
-        HEAP32[width >> 2] = bitmap.width;
-        HEAP32[height >> 2] = bitmap.height;
-        return 1;
-    } catch (error) {
-        Module.nvLog(2, "nv", "image decode failed: " + (error && error.message || error));
-        return 0;
-    }
-});
-
-EM_JS(void, js_take_decoded_image, (u8* out), {
-    HEAPU8.set(Module.nvDecodedImage, out);
-    Module.nvDecodedImage = null;
-});
 
 typedef struct LoadedTexture {
     b32 ok;
@@ -80,16 +57,12 @@ internal LoadedTexture load_texture(const cgltf_image* image, NvRenderer* render
         return (LoadedTexture){0};
     }
     const u8* bytes = cgltf_buffer_view_data(image->buffer_view);
-    s32 width = 0;
-    s32 height = 0;
     const char* mime = image->mime_type ? image->mime_type : "image/png";
-    if (!js_decode_image(bytes, (int)image->buffer_view->size, mime, &width, &height))
-        return (LoadedTexture){0};
-
     umm mark = scratch->used;
-    u8* pixels = NV_PUSH_ARRAY(scratch, (umm)width * height * 4, u8);
-    js_take_decoded_image(pixels);
-    NvTextureId texture = nv_renderer_add_texture(renderer, image->name, (u32)width, (u32)height, pixels, 1, scratch);
+    NvImage decoded = nv_image_decode(scratch, bytes, image->buffer_view->size, mime);
+    if (!decoded.ok)
+        return (LoadedTexture){0};
+    NvTextureId texture = nv_renderer_add_texture(renderer, image->name, decoded.width, decoded.height, decoded.pixels, 1, scratch);
     scratch->used = mark;
     return (LoadedTexture){.ok = 1, .id = texture};
 }

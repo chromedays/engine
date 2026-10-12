@@ -31,17 +31,45 @@ EM_JS(void, js_browser_agent, (char* out, int size), {
     stringToUTF8(navigator.userAgent, out, size);
 });
 
-const char* nv_gpu_format_name(WGPUTextureFormat format)
+const char* nv_gpu_format_name(NvGpuFormat format)
 {
     switch (format) {
-    case WGPUTextureFormat_BGRA8Unorm:     return "BGRA8Unorm";
-    case WGPUTextureFormat_BGRA8UnormSrgb: return "BGRA8UnormSrgb";
-    case WGPUTextureFormat_RGBA8Unorm:     return "RGBA8Unorm";
-    case WGPUTextureFormat_RGBA8UnormSrgb: return "RGBA8UnormSrgb";
-    case WGPUTextureFormat_RGBA16Float:    return "RGBA16Float";
-    case WGPUTextureFormat_Depth16Unorm:   return "Depth16Unorm";
-    case WGPUTextureFormat_Depth32Float:   return "Depth32Float";
-    default:                               return "other format";
+    case NV_GPU_FORMAT_BGRA8:      return "BGRA8Unorm";
+    case NV_GPU_FORMAT_BGRA8_SRGB: return "BGRA8UnormSrgb";
+    case NV_GPU_FORMAT_RGBA8:      return "RGBA8Unorm";
+    case NV_GPU_FORMAT_RGBA8_SRGB: return "RGBA8UnormSrgb";
+    case NV_GPU_FORMAT_RGBA16F:    return "RGBA16Float";
+    case NV_GPU_FORMAT_DEPTH16:    return "Depth16Unorm";
+    case NV_GPU_FORMAT_DEPTH32F:   return "Depth32Float";
+    default:                       return "other format";
+    }
+}
+
+WGPUTextureFormat nv_gpu_wgpu_format(NvGpuFormat format)
+{
+    switch (format) {
+    case NV_GPU_FORMAT_BGRA8:      return WGPUTextureFormat_BGRA8Unorm;
+    case NV_GPU_FORMAT_BGRA8_SRGB: return WGPUTextureFormat_BGRA8UnormSrgb;
+    case NV_GPU_FORMAT_RGBA8:      return WGPUTextureFormat_RGBA8Unorm;
+    case NV_GPU_FORMAT_RGBA8_SRGB: return WGPUTextureFormat_RGBA8UnormSrgb;
+    case NV_GPU_FORMAT_RGBA16F:    return WGPUTextureFormat_RGBA16Float;
+    case NV_GPU_FORMAT_DEPTH16:    return WGPUTextureFormat_Depth16Unorm;
+    case NV_GPU_FORMAT_DEPTH32F:   return WGPUTextureFormat_Depth32Float;
+    default:                       return WGPUTextureFormat_Undefined;
+    }
+}
+
+NvGpuFormat nv_gpu_format_from_wgpu(WGPUTextureFormat format)
+{
+    switch (format) {
+    case WGPUTextureFormat_BGRA8Unorm:     return NV_GPU_FORMAT_BGRA8;
+    case WGPUTextureFormat_BGRA8UnormSrgb: return NV_GPU_FORMAT_BGRA8_SRGB;
+    case WGPUTextureFormat_RGBA8Unorm:     return NV_GPU_FORMAT_RGBA8;
+    case WGPUTextureFormat_RGBA8UnormSrgb: return NV_GPU_FORMAT_RGBA8_SRGB;
+    case WGPUTextureFormat_RGBA16Float:    return NV_GPU_FORMAT_RGBA16F;
+    case WGPUTextureFormat_Depth16Unorm:   return NV_GPU_FORMAT_DEPTH16;
+    case WGPUTextureFormat_Depth32Float:   return NV_GPU_FORMAT_DEPTH32F;
+    default:                               return NV_GPU_FORMAT_NONE;
     }
 }
 
@@ -148,11 +176,11 @@ internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter
     return request;
 }
 
-internal WGPUTextureFormat srgb_view_format(WGPUTextureFormat format)
+internal NvGpuFormat srgb_view_format(NvGpuFormat format)
 {
     switch (format) {
-    case WGPUTextureFormat_BGRA8Unorm: return WGPUTextureFormat_BGRA8UnormSrgb;
-    case WGPUTextureFormat_RGBA8Unorm: return WGPUTextureFormat_RGBA8UnormSrgb;
+    case NV_GPU_FORMAT_BGRA8: return NV_GPU_FORMAT_BGRA8_SRGB;
+    case NV_GPU_FORMAT_RGBA8: return NV_GPU_FORMAT_RGBA8_SRGB;
     default: return format;
     }
 }
@@ -164,10 +192,11 @@ internal void configure_surface(NvGpu* gpu)
 
     WGPUSurfaceConfiguration config = WGPU_SURFACE_CONFIGURATION_INIT;
     config.device = gpu->device;
-    config.format = gpu->config_format;
+    config.format = nv_gpu_wgpu_format(gpu->config_format);
+    WGPUTextureFormat view_format = nv_gpu_wgpu_format(gpu->surface_format);
     if (gpu->surface_format != gpu->config_format) {
         config.viewFormatCount = 1;
-        config.viewFormats = &gpu->surface_format;
+        config.viewFormats = &view_format;
     }
     config.usage = WGPUTextureUsage_RenderAttachment;
     config.width = gpu->width;
@@ -312,9 +341,13 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
     }
     // NOTE: Canvases only offer linear formats, but accept the sRGB twin as a view format.
     // Rendering through that view gamma-corrects shader output.
-    gpu->config_format = caps.formats[0];
+    gpu->config_format = nv_gpu_format_from_wgpu(caps.formats[0]);
     gpu->surface_format = srgb_view_format(gpu->config_format);
     wgpuSurfaceCapabilitiesFreeMembers(caps);
+    if (gpu->config_format == NV_GPU_FORMAT_NONE) {
+        nv_log(NV_LOG_ERROR, "nv", "canvas format is not one nv uses");
+        goto fail;
+    }
 
     nv_window_framebuffer_size(window, &gpu->width, &gpu->height);
     log_system(gpu);
@@ -361,7 +394,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
 
     gpu->current_texture = surface_texture.texture;
     WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.format = gpu->surface_format;
+    view_desc.format = nv_gpu_wgpu_format(gpu->surface_format);
     gpu->current_view = wgpuTextureCreateView(gpu->current_texture, &view_desc);
     return (NvGpuFrame){.ok = 1, .view = gpu->current_view};
 }

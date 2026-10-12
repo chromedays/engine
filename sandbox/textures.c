@@ -18,7 +18,7 @@ typedef struct TextureEntry {
     const char* name;
     u32 width, height, mip_count;
     u32 samples; // per pixel; 0 is 1
-    WGPUTextureFormat format;
+    NvGpuFormat format;
     u32 users;    // mesh nodes whose material uses it
     b32 in_use;
     b32 preview;  // can be drawn now
@@ -139,7 +139,7 @@ internal u32 gather(Sandbox* sandbox, TextureEntry* entries, u32 capacity)
             .width = wgpuTextureGetWidth(texture->texture),
             .height = wgpuTextureGetHeight(texture->texture),
             .mip_count = wgpuTextureGetMipLevelCount(texture->texture),
-            .format = wgpuTextureGetFormat(texture->texture),
+            .format = nv_gpu_format_from_wgpu(wgpuTextureGetFormat(texture->texture)),
             .users = users[t],
             .in_use = users[t] > 0,
             .preview = 1,
@@ -156,7 +156,7 @@ internal u32 gather(Sandbox* sandbox, TextureEntry* entries, u32 capacity)
             .width = renderer->shadow_size,
             .height = renderer->shadow_size,
             .mip_count = 1,
-            .format = wgpuTextureGetFormat(renderer->shadow_texture),
+            .format = nv_gpu_format_from_wgpu(wgpuTextureGetFormat(renderer->shadow_texture)),
             .in_use = on,
             .preview = on,
             .note = on ? NULL : "Shadows are off: a 1x1 placeholder stays bound.",
@@ -172,7 +172,7 @@ internal u32 gather(Sandbox* sandbox, TextureEntry* entries, u32 capacity)
             .height = renderer->depth_height,
             .mip_count = 1,
             .samples = renderer->depth_samples,
-            .format = WGPUTextureFormat_Depth32Float,
+            .format = NV_GPU_FORMAT_DEPTH32F,
             .in_use = 1,
             .preview = sampled,
             .note = sampled ? NULL : "Made samplable on the next frame.",
@@ -241,7 +241,7 @@ internal u32 gather(Sandbox* sandbox, TextureEntry* entries, u32 capacity)
             .width = wgpuTextureGetWidth(texture->texture),
             .height = wgpuTextureGetHeight(texture->texture),
             .mip_count = 1,
-            .format = wgpuTextureGetFormat(texture->texture),
+            .format = nv_gpu_format_from_wgpu(wgpuTextureGetFormat(texture->texture)),
             .in_use = 1,
             .preview = 1,
         };

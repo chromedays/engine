@@ -6,7 +6,6 @@
 
 #include <engine/file.h>
 
-#include <emscripten/emscripten.h>
 
 #include <math.h>
 #include <stdarg.h>
@@ -300,7 +299,7 @@ internal void frame(void* userdata)
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
 // length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
 // units alive.
-EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
+NV_DEBUG_EXPORT int battle_debug(int which)
 {
     const Game* game = &game_state;
     const Battle* battle = &game->battle;
@@ -338,7 +337,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 }
 
 // Sets the game clock's speed as the panel's buttons do: 0 pauses (keeping the speed), anything else is the speed.
-EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
+NV_DEBUG_EXPORT void battle_debug_set_speed(float speed)
 {
     game_state.paused = speed <= 0.0f;
     if (speed > 0.0f)
@@ -346,21 +345,21 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
 }
 
 // Asks for a step as the panel's buttons do (+1 forward, -1 back), taken by the next frame; it pauses.
-EMSCRIPTEN_KEEPALIVE void battle_debug_step(int direction)
+NV_DEBUG_EXPORT void battle_debug_step(int direction)
 {
     game_state.step = direction > 0 ? 1 : -1;
     game_state.paused = true;
 }
 
 // Loads `text` as a project named `name`, as a local file opened in the panel would be; 1 when it was good.
-EMSCRIPTEN_KEEPALIVE int battle_debug_load(const char* name, const char* text)
+NV_DEBUG_EXPORT int battle_debug_load(const char* name, const char* text)
 {
     return game_load_project(&game_state, name, text, strlen(text));
 }
 
 // Loads /test.abproj from the page's file system as a local file would be (a test writes it with FS.writeFile, since a string
 // cannot be passed in); 1 when it was good.
-EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
+NV_DEBUG_EXPORT int battle_debug_load_test(void)
 {
     umm mark = game_state.scratch.used;
     NvFileData data = nv_file_read(&game_state.scratch, "/test.abproj");
@@ -371,50 +370,50 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
 
 // Presses a project button of the panel (ProjectAction: 0 Open..., 1 Reload, 2 Save, 3 Save as...); 1 when it started, 0 when
 // the button is disabled.
-EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
+NV_DEBUG_EXPORT int battle_debug_project_action(int action)
 {
     return game_project_action(&game_state, (ProjectAction)action);
 }
 
 // The panel's project message, for tests.
-EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_message(void)
+NV_DEBUG_EXPORT const char* battle_debug_project_message(void)
 {
     return game_state.project_message;
 }
 
 // Changes rule `key` to `a` (and `b`, the grid's length) as the panel's Rules section does; 1 when the change was made.
-EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double b)
+NV_DEBUG_EXPORT int battle_debug_set_rule(const char* key, double a, double b)
 {
     f64 values[BATTLE_RULE_MAX_VALUES] = {a, b};
     return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
 }
 
 // The roles of unit type `def` as a bit mask (bit r is the r-th declared role), for tests.
-EMSCRIPTEN_KEEPALIVE int battle_debug_unit_roles(int def)
+NV_DEBUG_EXPORT int battle_debug_unit_roles(int def)
 {
     return (u32)def < BATTLE_MAX_UNIT_DEFS ? (int)game_state.defs.unit_roles[def] : 0;
 }
 
 // Sets the Battle panel's role filter as its toggles do, for tests.
-EMSCRIPTEN_KEEPALIVE void battle_debug_set_role_filter(int mask)
+NV_DEBUG_EXPORT void battle_debug_set_role_filter(int mask)
 {
     game_state.role_filter = (u32)mask;
 }
 
 // The project's text as Save would write it, for tests.
-EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_text(void)
+NV_DEBUG_EXPORT const char* battle_debug_project_text(void)
 {
     return game_state.project_text;
 }
 
 // Places a player squad of unit type `def` with its footprint's corner nearest the grid's origin on cell (x, row), as a tap
 // would; 1 when it was placed.
-EMSCRIPTEN_KEEPALIVE int battle_debug_deploy(int def, int x, int row)
+NV_DEBUG_EXPORT int battle_debug_deploy(int def, int x, int row)
 {
     return game_state.defs_ok && battle_place(&game_state.battle, (u32)def, x, row);
 }
 
-EMSCRIPTEN_KEEPALIVE int battle_debug_start(void)
+NV_DEBUG_EXPORT int battle_debug_start(void)
 {
     nv_vfx_clear(&game_state.vfx);
     game_state.accumulator = 0.0f;
@@ -423,7 +422,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_start(void)
 }
 
 // Runs `ticks` ticks at once, with the view's effects, as if the frames had been that long.
-EMSCRIPTEN_KEEPALIVE void battle_debug_run(int ticks)
+NV_DEBUG_EXPORT void battle_debug_run(int ticks)
 {
     for (int i = 0; i < ticks && game_state.battle.phase == BATTLE_FIGHT; ++i) {
         battle_tick(&game_state.battle);
@@ -432,7 +431,7 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_run(int ticks)
 }
 
 // A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel; component 0 x, 1 y, 2 width, 3 height.
-EMSCRIPTEN_KEEPALIVE float battle_debug_layout(int region, int component)
+NV_DEBUG_EXPORT float battle_debug_layout(int region, int component)
 {
     const Game* game = &game_state;
     f32 ratio = nv_window_pixel_ratio(&game->window);
@@ -442,7 +441,7 @@ EMSCRIPTEN_KEEPALIVE float battle_debug_layout(int region, int component)
 }
 
 // Where a world point is on screen, in CSS pixels (axis 0 x, 1 y), as the camera drew the last frame.
-EMSCRIPTEN_KEEPALIVE float battle_debug_project(float x, float y, float z, int axis)
+NV_DEBUG_EXPORT float battle_debug_project(float x, float y, float z, int axis)
 {
     Game* game = &game_state;
     NvMat4 view, projection;
@@ -474,7 +473,7 @@ int main(void)
     nv_imgui_init(&game->imgui, &game->gpu, &game->window, &game->permanent);
     nv_imgui_load_ui_font(&game->imgui, &game->permanent);
     nv_window_download_text(game->download_text, sizeof(game->download_text));
-    nv_strings_set_language(nv_strings_browser_language());
+    nv_strings_set_language(nv_strings_system_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
     // Shadows (docs/specs/shadows.md) as in the sandbox: lighter on touch screens. The distance follows the camera

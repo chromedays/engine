@@ -172,7 +172,7 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
             blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
         }
         WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = NV_SCENE_FORMAT;
+        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
         target.blend = &blend;
         WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
         fragment.module = vfx->render_module;
@@ -181,7 +181,7 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
         fragment.targets = &target;
         // Tested against the scene's depth (reverse Z, so Greater) but never written to.
         WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-        depth.format = NV_SCENE_DEPTH_FORMAT;
+        depth.format = nv_gpu_wgpu_format(NV_SCENE_DEPTH_FORMAT);
         depth.depthWriteEnabled = WGPUOptionalBool_False;
         depth.depthCompare = WGPUCompareFunction_Greater;
         WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
@@ -217,7 +217,7 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
             blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
         }
         WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = NV_SCENE_FORMAT;
+        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
         target.blend = &blend;
         WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
         fragment.module = vfx->marks_module;
@@ -225,7 +225,7 @@ internal void create_render_pipelines(NvVfx* vfx, u32 samples)
         fragment.targetCount = 1;
         fragment.targets = &target;
         WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-        depth.format = NV_SCENE_DEPTH_FORMAT;
+        depth.format = nv_gpu_wgpu_format(NV_SCENE_DEPTH_FORMAT);
         depth.depthWriteEnabled = WGPUOptionalBool_False;
         depth.depthCompare = WGPUCompareFunction_Greater;
         WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;

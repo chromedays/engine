@@ -1,7 +1,6 @@
 #include "sandbox.h"
 
 #include <cimguizmo.h>
-#include <emscripten/emscripten.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -584,7 +583,7 @@ internal void frame(void* userdata)
 // Play button; component 0 x, 1 y, 2 width, 3 height). Module._sandbox_debug_ui_mode() is 0 for the
 // desktop UI and 1 for the phone UI, and Module._sandbox_debug_dock(n) the wanted sizes and state
 // (0 left width, 1 right width, 2 bottom height, 3 bottom open).
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_layout(int region, int component)
+NV_DEBUG_EXPORT float sandbox_debug_layout(int region, int component)
 {
     Sandbox* sandbox = &sandbox_state;
     f32 ratio = nv_window_pixel_ratio(&sandbox->window);
@@ -603,7 +602,7 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_layout(int region, int component)
 // The scene's resolution: 0 width, 1 height, 2 to 5 the image's x, y, width, height (framebuffer
 // pixels), 6 screen pixels per scene pixel across, 7 and 8 the allocated targets' width and height,
 // 9 screen pixels per scene pixel down.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_scene(int which)
+NV_DEBUG_EXPORT float sandbox_debug_scene(int which)
 {
     const NvSceneOutput* out = &sandbox_state.layout.scene;
     f32 values[10] = {(f32)out->width, (f32)out->height, (f32)out->image.x, (f32)out->image.y, (f32)out->image.width,
@@ -613,12 +612,12 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_scene(int which)
 }
 
 // Sets the resolution without the UI: mode 0 Scale (a is the divisor) or 1 Fixed (a, b the size).
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_fit(int fit)
+NV_DEBUG_EXPORT void sandbox_debug_set_fit(int fit)
 {
     sandbox_state.resolution.fixed_fit = (NvFixedFit)fit;
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_resolution(int mode, int a, int b)
+NV_DEBUG_EXPORT void sandbox_debug_set_resolution(int mode, int a, int b)
 {
     NvResolution* res = &sandbox_state.resolution;
     res->mode = mode ? NV_RESOLUTION_FIXED : NV_RESOLUTION_SCALE;
@@ -632,7 +631,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_resolution(int mode, int a, int b)
 
 // Where a world point is on screen, in CSS pixels (axis 0 x, 1 y), seen by the shown scene's camera
 // as drawn now: for tests that press on the gizmo or a node.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_project(float x, float y, float z, int axis)
+NV_DEBUG_EXPORT float sandbox_debug_project(float x, float y, float z, int axis)
 {
     Sandbox* sandbox = &sandbox_state;
     SceneView* view = sandbox_view(sandbox);
@@ -650,32 +649,32 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_project(float x, float y, float z, int 
 }
 
 // The renderer's sample count (1 or 4); the setter is for tests that switch it without the UI.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_msaa(void)
+NV_DEBUG_EXPORT int sandbox_debug_msaa(void)
 {
     return (int)sandbox_state.renderer.msaa;
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_msaa(int samples)
+NV_DEBUG_EXPORT void sandbox_debug_set_msaa(int samples)
 {
     sandbox_state.renderer.msaa = (u32)samples;
 }
 
 // The post-processing settings: 0 tone mapper, 1 exposure x1000, 2 bloom on, 3 bloom intensity x1000; the setter is
 // for tests that change them without the UI.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_post(int which)
+NV_DEBUG_EXPORT int sandbox_debug_post(int which)
 {
     const NvPostSettings* post = &sandbox_state.renderer.post;
     int values[4] = {(int)post->tone, (int)(post->exposure * 1000.0f + 0.5f), post->bloom, (int)(post->bloom_intensity * 1000.0f + 0.5f)};
     return values[which];
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_post(int tone, float exposure, int bloom, float intensity)
+NV_DEBUG_EXPORT void sandbox_debug_set_post(int tone, float exposure, int bloom, float intensity)
 {
     sandbox_state.renderer.post = (NvPostSettings){.tone = (NvToneMap)tone, .exposure = exposure, .bloom = bloom != 0, .bloom_intensity = intensity};
 }
 
 // Sets the intensity of the shown scene's first directional light, to put values above 1 on screen.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_sun(float intensity)
+NV_DEBUG_EXPORT void sandbox_debug_set_sun(float intensity)
 {
     NvScene* scene = sandbox_view(&sandbox_state)->scene;
     for (u32 index = 1; index <= scene->node_count; ++index) {
@@ -689,7 +688,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_sun(float intensity)
 
 // The particle system: 0 alive, 1 visible, 2 dropped spawns, 3 effects registered; the second fires a test
 // effect (0 explosion, 1 sparks, 2 smoke, 3 missile) beside the orbit point.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_vfx(int which)
+NV_DEBUG_EXPORT int sandbox_debug_vfx(int which)
 {
     NvVfxStats stats = nv_vfx_stats(&sandbox_state.vfx);
     int values[6] = {(int)stats.alive, (int)stats.visible, (int)stats.dropped, (int)sandbox_state.vfx.effect_count - 1,
@@ -708,7 +707,7 @@ internal Behavior* first_generator(BehaviorKind kind)
 }
 
 // Sets the shown scene's first `effects` behavior: particles kept, explosions a second, missiles, beams, decals a second.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
+NV_DEBUG_EXPORT void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
 {
     Behavior* behavior = first_generator(BEHAVIOR_EFFECTS);
     if (!behavior)
@@ -722,7 +721,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_effects(int particles, int explosion
     effects->decals = (u32)decals;
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire(int effect)
+NV_DEBUG_EXPORT void sandbox_debug_vfx_fire(int effect)
 {
     effects_fire(&sandbox_state, (u32)effect);
 }
@@ -730,7 +729,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire(int effect)
 // For the shader port's regression tests (docs/specs/slang_shader_port.md). Runs the game clock at a fixed step
 // (0 goes back to real time): frames advance it by `dt` only up to the limit set by sandbox_debug_run_frames (to
 // begin with none), and are stopped (dt 0) beyond it. Resets the count of frames run and the effects.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_fixed_dt(float dt)
+NV_DEBUG_EXPORT void sandbox_debug_fixed_dt(float dt)
 {
     debug_fixed_dt = dt;
     debug_frames = 0;
@@ -746,26 +745,26 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_fixed_dt(float dt)
 }
 
 // Lets the fixed clock run until `frames` frames have run in all since sandbox_debug_fixed_dt.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_run_frames(int frames)
+NV_DEBUG_EXPORT void sandbox_debug_run_frames(int frames)
 {
     debug_frame_limit = (u32)frames;
 }
 
 // Frames run at the fixed step so far.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_frames(void)
+NV_DEBUG_EXPORT int sandbox_debug_frames(void)
 {
     return (int)debug_frames;
 }
 
 // Restarts the shown scene's character clips from their start, so that a still frame shows the same pose every time.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_restart_clips(void)
+NV_DEBUG_EXPORT void sandbox_debug_restart_clips(void)
 {
     behaviors_restart_clips(&sandbox_state, sandbox_doc(&sandbox_state));
 }
 
 // Fires an effect `count` times between two frames (the overflow case needs thousands): 0 to 5 as sandbox_debug_vfx_fire,
 // 6 the swarm burst of the `effects` behavior.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire_n(int effect, int count)
+NV_DEBUG_EXPORT void sandbox_debug_vfx_fire_n(int effect, int count)
 {
     Sandbox* sandbox = &sandbox_state;
     for (int i = 0; i < count; ++i) {
@@ -779,17 +778,17 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_fire_n(int effect, int count)
 }
 
 // The particle dump (engine/vfx.h): start it between frames, poll the state (0 idle, 1 reading, 2 ready), read, finish.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_dump_start(int full)
+NV_DEBUG_EXPORT void sandbox_debug_vfx_dump_start(int full)
 {
     nv_vfx_debug_dump_start(&sandbox_state.vfx, full != 0);
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_vfx_dump_state(void)
+NV_DEBUG_EXPORT int sandbox_debug_vfx_dump_state(void)
 {
     return (int)nv_vfx_debug_dump_state(&sandbox_state.vfx);
 }
 
-EMSCRIPTEN_KEEPALIVE double sandbox_debug_vfx_dump_get(int what, int index, int field)
+NV_DEBUG_EXPORT double sandbox_debug_vfx_dump_get(int what, int index, int field)
 {
     const NvVfx* vfx = &sandbox_state.vfx;
     switch (what) {
@@ -803,13 +802,13 @@ EMSCRIPTEN_KEEPALIVE double sandbox_debug_vfx_dump_get(int what, int index, int 
     return 0.0;
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_vfx_dump_finish(void)
+NV_DEBUG_EXPORT void sandbox_debug_vfx_dump_finish(void)
 {
     nv_vfx_debug_dump_finish(&sandbox_state.vfx);
 }
 
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_gizmo(int which)
+NV_DEBUG_EXPORT int sandbox_debug_gizmo(int which)
 {
     int values[3] = {(int)sandbox_state.gizmo_operation, sandbox_state.gizmo_local, sandbox_state.gizmo_snap};
     return values[which];
@@ -817,7 +816,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_gizmo(int which)
 
 // The shown view: 0 selected node index, 1 follows selection, 2 keyboard shortcuts window open,
 // 3 to 5 the Scene, Inspector and Console docks shown.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_state(int which)
+NV_DEBUG_EXPORT int sandbox_debug_state(int which)
 {
     const Sandbox* sandbox = &sandbox_state;
     int values[6] = {(int)sandbox_view(&sandbox_state)->selected.index, sandbox_view(&sandbox_state)->follow_selection, sandbox->show_shortcuts,
@@ -826,7 +825,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_state(int which)
 }
 
 // The selected node's position (0 x, 1 y, 2 z).
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_selected_position(int axis)
+NV_DEBUG_EXPORT float sandbox_debug_selected_position(int axis)
 {
     SceneView* view = sandbox_view(&sandbox_state);
     if (!view->selected.index)
@@ -836,25 +835,25 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_selected_position(int axis)
     return values[axis];
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_playing(void)
+NV_DEBUG_EXPORT int sandbox_debug_playing(void)
 {
     return sandbox_state.playing;
 }
 
 // The shown view: 0 yaw, 1 pitch, 2 distance, 3 to 5 orbit point x, y, z.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_view(int which)
+NV_DEBUG_EXPORT float sandbox_debug_view(int which)
 {
     const SceneView* view = sandbox_view(&sandbox_state);
     f32 values[6] = {view->orbit.yaw, view->orbit.pitch, view->orbit.distance, view->orbit.target.x, view->orbit.target.y, view->orbit.target.z};
     return values[which];
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_ui_mode(void)
+NV_DEBUG_EXPORT int sandbox_debug_ui_mode(void)
 {
     return (int)sandbox_state.ui_mode;
 }
 
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_dock(int which)
+NV_DEBUG_EXPORT float sandbox_debug_dock(int which)
 {
     const Docks* docks = &sandbox_state.docks;
     f32 values[4] = {docks->left_width, docks->right_width, docks->bottom_height, (f32)docks->bottom_open};
@@ -862,25 +861,25 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_dock(int which)
 }
 
 // For tests: Module._sandbox_debug_save_round_trip() checks the save round trip at any moment.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_save_round_trip(void)
+NV_DEBUG_EXPORT int sandbox_debug_save_round_trip(void)
 {
     return save_round_trip_matches(&sandbox_state);
 }
 
 // For tests: Module._sandbox_debug_undo_steps() is the steps held, and _sandbox_debug_undo_done() how many
 // of them are applied.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_undo_steps(void)
+NV_DEBUG_EXPORT int sandbox_debug_undo_steps(void)
 {
     return (int)sandbox_state.undo.count;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_undo_done(void)
+NV_DEBUG_EXPORT int sandbox_debug_undo_done(void)
 {
     return (int)sandbox_state.undo.done;
 }
 
 // The bytes the undo's Node scope holds for the selected nodes, for checking UNDO_NODE_BYTES.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_undo_node_bytes(void)
+NV_DEBUG_EXPORT int sandbox_debug_undo_node_bytes(void)
 {
     return (int)sandbox_state.undo.committed_size[SAVE_SCOPE_NODE];
 }
@@ -888,17 +887,17 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_undo_node_bytes(void)
 // For tests, the Console tab (docs/specs/console.md). Module._sandbox_debug_log(level, n) adds an "sandbox"
 // message "test message n", and _sandbox_debug_log_lines(level, n) one of three lines; strings from the page
 // go through Module.nvLog. _sandbox_debug_wgpu_error() makes WebGPU report a validation error.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_log(int level, int number)
+NV_DEBUG_EXPORT void sandbox_debug_log(int level, int number)
 {
     nv_log((NvLogLevel)level, "sandbox", "test message %d", number);
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_log_lines(int level, int number)
+NV_DEBUG_EXPORT void sandbox_debug_log_lines(int level, int number)
 {
     nv_log((NvLogLevel)level, "sandbox", "first line %d\nsecond line\nthird line", number);
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_wgpu_error(void)
+NV_DEBUG_EXPORT void sandbox_debug_wgpu_error(void)
 {
     WGPUBufferDescriptor descriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
     descriptor.size = 16; // no usage: not a valid buffer
@@ -907,67 +906,67 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_wgpu_error(void)
         wgpuBufferRelease(buffer);
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_log_count(void)
+NV_DEBUG_EXPORT int sandbox_debug_log_count(void)
 {
     return (int)nv_log_ring.count;
 }
 
 // The i-th message held (0 = the oldest): its repeat count, and its level.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_log_repeat(int i)
+NV_DEBUG_EXPORT int sandbox_debug_log_repeat(int i)
 {
     return (int)nv_log_message((u32)i)->repeat;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_log_level(int i)
+NV_DEBUG_EXPORT int sandbox_debug_log_level(int i)
 {
     return (int)nv_log_message((u32)i)->level;
 }
 
 // The build label's tap box (component 0..3 is x0, y0, x1, y1), all zero when it has no badge.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_badge_box(int component)
+NV_DEBUG_EXPORT float sandbox_debug_badge_box(int component)
 {
     return sandbox_state.badge_box[component];
 }
 
 // The average CPU time of building and recording the UI, in milliseconds.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_ui_ms(void)
+NV_DEBUG_EXPORT float sandbox_debug_ui_ms(void)
 {
     return (float)sandbox_state.shown_average.ui;
 }
 
 // The shown scene's camera yaw, in radians.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_camera_yaw(void)
+NV_DEBUG_EXPORT float sandbox_debug_camera_yaw(void)
 {
     return sandbox_view(&sandbox_state)->orbit.yaw;
 }
 
 // Warnings and errors not yet seen (0 while the Console tab is shown).
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_console_unseen(void)
+NV_DEBUG_EXPORT int sandbox_debug_console_unseen(void)
 {
     return (int)console_unseen(&sandbox_state, NULL);
 }
 
 // Rows the Console tab's filters let through.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_console_rows(void)
+NV_DEBUG_EXPORT int sandbox_debug_console_rows(void)
 {
     return (int)sandbox_state.console.rows;
 }
 
 // Where an item of the Console tab was drawn last frame, in CSS pixels: id is a ConsoleRect,
 // component 0..3 is x0, y0, x1, y1.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_console_rect(int id, int component)
+NV_DEBUG_EXPORT float sandbox_debug_console_rect(int id, int component)
 {
     return sandbox_state.console.rects[id][component];
 }
 
 // The message list's scroll (0) and the end of its range (1).
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_console_scroll(int which)
+NV_DEBUG_EXPORT float sandbox_debug_console_scroll(int which)
 {
     return which ? sandbox_state.console.scroll_max : sandbox_state.console.scroll_y;
 }
 
 // The number of the selected message + 1; 0 = none.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_console_selected(void)
+NV_DEBUG_EXPORT int sandbox_debug_console_selected(void)
 {
     return (int)sandbox_state.console.selected;
 }
@@ -975,63 +974,63 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_console_selected(void)
 // For tests, the Textures tab (docs/specs/textures.md): where an item was drawn last frame (id is a
 // TexturesRect, component 0..3 is x0, y0, x1, y1, CSS pixels), the rows listed, the pick
 // (kind * 1000 + index, -1 = none), the preview slots in use, and whether the depth target is samplable.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_textures_rect(int id, int component)
+NV_DEBUG_EXPORT float sandbox_debug_textures_rect(int id, int component)
 {
     return sandbox_state.textures.rects[id][component];
 }
 
 // Where the k-th listed row was drawn last frame (component 0..3); zero when it was not.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_textures_row(int k, int component)
+NV_DEBUG_EXPORT float sandbox_debug_textures_row(int k, int component)
 {
     return sandbox_state.textures.row_rects[k][component];
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_textures_listed(void)
+NV_DEBUG_EXPORT int sandbox_debug_textures_listed(void)
 {
     return (int)sandbox_state.textures.listed;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_textures_selected(void)
+NV_DEBUG_EXPORT int sandbox_debug_textures_selected(void)
 {
     TextureViewer* viewer = &sandbox_state.textures;
     return viewer->has_selection ? (int)viewer->selected_kind * 1000 + (int)viewer->selected_index : -1;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_textures_mip(void)
+NV_DEBUG_EXPORT int sandbox_debug_textures_mip(void)
 {
     return (int)sandbox_state.textures.mip;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_preview_slots(void)
+NV_DEBUG_EXPORT int sandbox_debug_preview_slots(void)
 {
     return (int)nv_imgui_preview_count(&sandbox_state.imgui);
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_depth_sampled(void)
+NV_DEBUG_EXPORT int sandbox_debug_depth_sampled(void)
 {
     return sandbox_state.renderer.depth_texture_sampled;
 }
 
 // Changes the shadow settings (size 0 = off; format 0 depth32float, 1 depth16unorm), as the View tab does.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_shadows(int size, int format)
+NV_DEBUG_EXPORT void sandbox_debug_set_shadows(int size, int format)
 {
     sandbox_state.renderer.shadows.size = (u32)size;
     sandbox_state.renderer.shadows.format = (NvShadowFormat)format;
 }
 
 // Shows scene `index` of the list (0 is the first), as the View tab's picker does.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_show_scene(int index)
+NV_DEBUG_EXPORT void sandbox_debug_show_scene(int index)
 {
     sandbox_show_scene(&sandbox_state, (u32)index);
 }
 
 // Renderer textures: how many, and the i-th's width, height and mip count (component 0, 1, 2).
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_texture_count(void)
+NV_DEBUG_EXPORT int sandbox_debug_texture_count(void)
 {
     return (int)sandbox_state.renderer.texture_count;
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_texture_info(int i, int component)
+NV_DEBUG_EXPORT int sandbox_debug_texture_info(int i, int component)
 {
     WGPUTexture texture = sandbox_state.renderer.textures[i].texture;
     return component == 0 ? (int)wgpuTextureGetWidth(texture)
@@ -1040,7 +1039,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_texture_info(int i, int component)
 }
 
 // The k-th byte of the i-th renderer texture's name; 0 past its end.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_texture_name(int i, int k)
+NV_DEBUG_EXPORT int sandbox_debug_texture_name(int i, int k)
 {
     const char* name = sandbox_state.renderer.textures[i].name;
     return k < (int)strlen(name) ? (u8)name[k] : 0;
@@ -1049,12 +1048,12 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_texture_name(int i, int k)
 // For tests, search (docs/specs/search.md).
 // A buffer the test writes a query into (stringToUTF8), then _sandbox_debug_search_set(panel) copies it
 // to a panel's box (0 to 4) or, for 5, to the palette.
-EMSCRIPTEN_KEEPALIVE char* sandbox_debug_search_buffer(void)
+NV_DEBUG_EXPORT char* sandbox_debug_search_buffer(void)
 {
     return sandbox_state.search.debug_buffer;
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_search_set(int panel)
+NV_DEBUG_EXPORT void sandbox_debug_search_set(int panel)
 {
     Search* s = &sandbox_state.search;
     if (panel == SEARCH_PANEL_COUNT) {
@@ -1066,14 +1065,14 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_search_set(int panel)
 }
 
 // Rows a panel drew last frame.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_search_rows(int panel)
+NV_DEBUG_EXPORT int sandbox_debug_search_rows(int panel)
 {
     return (int)sandbox_state.search.rows[panel];
 }
 
 // The palette: 0 open, 1 result count, 2 highlighted index, 3 kind of the highlighted row (-1 none),
 // 4 settings collected, 5 recent actions held.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette(int which)
+NV_DEBUG_EXPORT int sandbox_debug_palette(int which)
 {
     const Search* s = &sandbox_state.search;
     switch (which) {
@@ -1087,14 +1086,14 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette(int which)
 }
 
 // The k-th byte of a panel's search query; 0 past its end.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_search_query(int panel, int k)
+NV_DEBUG_EXPORT int sandbox_debug_search_query(int panel, int k)
 {
     const char* q = sandbox_state.search.queries[panel];
     return k < (int)strlen(q) ? (u8)q[k] : 0;
 }
 
 // The k-th byte of the palette's query; 0 past its end.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_query(int k)
+NV_DEBUG_EXPORT int sandbox_debug_palette_query(int k)
 {
     const char* q = sandbox_state.search.palette_query;
     return k < (int)strlen(q) ? (u8)q[k] : 0;
@@ -1102,7 +1101,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_query(int k)
 
 // Result i's kind (0 action, 1 setting, 2 node, 3 more) and what it names: component 0 kind, 1 the
 // k-th byte of its name.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_result(int i, int k)
+NV_DEBUG_EXPORT int sandbox_debug_palette_result(int i, int k)
 {
     const Search* s = &sandbox_state.search;
     if (i < 0 || i >= (int)s->result_count)
@@ -1118,18 +1117,18 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_palette_result(int i, int k)
 }
 
 // The UI language: 0 English, 1 Korean; _sandbox_debug_set_language changes it.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_language(void)
+NV_DEBUG_EXPORT int sandbox_debug_language(void)
 {
     return (int)nv_strings_language();
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_language(int language)
+NV_DEBUG_EXPORT void sandbox_debug_set_language(int language)
 {
     nv_strings_set_language((NvLanguage)language);
 }
 
 // The k-th byte of the selected node's name; 0 past its end.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_selected_name(int k)
+NV_DEBUG_EXPORT int sandbox_debug_selected_name(int k)
 {
     SceneView* view = sandbox_view(&sandbox_state);
     if (!view->selected.index)
@@ -1139,7 +1138,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_selected_name(int k)
 }
 
 // Renames the selected node to the text in the search buffer (as typed names arrive: cut at a character).
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_rename_selected(void)
+NV_DEBUG_EXPORT void sandbox_debug_rename_selected(void)
 {
     SceneView* view = sandbox_view(&sandbox_state);
     if (!view->selected.index)
@@ -1152,7 +1151,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_rename_selected(void)
 }
 
 // Turns the shown scene's first `chain` on with `links` links (0 = off).
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_chain(int links)
+NV_DEBUG_EXPORT void sandbox_debug_set_chain(int links)
 {
     Behavior* behavior = first_generator(BEHAVIOR_CHAIN);
     if (!behavior)
@@ -1163,7 +1162,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_chain(int links)
 }
 
 // Sets the shown scene's first `grid` to `cubes` cubes (0 = off).
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_grid(int cubes)
+NV_DEBUG_EXPORT void sandbox_debug_set_grid(int cubes)
 {
     Behavior* behavior = first_generator(BEHAVIOR_GRID);
     if (!behavior)
@@ -1174,7 +1173,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_grid(int cubes)
 }
 
 // Sets the shown scene's first `crowd` to `characters` characters (0 = off).
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_crowd(int characters)
+NV_DEBUG_EXPORT void sandbox_debug_set_crowd(int characters)
 {
     Behavior* behavior = first_generator(BEHAVIOR_CROWD);
     if (!behavior)
@@ -1185,7 +1184,7 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_crowd(int characters)
 }
 
 // What the shown scene's generators have made: 0 cubes, 1 links, 2 characters in use, 3 characters made.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_built(int which)
+NV_DEBUG_EXPORT int sandbox_debug_built(int which)
 {
     Behavior* grid = first_generator(BEHAVIOR_GRID);
     Behavior* chain = first_generator(BEHAVIOR_CHAIN);
@@ -1197,20 +1196,20 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_built(int which)
 
 // The benchmark: 0 running, 1 the step, 2 results held, 3 the run started Play. _sandbox_debug_benchmark_start runs it, as the
 // button does.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_benchmark(int which)
+NV_DEBUG_EXPORT int sandbox_debug_benchmark(int which)
 {
     const Benchmark* benchmark = &sandbox_state.benchmark;
     int values[4] = {benchmark->running, (int)benchmark->step, (int)benchmark->result_count, benchmark->started_play};
     return values[which];
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_benchmark_start(void)
+NV_DEBUG_EXPORT void sandbox_debug_benchmark_start(void)
 {
     benchmark_start(&sandbox_state);
 }
 
 // The scenes: 0 the shown scene's index, 1 how many there are, 2 whether scene `a` was built.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_scenes(int which, int a)
+NV_DEBUG_EXPORT int sandbox_debug_scenes(int which, int a)
 {
     switch (which) {
     case 0: return (int)sandbox_state.shown;
@@ -1220,25 +1219,25 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_scenes(int which, int a)
 }
 
 // The selected node's index in the shown scene; 0 = none.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_selected_node(void)
+NV_DEBUG_EXPORT int sandbox_debug_selected_node(void)
 {
     return (int)sandbox_view(&sandbox_state)->selected.index;
 }
 
 // The selection (docs/specs/selection.md): how many nodes, and the i-th one's index (0 = the primary).
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_selection_count(void)
+NV_DEBUG_EXPORT int sandbox_debug_selection_count(void)
 {
     return (int)selection_count(sandbox_view(&sandbox_state));
 }
 
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_selection(int i)
+NV_DEBUG_EXPORT int sandbox_debug_selection(int i)
 {
     SceneView* view = sandbox_view(&sandbox_state);
     return i >= 0 && (u32)i < selection_count(view) ? (int)selection_get(view, (u32)i).index : 0;
 }
 
 // Selects node `index` of the shown scene: mode 0 only it (0 clears), 1 adds or removes it.
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_select(int index, int mode)
+NV_DEBUG_EXPORT void sandbox_debug_select(int index, int mode)
 {
     SceneView* view = sandbox_view(&sandbox_state);
     NvNodeId id = index > 0 ? (NvNodeId){(u32)index, view->scene->nodes[index].gen} : (NvNodeId){0};
@@ -1248,13 +1247,13 @@ EMSCRIPTEN_KEEPALIVE void sandbox_debug_select(int index, int mode)
         selection_set(view, id);
 }
 
-EMSCRIPTEN_KEEPALIVE void sandbox_debug_set_multi(int on)
+NV_DEBUG_EXPORT void sandbox_debug_set_multi(int on)
 {
     sandbox_state.multi_select = on != 0;
 }
 
 // The index of the shown scene's first live node named as the search buffer's text; 0 = none.
-EMSCRIPTEN_KEEPALIVE int sandbox_debug_find_node(void)
+NV_DEBUG_EXPORT int sandbox_debug_find_node(void)
 {
     NvScene* scene = sandbox_view(&sandbox_state)->scene;
     for (u32 i = 1; i <= scene->node_count; ++i) {
@@ -1265,7 +1264,7 @@ EMSCRIPTEN_KEEPALIVE int sandbox_debug_find_node(void)
 }
 
 // The Scene tab's k-th row last frame: component 0 its node index, 1 to 4 its rect (x0, y0, x1, y1).
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_tree_row(int k, int component)
+NV_DEBUG_EXPORT float sandbox_debug_tree_row(int k, int component)
 {
     if (k < 0 || (u32)k >= sandbox_state.tree_row_count[0] || k >= (int)NV_ARRAY_COUNT(sandbox_state.tree_row_rects))
         return 0.0f;
@@ -1273,7 +1272,7 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_tree_row(int k, int component)
 }
 
 // Node `index` of the shown scene: which 0 to 2 its world position, 3 to 5 its local position.
-EMSCRIPTEN_KEEPALIVE float sandbox_debug_node(int index, int which)
+NV_DEBUG_EXPORT float sandbox_debug_node(int index, int which)
 {
     NvNode* node = &sandbox_view(&sandbox_state)->scene->nodes[index];
     NvVec3 world = nv_mat4_translation(node->world);
@@ -1283,7 +1282,7 @@ EMSCRIPTEN_KEEPALIVE float sandbox_debug_node(int index, int which)
 
 // For tests: Module._sandbox_debug_save_crc() is a CRC-32 of the save the state would write now, so a
 // test can compare the state at two moments (before Play and after Stop).
-EMSCRIPTEN_KEEPALIVE unsigned sandbox_debug_save_crc(void)
+NV_DEBUG_EXPORT unsigned sandbox_debug_save_crc(void)
 {
     Sandbox* sandbox = &sandbox_state;
     umm mark = sandbox->scratch.used;
@@ -1311,7 +1310,7 @@ int main(void)
     nv_imgui_init(&sandbox->imgui, &sandbox->gpu, &sandbox->window, &sandbox->permanent);
     nv_imgui_load_ui_font(&sandbox->imgui, &sandbox->permanent);
     nv_window_download_text(sandbox->download_text, sizeof(sandbox->download_text));
-    nv_strings_set_language(nv_strings_browser_language()); // a save may change it (the LANG tag)
+    nv_strings_set_language(nv_strings_system_language()); // a save may change it (the LANG tag)
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = sandbox->imgui.ui_scale > 1.0f;
     // One UI per device (docs/specs/layout.md): touch gets the phone UI, everything else the desktop's.

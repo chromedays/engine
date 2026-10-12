@@ -208,7 +208,7 @@ typedef struct NvRenderer {
     WGPUTexture msaa_color;
     WGPUTextureView msaa_color_view;
     u32 msaa_width, msaa_height;
-    WGPUTextureFormat msaa_format;
+    NvGpuFormat msaa_format;
 
     // Tone mapping and bloom, applied by the upscale pass.
     NvPostSettings post;

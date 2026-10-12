@@ -63,7 +63,7 @@ typedef struct NvStringPair { const char* english; const char* korean; } NvStrin
 void nv_strings_set_table(const NvStringPair* pairs, u32 count); // kept, not copied; once, before any T()
 NvLanguage nv_strings_language(void);
 void nv_strings_set_language(NvLanguage language);
-NvLanguage nv_strings_browser_language(void);
+NvLanguage nv_strings_system_language(void);
 const char* nv_strings_find_korean(const char* english);
 const char* nv_strings_text(const char* english);
 const char* nv_strings_label(const char* english);
@@ -358,7 +358,7 @@ typedef struct NvStringPair { const char* english; const char* korean; } NvStrin
 void nv_strings_set_table(const NvStringPair* pairs, u32 count); // kept, not copied; once, before any T()
 NvLanguage nv_strings_language(void);
 void nv_strings_set_language(NvLanguage language);
-NvLanguage nv_strings_browser_language(void);
+NvLanguage nv_strings_system_language(void);
 const char* nv_strings_find_korean(const char* english);
 const char* nv_strings_text(const char* english);
 const char* nv_strings_label(const char* english);

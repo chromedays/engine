@@ -6,18 +6,26 @@ add_library(nv STATIC
     gltf.c
     gpu.c
     imgui.c
-    local_file.c
     log.c
     mesh.c
     renderer.c
     renderer_cpu.c
     scene.c
-    storage.c
     strings.c
     text.c
     vfx.c
-    vfx_cpu.c
-    window.c)
+    vfx_cpu.c)
+
+# The modules whose code depends on the platform have one source for each (docs/specs/d3d12_port.md, "Platform layer"): the
+# header is shared, the source is picked here.
+if(EMSCRIPTEN)
+    target_sources(nv PRIVATE
+        image_web.c
+        imgui_web.c
+        local_file_web.c
+        storage_web.c
+        window_web.c)
+endif()
 
 # The shaders (engine/shaders/*.slang): each becomes a header of its WGSL in the build directory, included as
 # "shaders/<name>_wgsl.h" (docs/specs/slang_shader_port.md).

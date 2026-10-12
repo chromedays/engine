@@ -5,6 +5,18 @@
 
 #include <webgpu/webgpu.h>
 
+// The texture formats nv uses. Zero is "none". The backend turns them into its API's own formats.
+typedef enum NvGpuFormat {
+    NV_GPU_FORMAT_NONE,
+    NV_GPU_FORMAT_BGRA8,
+    NV_GPU_FORMAT_BGRA8_SRGB,
+    NV_GPU_FORMAT_RGBA8,
+    NV_GPU_FORMAT_RGBA8_SRGB,
+    NV_GPU_FORMAT_RGBA16F,
+    NV_GPU_FORMAT_DEPTH32F,
+    NV_GPU_FORMAT_DEPTH16,
+} NvGpuFormat;
+
 // NOTE: Owns the WebGPU instance, adapter, device, queue and the canvas surface.
 // A zeroed NvGpu is the valid "not created" state.
 typedef struct NvGpu {
@@ -14,8 +26,8 @@ typedef struct NvGpu {
     WGPUAdapter adapter;
     WGPUDevice device;
     WGPUQueue queue;
-    WGPUTextureFormat surface_format; // format of the per-frame view; render pipelines target this
-    WGPUTextureFormat config_format;  // format the canvas itself is configured with
+    NvGpuFormat surface_format; // format of the per-frame view; render pipelines target this
+    NvGpuFormat config_format;  // format the canvas itself is configured with
     u32 width;
     u32 height;
     b32 has_timestamps; // the device can time passes (WGPUFeatureName_TimestampQuery)
@@ -27,29 +39,34 @@ typedef struct NvGpu {
 // The scene is rendered in linear HDR (docs/specs/vfx.md): colors above 1 are kept until the upscale
 // pass multiplies by the exposure, tone maps and writes the canvas. The scene pass has a depth target
 // of NV_SCENE_DEPTH_FORMAT, reverse Z.
-#define NV_SCENE_FORMAT WGPUTextureFormat_RGBA16Float
-#define NV_SCENE_DEPTH_FORMAT WGPUTextureFormat_Depth32Float
+#define NV_SCENE_FORMAT NV_GPU_FORMAT_RGBA16F
+#define NV_SCENE_DEPTH_FORMAT NV_GPU_FORMAT_DEPTH32F
 
-// A texture format's name for logs ("BGRA8Unorm"), or its number when it is not one nv uses.
-const char* nv_gpu_format_name(WGPUTextureFormat format);
+// A texture format's name for logs ("BGRA8Unorm").
+const char* nv_gpu_format_name(NvGpuFormat format);
 
-// Bytes per texel of the formats nv uses; 0 for others.
-static inline u32 nv_gpu_format_bytes(WGPUTextureFormat format)
+// The WebGPU format of `format`, and back (NV_GPU_FORMAT_NONE for one nv does not use). They go away from this header when the
+// WebGPU calls move into the backend.
+WGPUTextureFormat nv_gpu_wgpu_format(NvGpuFormat format);
+NvGpuFormat nv_gpu_format_from_wgpu(WGPUTextureFormat format);
+
+// Bytes per texel of the formats nv uses; 0 for none.
+static inline u32 nv_gpu_format_bytes(NvGpuFormat format)
 {
     switch (format) {
-    case WGPUTextureFormat_BGRA8Unorm:
-    case WGPUTextureFormat_BGRA8UnormSrgb:
-    case WGPUTextureFormat_RGBA8Unorm:
-    case WGPUTextureFormat_RGBA8UnormSrgb:
-    case WGPUTextureFormat_Depth32Float: return 4;
-    case WGPUTextureFormat_RGBA16Float:  return 8;
-    case WGPUTextureFormat_Depth16Unorm: return 2;
-    default:                             return 0;
+    case NV_GPU_FORMAT_BGRA8:
+    case NV_GPU_FORMAT_BGRA8_SRGB:
+    case NV_GPU_FORMAT_RGBA8:
+    case NV_GPU_FORMAT_RGBA8_SRGB:
+    case NV_GPU_FORMAT_DEPTH32F: return 4;
+    case NV_GPU_FORMAT_RGBA16F:  return 8;
+    case NV_GPU_FORMAT_DEPTH16:  return 2;
+    default:                     return 0;
     }
 }
 
 // Bytes a texture takes: every mip level's texels (each level half the last, at least 1x1).
-static inline u64 nv_gpu_texture_bytes(u32 width, u32 height, u32 mip_count, WGPUTextureFormat format)
+static inline u64 nv_gpu_texture_bytes(u32 width, u32 height, u32 mip_count, NvGpuFormat format)
 {
     u64 total = 0;
     for (u32 level = 0; level < mip_count; ++level) {

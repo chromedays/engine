@@ -49,6 +49,12 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 // the target in Module.nvTarget). Empty when the browser does not say.
 void nv_window_download_text(char* out, umm capacity);
 
+// True on Apple platforms, where the shortcut key is Cmd rather than Ctrl.
+b32 nv_window_is_mac(void);
+
+// A line that says what the program runs on, for the benchmark's table: the browser's user agent on the web.
+void nv_window_system_text(char* out, umm capacity);
+
 // Seconds since the page loaded.
 f64 nv_time_seconds(void);
 

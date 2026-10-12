@@ -25,7 +25,7 @@ void nv_strings_set_table(const NvStringPair* pairs, u32 count);
 
 NvLanguage nv_strings_language(void);
 void nv_strings_set_language(NvLanguage language);
-NvLanguage nv_strings_browser_language(void); // from navigator.language: Korean if it starts with "ko"
+NvLanguage nv_strings_system_language(void); // the system's: on the web navigator.language, Korean if it starts with "ko"
 
 // The Korean for an English text, or NULL: the search matches both languages.
 const char* nv_strings_find_korean(const char* english);

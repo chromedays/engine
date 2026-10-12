@@ -1,6 +1,5 @@
 #include "sandbox.h"
 
-#include <emscripten/emscripten.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -165,12 +164,6 @@ void stress_after_frame(Sandbox* sandbox)
         finish_run(sandbox);
 }
 
-EM_JS_DEPS(nv_stress, "$stringToUTF8");
-
-EM_JS(void, js_user_agent, (char* out, int size), {
-    stringToUTF8(navigator.userAgent, out, size);
-});
-
 // "585 x 497, scale 1/2" or "1280 x 720 fixed, shown x2": what the scene renders at.
 internal void resolution_text(Sandbox* sandbox, char* out, umm size)
 {
@@ -202,7 +195,7 @@ internal void copy_results(Sandbox* sandbox)
 {
     Benchmark* benchmark = &sandbox->benchmark;
     char agent[256];
-    js_user_agent(agent, sizeof(agent));
+    nv_window_system_text(agent, sizeof(agent));
     char text[4096];
     umm used = 0;
     char shadows[64];

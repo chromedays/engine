@@ -29,6 +29,13 @@ typedef size_t   umm;
 #endif
 #define NV_INVALID_CODE_PATH NV_ASSERT(!"invalid code path")
 
+// Marks a function the debug harness calls by name: Playwright reads it as Module._name on the web build.
+#if defined(__EMSCRIPTEN__)
+#    define NV_DEBUG_EXPORT __attribute__((used, visibility("default")))
+#else
+#    define NV_DEBUG_EXPORT
+#endif
+
 #define NV_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define NV_KILOBYTES(n) ((umm)(n) * 1024)
 #define NV_MEGABYTES(n) (NV_KILOBYTES(n) * 1024)
