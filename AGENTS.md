@@ -36,6 +36,7 @@ engine/                    each module's header and source side by side, include
                            docs/specs/mesh.md), camera.c/.h (orbit camera math),
                            strings.c/.h (T, TL and the language; each executable brings its own table),
                            renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
+                           shaders/*.slang (every shader of the engine, in Slang: docs/specs/slang_shader_port.md)
 sandbox/                   the sandbox (the engine's test ground): main.c (window, frame, debug exports), scene_file.c/.h (reads a
                            .nvscene file into plain data; no GPU), scenes.c (builds each scene of the list from its file), behaviors.c
                            (the behaviors a scene's objects have, and their Inspector rows), data/*.nvscene (the scenes: showcase,
@@ -78,6 +79,10 @@ cmake --build build
 python3 -m http.server -d build/sandbox 8000   # then open http://localhost:8000/
 ```
 
+The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOOLS_DIR`, by default under the build directory): Slang's
+`slangc` and Dawn's `tint`, pinned by version and SHA-256, run only while building and linked into nothing. A host without a Dawn package
+(Linux and Windows on arm64) skips the Tint check with a warning; `NV_SLANGC` and `NV_TINT` name binaries of your own.
+
 ## Conventions
 
 Follow `docs/CODING_STANDARD.md`. The web-specific rules:
@@ -111,6 +116,17 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   selection. A splitter must not use `nv_imgui_begin_panel`: its NoBringToFrontOnFocus puts a new
   window behind the earlier ones. Debug builds export `Module._sandbox_debug_layout(region, component)`,
   `_sandbox_debug_ui_mode`, `_sandbox_debug_dock`, `_sandbox_debug_view` and `_sandbox_debug_playing` for tests.
+- Shaders are Slang (`engine/shaders/*.slang`, `docs/specs/slang_shader_port.md`); no WGSL is written by hand. `nv_add_shader`
+  (`engine/CMakeLists.txt`) makes each one in three steps that stop the build when one fails: `slangc` writes WGSL
+  (`<build>/shaders/<name>.wgsl`, kept: the browser's and Tint's errors name its lines), `tint` checks it (`slangc` does not: it writes invalid WGSL
+  without a word), and the C header `shaders/<name>_wgsl.h` is made (`const char <name>_wgsl[]`, handed to `wgpuDeviceCreateShaderModule`).
+  The source must also compile to HLSL, for the D3D12 backend to come. Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
+  the same as the bind group layout in C; a vertex input or a varying gets its location from the number of its `TEXCOORD<n>` semantic (the
+  WGSL ignores `[[vk::location]]` and closes gaps, so a pipeline stops matching); a depth texture is `DepthTexture2D` or `DepthTexture2DMS`
+  (`Texture2D<float>` writes `texture_2d<f32>`, which a comparison sampler and a depth binding refuse); `import` does not pass on what the
+  imported module imports (`__exported import`) and only the entry points of the file `slangc` is given are compiled. A new binding or struct
+  is a row in `tests/shader_layout_test.mjs` (reflection and the generated WGSL against the sizes and locations the C code relies on, which
+  its `_Static_assert`s hold), and a browser run with no WebGPU error is the check Tint cannot be: it sees one shader, not the bind group layouts.
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the sandbox turns it into camera moves and picking
   (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
@@ -233,7 +249,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   (`docs/specs/shadows.md`); the sandbox sets `NvRenderer.shadows` and the renderer remakes the map and
   its depth-only pipelines when the size or format changes. The shadow pass binds
   `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
-  A new mesh vertex layout needs a matching entry point in `shadow_shader` too.
+  A new mesh vertex layout needs a matching entry point in `engine/shaders/shadow.slang` too.
 - The scene renders at a resolution of its own (`docs/specs/resolution.md`): `nv_renderer_draw`
   takes an `NvSceneOutput` (the scene's width and height, and the image rectangle of the canvas it
   is shown in, with `pixel_size` screen pixels per scene pixel), draws into the renderer's own color

@@ -1,4 +1,9 @@
 #include "engine/renderer.h"
+#include "shaders/bloom_wgsl.h"
+#include "shaders/debug_lines_wgsl.h"
+#include "shaders/mesh_wgsl.h"
+#include "shaders/shadow_wgsl.h"
+#include "shaders/upscale_wgsl.h"
 #include "engine/log.h"
 
 #include <math.h>
@@ -12,7 +17,7 @@ internal void create_bloom_pipelines(NvRenderer* renderer);
 
 #define NO_SKIN 0xFFFFFFFFu
 
-// Layouts match the WGSL structs below.
+// Layouts match the structs of engine/shaders/renderer_frame.slang and mesh.slang (tests/shader_layout_test.mjs).
 typedef struct FrameUniforms {
     NvMat4 view_proj;
     NvMat4 light_view_proj; // world to the shadow map's clip space
@@ -34,32 +39,6 @@ global const s32 shadow_bias_constant[2] = {
 };
 #define SHADOW_PULLBACK 50.0f // meters the light's box reaches back toward the light, for casters
 
-#define FRAME_WGSL \
-    "struct Frame {\n" \
-    "    view_proj: mat4x4f,\n" \
-    "    light_view_proj: mat4x4f,\n" \
-    "    light_dir: vec4f,\n" \
-    "    light_color: vec4f,\n" \
-    "    ambient: vec4f,\n" \
-    "    camera_pos: vec4f,\n" \
-    "    shadow: vec4f,\n" \
-    "    shadow_fade: vec4f,\n" \
-    "};\n" \
-    "struct Object {\n" \
-    "    model: mat4x4f,\n" \
-    "    joint_offset: u32,\n" \
-    "};\n" \
-    "@group(0) @binding(0) var<uniform> frame: Frame;\n" \
-    "@group(0) @binding(1) var<storage, read> objects: array<Object>;\n" \
-    "@group(0) @binding(2) var<storage, read> skin: array<mat4x4f>;\n" \
-    "fn skinned_model(object: Object, joints: vec4u, weights: vec4f) -> mat4x4f {\n" \
-    "    if (object.joint_offset == 0xFFFFFFFFu) { return object.model; }\n" \
-    "    let o = object.joint_offset;\n" \
-    "    let s = skin[o + joints.x] * weights.x + skin[o + joints.y] * weights.y +\n" \
-    "            skin[o + joints.z] * weights.z + skin[o + joints.w] * weights.w;\n" \
-    "    return object.model * s;\n" \
-    "}\n"
-
 typedef struct NvObjectData {
     NvMat4 model;
     u32 joint_offset; // first matrix in the skin buffer, or NO_SKIN
@@ -70,131 +49,11 @@ typedef struct MaterialUniforms {
     f32 base_color[4];
 } MaterialUniforms;
 
-// Every mesh node becomes one instance: the vertex shader finds its object data by instance index.
-global const char* mesh_shader =
-    FRAME_WGSL
-    "struct Material {\n"
-    "    base_color: vec4f,\n"
-    "};\n"
-    "@group(0) @binding(3) var shadow_map: texture_depth_2d;\n"
-    "@group(0) @binding(4) var shadow_sampler: sampler_comparison;\n"
-    "@group(1) @binding(0) var<uniform> material: Material;\n"
-    "@group(1) @binding(1) var material_sampler: sampler;\n"
-    "@group(1) @binding(2) var base_color_texture: texture_2d<f32>;\n"
-    "\n"
-    "struct StaticIn {\n"
-    "    @location(0) position: vec3f,\n"
-    "    @location(1) normal: vec3f,\n"
-    "    @location(2) uv: vec2f,\n"
-    "};\n"
-    "struct SkinnedIn {\n"
-    "    @location(0) position: vec3f,\n"
-    "    @location(1) normal: vec3f,\n"
-    "    @location(2) uv: vec2f,\n"
-    "    @location(3) joints: vec4u,\n"
-    "    @location(4) weights: vec4f,\n"
-    "};\n"
-    "struct VsOut {\n"
-    "    @builtin(position) clip: vec4f,\n"
-    "    @location(0) normal: vec3f,\n"
-    "    @location(1) uv: vec2f,\n"
-    "    @location(2) world: vec3f,\n"
-    "};\n"
-    "\n"
-    "fn finish(model: mat4x4f, position: vec3f, normal: vec3f, uv: vec2f) -> VsOut {\n"
-    "    var out: VsOut;\n"
-    "    let world = model * vec4f(position, 1.0);\n"
-    "    out.clip = frame.view_proj * world;\n"
-    "    out.normal = (model * vec4f(normal, 0.0)).xyz;\n"
-    "    out.uv = uv;\n"
-    "    out.world = world.xyz;\n"
-    "    return out;\n"
-    "}\n"
-    "\n"
-    "@vertex\n"
-    "fn vs_static(in: StaticIn, @builtin(instance_index) i: u32) -> VsOut {\n"
-    "    return finish(objects[i].model, in.position, in.normal, in.uv);\n"
-    "}\n"
-    "\n"
-    "@vertex\n"
-    "fn vs_skinned(in: SkinnedIn, @builtin(instance_index) i: u32) -> VsOut {\n"
-    "    return finish(skinned_model(objects[i], in.joints, in.weights), in.position, in.normal, in.uv);\n"
-    "}\n"
-    "\n"
-    // How much of the directional light reaches `world`: 1 lit, 0 in shadow. A comparison sampler
-    // with linear filtering compares the four nearest texels and blends the results (a 2x2
-    // percentage-closer filter per lookup); High averages 3x3 such lookups a texel apart.
-    "fn shadow_lit(world: vec3f, n: vec3f) -> f32 {\n"
-    "    let p = frame.light_view_proj * vec4f(world + n * frame.shadow.z, 1.0);\n"
-    "    let uv = vec2f(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5);\n"
-    "    var lit = textureSampleCompareLevel(shadow_map, shadow_sampler, uv, p.z);\n"
-    "    if (frame.shadow.y > 1.5) {\n"
-    "        var sum = 0.0;\n"
-    "        for (var y = -1; y <= 1; y++) {\n"
-    "            for (var x = -1; x <= 1; x++) {\n"
-    "                let offset = vec2f(f32(x), f32(y)) * frame.shadow.x;\n"
-    "                sum += textureSampleCompareLevel(shadow_map, shadow_sampler, uv + offset, p.z);\n"
-    "            }\n"
-    "        }\n"
-    "        lit = sum / 9.0;\n"
-    "    }\n"
-    "    let inside = all(uv >= vec2f(0.0)) && all(uv <= vec2f(1.0)) && p.z >= 0.0 && p.z <= 1.0;\n"
-    "    lit = select(1.0, lit, inside && frame.shadow.y > 0.5);\n"
-    "    let span = max(frame.shadow_fade.y - frame.shadow_fade.x, 0.001);\n"
-    "    let fade = clamp((distance(world, frame.camera_pos.xyz) - frame.shadow_fade.x) / span, 0.0, 1.0);\n"
-    "    return mix(lit, 1.0, fade);\n"
-    "}\n"
-    "\n"
-    "@fragment\n"
-    "fn fs_main(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {\n"
-    "    var n = normalize(in.normal);\n"
-    "    if (!front) { n = -n; }\n"
-    "    let base = material.base_color * textureSample(base_color_texture, material_sampler, in.uv);\n"
-    "    let diffuse = max(dot(n, -frame.light_dir.xyz), 0.0) * shadow_lit(in.world, n);\n"
-    "    let light = frame.ambient.rgb + frame.light_color.rgb * diffuse;\n"
-    "    return vec4f(base.rgb * light, base.a);\n"
-    "}\n";
+_Static_assert(sizeof(FrameUniforms) == 224, "the shaders read a 224-byte frame");
+_Static_assert(sizeof(NvObjectData) == 80, "the shaders read 80-byte objects");
+_Static_assert(sizeof(MaterialUniforms) == 16, "the shader reads a 16-byte material");
 
-// Depth only, seen from the light: the same meshes and skinning as the scene, no fragment stage.
-global const char* shadow_shader =
-    FRAME_WGSL
-    "struct StaticIn {\n"
-    "    @location(0) position: vec3f,\n"
-    "};\n"
-    "struct SkinnedIn {\n"
-    "    @location(0) position: vec3f,\n"
-    "    @location(3) joints: vec4u,\n"
-    "    @location(4) weights: vec4f,\n"
-    "};\n"
-    "@vertex\n"
-    "fn vs_static(in: StaticIn, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {\n"
-    "    return frame.light_view_proj * objects[i].model * vec4f(in.position, 1.0);\n"
-    "}\n"
-    "@vertex\n"
-    "fn vs_skinned(in: SkinnedIn, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {\n"
-    "    return frame.light_view_proj * skinned_model(objects[i], in.joints, in.weights) * vec4f(in.position, 1.0);\n"
-    "}\n";
-
-global const char* debug_shader =
-    "struct Frame {\n"
-    "    view_proj: mat4x4f,\n"
-    "};\n"
-    "@group(0) @binding(0) var<uniform> frame: Frame;\n"
-    "struct VsOut {\n"
-    "    @builtin(position) clip: vec4f,\n"
-    "    @location(0) color: vec4f,\n"
-    "};\n"
-    "@vertex\n"
-    "fn vs_main(@location(0) position: vec3f, @location(1) color: vec4f) -> VsOut {\n"
-    "    var out: VsOut;\n"
-    "    out.clip = frame.view_proj * vec4f(position, 1.0);\n"
-    "    out.color = color;\n"
-    "    return out;\n"
-    "}\n"
-    "@fragment\n"
-    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
-    "    return in.color;\n"
-    "}\n";
+// The shaders are engine/shaders/{mesh,shadow,debug_lines,upscale,bloom}.slang: the build makes mesh_wgsl and the others from them.
 
 internal WGPUBuffer create_buffer(NvGpu* gpu, WGPUBufferUsage usage, const void* data, umm size)
 {
@@ -284,7 +143,7 @@ internal void create_pipelines(NvRenderer* renderer)
 
     WGPUBindGroupLayout mesh_layouts[2] = {renderer->frame_layout, renderer->material_layout};
     WGPUPipelineLayout mesh_layout = create_pipeline_layout(device, mesh_layouts, 2);
-    WGPUShaderModule module = create_shader(device, mesh_shader);
+    WGPUShaderModule module = create_shader(device, mesh_wgsl);
 
     WGPUVertexAttribute static_attributes[3] = {
         {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, position), .shaderLocation = 0},
@@ -341,7 +200,7 @@ internal void create_pipelines(NvRenderer* renderer)
 
     // Debug lines: drawn over everything, so the depth test always passes.
     WGPUPipelineLayout debug_layout = create_pipeline_layout(device, &renderer->frame_layout, 1);
-    WGPUShaderModule debug_module = create_shader(device, debug_shader);
+    WGPUShaderModule debug_module = create_shader(device, debug_lines_wgsl);
     WGPUVertexAttribute debug_attributes[2] = {
         {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvDebugVertex, position), .shaderLocation = 0},
         {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvDebugVertex, color), .shaderLocation = 1},
@@ -400,7 +259,7 @@ internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat forma
         }
     }
     WGPUPipelineLayout layout = create_pipeline_layout(device, &renderer->shadow_frame_layout, 1);
-    WGPUShaderModule module = create_shader(device, shadow_shader);
+    WGPUShaderModule module = create_shader(device, shadow_wgsl);
     WGPUVertexAttribute static_attributes[1] = {
         {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, position), .shaderLocation = 0},
     };
@@ -772,75 +631,10 @@ internal f64 target_megabytes(u32 width, u32 height, u32 samples)
     return (f64)width * (f64)height * (f64)nv_gpu_format_bytes(NV_SCENE_FORMAT) * (f64)samples / (1024.0 * 1024.0);
 }
 
-internal const char* upscale_shader =
-    "struct Params {\n"
-    "    origin: vec2f,\n"
-    "    block: vec2f,\n"
-    "    size: vec2f,\n"
-    "    exposure: f32,\n"
-    "    tone: f32,\n"
-    "    bloom: vec4f,\n"     // x: intensity (0 = off), yz: the valid size of bloom mip 0 in texels
-    "    bloom_tex: vec4f,\n" // xy: the size of that mip's texture
-    "}\n"
-    "@group(0) @binding(0) var<uniform> p: Params;\n"
-    "@group(0) @binding(1) var scene: texture_2d<f32>;\n"
-    "@group(0) @binding(2) var bloom_tex: texture_2d<f32>;\n"
-    "@group(0) @binding(3) var bloom_sampler: sampler;\n"
-    "@vertex\n"
-    "fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
-    "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
-    "    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);\n"
-    "}\n"
-    "\n"
-    // Khronos PBR Neutral tone mapper (github.com/KhronosGroup/ToneMapping, Apache-2.0): colors whose
-    // brightest channel is below 0.76 change by at most 0.04, brighter ones are compressed toward 1
-    // by their peak so the hue stays, and the very bright lose saturation toward white.
-    "fn tone_pbr_neutral(input: vec3f) -> vec3f {\n"
-    "    let start_compression = 0.8 - 0.04;\n"
-    "    let desaturation = 0.15;\n"
-    "    var color = input;\n"
-    "    let x = min(color.r, min(color.g, color.b));\n"
-    "    let offset = select(0.04, x - 6.25 * x * x, x < 0.08);\n"
-    "    color -= vec3f(offset);\n"
-    "    let peak = max(color.r, max(color.g, color.b));\n"
-    "    if (peak < start_compression) { return color; }\n"
-    "    let d = 1.0 - start_compression;\n"
-    "    let new_peak = 1.0 - d * d / (peak + d - start_compression);\n"
-    "    color *= new_peak / peak;\n"
-    "    let g = 1.0 - 1.0 / (desaturation * (peak - new_peak) + 1.0);\n"
-    "    return mix(color, new_peak * vec3f(1.0), g);\n"
-    "}\n"
-    "\n"
-    // Krzysztof Narkowicz's fit of the ACES filmic curve.
-    "fn tone_aces(x: vec3f) -> vec3f {\n"
-    "    return clamp((x * (2.51 * x + vec3f(0.03))) / (x * (2.43 * x + vec3f(0.59)) + vec3f(0.14)), vec3f(0.0), vec3f(1.0));\n"
-    "}\n"
-    "\n"
-    "fn tone_map(color: vec3f) -> vec3f {\n"
-    "    let c = max(color * p.exposure, vec3f(0.0));\n"
-    "    if (p.tone > 1.5) { return tone_aces(c); }\n"
-    "    if (p.tone > 0.5) { return clamp(tone_pbr_neutral(c), vec3f(0.0), vec3f(1.0)); }\n"
-    "    return clamp(c, vec3f(0.0), vec3f(1.0));\n"
-    "}\n"
-    "\n"
-    "@fragment\n"
-    "fn fs_main(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
-    "    // Nearest: the scene pixel under this screen pixel, counted from the image's corner.\n"
-    "    let t = vec2i(floor((pos.xy - p.origin) / p.block));\n"
-    "    let c = clamp(t, vec2i(0), vec2i(p.size) - vec2i(1));\n"
-    "    var color = textureLoad(scene, c, 0).rgb;\n"
-    // Bloom mip 0 covers two scene pixels per texel; bilinear, kept inside what the chain wrote.
-    "    if (p.bloom.x > 0.0) {\n"
-    "        let q = clamp((vec2f(c) + vec2f(0.5)) * 0.5, vec2f(0.5), p.bloom.yz - vec2f(0.5));\n"
-    "        color += textureSampleLevel(bloom_tex, bloom_sampler, q / p.bloom_tex.xy, 0.0).rgb * p.bloom.x;\n"
-    "    }\n"
-    "    return vec4f(tone_map(color), 1.0);\n"
-    "}\n";
-
 internal void create_upscale_pipeline(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    WGPUShaderModule module = create_shader(gpu->device, upscale_shader);
+    WGPUShaderModule module = create_shader(gpu->device, upscale_wgsl);
     WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
     target.format = gpu->surface_format;
     WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
@@ -881,69 +675,8 @@ internal void rebuild_upscale_group(NvRenderer* renderer)
     wgpuBindGroupLayoutRelease(layout);
 }
 
-// Bloom after Jorge Jimenez, "Next Generation Post Processing in Call of Duty: Advanced Warfare"
-// (SIGGRAPH 2014): a 13-tap downsample (the first step weights its groups of four taps by
-// 1 / (1 + luma), Karis's average, so a single very bright pixel does not flicker) and a 3x3 tent
-// upsample added into the level above. Every tap is clamped to what the level before it wrote, so the
-// padding of the scene targets does not bleed in.
-internal const char* bloom_shader =
-    "struct Pass {\n"
-    "    src_tex: vec2f,\n"    // the source texture's size in texels
-    "    src_region: vec2f,\n" // the part of it that holds the image
-    "}\n"
-    "@group(0) @binding(0) var<uniform> p: Pass;\n"
-    "@group(0) @binding(1) var src: texture_2d<f32>;\n"
-    "@group(0) @binding(2) var samp: sampler;\n"
-    "@vertex\n"
-    "fn vs_main(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {\n"
-    "    let uv = vec2f(f32((i << 1u) & 2u), f32(i & 2u));\n"
-    "    return vec4f(uv * 2.0 - 1.0, 0.0, 1.0);\n"
-    "}\n"
-    "fn tap(q: vec2f) -> vec3f {\n"
-    "    let c = clamp(q, vec2f(0.5), p.src_region - vec2f(0.5));\n"
-    "    return textureSampleLevel(src, samp, c / p.src_tex, 0.0).rgb;\n"
-    "}\n"
-    "fn karis(c: vec3f) -> f32 {\n"
-    "    return 1.0 / (1.0 + dot(c, vec3f(0.2126, 0.7152, 0.0722)));\n"
-    "}\n"
-    // Two destination pixels are one source pixel apart on each axis, so the destination pixel's center
-    // is the corner shared by four source texels, and a bilinear tap there averages them.
-    "@fragment\n"
-    "fn fs_down_first(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
-    "    let o = pos.xy * 2.0;\n"
-    "    let a = tap(o + vec2f(-2.0, -2.0)); let b = tap(o + vec2f(0.0, -2.0)); let c = tap(o + vec2f(2.0, -2.0));\n"
-    "    let d = tap(o + vec2f(-2.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(2.0, 0.0));\n"
-    "    let g = tap(o + vec2f(-2.0, 2.0));  let h = tap(o + vec2f(0.0, 2.0));  let i = tap(o + vec2f(2.0, 2.0));\n"
-    "    let j = tap(o + vec2f(-1.0, -1.0)); let k = tap(o + vec2f(1.0, -1.0));\n"
-    "    let l = tap(o + vec2f(-1.0, 1.0));  let m = tap(o + vec2f(1.0, 1.0));\n"
-    "    var g0 = (a + b + d + e) * (0.125 / 4.0);\n"
-    "    var g1 = (b + c + e + f) * (0.125 / 4.0);\n"
-    "    var g2 = (d + e + g + h) * (0.125 / 4.0);\n"
-    "    var g3 = (e + f + h + i) * (0.125 / 4.0);\n"
-    "    var g4 = (j + k + l + m) * (0.5 / 4.0);\n"
-    "    g0 *= karis(g0); g1 *= karis(g1); g2 *= karis(g2); g3 *= karis(g3); g4 *= karis(g4);\n"
-    "    return vec4f(max(g0 + g1 + g2 + g3 + g4, vec3f(0.0001)), 1.0);\n"
-    "}\n"
-    "@fragment\n"
-    "fn fs_down(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
-    "    let o = pos.xy * 2.0;\n"
-    "    let a = tap(o + vec2f(-2.0, -2.0)); let b = tap(o + vec2f(0.0, -2.0)); let c = tap(o + vec2f(2.0, -2.0));\n"
-    "    let d = tap(o + vec2f(-2.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(2.0, 0.0));\n"
-    "    let g = tap(o + vec2f(-2.0, 2.0));  let h = tap(o + vec2f(0.0, 2.0));  let i = tap(o + vec2f(2.0, 2.0));\n"
-    "    let j = tap(o + vec2f(-1.0, -1.0)); let k = tap(o + vec2f(1.0, -1.0));\n"
-    "    let l = tap(o + vec2f(-1.0, 1.0));  let m = tap(o + vec2f(1.0, 1.0));\n"
-    "    let down = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;\n"
-    "    return vec4f(down, 1.0);\n"
-    "}\n"
-    // The destination is twice the source's size; the tent reaches one source texel around.
-    "@fragment\n"
-    "fn fs_up(@builtin(position) pos: vec4f) -> @location(0) vec4f {\n"
-    "    let o = pos.xy * 0.5;\n"
-    "    let a = tap(o + vec2f(-1.0, 1.0));  let b = tap(o + vec2f(0.0, 1.0));  let c = tap(o + vec2f(1.0, 1.0));\n"
-    "    let d = tap(o + vec2f(-1.0, 0.0));  let e = tap(o);                    let f = tap(o + vec2f(1.0, 0.0));\n"
-    "    let g = tap(o + vec2f(-1.0, -1.0)); let h = tap(o + vec2f(0.0, -1.0)); let i = tap(o + vec2f(1.0, -1.0));\n"
-    "    return vec4f((e * 4.0 + (b + d + f + h) * 2.0 + (a + c + g + i)) * (1.0 / 16.0), 0.0);\n"
-    "}\n";
+// Bloom is engine/shaders/bloom.slang.
+
 
 #define BLOOM_PASSES (2 * NV_BLOOM_LEVELS - 1) // six downsamples and five upsamples
 #define BLOOM_UNIFORM_STRIDE 256               // the uniform dynamic offset alignment WebGPU guarantees
@@ -964,7 +697,7 @@ internal void create_bloom_pipelines(NvRenderer* renderer)
     layout_desc.entries = entries;
     renderer->bloom_layout = wgpuDeviceCreateBindGroupLayout(device, &layout_desc);
     WGPUPipelineLayout pipeline_layout = create_pipeline_layout(device, &renderer->bloom_layout, 1);
-    WGPUShaderModule module = create_shader(device, bloom_shader);
+    WGPUShaderModule module = create_shader(device, bloom_wgsl);
 
     const char* fragments[3] = {"fs_down_first", "fs_down", "fs_up"};
     WGPURenderPipeline* pipelines[3] = {&renderer->bloom_down_first_pipeline, &renderer->bloom_down_pipeline, &renderer->bloom_up_pipeline};

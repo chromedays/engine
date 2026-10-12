@@ -125,6 +125,13 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   다루는 성숙한 데이터 지향 라이브러리다. API가 C++이므로 엔진은 우리 C 래퍼를 통해서만 사용한다.
 - UI 글꼴에는 Pretendard Regular(SIL OFL 1.1, `assets/fonts/`): 영어와 한국어를 한 파일로 그린다. 라틴은 Inter를 바탕으로
   해서 영어가 화면용 산세리프로 보이고, 한글 11,172 음절이 모두 있어 서브셋 도구가 필요 없다. 대가는 크기(약 2.6 MB)다.
+- 셰이더 컴파일러에는 Slang의 `slangc`(Apache 2.0 with LLVM exception, `docs/specs/slang_shader_port.md`): 셰이더 소스 하나에서 웹용
+  WGSL과 나중의 D3D12용 HLSL을 만든다. 변환기로 WGSL을 옮기면 최소 공통분모에 묶이지만, Slang은 D3D12의 기능을 그대로 쓸 수 있다.
+  **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.** 공식 릴리스의 미리 빌드된 바이너리를 버전과 SHA-256을 고정해 내려받으며,
+  소스에서 빌드하지 않는다.
+- 생성된 WGSL의 검사에는 Dawn의 `tint`(BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc`는 자기가 쓴 WGSL을 검사하지
+  않으므로, Chrome과 Edge가 쓰는 바로 그 WGSL 컴파일러로 빌드에서 검사한다. **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.**
+  Dawn 공식 릴리스의 미리 컴파일된 바이너리(`bin/tint`)만 버전과 SHA-256을 고정해 쓰며, 소스에서 빌드하지 않는다.
 - 그 밖의 것은 (단일 헤더 라이브러리라도) 이유를 글로 쓰고 먼저 합의해야 한다. 수학, 컨테이너, 문자열은
   여기서 작성한다.
 
@@ -265,6 +272,14 @@ The table sets the shape of names. What a name has to say:
 - Pretendard Regular (SIL OFL 1.1, `assets/fonts/`) for the UI font: one file draws English and Korean. Its Latin is
   based on Inter, so English reads as a screen sans, and it has all 11,172 Hangul syllables, so no subsetting tool is
   needed. The cost is its size (about 2.6 MB).
+- Slang's `slangc` for compiling shaders (Apache 2.0 with LLVM exception, `docs/specs/slang_shader_port.md`): one shader source gives
+  WGSL for the web and, later, HLSL for D3D12. Translating WGSL with a converter ties us to the lowest common subset; Slang lets
+  D3D12's features be used as they are. **It runs only as a build-time tool and is linked into nothing.** The official release's
+  prebuilt binaries are downloaded with the version and SHA-256 pinned; it is not built from source.
+- Dawn's `tint` for checking the generated WGSL (BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc` does not check the
+  WGSL it writes, so the build checks it with the same WGSL compiler Chrome and Edge use. **It runs only as a build-time tool and is
+  linked into nothing.** Only the prebuilt binary from Dawn's official releases (`bin/tint`) is used, with the version and SHA-256
+  pinned; it is not built from source.
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 
