@@ -53,6 +53,8 @@ export async function openSandbox(browser, url, size = { width: 1280, height: 72
         if (/scene color target/.test(text)) running();
         // Chromium's note that WebGPU is experimental on this platform is not a problem.
         if (/^WebGPU is experimental/.test(text)) return;
+        // The page has no favicon.
+        if (/Failed to load resource/.test(text) && /favicon/.test(message.location().url)) return;
         if (message.type() === 'error' || /wgpu|WebGPU|error \(/i.test(text) && !/^\[nv\] GPU/.test(text)) problems.push(text);
     });
     page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`));
