@@ -4,7 +4,10 @@
 // sorted by (emitter, seed) with a relative error of 1e-4 (1e-3, a half float's ulp, for the values the shader keeps
 // as halves). Exits with 1 when anything differs.
 // --exact: for stages that change only the shape of the code (stages 0-2: the same software renderer, the same shaders):
-// no channel of any pixel outside the masks may differ, in the effects' screens too, and the effect dumps must be equal.
+// no channel of any pixel outside the masks may differ, and the effect dumps must be equal. What the baseline itself does not
+// repeat between two runs of one build is held to what it does repeat (measured with two captures, docs/specs/d3d12_port.md,
+// "Found"): the effects' screens (unsorted translucent particles) to their block averages as without --exact, the UI screen
+// S10 to 0.01% of its pixels (a few pixels of text), and V12-250k (a Play case, driven by real time) is left out.
 import fs from 'fs';
 import path from 'path';
 import { launch } from './lib.mjs';
@@ -15,6 +18,7 @@ const [baseline, current] = process.argv.slice(2).filter((a) => !a.startsWith('-
 if (!baseline || !current) { console.error('usage: compare.mjs <baseline dir> <current dir>'); process.exit(2); }
 
 const CHANNEL_TOLERANCE = exact ? 0 : 2, PIXEL_FRACTION = exact ? 0 : 0.001;
+const NOT_REPEATABLE = new Set(['V12-250k.json']); // skipped with --exact
 // The effects' screens, by case. Most of what two builds differ by is the order in which the unsorted translucent particles
 // are blended: SwiftShader schedules the compute passes the same way every run of a build, so one build repeats itself exactly,
 // but any change of the shader moves the order in which the groups append to the visible lists (the particle dumps still
@@ -131,14 +135,17 @@ for (const name of names) {
             const fraction = result.over / result.counted;
             // The effects' screens (V*) hold unsorted translucent particles: their pixels may differ run to run, so they are
             // held to the block averages instead (BLOCK_TOLERANCE, set from the baseline's two runs).
-            const loose = !exact && /^V\d/.test(name);
+            const loose = /^V\d/.test(name);
             const tolerance = BLOCK_TOLERANCE[name.split('-')[0]] ?? 20;
             const problems = [];
-            if (loose ? result.blockMax > tolerance : fraction > PIXEL_FRACTION)
+            const allowed = exact && name.startsWith('S10') ? 0.0001 : PIXEL_FRACTION;
+            if (loose ? result.blockMax > tolerance : fraction > allowed)
                 problems.push(loose ? `16x16 block averages differ by up to ${result.blockMax.toFixed(2)}/255 (more than ${tolerance})`
                                     : `${(fraction * 100).toFixed(3)}% of the pixels differ by more than ${CHANNEL_TOLERANCE}/255 (largest ${result.max})`);
             report(name, problems, `largest ${result.max}/255, ${(fraction * 100).toFixed(4)}% over, blocks ${result.blockMax.toFixed(2)}`);
         }
+    } else if (exact && NOT_REPEATABLE.has(name)) {
+        console.log(`skip ${name}  does not repeat on the baseline itself`);
     } else if (/^V\d+[-\w]*\.json$/.test(name) && !fs.existsSync(path.join(baseline, name.replace(/\.json$/, '.png')))) {
         if (!fs.existsSync(path.join(current, name))) { report(name, ['missing from the current run']); continue; }
         const a = JSON.parse(fs.readFileSync(path.join(baseline, name), 'utf8'));
