@@ -8,15 +8,15 @@ struct Uniforms {
 [[vk::binding(2, 0)]] Texture2D<float4> t;
 
 struct VsIn {
-    [[vk::location(0)]] float2 pos : POSITION;
-    [[vk::location(1)]] float2 uv : TEXCOORD0;
-    [[vk::location(2)]] float4 col : COLOR0;
+    float2 pos : TEXCOORD0;
+    float2 uv : TEXCOORD1;
+    float4 col : TEXCOORD2;
 };
 
 struct VsOut {
     float4 pos : SV_Position;
-    [[vk::location(0)]] float2 uv : TEXCOORD0;
-    [[vk::location(1)]] float4 col : COLOR0;
+    float2 uv : TEXCOORD0;
+    float4 col : TEXCOORD1;
 };
 
 [shader("vertex")]

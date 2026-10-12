@@ -6,11 +6,11 @@ struct DebugFrame {
 
 struct VsOut {
     float4 clip : SV_Position;
-    [[vk::location(0)]] float4 color : COLOR0;
+    float4 color : TEXCOORD0;
 };
 
 [shader("vertex")]
-VsOut vs_main([[vk::location(0)]] float3 position : POSITION, [[vk::location(1)]] float4 color : COLOR0)
+VsOut vs_main(float3 position : TEXCOORD0, float4 color : TEXCOORD1)
 {
     VsOut out;
     out.clip = mul(frame.view_proj, float4(position, 1.0));

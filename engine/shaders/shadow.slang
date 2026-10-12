@@ -2,13 +2,13 @@
 import renderer_frame;
 
 struct StaticIn {
-    [[vk::location(0)]] float3 position : POSITION;
+    float3 position : TEXCOORD0;
 };
 
 struct SkinnedIn {
-    [[vk::location(0)]] float3 position : POSITION;
-    [[vk::location(3)]] uint4 joints : BLENDINDICES;
-    [[vk::location(4)]] float4 weights : BLENDWEIGHT;
+    float3 position : TEXCOORD0;
+    uint4 joints : TEXCOORD3;
+    float4 weights : TEXCOORD4;
 };
 
 [shader("vertex")]

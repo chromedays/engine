@@ -7,10 +7,10 @@ import vfx_shapes;
 
 struct VsOut {
     float4 clip : SV_Position;
-    [[vk::location(0)]] float2 uv : TEXCOORD0;
-    [[vk::location(1)]] float4 color : TEXCOORD1;
-    [[vk::location(2)]] nointerpolation uint shape : TEXCOORD2;
-    [[vk::location(3)]] nointerpolation uint seed : TEXCOORD3;
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+    nointerpolation uint shape : TEXCOORD2;
+    nointerpolation uint seed : TEXCOORD3;
 };
 
 // Vertex pulling: six vertices per visible particle, found by the vertex index. The additive list

@@ -32,9 +32,9 @@ static const float4 OUTSIDE = float4(2.0, 2.0, 2.0, 1.0);
 
 struct SegmentOut {
     float4 clip : SV_Position;
-    [[vk::location(0)]] float2 uv : TEXCOORD0;    // x along the segment 0 to 1, y across -1 to 1
-    [[vk::location(1)]] float3 color : TEXCOORD1; // already faded and flickered
-    [[vk::location(2)]] float2 bands : TEXCOORD2; // x: length in meters, y: scroll phase (0 = no bands)
+    float2 uv : TEXCOORD0;    // x along the segment 0 to 1, y across -1 to 1
+    float3 color : TEXCOORD1; // already faded and flickered
+    float2 bands : TEXCOORD2; // x: length in meters, y: scroll phase (0 = no bands)
 };
 
 [shader("vertex")]
@@ -93,10 +93,10 @@ float4 fs_segment(SegmentOut in) : SV_Target
 
 struct DecalOut {
     float4 clip : SV_Position;
-    [[vk::location(0)]] float2 uv : TEXCOORD0;
-    [[vk::location(1)]] float4 color : TEXCOORD1;
-    [[vk::location(2)]] nointerpolation uint shape : TEXCOORD2;
-    [[vk::location(3)]] nointerpolation uint seed : TEXCOORD3;
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+    nointerpolation uint shape : TEXCOORD2;
+    nointerpolation uint seed : TEXCOORD3;
 };
 
 [shader("vertex")]

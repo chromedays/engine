@@ -11,25 +11,27 @@ struct Material {
 [[vk::binding(1, 1)]] SamplerState material_sampler;
 [[vk::binding(2, 1)]] Texture2D<float4> base_color_texture;
 
+// NOTE: slangc's WGSL ignores [[vk::location]] on vertex inputs and numbers them in order; the number of a TEXCOORD<n> semantic
+// is what it uses as the location (the pipelines in renderer.c name the locations), so every input and varying says it that way.
 struct StaticIn {
-    [[vk::location(0)]] float3 position : POSITION;
-    [[vk::location(1)]] float3 normal : NORMAL;
-    [[vk::location(2)]] float2 uv : TEXCOORD0;
+    float3 position : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
 };
 
 struct SkinnedIn {
-    [[vk::location(0)]] float3 position : POSITION;
-    [[vk::location(1)]] float3 normal : NORMAL;
-    [[vk::location(2)]] float2 uv : TEXCOORD0;
-    [[vk::location(3)]] uint4 joints : BLENDINDICES;
-    [[vk::location(4)]] float4 weights : BLENDWEIGHT;
+    float3 position : TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float2 uv : TEXCOORD2;
+    uint4 joints : TEXCOORD3;
+    float4 weights : TEXCOORD4;
 };
 
 struct VsOut {
     float4 clip : SV_Position;
-    [[vk::location(0)]] float3 normal : NORMAL;
-    [[vk::location(1)]] float2 uv : TEXCOORD0;
-    [[vk::location(2)]] float3 world : TEXCOORD1;
+    float3 normal : TEXCOORD0;
+    float2 uv : TEXCOORD1;
+    float3 world : TEXCOORD2;
 };
 
 VsOut finish(float4x4 model, float3 position, float3 normal, float2 uv)

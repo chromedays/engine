@@ -13,6 +13,7 @@ if (!dir) { console.error('usage: shader_layout_test.mjs <shaders dir>'); proces
 const EXPECTED = {
     imgui: {
         entryPoints: ['vs_main', 'fs_main'],
+        inputs: { vs_main: [0, 1, 2] }, // the vertex attributes of imgui.c (position, uv, color)
         bindings: {
             '0:0': { name: 'u', kind: 'constantBuffer', size: 64, fields: { mvp: 0 } }, // NvMat4
             '0:1': { name: 's', kind: 'samplerState' },
@@ -55,6 +56,7 @@ const EXPECTED = {
     },
     mesh: {
         entryPoints: ['vs_static', 'vs_skinned', 'fs_main'],
+        inputs: { vs_static: [0, 1, 2], vs_skinned: [0, 1, 2, 3, 4] }, // position, normal, uv, joints, weights
         bindings: {
             '0:0': { name: 'frame', kind: 'constantBuffer', size: 224 }, // FrameUniforms
             '0:1': { name: 'objects', kind: 'resource', element: 'Object', size: 80 }, // NvObjectData
@@ -68,6 +70,7 @@ const EXPECTED = {
     },
     shadow: {
         entryPoints: ['vs_static', 'vs_skinned'],
+        inputs: { vs_static: [0], vs_skinned: [0, 3, 4] }, // position; position, joints, weights
         bindings: {
             '0:0': { name: 'frame', kind: 'constantBuffer', size: 224 },
             '0:1': { name: 'objects', kind: 'resource', element: 'Object', size: 80 },
@@ -76,6 +79,7 @@ const EXPECTED = {
     },
     debug_lines: {
         entryPoints: ['vs_main', 'fs_main'],
+        inputs: { vs_main: [0, 1] },
         bindings: { '0:0': { name: 'frame', kind: 'constantBuffer', size: 64 } }, // NvMat4
     },
     upscale: {
@@ -107,6 +111,17 @@ for (const [shader, expected] of Object.entries(EXPECTED)) {
     const reflection = JSON.parse(fs.readFileSync(file, 'utf8'));
     const names = reflection.entryPoints.map((e) => e.name).sort().join(',');
     if (names !== [...expected.entryPoints].sort().join(',')) fail(shader, `entry points ${names}`);
+    // The vertex attribute locations, as the WGSL numbers them (reflection numbers them in order, which is not what
+    // WGSL does): the pipelines in the C code name each one, and a gap that closes up draws the wrong data.
+    if (expected.inputs) {
+        const wgsl = fs.readFileSync(path.join(dir, `${shader}.wgsl`), 'utf8');
+        for (const [entry, locations] of Object.entries(expected.inputs)) {
+            const call = new RegExp(`fn ${entry}\\(\\s*(?:@\\w+\\(\\w+\\)\\s*)?\\w+\\s*:\\s*(\\w+)`).exec(wgsl);
+            const body = call && new RegExp(`struct ${call[1]}\\s*\\{([^}]*)\\}`).exec(wgsl);
+            const found = body ? [...body[1].matchAll(/@location\((\d+)\)/g)].map((m) => Number(m[1])) : null;
+            if (JSON.stringify(found) !== JSON.stringify(locations)) fail(shader, `${entry} reads locations ${JSON.stringify(found)}, not ${JSON.stringify(locations)}`);
+        }
+    }
     const found = new Map(reflection.parameters.map((p) => [`${p.binding.space || 0}:${p.binding.index}`, p]));
     for (const [index, want] of Object.entries(expected.bindings)) {
         const p = found.get(index);
