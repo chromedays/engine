@@ -4,10 +4,10 @@
 #include "engine/log.h"
 #include "engine/math.h"
 #include "engine/window.h"
-#include "shaders/imgui_wgsl.h"
-#include "shaders/preview_color_wgsl.h"
-#include "shaders/preview_depth_ms_wgsl.h"
-#include "shaders/preview_depth_wgsl.h"
+#include "shaders/imgui_shader.h"
+#include "shaders/preview_color_shader.h"
+#include "shaders/preview_depth_ms_shader.h"
+#include "shaders/preview_depth_shader.h"
 
 #include <float.h>
 #include <math.h>
@@ -59,116 +59,70 @@ typedef struct PreviewParams {
 } PreviewParams;
 _Static_assert(sizeof(PreviewParams) == 32, "the preview shaders read 32 bytes of parameters");
 
-internal WGPURenderPipeline create_pipeline(WGPUDevice device, NvGpuFormat format, const char* code, const char* label)
+internal NvGpuBuffer create_buffer(NvGpu* gpu, u32 usage, umm size)
 {
-    WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl.code = (WGPUStringView){code, WGPU_STRLEN};
-    WGPUShaderModuleDescriptor module_desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
-    module_desc.nextInChain = &wgsl.chain;
-    WGPUShaderModule module = wgpuDeviceCreateShaderModule(device, &module_desc);
-
-    WGPUVertexAttribute attributes[3] = {
-        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(ImDrawVert, pos), .shaderLocation = 0},
-        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(ImDrawVert, uv), .shaderLocation = 1},
-        {.format = WGPUVertexFormat_Unorm8x4, .offset = offsetof(ImDrawVert, col), .shaderLocation = 2},
-    };
-    WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
-    vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
-    vertex_layout.arrayStride = sizeof(ImDrawVert);
-    vertex_layout.attributeCount = NV_ARRAY_COUNT(attributes);
-    vertex_layout.attributes = attributes;
-
-    WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
-    blend.color.operation = WGPUBlendOperation_Add;
-    blend.color.srcFactor = WGPUBlendFactor_SrcAlpha;
-    blend.color.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
-    blend.alpha.operation = WGPUBlendOperation_Add;
-    blend.alpha.srcFactor = WGPUBlendFactor_One;
-    blend.alpha.dstFactor = WGPUBlendFactor_OneMinusSrcAlpha;
-
-    WGPUColorTargetState color_target = WGPU_COLOR_TARGET_STATE_INIT;
-    color_target.format = nv_gpu_wgpu_format(format);
-    color_target.blend = &blend;
-
-    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-    fragment.module = module;
-    fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
-    fragment.targetCount = 1;
-    fragment.targets = &color_target;
-
-    WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){label, WGPU_STRLEN};
-    desc.vertex.module = module;
-    desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
-    desc.vertex.bufferCount = 1;
-    desc.vertex.buffers = &vertex_layout;
-    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    desc.primitive.cullMode = WGPUCullMode_None;
-    desc.fragment = &fragment;
-
-    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
-    wgpuShaderModuleRelease(module);
-    return pipeline;
+    return nv_gpu_create_buffer(gpu, &(NvGpuBufferDesc){.usage = usage, .size = size});
 }
 
-internal WGPUBuffer create_buffer(WGPUDevice device, WGPUBufferUsage usage, umm size)
+internal NvGpuPipeline create_pipeline(NvGpu* gpu, NvGpuFormat format, const NvGpuShaderCode* shader, NvGpuLayout layout,
+                                       const char* label)
 {
-    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-    desc.usage = usage | WGPUBufferUsage_CopyDst;
-    desc.size = size;
-    return wgpuDeviceCreateBuffer(device, &desc);
+    return nv_gpu_create_render_pipeline(gpu, &(NvGpuRenderPipelineDesc){
+        .label = label,
+        .shader = shader,
+        .vertex_entry = "vs_main",
+        .fragment_entry = "fs_main",
+        .layouts = {layout},
+        .layout_count = 1,
+        .vertex_stride = sizeof(ImDrawVert),
+        .attributes = {
+            {.location = 0, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(ImDrawVert, pos)},
+            {.location = 1, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(ImDrawVert, uv)},
+            {.location = 2, .format = NV_GPU_VERTEX_UNORM8X4, .offset = offsetof(ImDrawVert, col)},
+        },
+        .attribute_count = 3,
+        .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+        .cull = NV_GPU_CULL_NONE,
+        .color_format = format,
+        .blend = NV_GPU_BLEND_ALPHA,
+    });
 }
 
 internal void upload_texture_rect(NvImgui* imgui, ImTextureData* tex, u32 x, u32 y, u32 w, u32 h)
 {
     NvImguiTexture* slot = &imgui->textures[ImTextureData_GetTexID(tex)];
-    u32 pitch = (u32)ImTextureData_GetPitch(tex);
-
-    WGPUTexelCopyTextureInfo destination = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-    destination.texture = slot->texture;
-    destination.origin = (WGPUOrigin3D){x, y, 0};
-    WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
-    layout.bytesPerRow = pitch;
-    layout.rowsPerImage = h;
-    WGPUExtent3D size = {w, h, 1};
-    umm data_size = (umm)pitch * (h - 1) + (umm)w * 4;
-    wgpuQueueWriteTexture(imgui->gpu->queue, &destination, ImTextureData_GetPixelsAt(tex, (int)x, (int)y),
-                          data_size, &layout, &size);
+    nv_gpu_write_texture(imgui->gpu, slot->texture, 0, x, y, w, h, ImTextureData_GetPixelsAt(tex, (int)x, (int)y),
+                         (u32)ImTextureData_GetPitch(tex));
 }
 
 // Serves ImGui's texture requests (font atlas creation, glyph uploads, destruction).
 internal void update_texture(NvImgui* imgui, ImTextureData* tex)
 {
-    WGPUDevice device = imgui->gpu->device;
+    NvGpu* gpu = imgui->gpu;
 
     if (tex->Status == ImTextureStatus_WantCreate) {
         NV_ASSERT(tex->Format == ImTextureFormat_RGBA32);
         u32 index = 1;
-        while (index < NV_IMGUI_MAX_TEXTURES && imgui->textures[index].texture)
+        while (index < NV_IMGUI_MAX_TEXTURES && imgui->textures[index].texture.index)
             ++index;
         NV_ASSERT(index < NV_IMGUI_MAX_TEXTURES);
         NvImguiTexture* slot = &imgui->textures[index];
 
-        WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-        desc.label = (WGPUStringView){"imgui texture", WGPU_STRLEN};
-        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-        desc.size = (WGPUExtent3D){(u32)tex->Width, (u32)tex->Height, 1};
-        desc.format = WGPUTextureFormat_RGBA8Unorm;
-        slot->texture = wgpuDeviceCreateTexture(device, &desc);
-        slot->view = wgpuTextureCreateView(slot->texture, NULL);
+        slot->texture = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+            .label = "imgui texture",
+            .width = (u32)tex->Width,
+            .height = (u32)tex->Height,
+            .format = NV_GPU_FORMAT_RGBA8,
+            .usage = NV_GPU_TEXTURE_SAMPLED | NV_GPU_TEXTURE_COPY_DST,
+        });
+        slot->view = nv_gpu_create_view(gpu, slot->texture, NULL);
 
-        WGPUBindGroupEntry entries[3] = {
+        NvGpuGroupEntry entries[3] = {
             {.binding = 0, .buffer = imgui->uniform_buffer, .size = sizeof(NvMat4)},
             {.binding = 1, .sampler = imgui->sampler},
-            {.binding = 2, .textureView = slot->view},
+            {.binding = 2, .view = slot->view},
         };
-        WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(imgui->pipeline, 0);
-        WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        group_desc.layout = layout;
-        group_desc.entryCount = NV_ARRAY_COUNT(entries);
-        group_desc.entries = entries;
-        slot->bind_group = wgpuDeviceCreateBindGroup(device, &group_desc);
-        wgpuBindGroupLayoutRelease(layout);
+        slot->bind_group = nv_gpu_create_group(gpu, imgui->layout, entries, NV_ARRAY_COUNT(entries));
 
         ImTextureData_SetTexID(tex, index);
         upload_texture_rect(imgui, tex, 0, 0, (u32)tex->Width, (u32)tex->Height);
@@ -180,20 +134,20 @@ internal void update_texture(NvImgui* imgui, ImTextureData* tex)
     } else if (tex->Status == ImTextureStatus_WantDestroy && tex->UnusedFrames > 0) {
         // Waiting for an unused frame keeps the texture alive while queued draws may use it.
         NvImguiTexture* slot = &imgui->textures[ImTextureData_GetTexID(tex)];
-        wgpuBindGroupRelease(slot->bind_group);
-        wgpuTextureViewRelease(slot->view);
-        wgpuTextureRelease(slot->texture);
+        nv_gpu_release_group(gpu, slot->bind_group);
+        nv_gpu_release_view(gpu, slot->view);
+        nv_gpu_release_texture(gpu, slot->texture);
         *slot = (NvImguiTexture){0};
         ImTextureData_SetTexID(tex, 0);
         ImTextureData_SetStatus(tex, ImTextureStatus_Destroyed);
     }
 }
 
-internal void set_render_state(NvImgui* imgui, WGPURenderPassEncoder pass)
+internal void set_render_state(NvImgui* imgui)
 {
-    wgpuRenderPassEncoderSetPipeline(pass, imgui->pipeline);
-    wgpuRenderPassEncoderSetVertexBuffer(pass, 0, imgui->vertex_buffer, 0, WGPU_WHOLE_SIZE);
-    wgpuRenderPassEncoderSetIndexBuffer(pass, imgui->index_buffer, WGPUIndexFormat_Uint16, 0, WGPU_WHOLE_SIZE);
+    nv_gpu_set_pipeline(imgui->gpu, imgui->pipeline);
+    nv_gpu_set_vertex_buffer(imgui->gpu, imgui->vertex_buffer);
+    nv_gpu_set_index_buffer(imgui->gpu, imgui->index_buffer, 0);
 }
 
 //
@@ -222,19 +176,38 @@ void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena)
     ImGuiStyle_ScaleAllSizes(style, imgui->ui_scale);
     style->FontScaleMain = imgui->ui_scale;
 
-    WGPUDevice device = gpu->device;
-    imgui->pipeline = create_pipeline(device, gpu->surface_format, imgui_wgsl, "imgui");
-    imgui->preview_pipeline = create_pipeline(device, gpu->surface_format, preview_color_wgsl, "imgui preview");
-    imgui->depth_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_wgsl, "imgui depth preview");
-    imgui->depth_ms_pipeline = create_pipeline(device, gpu->surface_format, preview_depth_ms_wgsl, "imgui multisampled depth preview");
-    imgui->uniform_buffer = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(NvMat4));
-    imgui->vertex_buffer = create_buffer(device, WGPUBufferUsage_Vertex, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
-    imgui->index_buffer = create_buffer(device, WGPUBufferUsage_Index, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
+    // The UI's bindings: the matrix in the vertex stage, the texture and its sampler in the fragment stage. A preview adds its
+    // parameters (binding 3); a depth preview has no sampler, and reads its texture with a load.
+    NvGpuLayoutEntry ui_entries[3] = {
+        {.binding = 0, .stages = NV_GPU_STAGE_VERTEX, .kind = NV_GPU_BINDING_UNIFORM},
+        {.binding = 1, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_SAMPLER},
+        {.binding = 2, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_FLOAT},
+    };
+    NvGpuLayoutEntry preview_entries[4] = {
+        ui_entries[0], ui_entries[1], ui_entries[2],
+        {.binding = 3, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM},
+    };
+    NvGpuLayoutEntry depth_entries[3] = {
+        ui_entries[0],
+        {.binding = 2, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_DEPTH},
+        {.binding = 3, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM},
+    };
+    NvGpuLayoutEntry depth_ms_entries[3] = {depth_entries[0], depth_entries[1], depth_entries[2]};
+    depth_ms_entries[1].kind = NV_GPU_BINDING_TEXTURE_DEPTH_MS;
+    imgui->layout = nv_gpu_create_layout(gpu, ui_entries, NV_ARRAY_COUNT(ui_entries));
+    imgui->preview_layout = nv_gpu_create_layout(gpu, preview_entries, NV_ARRAY_COUNT(preview_entries));
+    imgui->depth_layout = nv_gpu_create_layout(gpu, depth_entries, NV_ARRAY_COUNT(depth_entries));
+    imgui->depth_ms_layout = nv_gpu_create_layout(gpu, depth_ms_entries, NV_ARRAY_COUNT(depth_ms_entries));
 
-    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    sampler_desc.magFilter = WGPUFilterMode_Linear;
-    sampler_desc.minFilter = WGPUFilterMode_Linear;
-    imgui->sampler = wgpuDeviceCreateSampler(device, &sampler_desc);
+    imgui->pipeline = create_pipeline(gpu, gpu->surface_format, &imgui_shader, imgui->layout, "imgui");
+    imgui->preview_pipeline = create_pipeline(gpu, gpu->surface_format, &preview_color_shader, imgui->preview_layout, "imgui preview");
+    imgui->depth_pipeline = create_pipeline(gpu, gpu->surface_format, &preview_depth_shader, imgui->depth_layout, "imgui depth preview");
+    imgui->depth_ms_pipeline = create_pipeline(gpu, gpu->surface_format, &preview_depth_ms_shader, imgui->depth_ms_layout,
+                                               "imgui multisampled depth preview");
+    imgui->uniform_buffer = create_buffer(gpu, NV_GPU_BUFFER_UNIFORM, sizeof(NvMat4));
+    imgui->vertex_buffer = create_buffer(gpu, NV_GPU_BUFFER_VERTEX, NV_IMGUI_MAX_VERTICES * sizeof(ImDrawVert));
+    imgui->index_buffer = create_buffer(gpu, NV_GPU_BUFFER_INDEX, NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
+    imgui->sampler = nv_gpu_create_sampler(gpu, &(NvGpuSamplerDesc){0});
 }
 
 void nv_imgui_touch_press(NvImgui* imgui)
@@ -278,20 +251,19 @@ internal void decide_view_press(NvImgui* imgui)
         ImGuiIO_AddMousePosEvent(io, -FLT_MAX, -FLT_MAX);
 }
 
-internal void release_preview(NvImguiPreviewSlot* slot)
+internal void release_preview(NvGpu* gpu, NvImguiPreviewSlot* slot)
 {
-    wgpuBindGroupRelease(slot->bind_group);
-    wgpuBufferRelease(slot->params);
-    wgpuTextureViewRelease(slot->view);
-    wgpuTextureRelease(slot->key.texture);
+    nv_gpu_release_group(gpu, slot->bind_group);
+    nv_gpu_release_buffer(gpu, slot->params);
+    nv_gpu_release_view(gpu, slot->view);
     *slot = (NvImguiPreviewSlot){0};
 }
 
 internal b32 same_preview(const NvImguiPreview* a, const NvImguiPreview* b)
 {
-    return a->texture == b->texture && a->mip == b->mip && a->mode == b->mode && a->depth == b->depth &&
-           a->range_min == b->range_min && a->range_max == b->range_max && a->near_z == b->near_z &&
-           a->far_z == b->far_z;
+    return a->texture.index == b->texture.index && a->texture.generation == b->texture.generation && a->mip == b->mip &&
+           a->mode == b->mode && a->depth == b->depth && a->range_min == b->range_min && a->range_max == b->range_max &&
+           a->near_z == b->near_z && a->far_z == b->far_z;
 }
 
 internal b32 is_depth_format(NvGpuFormat format)
@@ -306,11 +278,11 @@ internal b32 is_srgb_format(NvGpuFormat format)
 
 ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
 {
-    NV_ASSERT(preview->texture);
+    NV_ASSERT(preview->texture.index);
     s32 free_slot = -1;
     for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
         NvImguiPreviewSlot* slot = &imgui->previews[i];
-        if (!slot->key.texture) {
+        if (!slot->key.texture.index) {
             if (free_slot < 0)
                 free_slot = (s32)i;
         } else if (same_preview(&slot->key, preview)) {
@@ -320,49 +292,38 @@ ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview)
     }
     NV_ASSERT(free_slot >= 0);
     NvImguiPreviewSlot* slot = &imgui->previews[free_slot];
-    WGPUDevice device = imgui->gpu->device;
-    NvGpuFormat format = nv_gpu_format_from_wgpu(wgpuTextureGetFormat(preview->texture));
+    NvGpu* gpu = imgui->gpu;
+    NvGpuTextureDesc texture_desc = nv_gpu_texture_desc(gpu, preview->texture);
+    NvGpuFormat format = texture_desc.format;
     b32 depth = is_depth_format(format);
     NV_ASSERT(depth == (preview->mode == NV_IMGUI_PREVIEW_DEPTH));
-    b32 multisampled = wgpuTextureGetSampleCount(preview->texture) > 1;
+    b32 multisampled = texture_desc.samples > 1;
     NV_ASSERT(!multisampled || depth); // only depth is shown multisampled (sample 0)
-    NV_ASSERT(preview->mip < wgpuTextureGetMipLevelCount(preview->texture));
-    NV_ASSERT(wgpuTextureGetUsage(preview->texture) & WGPUTextureUsage_TextureBinding);
+    NV_ASSERT(preview->mip < texture_desc.mip_count);
+    NV_ASSERT(texture_desc.usage & NV_GPU_TEXTURE_SAMPLED);
 
     slot->key = *preview;
     slot->depth = depth;
     slot->multisampled = multisampled;
     slot->used_frame = imgui->frame;
-    wgpuTextureAddRef(preview->texture);
 
-    WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-    view_desc.baseMipLevel = preview->mip;
-    view_desc.mipLevelCount = 1;
-    if (depth)
-        view_desc.aspect = WGPUTextureAspect_DepthOnly;
-    slot->view = wgpuTextureCreateView(preview->texture, &view_desc);
+    slot->view = nv_gpu_create_view(gpu, preview->texture, &(NvGpuViewDesc){.base_mip = preview->mip, .mip_count = 1, .depth_only = depth});
 
     PreviewParams params = {
         .range = {preview->range_min, preview->range_max, preview->near_z, preview->far_z},
         .mode = {(u32)preview->mode, !depth && !is_srgb_format(format), (u32)preview->depth, 0},
     };
-    slot->params = create_buffer(device, WGPUBufferUsage_Uniform, sizeof(params));
-    wgpuQueueWriteBuffer(imgui->gpu->queue, slot->params, 0, &params, sizeof(params));
+    slot->params = create_buffer(gpu, NV_GPU_BUFFER_UNIFORM, sizeof(params));
+    nv_gpu_write_buffer(gpu, slot->params, 0, &params, sizeof(params));
 
-    WGPUBindGroupEntry entries[4] = {
+    NvGpuGroupEntry entries[4] = {
         {.binding = 0, .buffer = imgui->uniform_buffer, .size = sizeof(NvMat4)},
         {.binding = 3, .buffer = slot->params, .size = sizeof(params)},
-        {.binding = 2, .textureView = slot->view},
+        {.binding = 2, .view = slot->view},
         {.binding = 1, .sampler = imgui->sampler}, // left out for depth: that pipeline has no sampler
     };
-    WGPURenderPipeline pipeline = depth ? (multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
-    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipeline, 0);
-    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    group_desc.layout = layout;
-    group_desc.entryCount = depth ? 3 : 4;
-    group_desc.entries = entries;
-    slot->bind_group = wgpuDeviceCreateBindGroup(device, &group_desc);
-    wgpuBindGroupLayoutRelease(layout);
+    NvGpuLayout layout = depth ? (multisampled ? imgui->depth_ms_layout : imgui->depth_layout) : imgui->preview_layout;
+    slot->bind_group = nv_gpu_create_group(gpu, layout, entries, depth ? 3 : 4);
     return (ImTextureID)(NV_IMGUI_MAX_TEXTURES + (u32)free_slot);
 }
 
@@ -370,7 +331,7 @@ u32 nv_imgui_preview_count(NvImgui* imgui)
 {
     u32 count = 0;
     for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i)
-        count += imgui->previews[i].key.texture != NULL;
+        count += imgui->previews[i].key.texture.index != 0;
     return count;
 }
 
@@ -381,8 +342,8 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     ++imgui->frame;
     for (u32 i = 0; i < NV_IMGUI_MAX_PREVIEWS; ++i) {
         NvImguiPreviewSlot* slot = &imgui->previews[i];
-        if (slot->key.texture && imgui->frame - slot->used_frame > NV_IMGUI_PREVIEW_FRAMES)
-            release_preview(slot);
+        if (slot->key.texture.index && imgui->frame - slot->used_frame > NV_IMGUI_PREVIEW_FRAMES)
+            release_preview(imgui->gpu, slot);
     }
     ImGuiIO* io = igGetIO_Nil();
     f32 scale = nv_window_pixel_ratio(imgui->window);
@@ -533,7 +494,7 @@ void nv_imgui_touch_scroll(NvImgui* imgui)
         igSetScrollY_Float(igGetScrollY() - imgui->touch_scroll);
 }
 
-void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target)
+void nv_imgui_render(NvImgui* imgui, NvGpuView target)
 {
     nv_imgui_platform_set_cursor(igGetMouseCursor());
     igRender();
@@ -570,9 +531,9 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
     // Buffer writes must be a multiple of 4 bytes; an odd index count gets one padding index.
     umm index_bytes = ((umm)index_count * sizeof(ImDrawIdx) + 3) & ~(umm)3;
     NV_ASSERT(index_bytes <= NV_IMGUI_MAX_INDICES * sizeof(ImDrawIdx));
-    WGPUQueue queue = imgui->gpu->queue;
-    wgpuQueueWriteBuffer(queue, imgui->vertex_buffer, 0, imgui->vertices, vertex_count * sizeof(ImDrawVert));
-    wgpuQueueWriteBuffer(queue, imgui->index_buffer, 0, imgui->indices, index_bytes);
+    NvGpu* gpu = imgui->gpu;
+    nv_gpu_write_buffer(gpu, imgui->vertex_buffer, 0, imgui->vertices, vertex_count * sizeof(ImDrawVert));
+    nv_gpu_write_buffer(gpu, imgui->index_buffer, 0, imgui->indices, index_bytes);
 
     // Maps ImGui's display rectangle (top-left origin, y down) to clip space.
     f32 l = pos.x;
@@ -585,19 +546,16 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
         0.0f, 0.0f, 0.5f, 0.0f,
         (r + l) / (l - r), (t + b) / (b - t), 0.5f, 1.0f,
     }};
-    wgpuQueueWriteBuffer(queue, imgui->uniform_buffer, 0, &mvp, sizeof(mvp));
+    nv_gpu_write_buffer(gpu, imgui->uniform_buffer, 0, &mvp, sizeof(mvp));
 
-    WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-    color.view = target;
-    color.loadOp = WGPULoadOp_Load;
-    color.storeOp = WGPUStoreOp_Store;
-    WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-    pass_desc.label = (WGPUStringView){"imgui", WGPU_STRLEN};
-    pass_desc.colorAttachmentCount = 1;
-    pass_desc.colorAttachments = &color;
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-    set_render_state(imgui, pass);
-    WGPURenderPipeline bound = imgui->pipeline;
+    nv_gpu_begin_render_pass(gpu, &(NvGpuRenderPassDesc){
+        .label = "imgui",
+        .color = target,
+        .color_load = NV_GPU_LOAD_LOAD,
+        .color_store = NV_GPU_STORE_STORE,
+    });
+    set_render_state(imgui);
+    NvGpuPipeline bound = imgui->pipeline;
 
     u32 vertex_offset = 0;
     u32 index_offset = 0;
@@ -607,7 +565,7 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
             ImDrawCmd* cmd = &list->CmdBuffer.Data[c];
             if (cmd->UserCallback) {
                 if (cmd->UserCallback == IMGUI_RESET_RENDER_STATE) {
-                    set_render_state(imgui, pass);
+                    set_render_state(imgui);
                     bound = imgui->pipeline;
                 } else
                     cmd->UserCallback(list, cmd);
@@ -624,33 +582,31 @@ void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView
             if (y1 > fb_height) y1 = fb_height;
             if (x1 <= x0 || y1 <= y0)
                 continue;
-            wgpuRenderPassEncoderSetScissorRect(pass, (u32)x0, (u32)y0, (u32)(x1 - x0), (u32)(y1 - y0));
+            nv_gpu_set_scissor(gpu, (u32)x0, (u32)y0, (u32)(x1 - x0), (u32)(y1 - y0));
 
             ImTextureID texture = ImDrawCmd_GetTexID(cmd);
-            WGPURenderPipeline pipeline = imgui->pipeline;
-            WGPUBindGroup group = NULL;
+            NvGpuPipeline pipeline = imgui->pipeline;
+            NvGpuGroup group = {0};
             if (texture >= NV_IMGUI_MAX_TEXTURES) {
                 NV_ASSERT(texture < NV_IMGUI_MAX_TEXTURES + NV_IMGUI_MAX_PREVIEWS);
                 NvImguiPreviewSlot* slot = &imgui->previews[texture - NV_IMGUI_MAX_TEXTURES];
-                NV_ASSERT(slot->bind_group);
+                NV_ASSERT(slot->bind_group.index);
                 pipeline = slot->depth ? (slot->multisampled ? imgui->depth_ms_pipeline : imgui->depth_pipeline) : imgui->preview_pipeline;
                 group = slot->bind_group;
             } else {
-                NV_ASSERT(texture > 0 && imgui->textures[texture].bind_group);
+                NV_ASSERT(texture > 0 && imgui->textures[texture].bind_group.index);
                 group = imgui->textures[texture].bind_group;
             }
-            if (pipeline != bound) {
-                wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+            if (!nv_gpu_same_pipeline(pipeline, bound)) {
+                nv_gpu_set_pipeline(gpu, pipeline);
                 bound = pipeline;
             }
-            wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, NULL);
-            wgpuRenderPassEncoderDrawIndexed(pass, cmd->ElemCount, 1, index_offset + cmd->IdxOffset,
-                                             (s32)(vertex_offset + cmd->VtxOffset), 0);
+            nv_gpu_set_group(gpu, 0, group, NULL, 0);
+            nv_gpu_draw_indexed(gpu, cmd->ElemCount, index_offset + cmd->IdxOffset, (s32)(vertex_offset + cmd->VtxOffset), 0);
         }
         vertex_offset += (u32)list->VtxBuffer.Size;
         index_offset += (u32)list->IdxBuffer.Size;
     }
 
-    wgpuRenderPassEncoderEnd(pass);
-    wgpuRenderPassEncoderRelease(pass);
+    nv_gpu_end_pass(gpu);
 }

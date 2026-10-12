@@ -1,9 +1,9 @@
 #include "engine/renderer.h"
-#include "shaders/bloom_wgsl.h"
-#include "shaders/debug_lines_wgsl.h"
-#include "shaders/mesh_wgsl.h"
-#include "shaders/shadow_wgsl.h"
-#include "shaders/upscale_wgsl.h"
+#include "shaders/bloom_shader.h"
+#include "shaders/debug_lines_shader.h"
+#include "shaders/mesh_shader.h"
+#include "shaders/shadow_shader.h"
+#include "shaders/upscale_shader.h"
 #include "engine/log.h"
 
 #include <math.h>
@@ -55,193 +55,115 @@ _Static_assert(sizeof(MaterialUniforms) == 16, "the shader reads a 16-byte mater
 
 // The shaders are engine/shaders/{mesh,shadow,debug_lines,upscale,bloom}.slang: the build makes mesh_wgsl and the others from them.
 
-internal WGPUBuffer create_buffer(NvGpu* gpu, WGPUBufferUsage usage, const void* data, umm size)
+internal NvGpuBuffer create_buffer(NvGpu* gpu, const char* label, u32 usage, const void* data, umm size)
 {
-    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-    desc.usage = usage | WGPUBufferUsage_CopyDst;
-    desc.size = (size + 3) & ~(umm)3;
-    WGPUBuffer buffer = wgpuDeviceCreateBuffer(gpu->device, &desc);
-    if (data)
-        wgpuQueueWriteBuffer(gpu->queue, buffer, 0, data, size);
-    return buffer;
-}
-
-internal WGPUShaderModule create_shader(WGPUDevice device, const char* code)
-{
-    WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl.code = (WGPUStringView){code, WGPU_STRLEN};
-    WGPUShaderModuleDescriptor desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
-    desc.nextInChain = &wgsl.chain;
-    return wgpuDeviceCreateShaderModule(device, &desc);
+    return nv_gpu_create_buffer(gpu, &(NvGpuBufferDesc){.label = label, .usage = usage, .size = size, .data = data});
 }
 
 internal void create_layouts(NvRenderer* renderer)
 {
-    WGPUDevice device = renderer->gpu->device;
+    NvGpu* gpu = renderer->gpu;
 
-    WGPUBindGroupLayoutEntry frame_entries[5] = {
-        {.binding = 0, .visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
-         .buffer = {.type = WGPUBufferBindingType_Uniform, .minBindingSize = sizeof(FrameUniforms)}},
-        {.binding = 1, .visibility = WGPUShaderStage_Vertex,
-         .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
-        {.binding = 2, .visibility = WGPUShaderStage_Vertex,
-         .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
-        {.binding = 3, .visibility = WGPUShaderStage_Fragment,
-         .texture = {.sampleType = WGPUTextureSampleType_Depth, .viewDimension = WGPUTextureViewDimension_2D}},
-        {.binding = 4, .visibility = WGPUShaderStage_Fragment,
-         .sampler = {.type = WGPUSamplerBindingType_Comparison}},
+    NvGpuLayoutEntry frame_entries[5] = {
+        {.binding = 0, .stages = NV_GPU_STAGE_VERTEX | NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM, .min_size = sizeof(FrameUniforms)},
+        {.binding = 1, .stages = NV_GPU_STAGE_VERTEX, .kind = NV_GPU_BINDING_STORAGE_READ, .stride = sizeof(NvObjectData)},
+        {.binding = 2, .stages = NV_GPU_STAGE_VERTEX, .kind = NV_GPU_BINDING_STORAGE_READ, .stride = sizeof(NvMat4)},
+        {.binding = 3, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_DEPTH},
+        {.binding = 4, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_SAMPLER_COMPARISON},
     };
-    WGPUBindGroupLayoutDescriptor frame_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    frame_desc.entryCount = NV_ARRAY_COUNT(frame_entries);
-    frame_desc.entries = frame_entries;
-    renderer->frame_layout = wgpuDeviceCreateBindGroupLayout(device, &frame_desc);
+    renderer->frame_layout = nv_gpu_create_layout(gpu, frame_entries, NV_ARRAY_COUNT(frame_entries));
     // IMPORTANT: The shadow pass writes the map, so its bind group must not also bind it.
-    frame_desc.entryCount = 3;
-    renderer->shadow_frame_layout = wgpuDeviceCreateBindGroupLayout(device, &frame_desc);
+    renderer->shadow_frame_layout = nv_gpu_create_layout(gpu, frame_entries, 3);
 
-    WGPUBindGroupLayoutEntry material_entries[3] = {
-        {.binding = 0, .visibility = WGPUShaderStage_Fragment,
-         .buffer = {.type = WGPUBufferBindingType_Uniform, .minBindingSize = sizeof(MaterialUniforms)}},
-        {.binding = 1, .visibility = WGPUShaderStage_Fragment,
-         .sampler = {.type = WGPUSamplerBindingType_Filtering}},
-        {.binding = 2, .visibility = WGPUShaderStage_Fragment,
-         .texture = {.sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D}},
+    NvGpuLayoutEntry material_entries[3] = {
+        {.binding = 0, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM, .min_size = sizeof(MaterialUniforms)},
+        {.binding = 1, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_SAMPLER},
+        {.binding = 2, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_FLOAT},
     };
-    WGPUBindGroupLayoutDescriptor material_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    material_desc.entryCount = NV_ARRAY_COUNT(material_entries);
-    material_desc.entries = material_entries;
-    renderer->material_layout = wgpuDeviceCreateBindGroupLayout(device, &material_desc);
-}
-
-internal WGPUPipelineLayout create_pipeline_layout(WGPUDevice device, const WGPUBindGroupLayout* layouts, u32 count)
-{
-    WGPUPipelineLayoutDescriptor desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    desc.bindGroupLayoutCount = count;
-    desc.bindGroupLayouts = layouts;
-    return wgpuDeviceCreatePipelineLayout(device, &desc);
+    renderer->material_layout = nv_gpu_create_layout(gpu, material_entries, NV_ARRAY_COUNT(material_entries));
 }
 
 internal void release_scene_pipelines(NvRenderer* renderer)
 {
+    NvGpu* gpu = renderer->gpu;
     for (u32 skinned = 0; skinned < 2; ++skinned) {
         for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
-            if (renderer->pipelines[skinned][double_sided])
-                wgpuRenderPipelineRelease(renderer->pipelines[skinned][double_sided]);
-            renderer->pipelines[skinned][double_sided] = NULL;
+            if (renderer->pipelines[skinned][double_sided].index)
+                nv_gpu_release_pipeline(gpu, renderer->pipelines[skinned][double_sided]);
+            renderer->pipelines[skinned][double_sided] = (NvGpuPipeline){0};
         }
     }
-    if (renderer->debug_pipeline)
-        wgpuRenderPipelineRelease(renderer->debug_pipeline);
-    renderer->debug_pipeline = NULL;
+    if (renderer->debug_pipeline.index)
+        nv_gpu_release_pipeline(gpu, renderer->debug_pipeline);
+    renderer->debug_pipeline = (NvGpuPipeline){0};
 }
+
+global const NvGpuVertexAttribute static_attributes[3] = {
+    {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvVertex, position)},
+    {.location = 1, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvVertex, normal)},
+    {.location = 2, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(NvVertex, uv)},
+};
+global const NvGpuVertexAttribute skinned_attributes[5] = {
+    {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, position)},
+    {.location = 1, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, normal)},
+    {.location = 2, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(NvSkinnedVertex, uv)},
+    {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(NvSkinnedVertex, joints)},
+    {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(NvSkinnedVertex, weights)},
+};
 
 // The pipelines the scene pass uses, for `scene_samples` samples per pixel.
 internal void create_pipelines(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    WGPUDevice device = gpu->device;
-
-    WGPUBindGroupLayout mesh_layouts[2] = {renderer->frame_layout, renderer->material_layout};
-    WGPUPipelineLayout mesh_layout = create_pipeline_layout(device, mesh_layouts, 2);
-    WGPUShaderModule module = create_shader(device, mesh_wgsl);
-
-    WGPUVertexAttribute static_attributes[3] = {
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, position), .shaderLocation = 0},
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, normal), .shaderLocation = 1},
-        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(NvVertex, uv), .shaderLocation = 2},
-    };
-    WGPUVertexAttribute skinned_attributes[5] = {
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvSkinnedVertex, position), .shaderLocation = 0},
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvSkinnedVertex, normal), .shaderLocation = 1},
-        {.format = WGPUVertexFormat_Float32x2, .offset = offsetof(NvSkinnedVertex, uv), .shaderLocation = 2},
-        {.format = WGPUVertexFormat_Uint16x4, .offset = offsetof(NvSkinnedVertex, joints), .shaderLocation = 3},
-        {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvSkinnedVertex, weights), .shaderLocation = 4},
-    };
-
-    WGPUColorTargetState color_target = WGPU_COLOR_TARGET_STATE_INIT;
-    color_target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-    fragment.module = module;
-    fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
-    fragment.targetCount = 1;
-    fragment.targets = &color_target;
-
-    WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    depth.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
-    depth.depthWriteEnabled = WGPUOptionalBool_True;
-    depth.depthCompare = WGPUCompareFunction_Greater; // reverse Z: near is 1, far is 0
 
     for (u32 skinned = 0; skinned < 2; ++skinned) {
-        WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
-        vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
-        vertex_layout.arrayStride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex);
-        vertex_layout.attributeCount = skinned ? NV_ARRAY_COUNT(skinned_attributes) : NV_ARRAY_COUNT(static_attributes);
-        vertex_layout.attributes = skinned ? skinned_attributes : static_attributes;
-
         for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
-            WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-            desc.label = (WGPUStringView){skinned ? "skinned mesh" : "static mesh", WGPU_STRLEN};
-            desc.layout = mesh_layout;
-            desc.vertex.module = module;
-            desc.vertex.entryPoint = (WGPUStringView){skinned ? "vs_skinned" : "vs_static", WGPU_STRLEN};
-            desc.vertex.bufferCount = 1;
-            desc.vertex.buffers = &vertex_layout;
-            desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-            desc.primitive.frontFace = WGPUFrontFace_CCW;
-            desc.primitive.cullMode = double_sided ? WGPUCullMode_None : WGPUCullMode_Back;
-            desc.depthStencil = &depth;
-            desc.multisample.count = renderer->scene_samples;
-            desc.fragment = &fragment;
-            renderer->pipelines[skinned][double_sided] = wgpuDeviceCreateRenderPipeline(device, &desc);
+            NvGpuRenderPipelineDesc desc = {
+                .label = skinned ? "skinned mesh" : "static mesh",
+                .shader = &mesh_shader,
+                .vertex_entry = skinned ? "vs_skinned" : "vs_static",
+                .fragment_entry = "fs_main",
+                .layouts = {renderer->frame_layout, renderer->material_layout},
+                .layout_count = 2,
+                .vertex_stride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex),
+                .attribute_count = skinned ? NV_ARRAY_COUNT(skinned_attributes) : NV_ARRAY_COUNT(static_attributes),
+                .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+                .cull = double_sided ? NV_GPU_CULL_NONE : NV_GPU_CULL_BACK,
+                .color_format = NV_SCENE_FORMAT,
+                .depth_format = NV_SCENE_DEPTH_FORMAT,
+                .depth_write = 1,
+                .depth_compare = NV_GPU_COMPARE_GREATER, // reverse Z: near is 1, far is 0
+                .samples = renderer->scene_samples,
+            };
+            memcpy(desc.attributes, skinned ? skinned_attributes : static_attributes,
+                   desc.attribute_count * sizeof(NvGpuVertexAttribute));
+            renderer->pipelines[skinned][double_sided] = nv_gpu_create_render_pipeline(gpu, &desc);
         }
     }
-    wgpuShaderModuleRelease(module);
-    wgpuPipelineLayoutRelease(mesh_layout);
 
     // Debug lines: drawn over everything, so the depth test always passes.
-    WGPUPipelineLayout debug_layout = create_pipeline_layout(device, &renderer->frame_layout, 1);
-    WGPUShaderModule debug_module = create_shader(device, debug_lines_wgsl);
-    WGPUVertexAttribute debug_attributes[2] = {
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvDebugVertex, position), .shaderLocation = 0},
-        {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvDebugVertex, color), .shaderLocation = 1},
+    NvGpuRenderPipelineDesc debug_desc = {
+        .label = "debug lines",
+        .shader = &debug_lines_shader,
+        .vertex_entry = "vs_main",
+        .fragment_entry = "fs_main",
+        .layouts = {renderer->frame_layout},
+        .layout_count = 1,
+        .vertex_stride = sizeof(NvDebugVertex),
+        .attributes = {
+            {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvDebugVertex, position)},
+            {.location = 1, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(NvDebugVertex, color)},
+        },
+        .attribute_count = 2,
+        .topology = NV_GPU_TOPOLOGY_LINES,
+        .color_format = NV_SCENE_FORMAT,
+        .blend = NV_GPU_BLEND_ALPHA,
+        .depth_format = NV_SCENE_DEPTH_FORMAT,
+        .depth_write = 0,
+        .depth_compare = NV_GPU_COMPARE_ALWAYS,
+        .samples = renderer->scene_samples,
     };
-    WGPUVertexBufferLayout debug_vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
-    debug_vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
-    debug_vertex_layout.arrayStride = sizeof(NvDebugVertex);
-    debug_vertex_layout.attributeCount = NV_ARRAY_COUNT(debug_attributes);
-    debug_vertex_layout.attributes = debug_attributes;
-
-    WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
-    blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
-    blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
-    WGPUColorTargetState debug_target = WGPU_COLOR_TARGET_STATE_INIT;
-    debug_target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-    debug_target.blend = &blend;
-    WGPUFragmentState debug_fragment = WGPU_FRAGMENT_STATE_INIT;
-    debug_fragment.module = debug_module;
-    debug_fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
-    debug_fragment.targetCount = 1;
-    debug_fragment.targets = &debug_target;
-
-    WGPUDepthStencilState debug_depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    debug_depth.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
-    debug_depth.depthWriteEnabled = WGPUOptionalBool_False;
-    debug_depth.depthCompare = WGPUCompareFunction_Always;
-
-    WGPURenderPipelineDescriptor debug_desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    debug_desc.label = (WGPUStringView){"debug lines", WGPU_STRLEN};
-    debug_desc.layout = debug_layout;
-    debug_desc.vertex.module = debug_module;
-    debug_desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
-    debug_desc.vertex.bufferCount = 1;
-    debug_desc.vertex.buffers = &debug_vertex_layout;
-    debug_desc.primitive.topology = WGPUPrimitiveTopology_LineList;
-    debug_desc.depthStencil = &debug_depth;
-    debug_desc.multisample.count = renderer->scene_samples;
-    debug_desc.fragment = &debug_fragment;
-    renderer->debug_pipeline = wgpuDeviceCreateRenderPipeline(device, &debug_desc);
-    wgpuShaderModuleRelease(debug_module);
-    wgpuPipelineLayoutRelease(debug_layout);
+    renderer->debug_pipeline = nv_gpu_create_render_pipeline(gpu, &debug_desc);
 }
 
 internal NvGpuFormat shadow_texture_format(NvShadowFormat format)
@@ -251,52 +173,45 @@ internal NvGpuFormat shadow_texture_format(NvShadowFormat format)
 
 internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat format)
 {
-    WGPUDevice device = renderer->gpu->device;
+    NvGpu* gpu = renderer->gpu;
     for (u32 skinned = 0; skinned < 2; ++skinned) {
         for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
-            if (renderer->shadow_pipelines[skinned][double_sided])
-                wgpuRenderPipelineRelease(renderer->shadow_pipelines[skinned][double_sided]);
+            if (renderer->shadow_pipelines[skinned][double_sided].index)
+                nv_gpu_release_pipeline(gpu, renderer->shadow_pipelines[skinned][double_sided]);
         }
     }
-    WGPUPipelineLayout layout = create_pipeline_layout(device, &renderer->shadow_frame_layout, 1);
-    WGPUShaderModule module = create_shader(device, shadow_wgsl);
-    WGPUVertexAttribute static_attributes[1] = {
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvVertex, position), .shaderLocation = 0},
+    // Only the position, and for a skinned vertex the joints and weights, are read.
+    local_persist const NvGpuVertexAttribute shadow_static_attributes[1] = {
+        {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvVertex, position)},
     };
-    WGPUVertexAttribute skinned_attributes[3] = {
-        {.format = WGPUVertexFormat_Float32x3, .offset = offsetof(NvSkinnedVertex, position), .shaderLocation = 0},
-        {.format = WGPUVertexFormat_Uint16x4, .offset = offsetof(NvSkinnedVertex, joints), .shaderLocation = 3},
-        {.format = WGPUVertexFormat_Float32x4, .offset = offsetof(NvSkinnedVertex, weights), .shaderLocation = 4},
+    local_persist const NvGpuVertexAttribute shadow_skinned_attributes[3] = {
+        {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, position)},
+        {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(NvSkinnedVertex, joints)},
+        {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(NvSkinnedVertex, weights)},
     };
-    WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-    depth.format = nv_gpu_wgpu_format(shadow_texture_format(format));
-    depth.depthWriteEnabled = WGPUOptionalBool_True;
-    depth.depthCompare = WGPUCompareFunction_Less;
-    depth.depthBias = shadow_bias_constant[format];
-    depth.depthBiasSlopeScale = SHADOW_BIAS_SLOPE;
     for (u32 skinned = 0; skinned < 2; ++skinned) {
-        WGPUVertexBufferLayout vertex_layout = WGPU_VERTEX_BUFFER_LAYOUT_INIT;
-        vertex_layout.stepMode = WGPUVertexStepMode_Vertex;
-        vertex_layout.arrayStride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex);
-        vertex_layout.attributeCount = skinned ? NV_ARRAY_COUNT(skinned_attributes) : NV_ARRAY_COUNT(static_attributes);
-        vertex_layout.attributes = skinned ? skinned_attributes : static_attributes;
         for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
-            WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-            desc.label = (WGPUStringView){skinned ? "skinned shadow" : "static shadow", WGPU_STRLEN};
-            desc.layout = layout;
-            desc.vertex.module = module;
-            desc.vertex.entryPoint = (WGPUStringView){skinned ? "vs_skinned" : "vs_static", WGPU_STRLEN};
-            desc.vertex.bufferCount = 1;
-            desc.vertex.buffers = &vertex_layout;
-            desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-            desc.primitive.frontFace = WGPUFrontFace_CCW;
-            desc.primitive.cullMode = double_sided ? WGPUCullMode_None : WGPUCullMode_Back;
-            desc.depthStencil = &depth;
-            renderer->shadow_pipelines[skinned][double_sided] = wgpuDeviceCreateRenderPipeline(device, &desc);
+            NvGpuRenderPipelineDesc desc = {
+                .label = skinned ? "skinned shadow" : "static shadow",
+                .shader = &shadow_shader,
+                .vertex_entry = skinned ? "vs_skinned" : "vs_static",
+                .layouts = {renderer->shadow_frame_layout},
+                .layout_count = 1,
+                .vertex_stride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex),
+                .attribute_count = skinned ? NV_ARRAY_COUNT(shadow_skinned_attributes) : NV_ARRAY_COUNT(shadow_static_attributes),
+                .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+                .cull = double_sided ? NV_GPU_CULL_NONE : NV_GPU_CULL_BACK,
+                .depth_format = shadow_texture_format(format),
+                .depth_write = 1,
+                .depth_compare = NV_GPU_COMPARE_LESS,
+                .depth_bias = shadow_bias_constant[format],
+                .depth_bias_slope = SHADOW_BIAS_SLOPE,
+            };
+            memcpy(desc.attributes, skinned ? shadow_skinned_attributes : shadow_static_attributes,
+                   desc.attribute_count * sizeof(NvGpuVertexAttribute));
+            renderer->shadow_pipelines[skinned][double_sided] = nv_gpu_create_render_pipeline(gpu, &desc);
         }
     }
-    wgpuShaderModuleRelease(module);
-    wgpuPipelineLayoutRelease(layout);
 }
 
 // Makes the shadow map (and, for a new format, its pipelines) match the settings, and the frame
@@ -306,22 +221,23 @@ internal void update_shadow_map(NvRenderer* renderer)
     NvGpu* gpu = renderer->gpu;
     u32 size = renderer->shadows.size ? renderer->shadows.size : 1;
     NvShadowFormat format = renderer->shadows.format;
-    if (renderer->shadow_texture && renderer->shadow_size == size && renderer->shadow_format == format)
+    if (renderer->shadow_texture.index && renderer->shadow_size == size && renderer->shadow_format == format)
         return;
-    if (!renderer->shadow_texture || renderer->shadow_format != format)
+    if (!renderer->shadow_texture.index || renderer->shadow_format != format)
         create_shadow_pipelines(renderer, format);
-    if (renderer->shadow_texture) {
-        wgpuTextureViewRelease(renderer->shadow_view);
-        wgpuTextureRelease(renderer->shadow_texture);
-        wgpuBindGroupRelease(renderer->frame_group);
+    if (renderer->shadow_texture.index) {
+        nv_gpu_release_view(gpu, renderer->shadow_view);
+        nv_gpu_release_texture(gpu, renderer->shadow_texture);
+        nv_gpu_release_group(gpu, renderer->frame_group);
     }
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"shadow map", WGPU_STRLEN};
-    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-    desc.size = (WGPUExtent3D){size, size, 1};
-    desc.format = nv_gpu_wgpu_format(shadow_texture_format(format));
-    renderer->shadow_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
-    renderer->shadow_view = wgpuTextureCreateView(renderer->shadow_texture, NULL);
+    renderer->shadow_texture = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+        .label = "shadow map",
+        .width = size,
+        .height = size,
+        .format = shadow_texture_format(format),
+        .usage = NV_GPU_TEXTURE_RENDER_TARGET | NV_GPU_TEXTURE_SAMPLED,
+    });
+    renderer->shadow_view = nv_gpu_create_view(gpu, renderer->shadow_texture, NULL);
     renderer->shadow_size = size;
     renderer->shadow_format = format;
     if (renderer->shadows.size)
@@ -329,18 +245,14 @@ internal void update_shadow_map(NvRenderer* renderer)
     else
         nv_log(NV_LOG_INFO, "nv", "shadow map: off (a 1x1 %s placeholder stays bound)", nv_gpu_format_name(shadow_texture_format(format)));
 
-    WGPUBindGroupEntry frame_entries[5] = {
+    NvGpuGroupEntry frame_entries[5] = {
         {.binding = 0, .buffer = renderer->frame_buffer, .size = sizeof(FrameUniforms)},
         {.binding = 1, .buffer = renderer->object_buffer, .size = NV_MAX_NODES * sizeof(NvObjectData)},
         {.binding = 2, .buffer = renderer->skin_buffer, .size = NV_MAX_SKIN_MATRICES * sizeof(NvMat4)},
-        {.binding = 3, .textureView = renderer->shadow_view},
+        {.binding = 3, .view = renderer->shadow_view},
         {.binding = 4, .sampler = renderer->shadow_sampler},
     };
-    WGPUBindGroupDescriptor frame_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    frame_desc.layout = renderer->frame_layout;
-    frame_desc.entryCount = NV_ARRAY_COUNT(frame_entries);
-    frame_desc.entries = frame_entries;
-    renderer->frame_group = wgpuDeviceCreateBindGroup(gpu->device, &frame_desc);
+    renderer->frame_group = nv_gpu_create_group(gpu, renderer->frame_layout, frame_entries, NV_ARRAY_COUNT(frame_entries));
 }
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
@@ -366,47 +278,23 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
     create_upscale_pipeline(renderer);
     create_bloom_pipelines(renderer);
 
-    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    sampler_desc.addressModeU = WGPUAddressMode_Repeat;
-    sampler_desc.addressModeV = WGPUAddressMode_Repeat;
-    sampler_desc.magFilter = WGPUFilterMode_Linear;
-    sampler_desc.minFilter = WGPUFilterMode_Linear;
-    sampler_desc.mipmapFilter = WGPUMipmapFilterMode_Linear;
-    renderer->sampler = wgpuDeviceCreateSampler(gpu->device, &sampler_desc);
+    renderer->sampler = nv_gpu_create_sampler(gpu, &(NvGpuSamplerDesc){.repeat = 1, .mip_linear = 1});
 
-    renderer->frame_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, sizeof(FrameUniforms));
-    renderer->object_buffer = create_buffer(gpu, WGPUBufferUsage_Storage, NULL, NV_MAX_NODES * sizeof(NvObjectData));
-    renderer->skin_buffer = create_buffer(gpu, WGPUBufferUsage_Storage, NULL, NV_MAX_SKIN_MATRICES * sizeof(NvMat4));
+    renderer->frame_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_UNIFORM, NULL, sizeof(FrameUniforms));
+    renderer->object_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_STORAGE, NULL, NV_MAX_NODES * sizeof(NvObjectData));
+    renderer->skin_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_STORAGE, NULL, NV_MAX_SKIN_MATRICES * sizeof(NvMat4));
+    renderer->debug_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_VERTEX, NULL, NV_MAX_DEBUG_LINES * 2 * sizeof(NvDebugVertex));
 
-    if (gpu->has_timestamps) {
-        WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = NV_TIMESTAMP_COUNT}; // scene, shadow, upscale
-        renderer->timestamp_queries = wgpuDeviceCreateQuerySet(gpu->device, &query_desc);
-        renderer->timestamp_resolve = create_buffer(gpu, WGPUBufferUsage_QueryResolve | WGPUBufferUsage_CopySrc, NULL, NV_TIMESTAMP_COUNT * sizeof(u64));
-        WGPUBufferDescriptor readback_desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-        readback_desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-        readback_desc.size = NV_TIMESTAMP_COUNT * sizeof(u64);
-        renderer->timestamp_readback = wgpuDeviceCreateBuffer(gpu->device, &readback_desc);
-    }
-    renderer->debug_buffer = create_buffer(gpu, WGPUBufferUsage_Vertex, NULL, NV_MAX_DEBUG_LINES * 2 * sizeof(NvDebugVertex));
-
-    WGPUBindGroupEntry shadow_frame_entries[3] = {
+    NvGpuGroupEntry shadow_frame_entries[3] = {
         {.binding = 0, .buffer = renderer->frame_buffer, .size = sizeof(FrameUniforms)},
         {.binding = 1, .buffer = renderer->object_buffer, .size = NV_MAX_NODES * sizeof(NvObjectData)},
         {.binding = 2, .buffer = renderer->skin_buffer, .size = NV_MAX_SKIN_MATRICES * sizeof(NvMat4)},
     };
-    WGPUBindGroupDescriptor shadow_frame_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    shadow_frame_desc.layout = renderer->shadow_frame_layout;
-    shadow_frame_desc.entryCount = NV_ARRAY_COUNT(shadow_frame_entries);
-    shadow_frame_desc.entries = shadow_frame_entries;
-    renderer->shadow_frame_group = wgpuDeviceCreateBindGroup(gpu->device, &shadow_frame_desc);
+    renderer->shadow_frame_group = nv_gpu_create_group(gpu, renderer->shadow_frame_layout, shadow_frame_entries,
+                                                       NV_ARRAY_COUNT(shadow_frame_entries));
 
-    WGPUSamplerDescriptor shadow_sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    shadow_sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
-    shadow_sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
-    shadow_sampler_desc.magFilter = WGPUFilterMode_Linear;
-    shadow_sampler_desc.minFilter = WGPUFilterMode_Linear;
-    shadow_sampler_desc.compare = WGPUCompareFunction_LessEqual; // 1 where the point is not behind the map's depth
-    renderer->shadow_sampler = wgpuDeviceCreateSampler(gpu->device, &shadow_sampler_desc);
+    // 1 where the point is not behind the map's depth.
+    renderer->shadow_sampler = nv_gpu_create_sampler(gpu, &(NvGpuSamplerDesc){.compare = 1});
     update_shadow_map(renderer); // the frame bind group, with a 1x1 map until shadows are on
 
     // Slot 0 of each table is the default: no mesh, a 1x1 white texture, a white material.
@@ -426,8 +314,8 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
     mesh->skinned = data->skinned_vertices != NULL;
     umm vertex_size = mesh->skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex);
     const void* vertices = mesh->skinned ? (const void*)data->skinned_vertices : (const void*)data->vertices;
-    mesh->vertices = create_buffer(renderer->gpu, WGPUBufferUsage_Vertex, vertices, data->vertex_count * vertex_size);
-    mesh->indices = create_buffer(renderer->gpu, WGPUBufferUsage_Index, data->indices, data->index_count * sizeof(u32));
+    mesh->vertices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_VERTEX, vertices, data->vertex_count * vertex_size);
+    mesh->indices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_INDEX, data->indices, data->index_count * sizeof(u32));
     mesh->index_count = data->index_count;
 
     mesh->bounds = nv_box_empty();
@@ -472,10 +360,10 @@ void nv_renderer_replace_mesh(NvRenderer* renderer, NvMeshId id, const NvMeshDat
     NvRenderMesh* mesh = &renderer->meshes[id.index];
     NV_ASSERT(!mesh->skinned);
     // Commands already submitted keep the old buffers alive until they finish; releasing only drops our reference.
-    wgpuBufferRelease(mesh->vertices);
-    wgpuBufferRelease(mesh->indices);
-    mesh->vertices = create_buffer(renderer->gpu, WGPUBufferUsage_Vertex, data->vertices, data->vertex_count * sizeof(NvVertex));
-    mesh->indices = create_buffer(renderer->gpu, WGPUBufferUsage_Index, data->indices, data->index_count * sizeof(u32));
+    nv_gpu_release_buffer(renderer->gpu, mesh->vertices);
+    nv_gpu_release_buffer(renderer->gpu, mesh->indices);
+    mesh->vertices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_VERTEX, data->vertices, data->vertex_count * sizeof(NvVertex));
+    mesh->indices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_INDEX, data->indices, data->index_count * sizeof(u32));
     mesh->index_count = data->index_count;
     mesh->bounds = nv_box_empty();
     for (u32 v = 0; v < data->vertex_count; ++v) {
@@ -499,14 +387,15 @@ NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 
         snprintf(slot->name, sizeof(slot->name), "%s", name);
     else
         snprintf(slot->name, sizeof(slot->name), "texture %u", renderer->texture_count);
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){slot->name, WGPU_STRLEN};
-    desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
-    desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = srgb ? WGPUTextureFormat_RGBA8UnormSrgb : WGPUTextureFormat_RGBA8Unorm;
-    desc.mipLevelCount = levels;
-    slot->texture = wgpuDeviceCreateTexture(renderer->gpu->device, &desc);
-    slot->view = wgpuTextureCreateView(slot->texture, NULL);
+    slot->texture = nv_gpu_create_texture(renderer->gpu, &(NvGpuTextureDesc){
+        .label = slot->name,
+        .width = width,
+        .height = height,
+        .mip_count = levels,
+        .format = srgb ? NV_GPU_FORMAT_RGBA8_SRGB : NV_GPU_FORMAT_RGBA8,
+        .usage = NV_GPU_TEXTURE_SAMPLED | NV_GPU_TEXTURE_COPY_DST,
+    });
+    slot->view = nv_gpu_create_view(renderer->gpu, slot->texture, NULL);
 
     // Each mip level is a 2x2 box filter of the previous one.
     umm scratch_mark = scratch ? scratch->used : 0;
@@ -514,14 +403,7 @@ NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 
     u32 w = width;
     u32 h = height;
     for (u32 level = 0; level < levels; ++level) {
-        WGPUTexelCopyTextureInfo destination = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
-        destination.texture = slot->texture;
-        destination.mipLevel = level;
-        WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
-        layout.bytesPerRow = w * 4;
-        layout.rowsPerImage = h;
-        WGPUExtent3D size = {w, h, 1};
-        wgpuQueueWriteTexture(renderer->gpu->queue, &destination, level_pixels, (umm)w * h * 4, &layout, &size);
+        nv_gpu_write_texture(renderer->gpu, slot->texture, level, 0, 0, w, h, level_pixels, w * 4);
 
         if (level + 1 == levels)
             break;
@@ -559,18 +441,14 @@ NvMaterialId nv_renderer_add_material(NvRenderer* renderer, const NvMaterialDesc
 
     MaterialUniforms uniforms = {0};
     memcpy(uniforms.base_color, desc->base_color, sizeof(uniforms.base_color));
-    material->uniform = create_buffer(renderer->gpu, WGPUBufferUsage_Uniform, &uniforms, sizeof(uniforms));
+    material->uniform = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_UNIFORM, &uniforms, sizeof(uniforms));
 
-    WGPUBindGroupEntry entries[3] = {
+    NvGpuGroupEntry entries[3] = {
         {.binding = 0, .buffer = material->uniform, .size = sizeof(MaterialUniforms)},
         {.binding = 1, .sampler = renderer->sampler},
-        {.binding = 2, .textureView = renderer->textures[desc->base_color_texture.index].view},
+        {.binding = 2, .view = renderer->textures[desc->base_color_texture.index].view},
     };
-    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    group_desc.layout = renderer->material_layout;
-    group_desc.entryCount = NV_ARRAY_COUNT(entries);
-    group_desc.entries = entries;
-    material->bind_group = wgpuDeviceCreateBindGroup(renderer->gpu->device, &group_desc);
+    material->bind_group = nv_gpu_create_group(renderer->gpu, renderer->material_layout, entries, NV_ARRAY_COUNT(entries));
     return (NvMaterialId){renderer->material_count++};
 }
 
@@ -581,7 +459,7 @@ void nv_renderer_set_material_color(NvRenderer* renderer, NvMaterialId id, const
     memcpy(material->desc.base_color, base_color, sizeof(material->desc.base_color));
     MaterialUniforms uniforms = {0};
     memcpy(uniforms.base_color, base_color, sizeof(uniforms.base_color));
-    wgpuQueueWriteBuffer(renderer->gpu->queue, material->uniform, 0, &uniforms, sizeof(uniforms));
+    nv_gpu_write_buffer(renderer->gpu, material->uniform, 0, &uniforms, sizeof(uniforms));
 }
 
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color)
@@ -599,31 +477,32 @@ internal u32 round_up_64(u32 value)
     return (value + 63u) & ~63u;
 }
 
-internal void release_texture(WGPUTexture* texture, WGPUTextureView* view)
+internal void release_texture(NvGpu* gpu, NvGpuTexture* texture, NvGpuView* view)
 {
-    if (*view)
-        wgpuTextureViewRelease(*view);
-    if (*texture)
-        wgpuTextureRelease(*texture);
-    *view = NULL;
-    *texture = NULL;
+    if (view->index)
+        nv_gpu_release_view(gpu, *view);
+    if (texture->index)
+        nv_gpu_release_texture(gpu, *texture);
+    *view = (NvGpuView){0};
+    *texture = (NvGpuTexture){0};
 }
 
 // A color target in the scene's HDR format (NV_SCENE_FORMAT, linear): what the scene pass draws, what it
 // resolves into and what the upscale pass samples. The canvas still gets the sRGB view format at the
 // end, in the upscale pass, so the tone mapped value is encoded by the canvas's own view
 // (docs/specs/vfx.md; before HDR the scene targets were made like the canvas, see msaa.md).
-internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 height, u32 samples, WGPUTextureUsage usage,
-                                  WGPUTexture* texture, WGPUTextureView* view)
+internal void create_color_target(NvGpu* gpu, const char* label, u32 width, u32 height, u32 samples, u32 usage,
+                                  NvGpuTexture* texture, NvGpuView* view)
 {
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){label, WGPU_STRLEN};
-    desc.usage = usage;
-    desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-    desc.sampleCount = samples;
-    *texture = wgpuDeviceCreateTexture(gpu->device, &desc);
-    *view = wgpuTextureCreateView(*texture, NULL);
+    *texture = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+        .label = label,
+        .width = width,
+        .height = height,
+        .samples = samples,
+        .format = NV_SCENE_FORMAT,
+        .usage = usage,
+    });
+    *view = nv_gpu_create_view(gpu, *texture, NULL);
 }
 
 internal f64 target_megabytes(u32 width, u32 height, u32 samples)
@@ -634,23 +513,24 @@ internal f64 target_megabytes(u32 width, u32 height, u32 samples)
 internal void create_upscale_pipeline(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    WGPUShaderModule module = create_shader(gpu->device, upscale_wgsl);
-    WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-    target.format = nv_gpu_wgpu_format(gpu->surface_format);
-    WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-    fragment.module = module;
-    fragment.entryPoint = (WGPUStringView){"fs_main", WGPU_STRLEN};
-    fragment.targetCount = 1;
-    fragment.targets = &target;
-    WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"upscale", WGPU_STRLEN};
-    desc.vertex.module = module;
-    desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
-    desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-    desc.fragment = &fragment;
-    renderer->upscale_pipeline = wgpuDeviceCreateRenderPipeline(gpu->device, &desc);
-    wgpuShaderModuleRelease(module);
-    renderer->upscale_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, 64);
+    NvGpuLayoutEntry entries[4] = {
+        {.binding = 0, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM},
+        {.binding = 1, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_FLOAT},
+        {.binding = 2, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_FLOAT},
+        {.binding = 3, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_SAMPLER},
+    };
+    renderer->upscale_layout = nv_gpu_create_layout(gpu, entries, NV_ARRAY_COUNT(entries));
+    renderer->upscale_pipeline = nv_gpu_create_render_pipeline(gpu, &(NvGpuRenderPipelineDesc){
+        .label = "upscale",
+        .shader = &upscale_shader,
+        .vertex_entry = "vs_main",
+        .fragment_entry = "fs_main",
+        .layouts = {renderer->upscale_layout},
+        .layout_count = 1,
+        .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+        .color_format = gpu->surface_format,
+    });
+    renderer->upscale_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_UNIFORM, NULL, 64);
 }
 
 // The upscale pass's bind group: the scene color, and bloom mip 0 (a 1x1 black texture while there
@@ -658,21 +538,15 @@ internal void create_upscale_pipeline(NvRenderer* renderer)
 internal void rebuild_upscale_group(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    if (renderer->upscale_group)
-        wgpuBindGroupRelease(renderer->upscale_group);
-    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(renderer->upscale_pipeline, 0);
-    WGPUBindGroupEntry entries[4] = {
+    if (renderer->upscale_group.index)
+        nv_gpu_release_group(gpu, renderer->upscale_group);
+    NvGpuGroupEntry entries[4] = {
         {.binding = 0, .buffer = renderer->upscale_buffer, .size = 64},
-        {.binding = 1, .textureView = renderer->scene_color_view},
-        {.binding = 2, .textureView = renderer->bloom_texture ? renderer->bloom_views[0] : renderer->bloom_dummy_view},
+        {.binding = 1, .view = renderer->scene_color_view},
+        {.binding = 2, .view = renderer->bloom_texture.index ? renderer->bloom_views[0] : renderer->bloom_dummy_view},
         {.binding = 3, .sampler = renderer->bloom_sampler},
     };
-    WGPUBindGroupDescriptor group_desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    group_desc.layout = layout;
-    group_desc.entryCount = 4;
-    group_desc.entries = entries;
-    renderer->upscale_group = wgpuDeviceCreateBindGroup(gpu->device, &group_desc);
-    wgpuBindGroupLayoutRelease(layout);
+    renderer->upscale_group = nv_gpu_create_group(gpu, renderer->upscale_layout, entries, NV_ARRAY_COUNT(entries));
 }
 
 // Bloom is engine/shaders/bloom.slang.
@@ -684,102 +558,77 @@ internal void rebuild_upscale_group(NvRenderer* renderer)
 internal void create_bloom_pipelines(NvRenderer* renderer)
 {
     NvGpu* gpu = renderer->gpu;
-    WGPUDevice device = gpu->device;
-    WGPUBindGroupLayoutEntry entries[3] = {
-        {.binding = 0, .visibility = WGPUShaderStage_Fragment,
-         .buffer = {.type = WGPUBufferBindingType_Uniform, .hasDynamicOffset = 1, .minBindingSize = 16}},
-        {.binding = 1, .visibility = WGPUShaderStage_Fragment,
-         .texture = {.sampleType = WGPUTextureSampleType_Float, .viewDimension = WGPUTextureViewDimension_2D}},
-        {.binding = 2, .visibility = WGPUShaderStage_Fragment, .sampler = {.type = WGPUSamplerBindingType_Filtering}},
+    NvGpuLayoutEntry entries[3] = {
+        {.binding = 0, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_UNIFORM, .min_size = 16, .dynamic_offset = 1},
+        {.binding = 1, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_TEXTURE_FLOAT},
+        {.binding = 2, .stages = NV_GPU_STAGE_FRAGMENT, .kind = NV_GPU_BINDING_SAMPLER},
     };
-    WGPUBindGroupLayoutDescriptor layout_desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    layout_desc.entryCount = 3;
-    layout_desc.entries = entries;
-    renderer->bloom_layout = wgpuDeviceCreateBindGroupLayout(device, &layout_desc);
-    WGPUPipelineLayout pipeline_layout = create_pipeline_layout(device, &renderer->bloom_layout, 1);
-    WGPUShaderModule module = create_shader(device, bloom_wgsl);
+    renderer->bloom_layout = nv_gpu_create_layout(gpu, entries, NV_ARRAY_COUNT(entries));
 
     const char* fragments[3] = {"fs_down_first", "fs_down", "fs_up"};
-    WGPURenderPipeline* pipelines[3] = {&renderer->bloom_down_first_pipeline, &renderer->bloom_down_pipeline, &renderer->bloom_up_pipeline};
+    NvGpuPipeline* pipelines[3] = {&renderer->bloom_down_first_pipeline, &renderer->bloom_down_pipeline, &renderer->bloom_up_pipeline};
     const char* labels[3] = {"bloom downsample (first)", "bloom downsample", "bloom upsample"};
     for (u32 i = 0; i < 3; ++i) {
-        // The upsample is added into the level it writes.
-        WGPUBlendState add = WGPU_BLEND_STATE_INIT;
-        add.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
-        add.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_One};
-        WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-        target.blend = i == 2 ? &add : NULL;
-        WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-        fragment.module = module;
-        fragment.entryPoint = (WGPUStringView){fragments[i], WGPU_STRLEN};
-        fragment.targetCount = 1;
-        fragment.targets = &target;
-        WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-        desc.label = (WGPUStringView){labels[i], WGPU_STRLEN};
-        desc.layout = pipeline_layout;
-        desc.vertex.module = module;
-        desc.vertex.entryPoint = (WGPUStringView){"vs_main", WGPU_STRLEN};
-        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-        desc.fragment = &fragment;
-        *pipelines[i] = wgpuDeviceCreateRenderPipeline(device, &desc);
+        *pipelines[i] = nv_gpu_create_render_pipeline(gpu, &(NvGpuRenderPipelineDesc){
+            .label = labels[i],
+            .shader = &bloom_shader,
+            .vertex_entry = "vs_main",
+            .fragment_entry = fragments[i],
+            .layouts = {renderer->bloom_layout},
+            .layout_count = 1,
+            .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+            .color_format = NV_SCENE_FORMAT,
+            .blend = i == 2 ? NV_GPU_BLEND_ADD_KEEP_ALPHA : NV_GPU_BLEND_NONE, // the upsample is added into the level it writes
+        });
     }
-    wgpuShaderModuleRelease(module);
-    wgpuPipelineLayoutRelease(pipeline_layout);
 
-    WGPUSamplerDescriptor sampler_desc = WGPU_SAMPLER_DESCRIPTOR_INIT;
-    sampler_desc.addressModeU = WGPUAddressMode_ClampToEdge;
-    sampler_desc.addressModeV = WGPUAddressMode_ClampToEdge;
-    sampler_desc.magFilter = WGPUFilterMode_Linear;
-    sampler_desc.minFilter = WGPUFilterMode_Linear;
-    renderer->bloom_sampler = wgpuDeviceCreateSampler(device, &sampler_desc);
-    renderer->bloom_buffer = create_buffer(gpu, WGPUBufferUsage_Uniform, NULL, BLOOM_PASSES * BLOOM_UNIFORM_STRIDE);
+    renderer->bloom_sampler = nv_gpu_create_sampler(gpu, &(NvGpuSamplerDesc){0});
+    renderer->bloom_buffer = create_buffer(gpu, NULL, NV_GPU_BUFFER_UNIFORM, NULL, BLOOM_PASSES * BLOOM_UNIFORM_STRIDE);
 
-    WGPUTextureDescriptor dummy_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    dummy_desc.label = (WGPUStringView){"bloom placeholder", WGPU_STRLEN};
-    dummy_desc.usage = WGPUTextureUsage_TextureBinding;
-    dummy_desc.size = (WGPUExtent3D){1, 1, 1};
-    dummy_desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-    renderer->bloom_dummy = wgpuDeviceCreateTexture(device, &dummy_desc);
-    renderer->bloom_dummy_view = wgpuTextureCreateView(renderer->bloom_dummy, NULL);
+    renderer->bloom_dummy = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+        .label = "bloom placeholder",
+        .width = 1,
+        .height = 1,
+        .format = NV_SCENE_FORMAT,
+        .usage = NV_GPU_TEXTURE_SAMPLED,
+    });
+    renderer->bloom_dummy_view = nv_gpu_create_view(gpu, renderer->bloom_dummy, NULL);
 }
 
 internal void release_bloom_chain(NvRenderer* renderer)
 {
+    NvGpu* gpu = renderer->gpu;
     for (u32 i = 0; i <= NV_BLOOM_LEVELS; ++i) {
-        if (renderer->bloom_groups[i])
-            wgpuBindGroupRelease(renderer->bloom_groups[i]);
-        renderer->bloom_groups[i] = NULL;
+        if (renderer->bloom_groups[i].index)
+            nv_gpu_release_group(gpu, renderer->bloom_groups[i]);
+        renderer->bloom_groups[i] = (NvGpuGroup){0};
     }
     for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i) {
-        if (renderer->bloom_views[i])
-            wgpuTextureViewRelease(renderer->bloom_views[i]);
-        renderer->bloom_views[i] = NULL;
+        if (renderer->bloom_views[i].index)
+            nv_gpu_release_view(gpu, renderer->bloom_views[i]);
+        renderer->bloom_views[i] = (NvGpuView){0};
     }
-    if (renderer->bloom_texture)
-        wgpuTextureRelease(renderer->bloom_texture);
-    renderer->bloom_texture = NULL;
+    if (renderer->bloom_texture.index)
+        nv_gpu_release_texture(gpu, renderer->bloom_texture);
+    renderer->bloom_texture = (NvGpuTexture){0};
     renderer->bloom_width = renderer->bloom_height = 0;
 }
 
 // The pass bind groups by source: the scene color, then each bloom mip. Made again when either changed.
 internal void rebuild_bloom_groups(NvRenderer* renderer)
 {
-    if (!renderer->bloom_texture)
+    NvGpu* gpu = renderer->gpu;
+    if (!renderer->bloom_texture.index)
         return;
     for (u32 i = 0; i <= NV_BLOOM_LEVELS; ++i) {
-        if (renderer->bloom_groups[i])
-            wgpuBindGroupRelease(renderer->bloom_groups[i]);
-        WGPUBindGroupEntry entries[3] = {
+        if (renderer->bloom_groups[i].index)
+            nv_gpu_release_group(gpu, renderer->bloom_groups[i]);
+        NvGpuGroupEntry entries[3] = {
             {.binding = 0, .buffer = renderer->bloom_buffer, .size = 16},
-            {.binding = 1, .textureView = i == 0 ? renderer->scene_color_view : renderer->bloom_views[i - 1]},
+            {.binding = 1, .view = i == 0 ? renderer->scene_color_view : renderer->bloom_views[i - 1]},
             {.binding = 2, .sampler = renderer->bloom_sampler},
         };
-        WGPUBindGroupDescriptor desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-        desc.layout = renderer->bloom_layout;
-        desc.entryCount = 3;
-        desc.entries = entries;
-        renderer->bloom_groups[i] = wgpuDeviceCreateBindGroup(renderer->gpu->device, &desc);
+        renderer->bloom_groups[i] = nv_gpu_create_group(gpu, renderer->bloom_layout, entries, NV_ARRAY_COUNT(entries));
     }
 }
 
@@ -789,7 +638,7 @@ internal void update_bloom(NvRenderer* renderer)
     NvGpu* gpu = renderer->gpu;
     b32 want = renderer->post.bloom && renderer->post.bloom_intensity > 0.0f;
     if (!want) {
-        if (renderer->bloom_texture) {
+        if (renderer->bloom_texture.index) {
             release_bloom_chain(renderer);
             rebuild_upscale_group(renderer);
             nv_log(NV_LOG_INFO, "nv", "bloom: off");
@@ -797,22 +646,19 @@ internal void update_bloom(NvRenderer* renderer)
         return;
     }
     u32 width = renderer->target_width / 2, height = renderer->target_height / 2;
-    if (renderer->bloom_texture && renderer->bloom_width == width && renderer->bloom_height == height)
+    if (renderer->bloom_texture.index && renderer->bloom_width == width && renderer->bloom_height == height)
         return;
     release_bloom_chain(renderer);
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"bloom", WGPU_STRLEN};
-    desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-    desc.size = (WGPUExtent3D){width, height, 1};
-    desc.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-    desc.mipLevelCount = NV_BLOOM_LEVELS;
-    renderer->bloom_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
-    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i) {
-        WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
-        view_desc.baseMipLevel = i;
-        view_desc.mipLevelCount = 1;
-        renderer->bloom_views[i] = wgpuTextureCreateView(renderer->bloom_texture, &view_desc);
-    }
+    renderer->bloom_texture = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+        .label = "bloom",
+        .width = width,
+        .height = height,
+        .mip_count = NV_BLOOM_LEVELS,
+        .format = NV_SCENE_FORMAT,
+        .usage = NV_GPU_TEXTURE_RENDER_TARGET | NV_GPU_TEXTURE_SAMPLED,
+    });
+    for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i)
+        renderer->bloom_views[i] = nv_gpu_create_view(gpu, renderer->bloom_texture, &(NvGpuViewDesc){.base_mip = i, .mip_count = 1});
     renderer->bloom_width = width;
     renderer->bloom_height = height;
     rebuild_bloom_groups(renderer);
@@ -834,8 +680,9 @@ internal void bloom_region(u32 width, u32 height, u32 level, u32 out[2])
 }
 
 // Records the downsample and upsample passes, between the scene pass and the upscale pass.
-internal void record_bloom(NvRenderer* renderer, WGPUCommandEncoder encoder, u32 scene_width, u32 scene_height)
+internal void record_bloom(NvRenderer* renderer, u32 scene_width, u32 scene_height, b32 timed)
 {
+    NvGpu* gpu = renderer->gpu;
     u32 region[NV_BLOOM_LEVELS][2];
     for (u32 i = 0; i < NV_BLOOM_LEVELS; ++i)
         bloom_region(scene_width, scene_height, i, region[i]);
@@ -843,7 +690,7 @@ internal void record_bloom(NvRenderer* renderer, WGPUCommandEncoder encoder, u32
     // Pass k writes `dst` from `src` (src 0 is the scene color, src n + 1 is mip n).
     typedef struct BloomPass {
         u32 dst, src;
-        WGPURenderPipeline pipeline;
+        NvGpuPipeline pipeline;
         b32 add;
     } BloomPass;
     BloomPass passes[BLOOM_PASSES];
@@ -872,38 +719,29 @@ internal void record_bloom(NvRenderer* renderer, WGPUCommandEncoder encoder, u32
             u[3] = (f32)region[mip][1];
         }
     }
-    wgpuQueueWriteBuffer(renderer->gpu->queue, renderer->bloom_buffer, 0, uniforms, sizeof(uniforms));
+    nv_gpu_write_buffer(gpu, renderer->bloom_buffer, 0, uniforms, sizeof(uniforms));
 
     for (u32 k = 0; k < count; ++k) {
-        WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-        color.view = renderer->bloom_views[passes[k].dst];
-        color.loadOp = passes[k].add ? WGPULoadOp_Load : WGPULoadOp_Clear;
-        color.storeOp = WGPUStoreOp_Store;
-        WGPURenderPassDescriptor desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        desc.label = (WGPUStringView){passes[k].add ? "bloom up" : "bloom down", WGPU_STRLEN};
-        desc.colorAttachmentCount = 1;
-        desc.colorAttachments = &color;
-        // The first pass starts the timing (queries 6 and 7) and the last ends it (8 and 9); a pass's
+        // The first pass starts the timing (slots 6 and 7) and the last ends it (8 and 9); a pass's
         // timestamps must both be given, so the span is from 6 to 9.
-        WGPUPassTimestampWrites timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-        if (renderer->timestamp_copied && (k == 0 || k == count - 1)) {
-            timestamps.querySet = renderer->timestamp_queries;
-            timestamps.beginningOfPassWriteIndex = k == 0 ? 6 : 8;
-            timestamps.endOfPassWriteIndex = k == 0 ? 7 : 9;
-            desc.timestampWrites = &timestamps;
-        }
-        WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &desc);
+        nv_gpu_begin_render_pass(gpu, &(NvGpuRenderPassDesc){
+            .label = passes[k].add ? "bloom up" : "bloom down",
+            .color = renderer->bloom_views[passes[k].dst],
+            .color_load = passes[k].add ? NV_GPU_LOAD_LOAD : NV_GPU_LOAD_CLEAR,
+            .color_store = NV_GPU_STORE_STORE,
+            .timestamps = timed && (k == 0 || k == count - 1),
+            .timestamp_begin = k == 0 ? 6 : 8,
+            .timestamp_end = k == 0 ? 7 : 9,
+        });
         u32 dst_w = region[passes[k].dst][0], dst_h = region[passes[k].dst][1];
-        wgpuRenderPassEncoderSetViewport(pass, 0.0f, 0.0f, (f32)dst_w, (f32)dst_h, 0.0f, 1.0f);
-        wgpuRenderPassEncoderSetScissorRect(pass, 0, 0, dst_w, dst_h);
-        wgpuRenderPassEncoderSetPipeline(pass, passes[k].pipeline);
+        nv_gpu_set_viewport(gpu, 0.0f, 0.0f, (f32)dst_w, (f32)dst_h);
+        nv_gpu_set_scissor(gpu, 0, 0, dst_w, dst_h);
+        nv_gpu_set_pipeline(gpu, passes[k].pipeline);
         u32 offset = k * BLOOM_UNIFORM_STRIDE;
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->bloom_groups[passes[k].src], 1, &offset);
-        wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0);
-        wgpuRenderPassEncoderEnd(pass);
-        wgpuRenderPassEncoderRelease(pass);
+        nv_gpu_set_group(gpu, 0, renderer->bloom_groups[passes[k].src], &offset, 1);
+        nv_gpu_draw(gpu, 3, 1, 0, 0);
+        nv_gpu_end_pass(gpu);
     }
-    renderer->bloom_recorded = renderer->timestamp_copied;
 }
 
 // Keeps the scene's targets: the color target the upscale pass samples, the multisampled color
@@ -925,14 +763,14 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
     u32 need_width = round_up_64(width), need_height = round_up_64(height);
     b32 large_enough = renderer->target_width >= width && renderer->target_height >= height;
     b32 too_large = (u64)renderer->target_width * renderer->target_height > 2ull * need_width * need_height;
-    b32 resized = !renderer->scene_color || !large_enough || too_large || renderer->msaa_format != NV_SCENE_FORMAT;
+    b32 resized = !renderer->scene_color.index || !large_enough || too_large || renderer->msaa_format != NV_SCENE_FORMAT;
     if (resized) {
         renderer->target_width = need_width;
         renderer->target_height = need_height;
         renderer->msaa_format = NV_SCENE_FORMAT;
-        release_texture(&renderer->scene_color, &renderer->scene_color_view);
+        release_texture(gpu, &renderer->scene_color, &renderer->scene_color_view);
         create_color_target(gpu, "scene color", need_width, need_height, 1,
-                            WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding, &renderer->scene_color,
+                            NV_GPU_TEXTURE_RENDER_TARGET | NV_GPU_TEXTURE_SAMPLED, &renderer->scene_color,
                             &renderer->scene_color_view);
         rebuild_upscale_group(renderer);
         rebuild_bloom_groups(renderer);
@@ -942,11 +780,11 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
 
     // The multisampled color target.
     if (samples == 1) {
-        release_texture(&renderer->msaa_color, &renderer->msaa_color_view);
-    } else if (!renderer->msaa_color || resized) {
-        release_texture(&renderer->msaa_color, &renderer->msaa_color_view);
+        release_texture(gpu, &renderer->msaa_color, &renderer->msaa_color_view);
+    } else if (!renderer->msaa_color.index || resized) {
+        release_texture(gpu, &renderer->msaa_color, &renderer->msaa_color_view);
         create_color_target(gpu, "msaa color target", renderer->target_width, renderer->target_height, samples,
-                            WGPUTextureUsage_RenderAttachment, &renderer->msaa_color, &renderer->msaa_color_view);
+                            NV_GPU_TEXTURE_RENDER_TARGET, &renderer->msaa_color, &renderer->msaa_color_view);
         renderer->msaa_width = renderer->target_width;
         renderer->msaa_height = renderer->target_height;
         nv_log(NV_LOG_INFO, "nv", "msaa color target: %ux%u %s x%u samples (%.1f MB), resolved into the scene color target",
@@ -955,29 +793,28 @@ internal void update_scene_targets(NvRenderer* renderer, u32 width, u32 height)
     }
 
     // The depth target.
-    if (renderer->depth_texture && !resized && renderer->depth_texture_sampled == renderer->depth_sampled &&
+    if (renderer->depth_texture.index && !resized && renderer->depth_texture_sampled == renderer->depth_sampled &&
         renderer->depth_samples == samples)
         return;
-    if (renderer->depth_texture) {
-        wgpuTextureViewRelease(renderer->depth_view);
-        wgpuTextureRelease(renderer->depth_texture);
+    if (renderer->depth_texture.index) {
+        nv_gpu_release_view(gpu, renderer->depth_view);
+        nv_gpu_release_texture(gpu, renderer->depth_texture);
     }
-    WGPUTextureDescriptor desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"depth target", WGPU_STRLEN};
-    desc.usage = WGPUTextureUsage_RenderAttachment;
-    if (renderer->depth_sampled)
-        desc.usage |= WGPUTextureUsage_TextureBinding;
-    desc.size = (WGPUExtent3D){renderer->target_width, renderer->target_height, 1};
-    desc.format = nv_gpu_wgpu_format(NV_GPU_FORMAT_DEPTH32F);
-    desc.sampleCount = samples;
-    renderer->depth_texture = wgpuDeviceCreateTexture(gpu->device, &desc);
-    renderer->depth_view = wgpuTextureCreateView(renderer->depth_texture, NULL);
+    renderer->depth_texture = nv_gpu_create_texture(gpu, &(NvGpuTextureDesc){
+        .label = "depth target",
+        .width = renderer->target_width,
+        .height = renderer->target_height,
+        .samples = samples,
+        .format = NV_SCENE_DEPTH_FORMAT,
+        .usage = NV_GPU_TEXTURE_RENDER_TARGET | (renderer->depth_sampled ? NV_GPU_TEXTURE_SAMPLED : 0),
+    });
+    renderer->depth_view = nv_gpu_create_view(gpu, renderer->depth_texture, NULL);
     renderer->depth_width = renderer->target_width;
     renderer->depth_height = renderer->target_height;
     renderer->depth_texture_sampled = renderer->depth_sampled;
     renderer->depth_samples = samples;
     nv_log(NV_LOG_INFO, "nv", "depth target: %ux%u %s x%u samples (%.1f MB), reverse Z (cleared to 0, compare Greater)%s",
-           renderer->target_width, renderer->target_height, nv_gpu_format_name(NV_GPU_FORMAT_DEPTH32F), samples,
+           renderer->target_width, renderer->target_height, nv_gpu_format_name(NV_SCENE_DEPTH_FORMAT), samples,
            target_megabytes(renderer->target_width, renderer->target_height, samples),
            renderer->depth_sampled ? ", samplable (texture viewer)" : "");
 }
@@ -1125,10 +962,27 @@ internal void fit_shadow(NvRenderer* renderer, NvNode* camera, f32 aspect, NvNod
     }
 }
 
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output,
-                      WGPUCommandEncoder encoder, WGPUTextureView target)
+// Reads the pass times that arrived from an earlier frame.
+internal void read_timestamps(NvRenderer* renderer)
+{
+    NvGpuTimestamps ticks = nv_gpu_poll_timestamps(renderer->gpu);
+    if (!ticks.ok)
+        return;
+    const u64* t = ticks.nanoseconds;
+    // Timestamps are nanoseconds; a pass the browser could not time reads as 0 or reversed.
+    if (t[1] > t[0])
+        renderer->gpu_ms = (f64)(t[1] - t[0]) / 1.0e6;
+    renderer->gpu_shadow_ms = t[3] > t[2] ? (f64)(t[3] - t[2]) / 1.0e6 : 0.0;
+    renderer->gpu_upscale_ms = t[5] > t[4] ? (f64)(t[5] - t[4]) / 1.0e6 : 0.0;
+    renderer->gpu_particles_ms = renderer->vfx && t[11] > t[10] ? (f64)(t[11] - t[10]) / 1.0e6 : 0.0;
+    renderer->gpu_bloom_ms = renderer->bloom_texture.index && t[9] > t[6] ? (f64)(t[9] - t[6]) / 1.0e6 : 0.0;
+}
+
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output, NvGpuView target)
 {
     NvGpu* gpu = renderer->gpu;
+    read_timestamps(renderer);
+    b32 timed = gpu->has_timestamps; // the passes write their times; they are read back when the last request has been taken
     if (!output.width || !output.height)
         output = (NvSceneOutput){gpu->width, gpu->height, {0, 0, gpu->width, gpu->height}, 1.0f, 1.0f};
     NV_ASSERT(output.image.x + output.image.width <= gpu->width && output.image.y + output.image.height <= gpu->height);
@@ -1201,57 +1055,44 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     if (shadows)
         fit_shadow(renderer, camera, (f32)viewport.width / (f32)viewport.height, sun, &uniforms);
 
-    WGPUQueue queue = gpu->queue;
-    wgpuQueueWriteBuffer(queue, renderer->frame_buffer, 0, &uniforms, sizeof(uniforms));
+    nv_gpu_write_buffer(gpu, renderer->frame_buffer, 0, &uniforms, sizeof(uniforms));
     if (object_count)
-        wgpuQueueWriteBuffer(queue, renderer->object_buffer, 0, renderer->objects, object_count * sizeof(NvObjectData));
+        nv_gpu_write_buffer(gpu, renderer->object_buffer, 0, renderer->objects, object_count * sizeof(NvObjectData));
     if (renderer->skin_matrix_count)
-        wgpuQueueWriteBuffer(queue, renderer->skin_buffer, 0, renderer->skin_matrices, renderer->skin_matrix_count * sizeof(NvMat4));
+        nv_gpu_write_buffer(gpu, renderer->skin_buffer, 0, renderer->skin_matrices, renderer->skin_matrix_count * sizeof(NvMat4));
     if (renderer->debug_vertex_count)
-        wgpuQueueWriteBuffer(queue, renderer->debug_buffer, 0, renderer->debug_vertices, renderer->debug_vertex_count * sizeof(NvDebugVertex));
+        nv_gpu_write_buffer(gpu, renderer->debug_buffer, 0, renderer->debug_vertices, renderer->debug_vertex_count * sizeof(NvDebugVertex));
 
     // Particles: spawn, simulate, cull. The scene pass draws what they leave in the visible list.
-    renderer->particles_recorded = 0;
     if (renderer->vfx) {
         NvVec3 camera_right = nv_vec3(camera->world.e[0], camera->world.e[1], camera->world.e[2]);
         NvVec3 camera_up = nv_vec3(camera->world.e[4], camera->world.e[5], camera->world.e[6]);
         NvVfxFrame vfx_frame = {.view_proj = uniforms.view_proj,
                                 .camera_right = nv_vec3_normalize(camera_right),
                                 .camera_up = nv_vec3_normalize(camera_up),
-                                .samples = renderer->scene_samples};
-        WGPUPassTimestampWrites vfx_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-        if (renderer->timestamp_copied) {
-            vfx_timestamps.querySet = renderer->timestamp_queries;
-            vfx_timestamps.beginningOfPassWriteIndex = 10;
-            vfx_timestamps.endOfPassWriteIndex = 11;
-        }
-        nv_vfx_compute(renderer->vfx, encoder, &vfx_frame, renderer->timestamp_copied ? &vfx_timestamps : NULL);
-        renderer->particles_recorded = renderer->timestamp_copied;
+                                .samples = renderer->scene_samples,
+                                .timestamps = timed,
+                                .timestamp_begin = 10,
+                                .timestamp_end = 11};
+        nv_vfx_compute(renderer->vfx, &vfx_frame);
     }
 
     // Shadow pass: every mesh's depth from the light, into the map the scene pass then samples.
-    // WebGPU orders the two passes, so the scene pass sees what this one wrote.
+    // The GPU orders the two passes, so the scene pass sees what this one wrote.
     u32 shadow_draws = 0;
-    renderer->timestamp_copied = renderer->timestamp_queries && !renderer->timestamp_mapping;
     if (shadows) {
-        WGPURenderPassDepthStencilAttachment shadow_depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
-        shadow_depth.view = renderer->shadow_view;
-        shadow_depth.depthLoadOp = WGPULoadOp_Clear;
-        shadow_depth.depthStoreOp = WGPUStoreOp_Store;
-        shadow_depth.depthClearValue = 1.0f;
-        WGPURenderPassDescriptor shadow_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-        shadow_desc.label = (WGPUStringView){"shadow", WGPU_STRLEN};
-        shadow_desc.depthStencilAttachment = &shadow_depth;
-        WGPUPassTimestampWrites shadow_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-        if (renderer->timestamp_copied) {
-            shadow_timestamps.querySet = renderer->timestamp_queries;
-            shadow_timestamps.beginningOfPassWriteIndex = 2;
-            shadow_timestamps.endOfPassWriteIndex = 3;
-            shadow_desc.timestampWrites = &shadow_timestamps;
-        }
-        WGPURenderPassEncoder shadow_pass = wgpuCommandEncoderBeginRenderPass(encoder, &shadow_desc);
-        wgpuRenderPassEncoderSetBindGroup(shadow_pass, 0, renderer->shadow_frame_group, 0, NULL);
-        WGPURenderPipeline bound = NULL;
+        nv_gpu_begin_render_pass(gpu, &(NvGpuRenderPassDesc){
+            .label = "shadow",
+            .depth = renderer->shadow_view,
+            .depth_load = NV_GPU_LOAD_CLEAR,
+            .depth_store = NV_GPU_STORE_STORE,
+            .clear_depth = 1.0f,
+            .timestamps = timed,
+            .timestamp_begin = 2,
+            .timestamp_end = 3,
+        });
+        nv_gpu_set_group(gpu, 0, renderer->shadow_frame_group, NULL, 0);
+        NvGpuPipeline bound = {0};
         u32 bound_mesh = 0;
         for (u32 i = 0; i < object_count; ++i) {
             NvNode* node = &scene->nodes[renderer->object_nodes[i]];
@@ -1264,62 +1105,51 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
                                          nv_mat4_mul(renderer->light_view_proj, node->world));
             if (box.max.x < -1.0f || box.min.x > 1.0f || box.max.y < -1.0f || box.min.y > 1.0f || box.min.z > 1.0f)
                 continue;
-            WGPURenderPipeline pipeline = renderer->shadow_pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
-            if (pipeline != bound) {
-                wgpuRenderPassEncoderSetPipeline(shadow_pass, pipeline);
+            NvGpuPipeline pipeline = renderer->shadow_pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
+            if (!nv_gpu_same_pipeline(pipeline, bound)) {
+                nv_gpu_set_pipeline(gpu, pipeline);
                 bound = pipeline;
             }
             if (node->mesh.index != bound_mesh) {
-                wgpuRenderPassEncoderSetVertexBuffer(shadow_pass, 0, mesh->vertices, 0, WGPU_WHOLE_SIZE);
-                wgpuRenderPassEncoderSetIndexBuffer(shadow_pass, mesh->indices, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                nv_gpu_set_vertex_buffer(gpu, mesh->vertices);
+                nv_gpu_set_index_buffer(gpu, mesh->indices, 1);
                 bound_mesh = node->mesh.index;
             }
-            wgpuRenderPassEncoderDrawIndexed(shadow_pass, mesh->index_count, 1, 0, 0, i);
+            nv_gpu_draw_indexed(gpu, mesh->index_count, 0, 0, i);
             ++shadow_draws;
         }
-        wgpuRenderPassEncoderEnd(shadow_pass);
-        wgpuRenderPassEncoderRelease(shadow_pass);
+        nv_gpu_end_pass(gpu);
     }
 
-    WGPURenderPassColorAttachment color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
+    NvGpuRenderPassDesc scene_pass = {
+        .label = "scene",
+        .color_load = NV_GPU_LOAD_CLEAR,
+        .clear_color = {renderer->clear_color[0], renderer->clear_color[1], renderer->clear_color[2], renderer->clear_color[3]},
+        .depth = renderer->depth_view,
+        .depth_load = NV_GPU_LOAD_CLEAR,
+        // Nothing reads the depth after the pass, unless the texture viewer shows it.
+        .depth_store = renderer->depth_texture_sampled ? NV_GPU_STORE_STORE : NV_GPU_STORE_DISCARD,
+        .clear_depth = 0.0f, // reverse Z: far is 0
+        .timestamps = timed,
+        .timestamp_begin = 0,
+        .timestamp_end = 1,
+    };
     if (renderer->scene_samples > 1) {
         // Draws into the multisampled target, which is resolved into the scene color target and then
         // not needed.
-        color.view = renderer->msaa_color_view;
-        color.resolveTarget = renderer->scene_color_view;
-        color.storeOp = WGPUStoreOp_Discard;
+        scene_pass.color = renderer->msaa_color_view;
+        scene_pass.resolve = renderer->scene_color_view;
+        scene_pass.color_store = NV_GPU_STORE_DISCARD;
     } else {
-        color.view = renderer->scene_color_view;
-        color.storeOp = WGPUStoreOp_Store;
+        scene_pass.color = renderer->scene_color_view;
+        scene_pass.color_store = NV_GPU_STORE_STORE;
     }
-    color.loadOp = WGPULoadOp_Clear;
-    color.clearValue = (WGPUColor){renderer->clear_color[0], renderer->clear_color[1], renderer->clear_color[2], renderer->clear_color[3]};
-    WGPURenderPassDepthStencilAttachment depth = WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;
-    depth.view = renderer->depth_view;
-    depth.depthLoadOp = WGPULoadOp_Clear;
-    // Nothing reads the depth after the pass, unless the texture viewer shows it.
-    depth.depthStoreOp = renderer->depth_texture_sampled ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
-    depth.depthClearValue = 0.0f; // reverse Z: far is 0
-    WGPURenderPassDescriptor pass_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-    pass_desc.label = (WGPUStringView){"scene", WGPU_STRLEN};
-    pass_desc.colorAttachmentCount = 1;
-    pass_desc.colorAttachments = &color;
-    pass_desc.depthStencilAttachment = &depth;
-    WGPUPassTimestampWrites timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-    if (renderer->timestamp_copied) {
-        timestamps.querySet = renderer->timestamp_queries;
-        timestamps.beginningOfPassWriteIndex = 0;
-        timestamps.endOfPassWriteIndex = 1;
-        pass_desc.timestampWrites = &timestamps;
-    }
+    nv_gpu_begin_render_pass(gpu, &scene_pass);
+    nv_gpu_set_viewport(gpu, (f32)viewport.x, (f32)viewport.y, (f32)viewport.width, (f32)viewport.height);
+    nv_gpu_set_scissor(gpu, viewport.x, viewport.y, viewport.width, viewport.height);
+    nv_gpu_set_group(gpu, 0, renderer->frame_group, NULL, 0);
 
-    WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &pass_desc);
-    wgpuRenderPassEncoderSetViewport(pass, (f32)viewport.x, (f32)viewport.y, (f32)viewport.width,
-                                     (f32)viewport.height, 0.0f, 1.0f);
-    wgpuRenderPassEncoderSetScissorRect(pass, viewport.x, viewport.y, viewport.width, viewport.height);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->frame_group, 0, NULL);
-
-    WGPURenderPipeline bound_pipeline = NULL;
+    NvGpuPipeline bound_pipeline = {0};
     u32 bound_mesh = 0;
     u32 bound_material = 0xFFFFFFFFu;
     NvRenderStats* stats = &renderer->stats;
@@ -1330,49 +1160,46 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
         NvRenderMesh* mesh = &renderer->meshes[node->mesh.index];
         NvRenderMaterial* material = &renderer->materials[node->material.index];
 
-        WGPURenderPipeline pipeline = renderer->pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
-        if (pipeline != bound_pipeline) {
-            wgpuRenderPassEncoderSetPipeline(pass, pipeline);
+        NvGpuPipeline pipeline = renderer->pipelines[mesh->skinned ? 1 : 0][material->desc.double_sided ? 1 : 0];
+        if (!nv_gpu_same_pipeline(pipeline, bound_pipeline)) {
+            nv_gpu_set_pipeline(gpu, pipeline);
             bound_pipeline = pipeline;
             ++stats->pipeline_changes;
         }
         if (node->material.index != bound_material) {
-            wgpuRenderPassEncoderSetBindGroup(pass, 1, material->bind_group, 0, NULL);
+            nv_gpu_set_group(gpu, 1, material->bind_group, NULL, 0);
             bound_material = node->material.index;
             ++stats->material_changes;
         }
         if (node->mesh.index != bound_mesh) {
             ++stats->mesh_changes;
-            wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh->vertices, 0, WGPU_WHOLE_SIZE);
-            wgpuRenderPassEncoderSetIndexBuffer(pass, mesh->indices, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            nv_gpu_set_vertex_buffer(gpu, mesh->vertices);
+            nv_gpu_set_index_buffer(gpu, mesh->indices, 1);
             bound_mesh = node->mesh.index;
         }
         // The first-instance offset makes instance_index equal the object's slot in `objects`.
-        wgpuRenderPassEncoderDrawIndexed(pass, mesh->index_count, 1, 0, 0, i);
+        nv_gpu_draw_indexed(gpu, mesh->index_count, 0, 0, i);
         stats->triangles += mesh->index_count / 3;
         stats->skinned_draws += mesh->skinned;
     }
 
     if (renderer->vfx) {
-        nv_vfx_draw_decals(renderer->vfx, pass);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, renderer->frame_group, 0, NULL); // the decals bound their own
+        nv_vfx_draw_decals(renderer->vfx);
+        nv_gpu_set_group(gpu, 0, renderer->frame_group, NULL, 0); // the decals bound their own
     }
     if (renderer->debug_vertex_count) {
-        wgpuRenderPassEncoderSetPipeline(pass, renderer->debug_pipeline);
-        wgpuRenderPassEncoderSetVertexBuffer(pass, 0, renderer->debug_buffer, 0, WGPU_WHOLE_SIZE);
-        wgpuRenderPassEncoderDraw(pass, renderer->debug_vertex_count, 1, 0, 0);
+        nv_gpu_set_pipeline(gpu, renderer->debug_pipeline);
+        nv_gpu_set_vertex_buffer(gpu, renderer->debug_buffer);
+        nv_gpu_draw(gpu, renderer->debug_vertex_count, 1, 0, 0);
         renderer->debug_vertex_count = 0;
     }
     if (renderer->vfx)
-        nv_vfx_draw(renderer->vfx, pass);
+        nv_vfx_draw(renderer->vfx);
 
-    wgpuRenderPassEncoderEnd(pass);
-    wgpuRenderPassEncoderRelease(pass);
+    nv_gpu_end_pass(gpu);
 
-    if (renderer->bloom_texture)
-        record_bloom(renderer, encoder, output.width, output.height);
-    else
-        renderer->bloom_recorded = 0;
+    if (renderer->bloom_texture.index)
+        record_bloom(renderer, output.width, output.height, timed);
 
     // The upscale pass: the scene color target, shown with the nearest filter in the image's
     // rectangle of the canvas. The canvas is cleared to black first, which is the bars around a
@@ -1381,82 +1208,40 @@ void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins,
     f32 exposure = post->exposure > 0.0f ? post->exposure : 1.0f;
     f32 tone = (f32)(post->tone < NV_TONE_COUNT ? post->tone : NV_TONE_CLAMP);
     u32 bloom_size[2] = {1, 1};
-    if (renderer->bloom_texture)
+    if (renderer->bloom_texture.index)
         bloom_region(output.width, output.height, 0, bloom_size);
-    f32 bloom_intensity = renderer->bloom_texture ? post->bloom_intensity : 0.0f;
+    f32 bloom_intensity = renderer->bloom_texture.index ? post->bloom_intensity : 0.0f;
     f32 params[16] = {(f32)output.image.x, (f32)output.image.y, output.pixel_width, output.pixel_height, (f32)output.width, (f32)output.height,
                       exposure, tone,
                       bloom_intensity, (f32)bloom_size[0], (f32)bloom_size[1], 0.0f,
-                      (f32)(renderer->bloom_texture ? renderer->bloom_width : 1), (f32)(renderer->bloom_texture ? renderer->bloom_height : 1), 0.0f, 0.0f};
-    wgpuQueueWriteBuffer(queue, renderer->upscale_buffer, 0, params, sizeof(params));
-    WGPURenderPassColorAttachment upscale_color = WGPU_RENDER_PASS_COLOR_ATTACHMENT_INIT;
-    upscale_color.view = target;
-    upscale_color.loadOp = WGPULoadOp_Clear;
-    upscale_color.storeOp = WGPUStoreOp_Store;
-    upscale_color.clearValue = (WGPUColor){0.0, 0.0, 0.0, 1.0};
-    WGPURenderPassDescriptor upscale_desc = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
-    upscale_desc.label = (WGPUStringView){"upscale", WGPU_STRLEN};
-    upscale_desc.colorAttachmentCount = 1;
-    upscale_desc.colorAttachments = &upscale_color;
-    WGPUPassTimestampWrites upscale_timestamps = WGPU_PASS_TIMESTAMP_WRITES_INIT;
-    if (renderer->timestamp_copied) {
-        upscale_timestamps.querySet = renderer->timestamp_queries;
-        upscale_timestamps.beginningOfPassWriteIndex = 4;
-        upscale_timestamps.endOfPassWriteIndex = 5;
-        upscale_desc.timestampWrites = &upscale_timestamps;
-    }
-    WGPURenderPassEncoder upscale_pass = wgpuCommandEncoderBeginRenderPass(encoder, &upscale_desc);
+                      (f32)(renderer->bloom_texture.index ? renderer->bloom_width : 1), (f32)(renderer->bloom_texture.index ? renderer->bloom_height : 1), 0.0f, 0.0f};
+    nv_gpu_write_buffer(gpu, renderer->upscale_buffer, 0, params, sizeof(params));
+    nv_gpu_begin_render_pass(gpu, &(NvGpuRenderPassDesc){
+        .label = "upscale",
+        .color = target,
+        .color_load = NV_GPU_LOAD_CLEAR,
+        .color_store = NV_GPU_STORE_STORE,
+        .clear_color = {0.0f, 0.0f, 0.0f, 1.0f},
+        .timestamps = timed,
+        .timestamp_begin = 4,
+        .timestamp_end = 5,
+    });
     if (output.image.width && output.image.height) {
-        wgpuRenderPassEncoderSetViewport(upscale_pass, (f32)output.image.x, (f32)output.image.y, (f32)output.image.width,
-                                         (f32)output.image.height, 0.0f, 1.0f);
-        wgpuRenderPassEncoderSetScissorRect(upscale_pass, output.image.x, output.image.y, output.image.width, output.image.height);
-        wgpuRenderPassEncoderSetPipeline(upscale_pass, renderer->upscale_pipeline);
-        wgpuRenderPassEncoderSetBindGroup(upscale_pass, 0, renderer->upscale_group, 0, NULL);
-        wgpuRenderPassEncoderDraw(upscale_pass, 3, 1, 0, 0);
+        nv_gpu_set_viewport(gpu, (f32)output.image.x, (f32)output.image.y, (f32)output.image.width, (f32)output.image.height);
+        nv_gpu_set_scissor(gpu, output.image.x, output.image.y, output.image.width, output.image.height);
+        nv_gpu_set_pipeline(gpu, renderer->upscale_pipeline);
+        nv_gpu_set_group(gpu, 0, renderer->upscale_group, NULL, 0);
+        nv_gpu_draw(gpu, 3, 1, 0, 0);
     }
-    wgpuRenderPassEncoderEnd(upscale_pass);
-    wgpuRenderPassEncoderRelease(upscale_pass);
+    nv_gpu_end_pass(gpu);
 
-    if (renderer->timestamp_copied) {
-        // A frame without a shadow pass resolves its two queries as 0, which reads as no time.
-        wgpuCommandEncoderResolveQuerySet(encoder, renderer->timestamp_queries, 0, NV_TIMESTAMP_COUNT, renderer->timestamp_resolve, 0);
-        wgpuCommandEncoderCopyBufferToBuffer(encoder, renderer->timestamp_resolve, 0, renderer->timestamp_readback, 0, NV_TIMESTAMP_COUNT * sizeof(u64));
-    }
-}
-
-internal void on_timestamps_mapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2)
-{
-    (void)message, (void)userdata2;
-    NvRenderer* renderer = userdata1;
-    if (status == WGPUMapAsyncStatus_Success) {
-        const u64* ticks = wgpuBufferGetConstMappedRange(renderer->timestamp_readback, 0, NV_TIMESTAMP_COUNT * sizeof(u64));
-        // Timestamps are nanoseconds; a pass the browser could not time reads as 0 or reversed.
-        if (ticks && ticks[1] > ticks[0])
-            renderer->gpu_ms = (f64)(ticks[1] - ticks[0]) / 1.0e6;
-        if (ticks)
-            renderer->gpu_shadow_ms = ticks[3] > ticks[2] ? (f64)(ticks[3] - ticks[2]) / 1.0e6 : 0.0;
-        if (ticks)
-            renderer->gpu_upscale_ms = ticks[5] > ticks[4] ? (f64)(ticks[5] - ticks[4]) / 1.0e6 : 0.0;
-        if (ticks)
-            renderer->gpu_particles_ms = renderer->vfx && ticks[11] > ticks[10] ? (f64)(ticks[11] - ticks[10]) / 1.0e6 : 0.0;
-        if (ticks)
-            renderer->gpu_bloom_ms = renderer->bloom_texture && ticks[9] > ticks[6] ? (f64)(ticks[9] - ticks[6]) / 1.0e6 : 0.0;
-        wgpuBufferUnmap(renderer->timestamp_readback);
-    }
-    renderer->timestamp_mapping = 0;
+    // The frame's end submits the commands and reads the times back; none are asked for while the last ones are still unread.
+    if (timed)
+        nv_gpu_resolve_timestamps(gpu, NV_TIMESTAMP_COUNT);
 }
 
 void nv_renderer_end_frame(NvRenderer* renderer)
 {
     if (renderer->vfx)
         nv_vfx_end_frame(renderer->vfx);
-    if (!renderer->timestamp_copied)
-        return;
-    renderer->timestamp_copied = 0;
-    renderer->timestamp_mapping = 1;
-    WGPUBufferMapCallbackInfo callback = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-    callback.mode = WGPUCallbackMode_AllowSpontaneous;
-    callback.callback = on_timestamps_mapped;
-    callback.userdata1 = renderer;
-    wgpuBufferMapAsync(renderer->timestamp_readback, WGPUMapMode_Read, 0, NV_TIMESTAMP_COUNT * sizeof(u64), callback);
 }

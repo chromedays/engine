@@ -4,7 +4,6 @@ add_library(nv STATIC
     chunk.c
     file.c
     gltf.c
-    gpu.c
     imgui.c
     log.c
     mesh.c
@@ -20,6 +19,7 @@ add_library(nv STATIC
 # header is shared, the source is picked here.
 if(EMSCRIPTEN)
     target_sources(nv PRIVATE
+        gpu_webgpu.c
         image_web.c
         imgui_web.c
         local_file_web.c
@@ -28,7 +28,7 @@ if(EMSCRIPTEN)
 endif()
 
 # The shaders (engine/shaders/*.slang): each becomes a header of its WGSL in the build directory, included as
-# "shaders/<name>_wgsl.h" (docs/specs/slang_shader_port.md).
+# "shaders/<name>_shader.h", which defines `<name>_shader` for the GPU API (docs/specs/slang_shader_port.md).
 nv_add_shader(imgui imgui.slang NV_IMGUI_WGSL)
 nv_add_shader(vfx_compute vfx_compute.slang NV_VFX_COMPUTE_WGSL)
 nv_add_shader(vfx_particles vfx_particles.slang NV_VFX_PARTICLES_WGSL)

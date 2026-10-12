@@ -34,9 +34,9 @@ typedef struct NvViewInput {
 #define NV_VIEW_MAX_TOUCHES 2
 
 typedef struct NvImguiTexture {
-    WGPUTexture texture;
-    WGPUTextureView view;
-    WGPUBindGroup bind_group;
+    NvGpuTexture texture;
+    NvGpuView view;
+    NvGpuGroup bind_group;
 } NvImguiTexture;
 
 // How nv_imgui_preview shows a texture (docs/specs/textures.md).
@@ -59,7 +59,7 @@ typedef enum NvImguiDepth {
 
 // What to show of a texture. Zero is the whole texture's first mip level as RGBA.
 typedef struct NvImguiPreview {
-    WGPUTexture texture; // needs WGPUTextureUsage_TextureBinding
+    NvGpuTexture texture; // needs NV_GPU_TEXTURE_SAMPLED
     u32 mip;
     NvImguiPreviewMode mode;
     NvImguiDepth depth;
@@ -69,35 +69,38 @@ typedef struct NvImguiPreview {
 
 typedef struct NvImguiPreviewSlot {
     NvImguiPreview key;
-    WGPUTextureView view; // the key's mip level
-    WGPUBuffer params;
-    WGPUBindGroup bind_group;
+    NvGpuView view; // the key's mip level
+    NvGpuBuffer params;
+    NvGpuGroup bind_group;
     b32 depth;       // drawn by the depth pipeline
     b32 multisampled; // a depth texture with more than one sample: the multisampled depth pipeline
     u64 used_frame;  // the last frame it was asked for
 } NvImguiPreviewSlot;
 
-// Dear ImGui on the canvas: browser input in, WebGPU draw calls out. Build UI with the cimgui
+// Dear ImGui on the canvas: the platform's input in, GPU draw calls out. Build UI with the cimgui
 // API (ig* functions) between nv_imgui_new_frame and nv_imgui_render.
 typedef struct NvImgui {
     NvGpu* gpu;
     NvWindow* window;
 
-    WGPURenderPipeline pipeline;
-    WGPUBuffer uniform_buffer;
-    WGPUSampler sampler;
-    WGPUBuffer vertex_buffer;
-    WGPUBuffer index_buffer;
+    NvGpuLayout layout;               // the UI's: the matrix, a sampler and a color texture
+    NvGpuLayout preview_layout;       // a color preview's: the same and the preview parameters
+    NvGpuLayout depth_layout;         // a depth preview's: the matrix, a depth texture and the parameters
+    NvGpuLayout depth_ms_layout;      // a multisampled depth preview's
+    NvGpuPipeline pipeline;
+    NvGpuBuffer uniform_buffer;
+    NvGpuSampler sampler;
+    NvGpuBuffer vertex_buffer;
+    NvGpuBuffer index_buffer;
 
     // Slot 0 is unused so that ImTextureID 0 keeps meaning "no texture".
     NvImguiTexture textures[NV_IMGUI_MAX_TEXTURES];
 
-    // Engine textures shown in the UI: ImTextureID NV_IMGUI_MAX_TEXTURES + i is previews[i]. A slot
-    // holds a reference on its texture, so a released texture cannot come back at the same address
-    // while a slot is keyed by it.
-    WGPURenderPipeline preview_pipeline; // color textures
-    WGPURenderPipeline depth_pipeline;   // depth textures, read without a sampler
-    WGPURenderPipeline depth_ms_pipeline; // multisampled depth textures (sample 0)
+    // Engine textures shown in the UI: ImTextureID NV_IMGUI_MAX_TEXTURES + i is previews[i]. A slot is keyed by the
+    // texture's handle, whose generation tells a released texture from a new one made in its place.
+    NvGpuPipeline preview_pipeline; // color textures
+    NvGpuPipeline depth_pipeline;   // depth textures, read without a sampler
+    NvGpuPipeline depth_ms_pipeline; // multisampled depth textures (sample 0)
     NvImguiPreviewSlot previews[NV_IMGUI_MAX_PREVIEWS];
     u64 frame; // counts nv_imgui_new_frame calls
 
@@ -155,7 +158,7 @@ typedef struct NvImgui {
     void* claims_key_data;
 } NvImgui;
 
-// Creates the ImGui context, hooks browser input and creates GPU objects. Staging memory for
+// Creates the ImGui context, hooks the platform's input and creates GPU objects. Staging memory for
 // geometry comes from `arena`.
 void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena);
 
@@ -209,5 +212,5 @@ ImTextureID nv_imgui_preview(NvImgui* imgui, const NvImguiPreview* preview);
 // Preview slots in use, for tests.
 u32 nv_imgui_preview_count(NvImgui* imgui);
 
-// Finishes the ImGui frame and records a render pass that draws it over `target`.
-void nv_imgui_render(NvImgui* imgui, WGPUCommandEncoder encoder, WGPUTextureView target);
+// Finishes the ImGui frame and records a render pass that draws it over `target` in the frame's commands (nv_gpu_begin_frame).
+void nv_imgui_render(NvImgui* imgui, NvGpuView target);

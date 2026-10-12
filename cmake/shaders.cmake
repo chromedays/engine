@@ -91,12 +91,13 @@ set(NV_SHADER_DIR "${PROJECT_SOURCE_DIR}/engine/shaders")
 
 # Builds <name> from engine/shaders/<source>: the WGSL (<build>/shaders/<name>.wgsl, kept: the browser's and tint's errors
 # name its lines), its check, the reflection (<name>.json, read by tests/shader_layout_test) and the C header
-# <build>/shaders/<name>_wgsl.h holding the WGSL as `const char <name>_wgsl[]`. Add the returned header to a target's sources:
+# <build>/shaders/<name>_shader.h holding the WGSL as `const char <name>_wgsl[]` and the shader as engine/gpu.h takes it,
+# `const NvGpuShaderCode <name>_shader`. Add the returned header to a target's sources:
 #   nv_add_shader(<name> <source.slang> <output header variable>)
 function(nv_add_shader name source out_header)
     set(dir "${CMAKE_BINARY_DIR}/shaders")
     set(wgsl "${dir}/${name}.wgsl")
-    set(header "${dir}/${name}_wgsl.h")
+    set(header "${dir}/${name}_shader.h")
     set(checked "${dir}/${name}.tint.wgsl")
     set(commands
         COMMAND ${CMAKE_COMMAND} -E make_directory "${dir}"
@@ -111,7 +112,7 @@ function(nv_add_shader name source out_header)
         list(APPEND commands COMMAND "${nv_tint}" --format=wgsl -o "${checked}" "${wgsl}")
     endif()
     # 3. The header, from the checked WGSL only.
-    list(APPEND commands COMMAND ${CMAKE_COMMAND} -DINPUT=${wgsl} -DOUTPUT=${header} -DNAME=${name}_wgsl
+    list(APPEND commands COMMAND ${CMAKE_COMMAND} -DINPUT=${wgsl} -DOUTPUT=${header} -DNAME=${name}_wgsl -DSHADER=${name}_shader -DFIELD=wgsl
                 -P "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake")
     add_custom_command(OUTPUT "${wgsl}" "${header}" "${dir}/${name}.json"
         ${commands}

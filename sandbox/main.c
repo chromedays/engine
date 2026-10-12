@@ -499,7 +499,7 @@ internal void frame(void* userdata)
     NvGpuFrame gpu_frame = nv_gpu_begin_frame(&sandbox->gpu);
     if (!gpu_frame.ok)
         return;
-    WGPUTextureView target = gpu_frame.view;
+    NvGpuView target = gpu_frame.view;
 
     FrameTimes* times = &sandbox->times;
     times->frame = (f64)ui_dt * 1000.0;
@@ -547,13 +547,12 @@ internal void frame(void* userdata)
     if (doc->show_bones)
         behaviors_draw_bones(sandbox, doc);
 
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(sandbox->gpu.device, NULL);
     t = now_ms();
     // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
     sandbox->renderer.depth_sampled = sandbox->textures.shown_now;
     // The shown scene's ambient light (chess_scene.md): the renderer takes it from the renderer, which the scene does not know.
     memcpy(sandbox->renderer.ambient, sandbox_doc(sandbox)->ambient, sizeof(sandbox->renderer.ambient));
-    nv_renderer_draw(&sandbox->renderer, scene, nv_anim_skins(), layout->scene, encoder, target);
+    nv_renderer_draw(&sandbox->renderer, scene, nv_anim_skins(), layout->scene, target);
     times->draw = now_ms() - t;
     times->gpu = sandbox->renderer.gpu_ms;
     times->gpu_shadow = sandbox->renderer.shadows.size ? sandbox->renderer.gpu_shadow_ms : 0.0;
@@ -561,14 +560,10 @@ internal void frame(void* userdata)
     times->gpu_bloom = sandbox->renderer.post.bloom ? sandbox->renderer.gpu_bloom_ms : 0.0;
     times->gpu_particles = sandbox->renderer.gpu_particles_ms;
     t = now_ms();
-    nv_imgui_render(&sandbox->imgui, encoder, target);
+    nv_imgui_render(&sandbox->imgui, target);
     times->ui += now_ms() - t;
-    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
-    wgpuQueueSubmit(sandbox->gpu.queue, 1, &commands);
-    wgpuCommandBufferRelease(commands);
-    wgpuCommandEncoderRelease(encoder);
-    nv_renderer_end_frame(&sandbox->renderer);
     nv_gpu_end_frame(&sandbox->gpu);
+    nv_renderer_end_frame(&sandbox->renderer);
 
     accumulate_times(sandbox, now);
     stress_after_frame(sandbox);
@@ -899,11 +894,7 @@ NV_DEBUG_EXPORT void sandbox_debug_log_lines(int level, int number)
 
 NV_DEBUG_EXPORT void sandbox_debug_wgpu_error(void)
 {
-    WGPUBufferDescriptor descriptor = WGPU_BUFFER_DESCRIPTOR_INIT;
-    descriptor.size = 16; // no usage: not a valid buffer
-    WGPUBuffer buffer = wgpuDeviceCreateBuffer(sandbox_state.gpu.device, &descriptor);
-    if (buffer)
-        wgpuBufferRelease(buffer);
+    nv_gpu_debug_raise_error(&sandbox_state.gpu);
 }
 
 NV_DEBUG_EXPORT int sandbox_debug_log_count(void)
@@ -1032,10 +1023,8 @@ NV_DEBUG_EXPORT int sandbox_debug_texture_count(void)
 
 NV_DEBUG_EXPORT int sandbox_debug_texture_info(int i, int component)
 {
-    WGPUTexture texture = sandbox_state.renderer.textures[i].texture;
-    return component == 0 ? (int)wgpuTextureGetWidth(texture)
-         : component == 1 ? (int)wgpuTextureGetHeight(texture)
-                          : (int)wgpuTextureGetMipLevelCount(texture);
+    NvGpuTextureDesc texture = nv_gpu_texture_desc(&sandbox_state.gpu, sandbox_state.renderer.textures[i].texture);
+    return component == 0 ? (int)texture.width : component == 1 ? (int)texture.height : (int)texture.mip_count;
 }
 
 // The k-th byte of the i-th renderer texture's name; 0 past its end.

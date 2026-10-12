@@ -237,7 +237,7 @@ internal void frame(void* userdata)
     NvGpuFrame gpu_frame = nv_gpu_begin_frame(&game->gpu);
     if (!gpu_frame.ok)
         return;
-    WGPUTextureView target = gpu_frame.view;
+    NvGpuView target = gpu_frame.view;
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
@@ -280,15 +280,10 @@ internal void frame(void* userdata)
     }
     view_update(game, effects_dt);
 
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(game->gpu.device, NULL);
-    nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, encoder, target);
-    nv_imgui_render(&game->imgui, encoder, target);
-    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
-    wgpuQueueSubmit(game->gpu.queue, 1, &commands);
-    wgpuCommandBufferRelease(commands);
-    wgpuCommandEncoderRelease(encoder);
-    nv_renderer_end_frame(&game->renderer);
+    nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, target);
+    nv_imgui_render(&game->imgui, target);
     nv_gpu_end_frame(&game->gpu);
+    nv_renderer_end_frame(&game->renderer);
 }
 
 #if !defined(NDEBUG)

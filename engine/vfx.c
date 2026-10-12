@@ -1,9 +1,9 @@
 #include "engine/vfx.h"
 #include "engine/log.h"
 #include "engine/vfx_cpu.h"
-#include "shaders/vfx_compute_wgsl.h"
-#include "shaders/vfx_marks_wgsl.h"
-#include "shaders/vfx_particles_wgsl.h"
+#include "shaders/vfx_compute_shader.h"
+#include "shaders/vfx_marks_shader.h"
+#include "shaders/vfx_particles_shader.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -58,13 +58,14 @@ typedef struct NvVfxGpuDecal {
 #if defined(NDEBUG)
 #define DEBUG_COPY_SRC 0
 #else
-#define DEBUG_COPY_SRC WGPUBufferUsage_CopySrc // the debug dump reads these back
+#define DEBUG_COPY_SRC NV_GPU_BUFFER_COPY_SRC // the debug dump reads these back
 #endif
 #define PARTICLE_BYTES 32
 #define EMITTER_BYTES 128
 #define COUNTERS_COUNT 16
 #define MAX_JOBS 65535u
 #define STAGE_SLOTS 4096u // segments or decals the CPU stages before one upload
+#define STATS_SLOT 0       // the readback slot of the counters; the debug dump uses the ones after it
 
 _Static_assert(sizeof(NvVfxGpuEmitter) == EMITTER_BYTES, "the shader reads 128-byte emitters");
 _Static_assert(sizeof(NvVfxBurst) == 64, "the shader reads 64-byte bursts");
@@ -74,177 +75,111 @@ _Static_assert(sizeof(VfxFrameUniforms) == 240, "the shader reads a 240-byte fra
 
 // The shaders are engine/shaders/vfx_*.slang: the build makes vfx_compute_wgsl, vfx_particles_wgsl and vfx_marks_wgsl from them.
 
-internal WGPUBuffer create_buffer(NvGpu* gpu, const char* label, WGPUBufferUsage usage, u64 size)
+internal NvGpuBuffer create_buffer(NvGpu* gpu, const char* label, u32 usage, u64 size)
 {
-    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){label, WGPU_STRLEN};
-    desc.usage = usage | WGPUBufferUsage_CopyDst;
-    desc.size = (size + 3) & ~(u64)3;
-    return wgpuDeviceCreateBuffer(gpu->device, &desc);
-}
-
-internal WGPUShaderModule create_module_text(WGPUDevice device, const char* label, const char* text)
-{
-    WGPUShaderSourceWGSL wgsl = WGPU_SHADER_SOURCE_WGSL_INIT;
-    wgsl.code = (WGPUStringView){text, WGPU_STRLEN};
-    WGPUShaderModuleDescriptor desc = WGPU_SHADER_MODULE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){label, WGPU_STRLEN};
-    desc.nextInChain = &wgsl.chain;
-    return wgpuDeviceCreateShaderModule(device, &desc);
+    return nv_gpu_create_buffer(gpu, &(NvGpuBufferDesc){.label = label, .usage = usage, .size = size});
 }
 
 typedef struct BindingKind {
     u32 binding;
-    WGPUBufferBindingType type;
+    NvGpuBindingKind kind;
 } BindingKind;
 
-internal WGPUBindGroupLayout create_layout(WGPUDevice device, WGPUShaderStage visibility, const BindingKind* kinds, u32 count)
+internal NvGpuLayout create_layout(NvGpu* gpu, u32 stages, const BindingKind* kinds, u32 count)
 {
-    WGPUBindGroupLayoutEntry entries[12] = {0};
+    NvGpuLayoutEntry entries[NV_GPU_MAX_ENTRIES] = {0};
     NV_ASSERT(count <= NV_ARRAY_COUNT(entries));
     for (u32 i = 0; i < count; ++i) {
         entries[i].binding = kinds[i].binding;
-        entries[i].visibility = visibility;
-        entries[i].buffer.type = kinds[i].type;
+        entries[i].stages = stages;
+        entries[i].kind = kinds[i].kind;
     }
-    WGPUBindGroupLayoutDescriptor desc = WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;
-    desc.entryCount = count;
-    desc.entries = entries;
-    return wgpuDeviceCreateBindGroupLayout(device, &desc);
+    return nv_gpu_create_layout(gpu, entries, count);
 }
 
-internal WGPUComputePipeline create_compute_pipeline(WGPUDevice device, WGPUShaderModule module, const char* entry, WGPUBindGroupLayout layout)
+internal NvGpuPipeline create_compute_pipeline(NvGpu* gpu, const char* entry, NvGpuLayout layout)
 {
-    WGPUPipelineLayoutDescriptor layout_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    layout_desc.bindGroupLayoutCount = 1;
-    layout_desc.bindGroupLayouts = &layout;
-    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(device, &layout_desc);
-    WGPUComputePipelineDescriptor desc = WGPU_COMPUTE_PIPELINE_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){entry, WGPU_STRLEN};
-    desc.layout = pipeline_layout;
-    desc.compute.module = module;
-    desc.compute.entryPoint = (WGPUStringView){entry, WGPU_STRLEN};
-    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(device, &desc);
-    wgpuPipelineLayoutRelease(pipeline_layout);
-    return pipeline;
+    return nv_gpu_create_compute_pipeline(gpu, &(NvGpuComputePipelineDesc){
+        .label = entry,
+        .shader = &vfx_compute_shader,
+        .entry = entry,
+        .layouts = {layout},
+        .layout_count = 1,
+    });
 }
 
 // A bind group of whole buffers: `buffers[i]` is bound at `kinds[i].binding`.
-internal WGPUBindGroup create_group(WGPUDevice device, WGPUBindGroupLayout layout, const BindingKind* kinds, const WGPUBuffer* buffers,
-                                    const u64* sizes, u32 count)
+internal NvGpuGroup create_group(NvGpu* gpu, NvGpuLayout layout, const BindingKind* kinds, const NvGpuBuffer* buffers,
+                                 const u64* sizes, u32 count)
 {
-    WGPUBindGroupEntry entries[12] = {0};
+    NvGpuGroupEntry entries[NV_GPU_MAX_ENTRIES] = {0};
     for (u32 i = 0; i < count; ++i) {
         entries[i].binding = kinds[i].binding;
         entries[i].buffer = buffers[i];
         entries[i].size = sizes[i];
     }
-    WGPUBindGroupDescriptor desc = WGPU_BIND_GROUP_DESCRIPTOR_INIT;
-    desc.layout = layout;
-    desc.entryCount = count;
-    desc.entries = entries;
-    return wgpuDeviceCreateBindGroup(device, &desc);
+    return nv_gpu_create_group(gpu, layout, entries, count);
 }
 
 internal void create_render_pipelines(NvVfx* vfx, u32 samples)
 {
-    WGPUDevice device = vfx->gpu->device;
-    if (vfx->add_pipeline)
-        wgpuRenderPipelineRelease(vfx->add_pipeline);
-    if (vfx->alpha_pipeline)
-        wgpuRenderPipelineRelease(vfx->alpha_pipeline);
-    if (vfx->segment_pipeline)
-        wgpuRenderPipelineRelease(vfx->segment_pipeline);
-    if (vfx->decal_pipeline)
-        wgpuRenderPipelineRelease(vfx->decal_pipeline);
-    WGPUPipelineLayoutDescriptor layout_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    layout_desc.bindGroupLayoutCount = 1;
-    layout_desc.bindGroupLayouts = &vfx->render_layout;
-    WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device, &layout_desc);
+    NvGpu* gpu = vfx->gpu;
+    if (vfx->add_pipeline.index)
+        nv_gpu_release_pipeline(gpu, vfx->add_pipeline);
+    if (vfx->alpha_pipeline.index)
+        nv_gpu_release_pipeline(gpu, vfx->alpha_pipeline);
+    if (vfx->segment_pipeline.index)
+        nv_gpu_release_pipeline(gpu, vfx->segment_pipeline);
+    if (vfx->decal_pipeline.index)
+        nv_gpu_release_pipeline(gpu, vfx->decal_pipeline);
 
+    // All of them are tested against the scene's depth (reverse Z, so Greater) but never write to it.
     for (u32 alpha = 0; alpha < 2; ++alpha) {
-        WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
-        if (alpha) {
-            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
-            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
-        } else {
-            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
-            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
-        }
-        WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-        target.blend = &blend;
-        WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-        fragment.module = vfx->render_module;
-        fragment.entryPoint = (WGPUStringView){alpha ? "fs_alpha" : "fs_add", WGPU_STRLEN};
-        fragment.targetCount = 1;
-        fragment.targets = &target;
-        // Tested against the scene's depth (reverse Z, so Greater) but never written to.
-        WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-        depth.format = nv_gpu_wgpu_format(NV_SCENE_DEPTH_FORMAT);
-        depth.depthWriteEnabled = WGPUOptionalBool_False;
-        depth.depthCompare = WGPUCompareFunction_Greater;
-        WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-        desc.label = (WGPUStringView){alpha ? "particles (alpha)" : "particles (additive)", WGPU_STRLEN};
-        desc.layout = layout;
-        desc.vertex.module = vfx->render_module;
-        desc.vertex.entryPoint = (WGPUStringView){alpha ? "vs_alpha" : "vs_add", WGPU_STRLEN};
-        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-        desc.primitive.cullMode = WGPUCullMode_None;
-        desc.depthStencil = &depth;
-        desc.multisample.count = samples;
-        desc.fragment = &fragment;
-        WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+        NvGpuPipeline pipeline = nv_gpu_create_render_pipeline(gpu, &(NvGpuRenderPipelineDesc){
+            .label = alpha ? "particles (alpha)" : "particles (additive)",
+            .shader = &vfx_particles_shader,
+            .vertex_entry = alpha ? "vs_alpha" : "vs_add",
+            .fragment_entry = alpha ? "fs_alpha" : "fs_add",
+            .layouts = {vfx->render_layout},
+            .layout_count = 1,
+            .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+            .cull = NV_GPU_CULL_NONE,
+            .color_format = NV_SCENE_FORMAT,
+            .blend = alpha ? NV_GPU_BLEND_ALPHA : NV_GPU_BLEND_ADD,
+            .depth_format = NV_SCENE_DEPTH_FORMAT,
+            .depth_write = 0,
+            .depth_compare = NV_GPU_COMPARE_GREATER,
+            .samples = samples,
+        });
         if (alpha)
             vfx->alpha_pipeline = pipeline;
         else
             vfx->add_pipeline = pipeline;
     }
-    wgpuPipelineLayoutRelease(layout);
 
-    // Segments add light; decals blend. Both are tested against the scene's depth and never write it.
-    WGPUPipelineLayoutDescriptor marks_layout_desc = WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;
-    marks_layout_desc.bindGroupLayoutCount = 1;
-    marks_layout_desc.bindGroupLayouts = &vfx->marks_layout;
-    WGPUPipelineLayout marks_layout = wgpuDeviceCreatePipelineLayout(device, &marks_layout_desc);
+    // Segments add light; decals blend.
     for (u32 decal = 0; decal < 2; ++decal) {
-        WGPUBlendState blend = WGPU_BLEND_STATE_INIT;
-        if (decal) {
-            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_SrcAlpha, WGPUBlendFactor_OneMinusSrcAlpha};
-            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_OneMinusSrcAlpha};
-        } else {
-            blend.color = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
-            blend.alpha = (WGPUBlendComponent){WGPUBlendOperation_Add, WGPUBlendFactor_One, WGPUBlendFactor_One};
-        }
-        WGPUColorTargetState target = WGPU_COLOR_TARGET_STATE_INIT;
-        target.format = nv_gpu_wgpu_format(NV_SCENE_FORMAT);
-        target.blend = &blend;
-        WGPUFragmentState fragment = WGPU_FRAGMENT_STATE_INIT;
-        fragment.module = vfx->marks_module;
-        fragment.entryPoint = (WGPUStringView){decal ? "fs_decal" : "fs_segment", WGPU_STRLEN};
-        fragment.targetCount = 1;
-        fragment.targets = &target;
-        WGPUDepthStencilState depth = WGPU_DEPTH_STENCIL_STATE_INIT;
-        depth.format = nv_gpu_wgpu_format(NV_SCENE_DEPTH_FORMAT);
-        depth.depthWriteEnabled = WGPUOptionalBool_False;
-        depth.depthCompare = WGPUCompareFunction_Greater;
-        WGPURenderPipelineDescriptor desc = WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
-        desc.label = (WGPUStringView){decal ? "decals" : "trails and beams", WGPU_STRLEN};
-        desc.layout = marks_layout;
-        desc.vertex.module = vfx->marks_module;
-        desc.vertex.entryPoint = (WGPUStringView){decal ? "vs_decal" : "vs_segment", WGPU_STRLEN};
-        desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
-        desc.primitive.cullMode = WGPUCullMode_None;
-        desc.depthStencil = &depth;
-        desc.multisample.count = samples;
-        desc.fragment = &fragment;
-        WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(device, &desc);
+        NvGpuPipeline pipeline = nv_gpu_create_render_pipeline(gpu, &(NvGpuRenderPipelineDesc){
+            .label = decal ? "decals" : "trails and beams",
+            .shader = &vfx_marks_shader,
+            .vertex_entry = decal ? "vs_decal" : "vs_segment",
+            .fragment_entry = decal ? "fs_decal" : "fs_segment",
+            .layouts = {vfx->marks_layout},
+            .layout_count = 1,
+            .topology = NV_GPU_TOPOLOGY_TRIANGLES,
+            .cull = NV_GPU_CULL_NONE,
+            .color_format = NV_SCENE_FORMAT,
+            .blend = decal ? NV_GPU_BLEND_ALPHA : NV_GPU_BLEND_ADD,
+            .depth_format = NV_SCENE_DEPTH_FORMAT,
+            .depth_write = 0,
+            .depth_compare = NV_GPU_COMPARE_GREATER,
+            .samples = samples,
+        });
         if (decal)
             vfx->decal_pipeline = pipeline;
         else
             vfx->segment_pipeline = pipeline;
     }
-    wgpuPipelineLayoutRelease(marks_layout);
     vfx->pipeline_samples = samples;
 }
 
@@ -255,14 +190,14 @@ internal void ring_init(NvVfx* vfx, struct VfxRing* ring, const char* label, u32
     ring->capacity = capacity;
     ring->staged = NV_PUSH_ARRAY(arena, (umm)STAGE_SLOTS * slot_bytes, u8);
     ring->death = NV_PUSH_ARRAY(arena, capacity, f32);
-    ring->buffer = create_buffer(vfx->gpu, label, WGPUBufferUsage_Storage, (u64)capacity * slot_bytes);
+    ring->buffer = create_buffer(vfx->gpu, label, NV_GPU_BUFFER_STORAGE, (u64)capacity * slot_bytes);
 }
 
 internal void ring_flush(NvVfx* vfx, struct VfxRing* ring, u32 slot_bytes)
 {
     if (!ring->pending)
         return;
-    wgpuQueueWriteBuffer(vfx->gpu->queue, ring->buffer, (u64)ring->pending_start * slot_bytes, ring->staged, (umm)ring->pending * slot_bytes);
+    nv_gpu_write_buffer(vfx->gpu, ring->buffer, (u64)ring->pending_start * slot_bytes, ring->staged, (umm)ring->pending * slot_bytes);
     ring->pending = 0;
 }
 
@@ -309,15 +244,13 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
 {
     *vfx = (NvVfx){0};
     vfx->gpu = gpu;
-    WGPUDevice device = gpu->device;
 
     // The state buffer has to fit one binding.
     u32 particles = capacity.particles ? capacity.particles : NV_VFX_DEFAULT_PARTICLES;
-    WGPULimits limits = WGPU_LIMITS_INIT;
     u64 room = (u64)NV_VFX_MAX_PARTICLES;
-    if (wgpuDeviceGetLimits(device, &limits) == WGPUStatus_Success) {
-        u64 binding = limits.maxStorageBufferBindingSize / PARTICLE_BYTES;
-        u64 buffer = limits.maxBufferSize / PARTICLE_BYTES;
+    if (gpu->max_storage_binding_bytes && gpu->max_buffer_bytes) {
+        u64 binding = gpu->max_storage_binding_bytes / PARTICLE_BYTES;
+        u64 buffer = gpu->max_buffer_bytes / PARTICLE_BYTES;
         room = binding < room ? binding : room;
         room = buffer < room ? buffer : room;
     }
@@ -330,7 +263,7 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     u32 segments = capacity.segments ? capacity.segments : NV_VFX_DEFAULT_SEGMENTS;
     u32 decals = capacity.decals ? capacity.decals : NV_VFX_DEFAULT_DECALS;
     {
-        u64 binding = limits.maxStorageBufferBindingSize ? limits.maxStorageBufferBindingSize : (128ull << 20);
+        u64 binding = gpu->max_storage_binding_bytes ? gpu->max_storage_binding_bytes : (128ull << 20);
         if ((u64)segments * sizeof(NvVfxGpuSegment) > binding)
             segments = (u32)(binding / sizeof(NvVfxGpuSegment));
         if ((u64)decals * sizeof(NvVfxGpuDecal) > binding)
@@ -345,32 +278,23 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     vfx->random = 0x2545F491u;
 
     u64 capacity_u64 = particles;
-    vfx->frame_buffer = create_buffer(gpu, "vfx frame", WGPUBufferUsage_Uniform, sizeof(VfxFrameUniforms));
-    vfx->particles = create_buffer(gpu, "particles", WGPUBufferUsage_Storage | DEBUG_COPY_SRC, capacity_u64 * PARTICLE_BYTES);
-    vfx->free_list = create_buffer(gpu, "particle free list", WGPUBufferUsage_Storage | DEBUG_COPY_SRC, capacity_u64 * 4);
-    vfx->alive[0] = create_buffer(gpu, "particle alive list A", WGPUBufferUsage_Storage | DEBUG_COPY_SRC, capacity_u64 * 4);
-    vfx->alive[1] = create_buffer(gpu, "particle alive list B", WGPUBufferUsage_Storage | DEBUG_COPY_SRC, capacity_u64 * 4);
-    vfx->visible = create_buffer(gpu, "particle visible list", WGPUBufferUsage_Storage, capacity_u64 * 4);
-    vfx->counters = create_buffer(gpu, "particle counters", WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc, COUNTERS_COUNT * 4);
-    vfx->emitter_buffer = create_buffer(gpu, "particle emitters", WGPUBufferUsage_Storage, (u64)NV_VFX_MAX_EMITTERS * EMITTER_BYTES);
-    vfx->burst_buffer = create_buffer(gpu, "particle bursts", WGPUBufferUsage_Storage, (u64)NV_VFX_MAX_BURSTS * sizeof(NvVfxBurst));
-    vfx->job_buffer = create_buffer(gpu, "particle spawn jobs", WGPUBufferUsage_Storage, (u64)MAX_JOBS * 8);
-    vfx->sim_args = create_buffer(gpu, "particle simulate arguments", WGPUBufferUsage_Storage | WGPUBufferUsage_Indirect | DEBUG_COPY_SRC, 16);
-    vfx->draw_args = create_buffer(gpu, "particle draw arguments", WGPUBufferUsage_Storage | WGPUBufferUsage_Indirect | DEBUG_COPY_SRC, 32);
-    WGPUBufferDescriptor readback = WGPU_BUFFER_DESCRIPTOR_INIT;
-    readback.label = (WGPUStringView){"particle stats", WGPU_STRLEN};
-    readback.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-    readback.size = 16;
-    vfx->stats_buffer = wgpuDeviceCreateBuffer(device, &readback);
+    vfx->frame_buffer = create_buffer(gpu, "vfx frame", NV_GPU_BUFFER_UNIFORM, sizeof(VfxFrameUniforms));
+    vfx->particles = create_buffer(gpu, "particles", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * PARTICLE_BYTES);
+    vfx->free_list = create_buffer(gpu, "particle free list", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
+    vfx->alive[0] = create_buffer(gpu, "particle alive list A", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
+    vfx->alive[1] = create_buffer(gpu, "particle alive list B", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
+    vfx->visible = create_buffer(gpu, "particle visible list", NV_GPU_BUFFER_STORAGE, capacity_u64 * 4);
+    vfx->counters = create_buffer(gpu, "particle counters", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_COPY_SRC, COUNTERS_COUNT * 4);
+    vfx->emitter_buffer = create_buffer(gpu, "particle emitters", NV_GPU_BUFFER_STORAGE, (u64)NV_VFX_MAX_EMITTERS * EMITTER_BYTES);
+    vfx->burst_buffer = create_buffer(gpu, "particle bursts", NV_GPU_BUFFER_STORAGE, (u64)NV_VFX_MAX_BURSTS * sizeof(NvVfxBurst));
+    vfx->job_buffer = create_buffer(gpu, "particle spawn jobs", NV_GPU_BUFFER_STORAGE, (u64)MAX_JOBS * 8);
+    vfx->sim_args = create_buffer(gpu, "particle simulate arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT | DEBUG_COPY_SRC, 16);
+    vfx->draw_args = create_buffer(gpu, "particle draw arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT | DEBUG_COPY_SRC, 32);
 
     ring_init(vfx, &vfx->segments, "trail and beam segments", segments, sizeof(NvVfxGpuSegment), arena);
     ring_init(vfx, &vfx->decals, "decals", decals, sizeof(NvVfxGpuDecal), arena);
-    vfx->compute_module = create_module_text(device, "particle passes", vfx_compute_wgsl);
-    vfx->render_module = create_module_text(device, "particle draw", vfx_particles_wgsl);
-    vfx->marks_module = create_module_text(device, "trails, beams and decals", vfx_marks_wgsl);
 
-    const WGPUBufferBindingType U = WGPUBufferBindingType_Uniform, RW = WGPUBufferBindingType_Storage,
-                                RO = WGPUBufferBindingType_ReadOnlyStorage;
+    const NvGpuBindingKind U = NV_GPU_BINDING_UNIFORM, RW = NV_GPU_BINDING_STORAGE_READ_WRITE, RO = NV_GPU_BINDING_STORAGE_READ;
     // Each pass binds only what it uses, so the indirect arguments are never bound where they are also read as arguments.
     const BindingKind emit_kinds[] = {{0, U}, {1, RW}, {2, RW}, {3, RW}, {6, RW}, {7, RO}, {8, RO}, {9, RO}};
     const BindingKind simulate_kinds[] = {{0, U}, {1, RW}, {2, RW}, {3, RW}, {4, RW}, {5, RW}, {6, RW}, {7, RO}};
@@ -379,58 +303,58 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
     const BindingKind init_kinds[] = {{0, U}, {2, RW}, {6, RW}};
     const BindingKind render_kinds[] = {{0, U}, {1, RO}, {2, RO}, {3, RO}};
     const BindingKind marks_kinds[] = {{0, U}, {1, RO}, {2, RO}};
-    vfx->marks_layout = create_layout(device, WGPUShaderStage_Vertex, marks_kinds, NV_ARRAY_COUNT(marks_kinds));
-    vfx->layouts[0] = create_layout(device, WGPUShaderStage_Compute, emit_kinds, NV_ARRAY_COUNT(emit_kinds));
-    vfx->layouts[1] = create_layout(device, WGPUShaderStage_Compute, simulate_kinds, NV_ARRAY_COUNT(simulate_kinds));
-    vfx->layouts[2] = create_layout(device, WGPUShaderStage_Compute, prepare_a_kinds, NV_ARRAY_COUNT(prepare_a_kinds));
-    vfx->layouts[3] = create_layout(device, WGPUShaderStage_Compute, prepare_b_kinds, NV_ARRAY_COUNT(prepare_b_kinds));
-    vfx->layouts[4] = create_layout(device, WGPUShaderStage_Compute, init_kinds, NV_ARRAY_COUNT(init_kinds));
-    vfx->render_layout = create_layout(device, WGPUShaderStage_Vertex, render_kinds, NV_ARRAY_COUNT(render_kinds));
-    vfx->emit_pipeline = create_compute_pipeline(device, vfx->compute_module, "emit", vfx->layouts[0]);
-    vfx->simulate_pipeline = create_compute_pipeline(device, vfx->compute_module, "simulate", vfx->layouts[1]);
-    vfx->prepare_a_pipeline = create_compute_pipeline(device, vfx->compute_module, "prepare_a", vfx->layouts[2]);
-    vfx->prepare_b_pipeline = create_compute_pipeline(device, vfx->compute_module, "prepare_b", vfx->layouts[3]);
-    vfx->init_pipeline = create_compute_pipeline(device, vfx->compute_module, "init_free", vfx->layouts[4]);
+    vfx->marks_layout = create_layout(gpu, NV_GPU_STAGE_VERTEX, marks_kinds, NV_ARRAY_COUNT(marks_kinds));
+    vfx->layouts[0] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, emit_kinds, NV_ARRAY_COUNT(emit_kinds));
+    vfx->layouts[1] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, simulate_kinds, NV_ARRAY_COUNT(simulate_kinds));
+    vfx->layouts[2] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, prepare_a_kinds, NV_ARRAY_COUNT(prepare_a_kinds));
+    vfx->layouts[3] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, prepare_b_kinds, NV_ARRAY_COUNT(prepare_b_kinds));
+    vfx->layouts[4] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, init_kinds, NV_ARRAY_COUNT(init_kinds));
+    vfx->render_layout = create_layout(gpu, NV_GPU_STAGE_VERTEX, render_kinds, NV_ARRAY_COUNT(render_kinds));
+    vfx->emit_pipeline = create_compute_pipeline(gpu, "emit", vfx->layouts[0]);
+    vfx->simulate_pipeline = create_compute_pipeline(gpu, "simulate", vfx->layouts[1]);
+    vfx->prepare_a_pipeline = create_compute_pipeline(gpu, "prepare_a", vfx->layouts[2]);
+    vfx->prepare_b_pipeline = create_compute_pipeline(gpu, "prepare_b", vfx->layouts[3]);
+    vfx->init_pipeline = create_compute_pipeline(gpu, "init_free", vfx->layouts[4]);
 
     const u64 list = capacity_u64 * 4, state = capacity_u64 * PARTICLE_BYTES, emitters = (u64)NV_VFX_MAX_EMITTERS * EMITTER_BYTES;
     for (u32 parity = 0; parity < 2; ++parity) {
-        WGPUBuffer cur = vfx->alive[parity], next = vfx->alive[parity ^ 1];
-        const WGPUBuffer emit_buffers[] = {vfx->frame_buffer, vfx->particles, vfx->free_list, cur, vfx->counters, vfx->emitter_buffer,
-                                           vfx->burst_buffer, vfx->job_buffer};
+        NvGpuBuffer cur = vfx->alive[parity], next = vfx->alive[parity ^ 1];
+        const NvGpuBuffer emit_buffers[] = {vfx->frame_buffer, vfx->particles, vfx->free_list, cur, vfx->counters, vfx->emitter_buffer,
+                                            vfx->burst_buffer, vfx->job_buffer};
         const u64 emit_sizes[] = {sizeof(VfxFrameUniforms), state, list, list, COUNTERS_COUNT * 4, emitters,
                                   (u64)NV_VFX_MAX_BURSTS * sizeof(NvVfxBurst), (u64)MAX_JOBS * 8};
-        vfx->emit_groups[parity] = create_group(device, vfx->layouts[0], emit_kinds, emit_buffers, emit_sizes, NV_ARRAY_COUNT(emit_kinds));
-        const WGPUBuffer simulate_buffers[] = {vfx->frame_buffer, vfx->particles, vfx->free_list, cur, next, vfx->visible, vfx->counters,
-                                               vfx->emitter_buffer};
+        vfx->emit_groups[parity] = create_group(gpu, vfx->layouts[0], emit_kinds, emit_buffers, emit_sizes, NV_ARRAY_COUNT(emit_kinds));
+        const NvGpuBuffer simulate_buffers[] = {vfx->frame_buffer, vfx->particles, vfx->free_list, cur, next, vfx->visible, vfx->counters,
+                                                vfx->emitter_buffer};
         const u64 simulate_sizes[] = {sizeof(VfxFrameUniforms), state, list, list, list, list, COUNTERS_COUNT * 4, emitters};
-        vfx->simulate_groups[parity] = create_group(device, vfx->layouts[1], simulate_kinds, simulate_buffers, simulate_sizes,
+        vfx->simulate_groups[parity] = create_group(gpu, vfx->layouts[1], simulate_kinds, simulate_buffers, simulate_sizes,
                                                     NV_ARRAY_COUNT(simulate_kinds));
     }
     {
-        const WGPUBuffer buffers[] = {vfx->counters, vfx->sim_args};
+        const NvGpuBuffer buffers[] = {vfx->counters, vfx->sim_args};
         const u64 sizes[] = {COUNTERS_COUNT * 4, 16};
-        vfx->prepare_a_group = create_group(device, vfx->layouts[2], prepare_a_kinds, buffers, sizes, 2);
+        vfx->prepare_a_group = create_group(gpu, vfx->layouts[2], prepare_a_kinds, buffers, sizes, 2);
     }
     {
-        const WGPUBuffer buffers[] = {vfx->counters, vfx->draw_args};
+        const NvGpuBuffer buffers[] = {vfx->counters, vfx->draw_args};
         const u64 sizes[] = {COUNTERS_COUNT * 4, 32};
-        vfx->prepare_b_group = create_group(device, vfx->layouts[3], prepare_b_kinds, buffers, sizes, 2);
+        vfx->prepare_b_group = create_group(gpu, vfx->layouts[3], prepare_b_kinds, buffers, sizes, 2);
     }
     {
-        const WGPUBuffer buffers[] = {vfx->frame_buffer, vfx->free_list, vfx->counters};
+        const NvGpuBuffer buffers[] = {vfx->frame_buffer, vfx->free_list, vfx->counters};
         const u64 sizes[] = {sizeof(VfxFrameUniforms), list, COUNTERS_COUNT * 4};
-        vfx->init_group = create_group(device, vfx->layouts[4], init_kinds, buffers, sizes, 3);
+        vfx->init_group = create_group(gpu, vfx->layouts[4], init_kinds, buffers, sizes, 3);
     }
     {
-        const WGPUBuffer buffers[] = {vfx->frame_buffer, vfx->particles, vfx->visible, vfx->emitter_buffer};
+        const NvGpuBuffer buffers[] = {vfx->frame_buffer, vfx->particles, vfx->visible, vfx->emitter_buffer};
         const u64 sizes[] = {sizeof(VfxFrameUniforms), state, list, emitters};
-        vfx->render_group = create_group(device, vfx->render_layout, render_kinds, buffers, sizes, 4);
+        vfx->render_group = create_group(gpu, vfx->render_layout, render_kinds, buffers, sizes, 4);
     }
 
     {
-        const WGPUBuffer buffers[] = {vfx->frame_buffer, vfx->segments.buffer, vfx->decals.buffer};
+        const NvGpuBuffer buffers[] = {vfx->frame_buffer, vfx->segments.buffer, vfx->decals.buffer};
         const u64 sizes[] = {sizeof(VfxFrameUniforms), (u64)segments * sizeof(NvVfxGpuSegment), (u64)decals * sizeof(NvVfxGpuDecal)};
-        vfx->marks_group = create_group(device, vfx->marks_layout, marks_kinds, buffers, sizes, 3);
+        vfx->marks_group = create_group(gpu, vfx->marks_layout, marks_kinds, buffers, sizes, 3);
     }
 
     vfx->clear_requested = 1; // fills the free list on the first frame
@@ -632,11 +556,6 @@ void nv_vfx_clear(NvVfx* vfx)
     ring_clear(&vfx->decals);
 }
 
-NvVfxStats nv_vfx_stats(const NvVfx* vfx)
-{
-    return vfx->stats;
-}
-
 // The six planes of the frustum of `m` (column major, clip = m * point), each normalized and
 // pointing inside: a point is inside when dot(plane.xyz, p) + plane.w >= 0 for all of them.
 internal void frustum_planes(NvMat4 m, f32 planes[6][4])
@@ -662,9 +581,27 @@ internal void frustum_planes(NvMat4 m, f32 planes[6][4])
     }
 }
 
-void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* frame, const WGPUPassTimestampWrites* timestamps)
+// Takes the counters the GPU reported, if they have arrived.
+internal void take_stats(NvVfx* vfx)
 {
-    WGPUQueue queue = vfx->gpu->queue;
+    NvGpuReadback readback = nv_gpu_poll_readback(vfx->gpu, STATS_SLOT);
+    if (!readback.ok)
+        return;
+    const u32* values = readback.bytes;
+    vfx->stats.alive = values[0];
+    vfx->stats.visible = values[1];
+    vfx->stats.dropped = values[2];
+}
+
+NvVfxStats nv_vfx_stats(NvVfx* vfx)
+{
+    take_stats(vfx);
+    return vfx->stats;
+}
+
+void nv_vfx_compute(NvVfx* vfx, const NvVfxFrame* frame)
+{
+    NvGpu* gpu = vfx->gpu;
     if (vfx->pipeline_samples != frame->samples)
         create_render_pipelines(vfx, frame->samples);
 
@@ -686,9 +623,9 @@ void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* fr
     uniforms.wind[1] = vfx->wind.y;
     uniforms.wind[2] = vfx->wind.z;
     uniforms.counts[0] = vfx->capacity;
-    wgpuQueueWriteBuffer(queue, vfx->frame_buffer, 0, &uniforms, sizeof(uniforms));
+    nv_gpu_write_buffer(gpu, vfx->frame_buffer, 0, &uniforms, sizeof(uniforms));
     if (vfx->emitters_dirty) {
-        wgpuQueueWriteBuffer(queue, vfx->emitter_buffer, 0, vfx->gpu_emitters, (umm)vfx->emitter_count * EMITTER_BYTES);
+        nv_gpu_write_buffer(gpu, vfx->emitter_buffer, 0, vfx->gpu_emitters, (umm)vfx->emitter_count * EMITTER_BYTES);
         vfx->emitters_dirty = 0;
     }
 
@@ -696,86 +633,69 @@ void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* fr
     u32 bursts_used = 0;
     u32 job_count = nv_vfx_split_bursts(vfx->bursts, vfx->burst_count, MAX_JOBS, vfx->jobs, &bursts_used, &vfx->stats.bursts_lost);
     if (job_count) {
-        wgpuQueueWriteBuffer(queue, vfx->burst_buffer, 0, vfx->bursts, (umm)bursts_used * sizeof(NvVfxBurst));
-        wgpuQueueWriteBuffer(queue, vfx->job_buffer, 0, vfx->jobs, (umm)job_count * 8);
+        nv_gpu_write_buffer(gpu, vfx->burst_buffer, 0, vfx->bursts, (umm)bursts_used * sizeof(NvVfxBurst));
+        nv_gpu_write_buffer(gpu, vfx->job_buffer, 0, vfx->jobs, (umm)job_count * 8);
     }
 
-    WGPUComputePassDescriptor pass_desc = WGPU_COMPUTE_PASS_DESCRIPTOR_INIT;
-    pass_desc.label = (WGPUStringView){"particles", WGPU_STRLEN};
-    pass_desc.timestampWrites = timestamps;
-    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+    nv_gpu_begin_compute_pass(gpu, &(NvGpuComputePassDesc){
+        .label = "particles",
+        .timestamps = frame->timestamps,
+        .timestamp_begin = frame->timestamp_begin,
+        .timestamp_end = frame->timestamp_end,
+    });
     if (vfx->clear_requested) {
-        wgpuComputePassEncoderSetPipeline(pass, vfx->init_pipeline);
-        wgpuComputePassEncoderSetBindGroup(pass, 0, vfx->init_group, 0, NULL);
-        wgpuComputePassEncoderDispatchWorkgroups(pass, (vfx->capacity + 63u) / 64u, 1, 1);
+        nv_gpu_set_pipeline(gpu, vfx->init_pipeline);
+        nv_gpu_set_group(gpu, 0, vfx->init_group, NULL, 0);
+        nv_gpu_dispatch(gpu, (vfx->capacity + 63u) / 64u, 1, 1);
         vfx->clear_requested = 0;
     }
     if (job_count) {
-        wgpuComputePassEncoderSetPipeline(pass, vfx->emit_pipeline);
-        wgpuComputePassEncoderSetBindGroup(pass, 0, vfx->emit_groups[vfx->parity], 0, NULL);
-        wgpuComputePassEncoderDispatchWorkgroups(pass, job_count, 1, 1);
+        nv_gpu_set_pipeline(gpu, vfx->emit_pipeline);
+        nv_gpu_set_group(gpu, 0, vfx->emit_groups[vfx->parity], NULL, 0);
+        nv_gpu_dispatch(gpu, job_count, 1, 1);
     }
-    wgpuComputePassEncoderSetPipeline(pass, vfx->prepare_a_pipeline);
-    wgpuComputePassEncoderSetBindGroup(pass, 0, vfx->prepare_a_group, 0, NULL);
-    wgpuComputePassEncoderDispatchWorkgroups(pass, 1, 1, 1);
-    wgpuComputePassEncoderSetPipeline(pass, vfx->simulate_pipeline);
-    wgpuComputePassEncoderSetBindGroup(pass, 0, vfx->simulate_groups[vfx->parity], 0, NULL);
-    wgpuComputePassEncoderDispatchWorkgroupsIndirect(pass, vfx->sim_args, 0);
-    wgpuComputePassEncoderSetPipeline(pass, vfx->prepare_b_pipeline);
-    wgpuComputePassEncoderSetBindGroup(pass, 0, vfx->prepare_b_group, 0, NULL);
-    wgpuComputePassEncoderDispatchWorkgroups(pass, 1, 1, 1);
-    wgpuComputePassEncoderEnd(pass);
-    wgpuComputePassEncoderRelease(pass);
+    nv_gpu_set_pipeline(gpu, vfx->prepare_a_pipeline);
+    nv_gpu_set_group(gpu, 0, vfx->prepare_a_group, NULL, 0);
+    nv_gpu_dispatch(gpu, 1, 1, 1);
+    nv_gpu_set_pipeline(gpu, vfx->simulate_pipeline);
+    nv_gpu_set_group(gpu, 0, vfx->simulate_groups[vfx->parity], NULL, 0);
+    nv_gpu_dispatch_indirect(gpu, vfx->sim_args, 0);
+    nv_gpu_set_pipeline(gpu, vfx->prepare_b_pipeline);
+    nv_gpu_set_group(gpu, 0, vfx->prepare_b_group, NULL, 0);
+    nv_gpu_dispatch(gpu, 1, 1, 1);
+    nv_gpu_end_pass(gpu);
 
     vfx->burst_count = 0;
     vfx->parity ^= 1u;
 
-    // The counters prepare reported, for the CPU, unless the last copy is still being read.
-    vfx->stats_copied = 0;
-    if (!vfx->stats_mapping) {
-        wgpuCommandEncoderCopyBufferToBuffer(encoder, vfx->counters, 8 * 4, vfx->stats_buffer, 0, 16);
-        vfx->stats_copied = 1;
-    }
+    // The counters prepare reported, for the CPU, unless the last copy has not been taken yet.
+    take_stats(vfx);
+    nv_gpu_copy_for_readback(gpu, STATS_SLOT, vfx->counters, 8 * 4, 16);
 }
 
-void nv_vfx_draw_decals(NvVfx* vfx, WGPURenderPassEncoder pass)
+void nv_vfx_draw_decals(NvVfx* vfx)
 {
     if (!vfx->decals.filled)
         return;
-    wgpuRenderPassEncoderSetPipeline(pass, vfx->decal_pipeline);
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->marks_group, 0, NULL);
-    wgpuRenderPassEncoderDraw(pass, 6, vfx->decals.filled, 0, 0);
+    nv_gpu_set_pipeline(vfx->gpu, vfx->decal_pipeline);
+    nv_gpu_set_group(vfx->gpu, 0, vfx->marks_group, NULL, 0);
+    nv_gpu_draw(vfx->gpu, 6, vfx->decals.filled, 0, 0);
 }
 
-void nv_vfx_draw(NvVfx* vfx, WGPURenderPassEncoder pass)
+void nv_vfx_draw(NvVfx* vfx)
 {
+    NvGpu* gpu = vfx->gpu;
     if (vfx->segments.filled) {
-        wgpuRenderPassEncoderSetPipeline(pass, vfx->segment_pipeline);
-        wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->marks_group, 0, NULL);
-        wgpuRenderPassEncoderDraw(pass, 6, vfx->segments.filled, 0, 0);
+        nv_gpu_set_pipeline(gpu, vfx->segment_pipeline);
+        nv_gpu_set_group(gpu, 0, vfx->marks_group, NULL, 0);
+        nv_gpu_draw(gpu, 6, vfx->segments.filled, 0, 0);
     }
-    wgpuRenderPassEncoderSetBindGroup(pass, 0, vfx->render_group, 0, NULL);
+    nv_gpu_set_group(gpu, 0, vfx->render_group, NULL, 0);
     // Alpha first (words 4 to 7 of the arguments), then additive (0 to 3).
-    wgpuRenderPassEncoderSetPipeline(pass, vfx->alpha_pipeline);
-    wgpuRenderPassEncoderDrawIndirect(pass, vfx->draw_args, 16);
-    wgpuRenderPassEncoderSetPipeline(pass, vfx->add_pipeline);
-    wgpuRenderPassEncoderDrawIndirect(pass, vfx->draw_args, 0);
-}
-
-internal void on_stats_mapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2)
-{
-    (void)message, (void)userdata2;
-    NvVfx* vfx = userdata1;
-    if (status == WGPUMapAsyncStatus_Success) {
-        const u32* values = wgpuBufferGetConstMappedRange(vfx->stats_buffer, 0, 16);
-        if (values) {
-            vfx->stats.alive = values[0];
-            vfx->stats.visible = values[1];
-            vfx->stats.dropped = values[2];
-        }
-        wgpuBufferUnmap(vfx->stats_buffer);
-    }
-    vfx->stats_mapping = 0;
+    nv_gpu_set_pipeline(gpu, vfx->alpha_pipeline);
+    nv_gpu_draw_indirect(gpu, vfx->draw_args, 16);
+    nv_gpu_set_pipeline(gpu, vfx->add_pipeline);
+    nv_gpu_draw_indirect(gpu, vfx->draw_args, 0);
 }
 
 void nv_vfx_end_frame(NvVfx* vfx)
@@ -785,29 +705,19 @@ void nv_vfx_end_frame(NvVfx* vfx)
         vfx->stats.segments = ring_live(&vfx->segments, vfx->time);
         vfx->stats.decals = ring_live(&vfx->decals, vfx->time);
     }
-    if (!vfx->stats_copied)
-        return;
-    vfx->stats_copied = 0;
-    vfx->stats_mapping = 1;
-    WGPUBufferMapCallbackInfo callback = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-    callback.mode = WGPUCallbackMode_AllowSpontaneous;
-    callback.callback = on_stats_mapped;
-    callback.userdata1 = vfx;
-    wgpuBufferMapAsync(vfx->stats_buffer, WGPUMapMode_Read, 0, 16, callback);
 }
 
 #if !defined(NDEBUG)
-// Debug dump for the shader port's regression tests (engine/vfx.h). Everything it needs is copied into mappable buffers
-// by one submit made between frames, so it sees the state after the last submitted frame. The maps complete on the
-// browser's event loop; the frame never waits.
+// Debug dump for the regression tests (engine/vfx.h). Everything it needs is copied into readback slots between frames
+// (nv_gpu_copy_for_readback), so it sees the state after the last submitted frame. The readbacks arrive on the browser's event
+// loop and are taken when the state is asked for; the frame never waits.
 typedef struct NvVfxDumpParticle {
     u32 emitter, seed;
     f32 v[10]; // position, age, velocity, life, scale, rotation
 } NvVfxDumpParticle;
 
 typedef struct NvVfxDumpSource {
-    WGPUBuffer buffer;
-    u64 size;
+    u32 slot; // the readback slot
     const u8* mapped;
 } NvVfxDumpSource;
 
@@ -916,46 +826,12 @@ internal void dump_process(struct NvVfxDump* dump)
     dump->violations = violations;
 }
 
-internal void dump_release(struct NvVfxDump* dump)
+// Asks for the copy of `size` bytes of `from` in readback slot `slot`; false when the slot is still busy.
+internal b32 dump_copy(struct NvVfxDump* dump, NvVfxDumpSource* source, u32 slot, NvGpuBuffer from, u64 size)
 {
-    NvVfxDumpSource* sources[] = {&dump->counters, &dump->sim_args, &dump->draw_args, &dump->free_list, &dump->alive, &dump->particles};
-    for (u32 i = 0; i < NV_ARRAY_COUNT(sources); ++i) {
-        NvVfxDumpSource* source = sources[i];
-        if (source->buffer) {
-            if (source->mapped)
-                wgpuBufferUnmap(source->buffer);
-            wgpuBufferRelease(source->buffer);
-        }
-        *source = (NvVfxDumpSource){0};
-    }
-}
-
-internal void on_dump_mapped(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2)
-{
-    (void)message;
-    struct NvVfxDump* dump = userdata1;
-    NvVfxDumpSource* source = userdata2;
-    if (status == WGPUMapAsyncStatus_Success)
-        source->mapped = wgpuBufferGetConstMappedRange(source->buffer, 0, source->size);
-    else
-        nv_log(NV_LOG_ERROR, "vfx", "dump: mapping %s failed (%d)", "a buffer", (int)status);
-    if (--dump->pending == 0) {
-        dump_process(dump);
-        dump_release(dump);
-        dump->state = NV_VFX_DUMP_READY;
-    }
-}
-
-internal void dump_copy(struct NvVfxDump* dump, WGPUCommandEncoder encoder, NvVfxDumpSource* source, WGPUBuffer from, u64 size)
-{
-    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
-    desc.label = (WGPUStringView){"vfx dump", WGPU_STRLEN};
-    desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-    desc.size = (size + 3u) & ~(u64)3u;
-    source->buffer = wgpuDeviceCreateBuffer(dump->vfx->gpu->device, &desc);
-    source->size = desc.size;
-    wgpuCommandEncoderCopyBufferToBuffer(encoder, from, 0, source->buffer, 0, desc.size);
-    (void)dump;
+    source->slot = slot;
+    source->mapped = NULL;
+    return nv_gpu_copy_for_readback(dump->vfx->gpu, slot, from, 0, (umm)size);
 }
 
 void nv_vfx_debug_dump_start(NvVfx* vfx, b32 full)
@@ -968,42 +844,51 @@ void nv_vfx_debug_dump_start(NvVfx* vfx, b32 full)
     dump->vfx = vfx;
     dump->full = full;
     dump->state = NV_VFX_DUMP_MAPPING;
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(vfx->gpu->device, NULL);
     NvVfxDumpSource* sources[6];
     u32 count = 0;
-    dump_copy(dump, encoder, &dump->counters, vfx->counters, COUNTERS_COUNT * 4);
+    b32 ok = dump_copy(dump, &dump->counters, STATS_SLOT + 1, vfx->counters, COUNTERS_COUNT * 4);
     sources[count++] = &dump->counters;
-    dump_copy(dump, encoder, &dump->sim_args, vfx->sim_args, 16);
+    ok = ok && dump_copy(dump, &dump->sim_args, STATS_SLOT + 2, vfx->sim_args, 16);
     sources[count++] = &dump->sim_args;
-    dump_copy(dump, encoder, &dump->draw_args, vfx->draw_args, 32);
+    ok = ok && dump_copy(dump, &dump->draw_args, STATS_SLOT + 3, vfx->draw_args, 32);
     sources[count++] = &dump->draw_args;
     if (full) {
-        dump_copy(dump, encoder, &dump->free_list, vfx->free_list, (u64)vfx->capacity * 4);
+        ok = ok && dump_copy(dump, &dump->free_list, STATS_SLOT + 4, vfx->free_list, (u64)vfx->capacity * 4);
         sources[count++] = &dump->free_list;
         // The list the last frame's simulate wrote is the one the next frame starts from.
-        dump_copy(dump, encoder, &dump->alive, vfx->alive[vfx->parity], (u64)vfx->capacity * 4);
+        ok = ok && dump_copy(dump, &dump->alive, STATS_SLOT + 5, vfx->alive[vfx->parity], (u64)vfx->capacity * 4);
         sources[count++] = &dump->alive;
-        dump_copy(dump, encoder, &dump->particles, vfx->particles, (u64)vfx->capacity * PARTICLE_BYTES);
+        ok = ok && dump_copy(dump, &dump->particles, STATS_SLOT + 6, vfx->particles, (u64)vfx->capacity * PARTICLE_BYTES);
         sources[count++] = &dump->particles;
     }
-    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
-    wgpuQueueSubmit(vfx->gpu->queue, 1, &commands);
-    wgpuCommandBufferRelease(commands);
-    wgpuCommandEncoderRelease(encoder);
     dump->pending = count;
-    for (u32 i = 0; i < count; ++i) {
-        WGPUBufferMapCallbackInfo callback = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
-        callback.mode = WGPUCallbackMode_AllowSpontaneous;
-        callback.callback = on_dump_mapped;
-        callback.userdata1 = dump;
-        callback.userdata2 = sources[i];
-        wgpuBufferMapAsync(sources[i]->buffer, WGPUMapMode_Read, 0, sources[i]->size, callback);
+    if (!ok) {
+        nv_log(NV_LOG_ERROR, "vfx", "dump: a readback slot was still busy");
+        dump->state = NV_VFX_DUMP_IDLE;
     }
 }
 
-NvVfxDumpState nv_vfx_debug_dump_state(const NvVfx* vfx)
+NvVfxDumpState nv_vfx_debug_dump_state(NvVfx* vfx)
 {
-    return vfx->dump ? vfx->dump->state : NV_VFX_DUMP_IDLE;
+    struct NvVfxDump* dump = vfx->dump;
+    if (dump && dump->state == NV_VFX_DUMP_MAPPING) {
+        NvVfxDumpSource* sources[] = {&dump->counters, &dump->sim_args, &dump->draw_args, &dump->free_list, &dump->alive, &dump->particles};
+        for (u32 i = 0; i < NV_ARRAY_COUNT(sources); ++i) {
+            NvVfxDumpSource* source = sources[i];
+            if (!source->slot || source->mapped)
+                continue;
+            NvGpuReadback readback = nv_gpu_poll_readback(vfx->gpu, source->slot);
+            if (readback.ok) {
+                source->mapped = readback.bytes;
+                --dump->pending;
+            }
+        }
+        if (dump->pending == 0) {
+            dump_process(dump);
+            dump->state = NV_VFX_DUMP_READY;
+        }
+    }
+    return dump ? dump->state : NV_VFX_DUMP_IDLE;
 }
 
 u32 nv_vfx_debug_dump_counter(const NvVfx* vfx, u32 index)

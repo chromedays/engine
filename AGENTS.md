@@ -23,12 +23,17 @@ There is no native build.
 
 ```
 engine/                    each module's header and source side by side, included as <engine/name.h>:
-                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.c/.h, gpu.c/.h,
-                           imgui.c/.h (Dear ImGui, ImGuizmo), renderer.c/.h (meshes, materials, skinning, debug lines),
+                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.h, gpu.h (the GPU API: handles,
+                           buffers, textures, bind groups, pipelines, passes; no backend header; gpu_webgpu.c is its web backend and
+                           the only file that calls WebGPU), imgui.c/.h (Dear ImGui, ImGuizmo: drawing, previews),
+                           renderer.c/.h (meshes, materials, skinning, debug lines),
                            gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
                            C++ file), chunk.c/.h (tagged binary files), file.c/.h (reading a packed file whole into an arena),
-                           storage.c/.h (files kept in IndexedDB), local_file.c/.h (opening and saving files on the
+                           storage.h (files kept in IndexedDB), local_file.h (opening and saving files on the
                            user's computer through the browser's dialogs; docs/specs/local_files.md),
+                           image.h (decoding a JPEG or PNG to RGBA8),
+                           the web sources of the modules that depend on the platform: window_web.c, imgui_web.c (input, text
+                           agent, clipboard; with imgui_platform.h, engine-private), storage_web.c, local_file_web.c, image_web.c,
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
                            GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
@@ -87,8 +92,8 @@ The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOO
 
 Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
-- `wgpuSurfacePresent` must not be called; the browser presents the canvas.
-- Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
+- Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
+- Blocking waits (in `gpu_webgpu.c`) use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
   (`ASYNCIFY_IGNORE_INDIRECT` is off), so a frame may wait through Asyncify: a scene built on first show awaits its image decodes.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
 - ImGui input reads page client coordinates, which match canvas coordinates only because the page
@@ -97,7 +102,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `nv_imgui_new_frame` and `nv_imgui_render`.
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
-  in `engine/imgui.c`.
+  in `engine/imgui_web.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Pretendard
   Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
   syllable, not ImGui's built-in one.
@@ -119,7 +124,8 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - Shaders are Slang (`engine/shaders/*.slang`, `docs/specs/slang_shader_port.md`); no WGSL is written by hand. `nv_add_shader`
   (`engine/CMakeLists.txt`) makes each one in three steps that stop the build when one fails: `slangc` writes WGSL
   (`<build>/shaders/<name>.wgsl`, kept: the browser's and Tint's errors name its lines), `tint` checks it (`slangc` does not: it writes invalid WGSL
-  without a word), and the C header `shaders/<name>_wgsl.h` is made (`const char <name>_wgsl[]`, handed to `wgpuDeviceCreateShaderModule`).
+  without a word), and the C header `shaders/<name>_shader.h` is made (`const char <name>_wgsl[]` and `const NvGpuShaderCode <name>_shader`, which the
+  pipeline descriptions of `engine/gpu.h` take).
   The source must also compile to HLSL, for the D3D12 backend to come. Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
   the same as the bind group layout in C; a vertex input or a varying gets its location from the number of its `TEXCOORD<n>` semantic (the
   WGSL ignores `[[vk::location]]` and closes gaps, so a pipeline stops matching); a depth texture is `DepthTexture2D` or `DepthTexture2DMS`
@@ -127,6 +133,13 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   imported module imports (`__exported import`) and only the entry points of the file `slangc` is given are compiled. A new binding or struct
   is a row in `tests/shader_layout_test.mjs` (reflection and the generated WGSL against the sizes and locations the C code relies on, which
   its `_Static_assert`s hold), and a browser run with no WebGPU error is the check Tint cannot be: it sees one shader, not the bind group layouts.
+- The GPU is used through `engine/gpu.h` only (`docs/specs/d3d12_port.md`, "GPU API"). Its objects are handles (an index and a generation) that
+  assert when stale; `nv_gpu_begin_frame` opens the frame's command list and `nv_gpu_end_frame` submits it, so `nv_renderer_draw` and
+  `nv_imgui_render` take only the target view. Buffer and texture writes take effect before every command of the next submit, wherever
+  they are made. Pass times and buffer reads come back by polling (`nv_gpu_poll_timestamps`, `nv_gpu_poll_readback`), a few frames late, and
+  a new request waits until the earlier one was taken. A use of the GPU the API lacks is a row in that spec's table and a function in the
+  backend, never a backend call from the renderer, the effects or an app.
+- A function Playwright calls by name is marked `NV_DEBUG_EXPORT` (`engine/base.h`; `EMSCRIPTEN_KEEPALIVE` on the web).
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the sandbox turns it into camera moves and picking
   (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
@@ -242,7 +255,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   color pipeline for channels, a depth pipeline reading with `textureLoad`). The depth target is
   samplable (`NvRenderer.depth_sampled`) and its depth stored only while the tab is shown. A new
   kind of texture belongs in its list (`gather`), and a texture it shows needs
-  `WGPUTextureUsage_TextureBinding`. Renderer textures carry a name (`nv_renderer_add_texture`).
+  `NV_GPU_TEXTURE_SAMPLED`. Renderer textures carry a name (`nv_renderer_add_texture`).
   Debug builds export `Module._sandbox_debug_textures_*`, `_sandbox_debug_preview_slots` and
   `_sandbox_debug_depth_sampled` for tests.
 - The first directional light casts shadows through one shadow map fitted to the view
