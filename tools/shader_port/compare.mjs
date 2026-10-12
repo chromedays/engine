@@ -7,7 +7,8 @@ import fs from 'fs';
 import path from 'path';
 import { launch } from './lib.mjs';
 
-const [baseline, current] = process.argv.slice(2).map((d) => path.resolve(d));
+const present = process.argv.includes('--present'); // only what the current directory holds (a run of some cases)
+const [baseline, current] = process.argv.slice(2).filter((a) => !a.startsWith('--')).map((d) => path.resolve(d));
 if (!baseline || !current) { console.error('usage: compare.mjs <baseline dir> <current dir>'); process.exit(2); }
 
 const CHANNEL_TOLERANCE = 2, PIXEL_FRACTION = 0.001;
@@ -112,7 +113,7 @@ const report = (name, problems, note = '') => {
     else console.log(`ok   ${name}${note ? '  ' + note : ''}`);
 };
 
-const names = fs.readdirSync(baseline).sort();
+const names = fs.readdirSync(baseline).sort().filter((n) => !present || fs.existsSync(path.join(current, n)));
 for (const name of names) {
     if (name.endsWith('.png')) {
         if (!fs.existsSync(path.join(current, name))) { report(name, ['missing from the current run']); continue; }

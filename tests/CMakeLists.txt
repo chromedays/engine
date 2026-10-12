@@ -86,3 +86,6 @@ target_include_directories(file_test PRIVATE ${PROJECT_SOURCE_DIR})
 target_compile_definitions(file_test PRIVATE FILE_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/file_test.c")
 target_link_options(file_test PRIVATE -sENVIRONMENT=node -sNODERAWFS=1)
 add_test(NAME file_test COMMAND file_test)
+
+# The shaders' reflection (slangc's, written when they are built) against the layouts the C code relies on.
+add_test(NAME shader_layout_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/shader_layout_test.mjs ${CMAKE_BINARY_DIR}/shaders)

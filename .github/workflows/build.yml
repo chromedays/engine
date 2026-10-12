@@ -30,6 +30,13 @@ jobs:
       - name: Fetch LFS objects
         run: git lfs pull --exclude="tools/shader_port/baseline/*"
 
+      # The shader tools (Slang's slangc and Dawn's tint, docs/specs/slang_shader_port.md) are downloaded once per version and
+      # shared by both builds.
+      - uses: actions/cache@v4
+        with:
+          path: .shader-tools
+          key: shader-tools-${{ hashFiles('cmake/shaders.cmake') }}
+
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 6.0.10
@@ -41,8 +48,8 @@ jobs:
       # deployed apart from the sandbox (docs/specs/battle.md): <pages>/autobattler/release/ and .../debug/.
       - name: Configure
         run: |
-          emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
-          emcmake cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          emcmake cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DNV_TOOLS_DIR=$PWD/.shader-tools
+          emcmake cmake -S . -B build-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNV_TOOLS_DIR=$PWD/.shader-tools
 
       - name: Build
         run: |

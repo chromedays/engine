@@ -322,6 +322,22 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
   차이의 약 두 배를 허용한다(V1 3, V3·V11 20, V2 40, V4 200: V4의 연기는 "그려졌다"만 본다). 덤프가 정확히 같으므로 효과의 값은
   덤프가 지킨다.
 
+### 단계 1에서 알게 된 것 (2026-10-12)
+
+- 빌드는 `cmake/shaders.cmake`(두 도구를 받고 `nv_add_shader`를 정의), `cmake/embed_text.cmake`, `cmake/check_hlsl.cmake`다(spec의
+  `cmake/slang.cmake`와 `cmake/tint.cmake`를 한 파일로 합쳤다). 묶음은 `NV_TOOLS_DIR`(기본은 빌드 디렉터리 안, CI는 `.shader-tools`)에
+  풀고, 이미 있으면 다시 받지 않는다. CI는 그 디렉터리를 `cmake/shaders.cmake`의 해시를 키로 캐시한다. 다섯 호스트의 Slang
+  SHA-256과 Dawn 네 호스트의 SHA-256을 모두 고정했다(해시는 실제로 내려받아 계산했고, Linux x86_64만 실행해 봤다).
+- HLSL 검사는 `slangc -target hlsl`이 엔트리 포인트가 여럿인 소스를 표준 출력에 쓰고 `-o`는 엔트리마다 필요해서, `add_custom_command`가
+  리다이렉트하지 못하므로 `cmake/check_hlsl.cmake`가 `execute_process`로 한다. 결과 텍스트는 `<name>.hlsl.txt`로 남는다.
+- 잘못된 셰이더(깊이 텍스처를 `Texture2D<float>`로)를 일부러 넣어 보았다: `slangc`는 통과하고 Tint가 브라우저와 같은 메시지
+  (`broken.wgsl:13:57 error: no matching call to 'textureSampleCompareLevel(...)'`)로 빌드를 멈추며, 헤더는 만들어지지 않는다.
+- `shader_layout_test`는 `tests/shader_layout_test.mjs`다. 기대하는 크기와 바인딩을 표로 갖고, 그 크기는 C 쪽 `_Static_assert`가
+  지킨다(C의 `sizeof`를 직접 읽지 않는다: 실행 중인 C 프로그램이 JSON을 읽게 하는 것보다 `_Static_assert`가 더 단순하다). 단계마다 그
+  셰이더의 행을 더한다. 지금은 imgui.
+- `imgui.slang`: Slang이 uniform 행렬을 `array<vec4<f32>, 4>`로 감싸고 `v * mat4x4(...)`로 곱하는 WGSL을 쓴다(수학적으로 같다). 포팅
+  뒤 S1, S9, S10, V1이 기준선과 모두 일치하고 WebGPU 오류가 0개다(`S10`의 ImGui 그림이 그대로다).
+
 ### 열린 질문
 
 - DXIL: 언제 DXC로 컴파일과 검증을 시작할지(DXC도 빌드 도구 의존성이므로 따로 승인). RHI 스펙에서 정하자는 것이 제안이다.

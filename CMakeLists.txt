@@ -178,6 +178,9 @@ foreach(ozz_target ozz_base ozz_animation ozz_animation_offline)
     target_compile_options(${ozz_target} PRIVATE -w)
 endforeach()
 
+# Slang and Tint for the shaders (docs/specs/slang_shader_port.md), and nv_add_shader.
+include(cmake/shaders.cmake)
+
 enable_testing()
 add_subdirectory(engine)
 add_subdirectory(sandbox)

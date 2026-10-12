@@ -3,6 +3,7 @@
 #include "engine/log.h"
 #include "engine/math.h"
 #include "engine/window.h"
+#include "shaders/imgui_wgsl.h"
 
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
@@ -15,40 +16,9 @@
 // NOTE: imgui.h spells this as a macro that cimgui does not carry over.
 #define IMGUI_RESET_RENDER_STATE ((ImDrawCallback)(intptr_t)-8)
 
-// Vertex colors are authored in sRGB, but the canvas view is sRGB-encoding, so they are
-// linearized here to avoid applying the curve twice.
-global const char* imgui_shader =
-    "struct Uniforms {\n"
-    "    mvp: mat4x4f,\n"
-    "};\n"
-    "@group(0) @binding(0) var<uniform> u: Uniforms;\n"
-    "@group(0) @binding(1) var s: sampler;\n"
-    "@group(0) @binding(2) var t: texture_2d<f32>;\n"
-    "\n"
-    "struct VsIn {\n"
-    "    @location(0) pos: vec2f,\n"
-    "    @location(1) uv: vec2f,\n"
-    "    @location(2) col: vec4f,\n"
-    "};\n"
-    "struct VsOut {\n"
-    "    @builtin(position) pos: vec4f,\n"
-    "    @location(0) uv: vec2f,\n"
-    "    @location(1) col: vec4f,\n"
-    "};\n"
-    "\n"
-    "@vertex\n"
-    "fn vs_main(in: VsIn) -> VsOut {\n"
-    "    var out: VsOut;\n"
-    "    out.pos = u.mvp * vec4f(in.pos, 0.0, 1.0);\n"
-    "    out.uv = in.uv;\n"
-    "    out.col = vec4f(pow(in.col.rgb, vec3f(2.2)), in.col.a);\n"
-    "    return out;\n"
-    "}\n"
-    "\n"
-    "@fragment\n"
-    "fn fs_main(in: VsOut) -> @location(0) vec4f {\n"
-    "    return in.col * textureSample(t, s, in.uv);\n"
-    "}\n";
+// The shader is engine/shaders/imgui.slang: the build makes imgui_wgsl from it.
+global const char* imgui_shader = imgui_wgsl;
+_Static_assert(sizeof(NvMat4) == 64, "shaders/imgui.slang reads a 64-byte uniform block");
 
 //
 // Browser glue
