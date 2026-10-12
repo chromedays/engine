@@ -1,6 +1,6 @@
 # Slang 셰이더 포팅 스펙 (WGSL → Slang, 빌드 시점 컴파일)
 
-상태: 제안 (2026-10-11). 이 스펙의 변경은 먼저 합의한다.
+상태: 구현됨 (2026-10-12). 이 스펙의 변경은 먼저 합의한다.
 
 ### 목표
 
@@ -376,6 +376,17 @@ VFX의 계산 패스는 아토믹으로 슬롯을 나눠 가지므로 실행 순
   없었다(Tint는 통과). 그래서 모듈에는 `preview_vertex`가 있고 세 파일이 각자 `vs_main`을 갖는다. 텍스처 미리보기의 다중 샘플 깊이는
   `DepthTexture2DMS`(`GetDimensions(w, h, samples)`, `Load(int2, 0)`)로 같은 WGSL(`texture_depth_multisampled_2d`, `textureLoad`)이 된다.
 - S9(컬러, 깊이, 다중 샘플 깊이)와 S10(데스크톱, 메뉴, 폰)이 기준선과 픽셀까지 같다.
+
+### 단계 6과 만든 결과 (2026-10-12)
+
+- 모든 셰이더가 `engine/shaders/*.slang` 16개(엔트리 포인트가 있는 12개, 공용 4개)다. C에는 WGSL 문자열이 없고
+  `wgpuDeviceCreateShaderModule`에 생성된 헤더의 `const char[]`를 넘긴다. 규칙은 AGENTS.md에 있다.
+- 마지막 전체 실행(S1–S10, V1–V12, 한 빌드에서)이 기준선과 일치했다: 장면과 UI 화면은 픽셀까지 같고(가장 큰 채널 차이 0/255), 효과의
+  덤프는 불변식 0건에 값이 일치하며, 효과의 화면만 블록 평균의 허용 안이다. 그 뒤 `tools/shader_port/`(기준선 포함), 테스트 전용 디버그
+  내보내기(`sandbox_debug_fixed_dt`, `run_frames`, `frames`, `vfx_fire_n`, `restart_clips`, `vfx_dump_*`와 엔진의 `nv_vfx_debug_dump*`),
+  `build.yml`의 LFS 제외를 지웠다. 기준선과 하네스는 Git 기록(커밋 `217d1c2`, `48f2ab2`, `8ef41ff` 무렵)에 있다.
+- 확인: Release 빌드의 샌드박스와 오토배틀러는 시작해서 6초 동안 WebGPU 오류가 0개이고, Debug 오토배틀러는 한 라운드(588틱, 적 승리)를 돌아 오류가 0개다.
+- 남는 검사: `shader_layout_test`(ctest), 빌드의 Slang, HLSL, Tint 검사. 브라우저 검사는 사람이 하거나 새 하네스를 만들어야 한다.
 
 ### 열린 질문
 
