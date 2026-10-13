@@ -106,6 +106,9 @@ cmake --build build-win --config Release -j
 build-win\sandbox\Release\sandbox.exe      # or build-win\autobattler\Release\autobattler.exe; Debug\ for the Debug build
 ```
 
+The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run autobattler Release`, `just test`,
+`just script <file>`; `just` lists them, and each takes Debug by default.
+
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
 runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
 `assets\` and `data\` beside themselves and keep their saves in `%LOCALAPPDATA%\nv\<target>\`. A native build is not built or
