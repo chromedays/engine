@@ -90,9 +90,11 @@ if(NV_WEB)
 endif()
 
 # Files on the user's computer on Windows (engine/local_file_win32.c). A Debug build takes the path the dialogs would give from
-# NV_LOCAL_FILE, which the test sets; a Release build would open a dialog, so the test is Debug only.
-if(NV_WINDOWS AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-    nv_add_test(local_file_test local_file_test.c ${PROJECT_SOURCE_DIR}/engine/local_file_win32.c ${PROJECT_SOURCE_DIR}/engine/file.c)
+# NV_LOCAL_FILE, which the test sets; a Release build would open a dialog, so ctest runs the test in Debug only (-C Debug).
+if(NV_WINDOWS)
+    add_executable(local_file_test local_file_test.c ${PROJECT_SOURCE_DIR}/engine/local_file_win32.c ${PROJECT_SOURCE_DIR}/engine/file.c)
+    target_include_directories(local_file_test PRIVATE ${PROJECT_SOURCE_DIR})
+    add_test(NAME local_file_test COMMAND local_file_test CONFIGURATIONS Debug)
     target_compile_definitions(local_file_test PRIVATE LOCAL_FILE_TEST_DIR="${CMAKE_CURRENT_BINARY_DIR}")
     target_link_libraries(local_file_test PRIVATE comdlg32)
 endif()

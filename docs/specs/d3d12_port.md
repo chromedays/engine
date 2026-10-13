@@ -367,11 +367,20 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 
 ### 빌드
 
-- **컴파일러는 MSVC(`cl`)다** (합의함, 2026-10-12). 구성: Visual Studio의 "x64 Native Tools Command Prompt"에서
-  `cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release`(CMake가 `cl`을 찾는다). 단계 3에서 쓴 것: Visual Studio 2026 Community
-  18.9.2, MSVC 14.51.36231(`cl` x64), Windows SDK 10.0.26100.0, CMake 4.4.3, Ninja(Visual Studio 것). Emscripten이 아니면 MSVC만 받고,
+- **컴파일러는 MSVC(`cl`)이고, 빌드 도구는 Visual Studio 제너레이터다** (합의함, 2026-10-12; 제너레이터는 단계 6 뒤에 Ninja에서 바꿨다). 구성은 아무
+  프롬프트에서나: `cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64`, 빌드는 `cmake --build build-win --config Release`(또는 `Debug`).
+  제너레이터가 MSVC와 Windows SDK를 스스로 찾으므로 "x64 Native Tools" 프롬프트가 필요 없다. 단계 3–6에서는 Ninja(`-G Ninja
+  -DCMAKE_BUILD_TYPE=Release`, Native Tools 프롬프트)로 만들고 검증했다. 단계 3에서 쓴 것: Visual Studio 2026 Community
+  18.9.2, MSVC 14.51.36231(`cl` x64), Windows SDK 10.0.26100.0, CMake 4.4.3. Emscripten이 아니면 MSVC만 받고,
   그 밖의 네이티브 호스트와 컴파일러는 지금처럼 `FATAL_ERROR`다. 디버그 레이어를 쓰려면 Windows의 선택 기능 "그래픽 도구"(Graphics
   Tools)가 필요하다("찾은 것").
+- **Visual Studio 제너레이터는 Windows 빌드에만 쓴다 (바꿨고 검증했다, 2026-10-12).** 웹 빌드는 Emscripten과 Ninja(`CMAKE_BUILD_TYPE`)를 그대로 쓴다. 제너레이터는 여러 구성을 한 빌드 폴더에 두므로
+  (`CMAKE_BUILD_TYPE`이 비어 있다) 바꾼 곳: `NV_BUILD_NAME`은 Windows에서 `$<CONFIG>`, 실행 파일 옆의 `D3D12\`는 `cmake/copy_d3d12_runtime.cmake`가 채운다(디버그 레이어 DLL은 Debug만; 구성에 따라
+  명령을 빼는 일은 한 프로젝트에 모든 구성이 든 빌드에서 생성기 식으로는 안 된다), `local_file_test`는 모든 구성에서 만들고 `CONFIGURATIONS Debug`로 Debug에서만 돌린다(`ctest -C Debug`).
+  실행 파일은 `build-win\sandbox\Release\sandbox.exe`처럼 구성 폴더 안에 생기고, `capture_native.ps1`은 `-Config`(기본 Debug)로 그 폴더를 고른다. 한 `build-win`에 Debug와 Release가 함께 있다.
+  Ninja로 만든 단계 3–6의 폴더는 `build-win-ninja`와 `build-win-ninja-release`로 옮겨 두었고, `-DNV_TOOLS_DIR`로 받아 둔 도구를 다시 쓰면 새 폴더에서 다시 받지 않는다.
+  검증: Debug와 Release 모두 경고 없이 만들어지고(타사 ozz의 `D9025`, `/W4`가 그쪽 `/w`와 겹치는 알림은 제외), ctest가 Debug 13개, Release 12개를 통과하고, `capture_native.ps1`의 22번 실행이
+  디버그 레이어 메시지 0개로 끝나고, `compare --blocks`가 50건 모두 같다고 하고, B1이 같은 라운드를 돈다.
 - 옵션 (우리 코드): `/std:c17`(C), `/std:c++17`(`anim.cpp`), `/W4`, `/utf-8`, `/Zc:preprocessor`. 외부 라이브러리는 `/w`.
   `CMakeLists.txt`의 `add_compile_options(-Wall -Wextra)`와 외부 라이브러리의 `-w`는 컴파일러에 따라 고른다.
   - `/utf-8`이 없으면 MSVC는 BOM 없는 소스를 시스템 코드 페이지(한국어 Windows에서는 CP949)로 읽어 한글 문자열을 깨뜨린다. 한글이 든
@@ -639,7 +648,7 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
   D3D12 백엔드는 자원 상태 추적, 업로드 링과 펜스, 뷰와 샘플러 힙, 루트 시그니처 캐시, 지연 해제를 한다.
 - **플랫폼:** `window`, `imgui`의 입력, `storage`, `local_file`, `image`가 플랫폼마다 소스 하나(`*_web.c`, `*_win32.c`). 플랫폼을 모르는 파일에는 `__EMSCRIPTEN__`이 없다.
 - **셰이더:** 같은 Slang 소스가 웹에서는 WGSL, Windows에서는 DXIL(SM 6.6)이 된다. 빌드가 DXC와 Agility SDK를 받는다.
-- **빌드:** `cmake -S . -B build-win -G Ninja`(MSVC)로 `sandbox.exe`, `autobattler.exe`. CI는 웹만 빌드한다.
+- **빌드:** `cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64`(MSVC)로 `sandbox.exe`, `autobattler.exe`. CI는 웹만 빌드한다.
 - **시험:** 네이티브 C 테스트(ctest), `--script`로 도는 Debug 실행, `tools/d3d12_port/`의 SwiftShader 기준선과 `compare`(하나의 비교 구현), `capture_native.ps1`(S1–S10, V1–V12, B1).
 - **문서:** `AGENTS.md`(Windows 빌드와 시험), `docs/CODING_STANDARD.md`(MSVC와 emcc 둘 다, 플랫폼별 소스의 예외, 의존성), 그리고 이 스펙과 GPU를 가리키던 `msaa.md`, `shadows.md`,
   `textures.md`, `resolution.md`, `vfx.md`의 참고.

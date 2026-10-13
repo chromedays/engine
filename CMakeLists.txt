@@ -8,7 +8,7 @@ elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
 else()
     message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja) and for Windows x64 with MSVC "
-        "(cmake -S . -B build-win -G Ninja in a Visual Studio x64 Native Tools Command Prompt).")
+        "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64).")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -86,15 +86,9 @@ function(nv_setup_executable target)
     else()
         target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/engine/nv.manifest")
         add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/D3D12"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NV_AGILITY_BIN}/D3D12Core.dll" "$<TARGET_FILE_DIR:${target}>/D3D12"
+            COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DBIN=${NV_AGILITY_BIN} -DDEST=$<TARGET_FILE_DIR:${target}>/D3D12
+                    -P "${PROJECT_SOURCE_DIR}/cmake/copy_d3d12_runtime.cmake"
             VERBATIM)
-        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-            # The debug layer has to be the runtime's own version.
-            add_custom_command(TARGET ${target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NV_AGILITY_BIN}/d3d12SDKLayers.dll" "$<TARGET_FILE_DIR:${target}>/D3D12"
-                VERBATIM)
-        endif()
     endif()
 
     set(preloads ${ARG_PRELOAD})
@@ -153,7 +147,12 @@ function(nv_add_version target)
         COMMENT "Recording the commit")
     add_dependencies(${target} ${target}_version)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-    target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
+    if(NV_WEB)
+        target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
+    else()
+        # The Visual Studio generator keeps every configuration in one build folder, so CMAKE_BUILD_TYPE is empty.
+        target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="$<CONFIG>")
+    endif()
 endfunction()
 
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined

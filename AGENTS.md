@@ -96,14 +96,16 @@ The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOO
 
 ### On Windows
 
-Requires Windows 11 x64, Visual Studio's MSVC (`cl`) and Windows SDK, CMake 3.30+, Ninja and Git LFS; no Emscripten. A GPU that
+Requires Windows 11 x64, Visual Studio's MSVC (`cl`) and Windows SDK, CMake 3.30+ and Git LFS; no Emscripten. A GPU that
 supports Direct3D 12 feature level 12_2 and shader model 6.6 runs it (`docs/specs/d3d12_port.md`, "Minimum specification"); the
-Debug build's debug layer needs the "Graphics Tools" optional feature. Run from an "x64 Native Tools Command Prompt":
+Debug build's debug layer needs the "Graphics Tools" optional feature. The Windows build uses the Visual Studio generator (the web
+build keeps Ninja), which finds MSVC itself, so any prompt works. It keeps every configuration in one build folder, so a build says
+which one (`--config`), and the executables are in a folder named after it:
 
 ```sh
-cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build-win
-build-win\sandbox\sandbox.exe      # or build-win\autobattler\autobattler.exe
+cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64
+cmake --build build-win --config Release -j
+build-win\sandbox\Release\sandbox.exe      # or build-win\autobattler\Release\autobattler.exe; Debug\ for the Debug build
 ```
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
@@ -416,10 +418,10 @@ the log holds an error. `call` finds the debug exports in the table the app give
 `battle_debug_calls` in `autobattler/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
 GPU-based validation, so a run with no `[d3d12]` message in its log is the native counterpart of "no WebGPU error";
 `NV_D3D12_VALIDATION=0` turns them off for a timed run, `NV_STORAGE_DIR` points the save at a folder (a run starts from empty storage)
-and `NV_LOCAL_FILE` answers the file dialogs. `ctest --test-dir build-win` runs the C tests (no Node: the `.mjs` tests run only where
+and `NV_LOCAL_FILE` answers the file dialogs. `ctest --test-dir build-win -C Debug` (or `-C Release`) runs the C tests (no Node: the `.mjs` tests run only where
 Node is found).
 
-`tools/d3d12_port/` holds the regression harness: `capture_native.ps1 -Build build-win -Out build-win\capture [-Cases S1,V3,B1]`
+`tools/d3d12_port/` holds the regression harness: `capture_native.ps1 -Build build-win -Out build-win\capture [-Cases S1,V3,B1]` (the Debug configuration: only it has the scripted runs)
 makes the screens (S1-S10) and the effects dumps (V1-V12) of the cases the web harness (`capture.mjs`) also makes, and `compare`
 (`compare.c`, built with `cl /std:c17 /I<repo> compare.c`) sets them against the committed SwiftShader baseline (`--blocks` for a
 GPU, whose rasterizer differs; `--exact` for the web build against its own baseline). The tolerances and their reasons are in the

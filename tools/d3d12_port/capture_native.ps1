@@ -1,5 +1,5 @@
 # Captures the regression cases of the D3D12 port on Windows (docs/specs/d3d12_port.md): screens S1-S10 as PNGs and effects V1-V12 as
-# JSON, from the Debug build's sandbox.exe, in the layout of the web harness's (capture.mjs), so that compare can set them against the
+# JSON, from the Debug configuration's sandbox.exe (only Debug has the scripted runs), in the layout of the web harness's (capture.mjs), so that compare can set them against the
 # SwiftShader baseline. The effects cases are tools/d3d12_port/cases.json, which capture.mjs reads too.
 #   powershell -File tools\d3d12_port\capture_native.ps1 -Build build-win -Out build-win\capture [-Cases S1,V3] [-List]
 # Each case group is one run of the sandbox with a script (sandbox/debug_script.c), on empty storage (NV_STORAGE_DIR): the web
@@ -7,6 +7,7 @@
 param(
     [string]$Build = "build-win",
     [string]$Out = "build-win\capture",
+    [string]$Config = "Debug",   # the configuration of the Visual Studio build; the scripted runs exist in Debug only
     [string[]]$Cases = @(),
     [switch]$List
 )
@@ -15,8 +16,8 @@ $ErrorActionPreference = "Stop"
 $Cases = @($Cases | ForEach-Object { $_ -split "," } | Where-Object { $_ })  # -File gives "S1,V3" as one string
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $buildRoot = (Resolve-Path (Join-Path $root $Build)).Path
-$exe = Join-Path $buildRoot "sandbox\sandbox.exe"
-$battler = Join-Path $buildRoot "autobattler\autobattler.exe"
+$exe = Join-Path $buildRoot "sandbox\$Config\sandbox.exe"
+$battler = Join-Path $buildRoot "autobattler\$Config\autobattler.exe"
 New-Item -ItemType Directory -Force $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 $scripts = Join-Path $Out "scripts"
