@@ -481,6 +481,7 @@ global u32 debug_frames, debug_frame_limit;
 internal void frame(void* userdata)
 {
     Sandbox* sandbox = userdata;
+    debug_script_update(sandbox);
     nv_log_pump();
     f64 now = nv_time_seconds();
     f32 ui_dt = (f32)(now - sandbox->last_time);
@@ -1280,6 +1281,100 @@ NV_DEBUG_EXPORT unsigned sandbox_debug_save_crc(void)
     sandbox->scratch.used = mark;
     return crc;
 }
+
+#if defined(_WIN32)
+// The scripted runs' `call` finds a debug export by name here (sandbox/debug_script.c). The letters before the `>` are the arguments (i: int,
+// f: float), the one after it the result (v: none, i: int, f: float, d: double, s: char*, u: unsigned).
+const DebugCall sandbox_debug_calls[] = {
+    {"layout", "ii>f", (void*)sandbox_debug_layout},
+    {"scene", "i>f", (void*)sandbox_debug_scene},
+    {"set_fit", "i>v", (void*)sandbox_debug_set_fit},
+    {"set_resolution", "iii>v", (void*)sandbox_debug_set_resolution},
+    {"project", "fffi>f", (void*)sandbox_debug_project},
+    {"msaa", ">i", (void*)sandbox_debug_msaa},
+    {"set_msaa", "i>v", (void*)sandbox_debug_set_msaa},
+    {"post", "i>i", (void*)sandbox_debug_post},
+    {"set_post", "ifif>v", (void*)sandbox_debug_set_post},
+    {"set_sun", "f>v", (void*)sandbox_debug_set_sun},
+    {"vfx", "i>i", (void*)sandbox_debug_vfx},
+    {"set_effects", "iiiii>v", (void*)sandbox_debug_set_effects},
+    {"vfx_fire", "i>v", (void*)sandbox_debug_vfx_fire},
+    {"fixed_dt", "f>v", (void*)sandbox_debug_fixed_dt},
+    {"run_frames", "i>v", (void*)sandbox_debug_run_frames},
+    {"frames", ">i", (void*)sandbox_debug_frames},
+    {"restart_clips", ">v", (void*)sandbox_debug_restart_clips},
+    {"vfx_fire_n", "ii>v", (void*)sandbox_debug_vfx_fire_n},
+    {"vfx_dump_start", "i>v", (void*)sandbox_debug_vfx_dump_start},
+    {"vfx_dump_state", ">i", (void*)sandbox_debug_vfx_dump_state},
+    {"vfx_dump_get", "iii>d", (void*)sandbox_debug_vfx_dump_get},
+    {"vfx_dump_finish", ">v", (void*)sandbox_debug_vfx_dump_finish},
+    {"gizmo", "i>i", (void*)sandbox_debug_gizmo},
+    {"state", "i>i", (void*)sandbox_debug_state},
+    {"selected_position", "i>f", (void*)sandbox_debug_selected_position},
+    {"playing", ">i", (void*)sandbox_debug_playing},
+    {"view", "i>f", (void*)sandbox_debug_view},
+    {"ui_mode", ">i", (void*)sandbox_debug_ui_mode},
+    {"dock", "i>f", (void*)sandbox_debug_dock},
+    {"save_round_trip", ">i", (void*)sandbox_debug_save_round_trip},
+    {"undo_steps", ">i", (void*)sandbox_debug_undo_steps},
+    {"undo_done", ">i", (void*)sandbox_debug_undo_done},
+    {"undo_node_bytes", ">i", (void*)sandbox_debug_undo_node_bytes},
+    {"log", "ii>v", (void*)sandbox_debug_log},
+    {"log_lines", "ii>v", (void*)sandbox_debug_log_lines},
+    {"wgpu_error", ">v", (void*)sandbox_debug_wgpu_error},
+    {"log_count", ">i", (void*)sandbox_debug_log_count},
+    {"log_repeat", "i>i", (void*)sandbox_debug_log_repeat},
+    {"log_level", "i>i", (void*)sandbox_debug_log_level},
+    {"badge_box", "i>f", (void*)sandbox_debug_badge_box},
+    {"ui_ms", ">f", (void*)sandbox_debug_ui_ms},
+    {"camera_yaw", ">f", (void*)sandbox_debug_camera_yaw},
+    {"console_unseen", ">i", (void*)sandbox_debug_console_unseen},
+    {"console_rows", ">i", (void*)sandbox_debug_console_rows},
+    {"console_rect", "ii>f", (void*)sandbox_debug_console_rect},
+    {"console_scroll", "i>f", (void*)sandbox_debug_console_scroll},
+    {"console_selected", ">i", (void*)sandbox_debug_console_selected},
+    {"textures_rect", "ii>f", (void*)sandbox_debug_textures_rect},
+    {"textures_row", "ii>f", (void*)sandbox_debug_textures_row},
+    {"textures_listed", ">i", (void*)sandbox_debug_textures_listed},
+    {"textures_selected", ">i", (void*)sandbox_debug_textures_selected},
+    {"textures_mip", ">i", (void*)sandbox_debug_textures_mip},
+    {"preview_slots", ">i", (void*)sandbox_debug_preview_slots},
+    {"depth_sampled", ">i", (void*)sandbox_debug_depth_sampled},
+    {"set_shadows", "ii>v", (void*)sandbox_debug_set_shadows},
+    {"show_scene", "i>v", (void*)sandbox_debug_show_scene},
+    {"texture_count", ">i", (void*)sandbox_debug_texture_count},
+    {"texture_info", "ii>i", (void*)sandbox_debug_texture_info},
+    {"texture_name", "ii>i", (void*)sandbox_debug_texture_name},
+    {"search_buffer", ">s", (void*)sandbox_debug_search_buffer},
+    {"search_set", "i>v", (void*)sandbox_debug_search_set},
+    {"search_rows", "i>i", (void*)sandbox_debug_search_rows},
+    {"palette", "i>i", (void*)sandbox_debug_palette},
+    {"search_query", "ii>i", (void*)sandbox_debug_search_query},
+    {"palette_query", "i>i", (void*)sandbox_debug_palette_query},
+    {"palette_result", "ii>i", (void*)sandbox_debug_palette_result},
+    {"language", ">i", (void*)sandbox_debug_language},
+    {"set_language", "i>v", (void*)sandbox_debug_set_language},
+    {"selected_name", "i>i", (void*)sandbox_debug_selected_name},
+    {"rename_selected", ">v", (void*)sandbox_debug_rename_selected},
+    {"set_chain", "i>v", (void*)sandbox_debug_set_chain},
+    {"set_grid", "i>v", (void*)sandbox_debug_set_grid},
+    {"set_crowd", "i>v", (void*)sandbox_debug_set_crowd},
+    {"built", "i>i", (void*)sandbox_debug_built},
+    {"benchmark", "i>i", (void*)sandbox_debug_benchmark},
+    {"benchmark_start", ">v", (void*)sandbox_debug_benchmark_start},
+    {"scenes", "ii>i", (void*)sandbox_debug_scenes},
+    {"selected_node", ">i", (void*)sandbox_debug_selected_node},
+    {"selection_count", ">i", (void*)sandbox_debug_selection_count},
+    {"selection", "i>i", (void*)sandbox_debug_selection},
+    {"select", "ii>v", (void*)sandbox_debug_select},
+    {"set_multi", "i>v", (void*)sandbox_debug_set_multi},
+    {"find_node", ">i", (void*)sandbox_debug_find_node},
+    {"tree_row", "ii>f", (void*)sandbox_debug_tree_row},
+    {"node", "ii>f", (void*)sandbox_debug_node},
+    {"save_crc", ">u", (void*)sandbox_debug_save_crc},
+};
+const u32 sandbox_debug_call_count = NV_ARRAY_COUNT(sandbox_debug_calls);
+#endif
 #endif
 
 int main(void)
@@ -1292,13 +1387,15 @@ int main(void)
 
     nv_window_create(&sandbox->window, "nv");
     if (!nv_gpu_create(&sandbox->gpu, &sandbox->window)) {
-        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to initialize WebGPU");
+        nv_log(NV_LOG_ERROR, "sandbox", "fatal: failed to initialize the GPU");
         return 1;
     }
     nv_renderer_init(&sandbox->renderer, &sandbox->gpu, &sandbox->permanent);
     nv_imgui_init(&sandbox->imgui, &sandbox->gpu, &sandbox->window, &sandbox->permanent);
     nv_imgui_load_ui_font(&sandbox->imgui, &sandbox->permanent);
     nv_window_download_text(sandbox->download_text, sizeof(sandbox->download_text));
+    if (!sandbox->download_text[0]) // nothing was downloaded (a native build, whose files are on the disk): the label names the backend
+        snprintf(sandbox->download_text, sizeof(sandbox->download_text), "%s", sandbox->gpu.backend_name);
     nv_strings_set_language(nv_strings_system_language()); // a save may change it (the LANG tag)
     // Shadows (docs/specs/shadows.md): lighter on touch screens, where the GPU is the limit.
     b32 touch = sandbox->imgui.ui_scale > 1.0f;
@@ -1357,6 +1454,7 @@ int main(void)
     NV_ASSERT(save_round_trip_matches(sandbox));
     save_init(sandbox);
     undo_init(sandbox);
+    debug_script_init(sandbox);
     sandbox->last_time = nv_time_seconds();
     nv_window_run(&sandbox->window, frame, sandbox);
     return 0;

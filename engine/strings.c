@@ -37,6 +37,14 @@ internal b32 system_is_korean(void)
 {
     return js_browser_is_korean();
 }
+#elif defined(_WIN32)
+#include "engine/win32.h"
+
+// Korean when the user's Windows display language is.
+internal b32 system_is_korean(void)
+{
+    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_KOREAN;
+}
 #endif
 
 NvLanguage nv_strings_language(void) { return language; }

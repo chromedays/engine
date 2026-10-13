@@ -7,9 +7,11 @@ typedef struct NvRect {
     u32 x, y, width, height;
 } NvRect;
 
-// NOTE: The window is the page's <canvas>; its size follows the canvas's CSS layout.
+// NOTE: On the web the window is the page's <canvas> and its size follows the canvas's CSS layout; on Windows it is a top-level window
+// whose client area is the canvas. "CSS pixels" are device-independent pixels (DIPs) there: 96 to the inch at 100% scaling.
 typedef struct NvWindow {
-    const char* canvas_selector; // CSS selector of the <canvas> element, e.g. "#canvas"
+    const char* canvas_selector; // web: CSS selector of the <canvas> element, e.g. "#canvas"
+    void* handle;                // Windows: the HWND
     f32 pixel_ratio;             // device pixels per CSS pixel, updated by nv_window_framebuffer_size
     void (*on_hidden)(void* userdata);
     void* on_hidden_data;
@@ -38,7 +40,7 @@ static inline NvRect nv_window_framebuffer_rect_from_css(f32 x0, f32 y0, f32 x1,
         right = left;
     if (bottom < top)
         bottom = top;
-    return (NvRect){left, top, right - left, bottom - top};
+    return NV_LITERAL(NvRect){left, top, right - left, bottom - top};
 }
 
 // NOTE: Returns the canvas size in device pixels and resizes its backing store to match.
@@ -46,24 +48,26 @@ void nv_window_framebuffer_size(NvWindow* window, u32* width, u32* height);
 
 // What the page downloaded, for a build label: "3.2 MB downloaded", or "3.2 MB from cache" (the bytes after the browser unpacked
 // them). From the page's resource timing entries of the executable's own files (<target>.wasm, .data and .js; the page names
-// the target in Module.nvTarget). Empty when the browser does not say.
+// the target in Module.nvTarget). Empty when the browser does not say, and on Windows.
 void nv_window_download_text(char* out, umm capacity);
 
 // True on Apple platforms, where the shortcut key is Cmd rather than Ctrl.
 b32 nv_window_is_mac(void);
 
-// A line that says what the program runs on, for the benchmark's table: the browser's user agent on the web.
+// A line that says what the program runs on, for the benchmark's table: the browser's user agent on the web; on Windows the
+// version of Windows, the CPU and the memory (the GPU is the backend's: NvGpu.adapter_name).
 void nv_window_system_text(char* out, umm capacity);
 
-// Seconds since the page loaded.
+// Seconds since the page loaded (Windows: since the process started).
 f64 nv_time_seconds(void);
 
 // Calls `hidden` when the page is hidden: another tab, the app switcher, the screen turning off,
-// or the page closing. Frames stop while it is hidden, so this is the last moment to save.
+// or the page closing (Windows: the window minimized, the app deactivated, closed, or the session ending). Frames stop while it
+// is hidden, so this is the last moment to save.
 void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void* userdata);
 
 typedef void (*NvFrameFn)(void* userdata);
 
-// IMPORTANT: Hands control to the browser's requestAnimationFrame loop and never returns, so any
+// IMPORTANT: Hands control to the browser's requestAnimationFrame loop (Windows: the message loop) and never returns, so any
 // state `frame` uses must not live on the caller's stack.
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata);

@@ -1,8 +1,8 @@
 // The Textures tab's color preview (engine/imgui.c): a texture through a channel selector, linearized when it is sRGB.
 import preview_common;
 
-[[vk::binding(1, 0)]] SamplerState s;
-[[vk::binding(2, 0)]] Texture2D<float4> t;
+[[vk::binding(1, 0)]] SamplerState s : register(s1, space0);
+[[vk::binding(2, 0)]] Texture2D<float4> t : register(t2, space0);
 
 [shader("vertex")]
 VsOut vs_main(VsIn in)

@@ -11,7 +11,7 @@ struct Frame {
     float4 wind;
     uint4 counts;       // x: capacity
 };
-[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame;
+[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame : register(b0, space0);
 
 // 32 bytes: where it is, how old, what it moves with and how long it lives (half floats), its
 // emitter and seed, and the scale it was fired with and its starting rotation (half floats).

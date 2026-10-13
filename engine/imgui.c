@@ -44,6 +44,66 @@ void nv_imgui_view_tap(NvImgui* imgui, f32 x, f32 y)
     // As they were at the press: a tap can be decided frames after the keys were let go.
     imgui->view_pending.tap_mods = imgui->view_press_mods;
 }
+
+// A press in the view drags the camera: left orbits, right and middle pan. A left press that does not move is a tap.
+b32 nv_imgui_view_mouse(NvImgui* imgui, NvMouseEvent event, s32 button, f32 x, f32 y, u32 mods)
+{
+    if (event == NV_MOUSE_DOWN) {
+        if (imgui->view_mouse_button || !nv_imgui_in_view(imgui, x, y))
+            return 0;
+        imgui->view_mouse_button = button + 1;
+        imgui->view_moved = 0;
+        imgui->view_press_x = imgui->view_mouse_x = x;
+        imgui->view_press_y = imgui->view_mouse_y = y;
+        imgui->view_press_mods = mods;
+        if (imgui->view_grab && button == 0) {
+            imgui->view_grab_wait = 2;
+            imgui->view_tap_held = 0;
+            imgui->view_grab_touch = 0;
+        }
+        return 1;
+    }
+    if (!imgui->view_mouse_button)
+        return 0;
+    if (event == NV_MOUSE_MOVE) {
+        f32 dx = x - imgui->view_mouse_x;
+        f32 dy = y - imgui->view_mouse_y;
+        imgui->view_mouse_x = x;
+        imgui->view_mouse_y = y;
+        if (imgui->view_mouse_button == 1) {
+            imgui->view_pending.orbit_x += dx;
+            imgui->view_pending.orbit_y += dy;
+        } else {
+            imgui->view_pending.pan_x += dx;
+            imgui->view_pending.pan_y += dy;
+        }
+        if (fabsf(x - imgui->view_press_x) + fabsf(y - imgui->view_press_y) > 4.0f)
+            imgui->view_moved = 1;
+        return 1;
+    }
+    if (event == NV_MOUSE_UP && button + 1 == imgui->view_mouse_button) {
+        if (!imgui->view_moved && imgui->view_mouse_button == 1) {
+            if (imgui->view_grab_wait)
+                imgui->view_tap_held = 1;
+            else
+                nv_imgui_view_tap(imgui, x, y);
+        }
+        imgui->view_mouse_button = 0;
+        return 1;
+    }
+    return 0;
+}
+
+b32 nv_imgui_view_wheel(NvImgui* imgui, f32 scroll_pixels)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    if (!nv_imgui_in_view(imgui, io->MousePos.x, io->MousePos.y))
+        return 0;
+    // One wheel notch (about 100 pixels) zooms by about 15%.
+    imgui->view_pending.dolly += scroll_pixels * 0.0014f;
+    return 1;
+}
+
 //
 // Rendering
 //

@@ -1,7 +1,7 @@
 // The Textures tab's depth preview (engine/imgui.c).
 import preview_common;
 
-[[vk::binding(2, 0)]] DepthTexture2D d;
+[[vk::binding(2, 0)]] DepthTexture2D d : register(t2, space0);
 
 [shader("vertex")]
 VsOut vs_main(VsIn in)

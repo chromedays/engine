@@ -40,8 +40,12 @@ typedef struct NvMeshBuilder {
 // What nv_renderer_add_mesh takes, over the arrays built so far.
 static inline NvMeshData nv_mesh_builder_data(const NvMeshBuilder* mesh)
 {
-    return (NvMeshData){.vertices = mesh->vertices, .skinned_vertices = NULL, .vertex_count = mesh->vertex_count,
-                        .indices = mesh->indices, .index_count = mesh->index_count};
+    NvMeshData data = {0}; // not a compound literal: anim.cpp (C++, MSVC) includes this header
+    data.vertices = mesh->vertices;
+    data.vertex_count = mesh->vertex_count;
+    data.indices = mesh->indices;
+    data.index_count = mesh->index_count;
+    return data;
 }
 
 // The primitives (docs/specs/mesh.md). Every one is closed (but the plane), wound counter-clockwise seen from outside, and

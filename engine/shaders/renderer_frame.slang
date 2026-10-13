@@ -14,11 +14,16 @@ struct Frame {
 struct Object {
     float4x4 model;
     uint joint_offset; // first matrix in the skin buffer, or 0xFFFFFFFF
+    // NvObjectData has 80 bytes: WGSL rounds a struct up to its alignment and HLSL does not, and the D3D12 view must give the same
+    // stride the shader was compiled with. Three scalars, not a uint3: a vec3 would start at 80 in WGSL and make it 96.
+    uint padding0;
+    uint padding1;
+    uint padding2;
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame;
-[[vk::binding(1, 0)]] StructuredBuffer<Object> objects;
-[[vk::binding(2, 0)]] StructuredBuffer<float4x4> skin;
+[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame : register(b0, space0);
+[[vk::binding(1, 0)]] StructuredBuffer<Object> objects : register(t1, space0);
+[[vk::binding(2, 0)]] StructuredBuffer<float4x4> skin : register(t2, space0);
 
 float4x4 skinned_model(Object object, uint4 joints, float4 weights)
 {
@@ -30,3 +35,23 @@ float4x4 skinned_model(Object object, uint4 joints, float4 weights)
                  skin[o + joints.z] * weights.z + skin[o + joints.w] * weights.w;
     return mul(object.model, s);
 }
+
+// The object an instance draws: nv_gpu_draw_indexed passes the object's number as the draw's first instance. WebGPU's
+// instance_index counts from it, but D3D12's SV_InstanceID does not (it leaves out StartInstanceLocation), so there the backend
+// puts the first instance in a root constant (engine/gpu_d3d12.c) and it is added here. The build defines NV_D3D12 for D3D12.
+#if defined(NV_D3D12)
+struct FirstInstance {
+    uint value;
+};
+ConstantBuffer<FirstInstance> first_instance : register(b0, space8);
+
+uint object_index(uint instance_id)
+{
+    return instance_id + first_instance.value;
+}
+#else
+uint object_index(uint instance_id)
+{
+    return instance_id;
+}
+#endif

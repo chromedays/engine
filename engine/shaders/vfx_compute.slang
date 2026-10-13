@@ -2,17 +2,17 @@
 // the GPU only: a free list (a stack), two alive lists that swap roles every frame, and a visible list per blend mode.
 import vfx_common;
 
-[[vk::binding(1, 0)]] RWStructuredBuffer<Particle> particles;
-[[vk::binding(2, 0)]] RWStructuredBuffer<uint> free_list;
-[[vk::binding(3, 0)]] RWStructuredBuffer<uint> alive_cur;
-[[vk::binding(4, 0)]] RWStructuredBuffer<uint> alive_next;
-[[vk::binding(5, 0)]] RWStructuredBuffer<uint> visible;
-[[vk::binding(6, 0)]] RWStructuredBuffer<Atomic<int>> counters;
-[[vk::binding(7, 0)]] StructuredBuffer<Emitter> emitters;
-[[vk::binding(8, 0)]] StructuredBuffer<Burst> bursts;
-[[vk::binding(9, 0)]] StructuredBuffer<uint2> jobs;
-[[vk::binding(10, 0)]] RWStructuredBuffer<uint> sim_args;
-[[vk::binding(11, 0)]] RWStructuredBuffer<uint> draw_args;
+[[vk::binding(1, 0)]] RWStructuredBuffer<Particle> particles : register(u1, space0);
+[[vk::binding(2, 0)]] RWStructuredBuffer<uint> free_list : register(u2, space0);
+[[vk::binding(3, 0)]] RWStructuredBuffer<uint> alive_cur : register(u3, space0);
+[[vk::binding(4, 0)]] RWStructuredBuffer<uint> alive_next : register(u4, space0);
+[[vk::binding(5, 0)]] RWStructuredBuffer<uint> visible : register(u5, space0);
+[[vk::binding(6, 0)]] RWStructuredBuffer<Atomic<int>> counters : register(u6, space0);
+[[vk::binding(7, 0)]] StructuredBuffer<Emitter> emitters : register(t7, space0);
+[[vk::binding(8, 0)]] StructuredBuffer<Burst> bursts : register(t8, space0);
+[[vk::binding(9, 0)]] StructuredBuffer<uint2> jobs : register(t9, space0);
+[[vk::binding(10, 0)]] RWStructuredBuffer<uint> sim_args : register(u10, space0);
+[[vk::binding(11, 0)]] RWStructuredBuffer<uint> draw_args : register(u11, space0);
 
 // Workgroup memory: the counts a group needs and the places it was given.
 groupshared Atomic<uint> wg[8];

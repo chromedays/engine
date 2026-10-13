@@ -62,6 +62,43 @@ internal int page_take(int* level, char* source, int source_size, char* text, in
 {
     return js_log_take(level, source, source_size, text, text_size, time);
 }
+#elif defined(_WIN32)
+#include "engine/win32.h"
+
+// The console (standard error) and the debugger's output window, one line each, as "[source] text".
+internal void console_write(NvLogLevel level, const char* source, const char* text)
+{
+    (void)level;
+    fprintf(stderr, "[%s] %s\n", source, text);
+    wchar_t wide[NV_LOG_MAX_MESSAGE_SIZE + 16];
+    char line[NV_LOG_MAX_MESSAGE_SIZE + 16];
+    snprintf(line, sizeof(line), "[%s] %s\n", source, text);
+    if (nv_win32_wide_from_utf8(line, wide, NV_ARRAY_COUNT(wide)))
+        OutputDebugStringW(wide);
+}
+
+internal f64 now_seconds(void)
+{
+    LARGE_INTEGER counter, frequency;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&frequency);
+    local_persist LONGLONG first;
+    if (!first)
+        first = counter.QuadPart;
+    return (f64)(counter.QuadPart - first) / (f64)frequency.QuadPart;
+}
+
+// No page hands messages in here: everything on Windows calls nv_log itself.
+internal int page_dropped(void)
+{
+    return 0;
+}
+
+internal int page_take(int* level, char* source, int source_size, char* text, int text_size, double* time)
+{
+    (void)level, (void)source, (void)source_size, (void)text, (void)text_size, (void)time;
+    return -1;
+}
 #endif
 
 // Where a message is formatted (nv_log) or read from the page (nv_log_pump) before it goes in the

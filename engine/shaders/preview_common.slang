@@ -9,8 +9,8 @@ struct Params {
     uint4 mode;   // NvImguiPreviewMode, linearize, NvImguiDepth
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<Uniforms> u;
-[[vk::binding(3, 0)]] ConstantBuffer<Params> p;
+[[vk::binding(0, 0)]] ConstantBuffer<Uniforms> u : register(b0, space0);
+[[vk::binding(3, 0)]] ConstantBuffer<Params> p : register(b3, space0);
 
 // NOTE: slangc's WGSL takes a vertex attribute's location from its TEXCOORD<n> semantic (see mesh.slang).
 struct VsIn {

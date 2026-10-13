@@ -153,7 +153,7 @@ void apply_rotation_correction(om::SoaTransform* locals, int joint, const om::Si
     om::StorePtrU(q.z, z);
     om::StorePtrU(q.w, w);
     om::StorePtrU(correction.xyzw, c);
-    NvQuat r = nv_quat_mul((NvQuat){x[lane], y[lane], z[lane], w[lane]}, (NvQuat){c[0], c[1], c[2], c[3]});
+    NvQuat r = nv_quat_mul(NvQuat{x[lane], y[lane], z[lane], w[lane]}, NvQuat{c[0], c[1], c[2], c[3]});
     x[lane] = r.x;
     y[lane] = r.y;
     z[lane] = r.z;

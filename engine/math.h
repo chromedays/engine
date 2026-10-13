@@ -16,15 +16,15 @@ typedef struct NvVec3 { f32 x, y, z; } NvVec3;
 typedef struct NvQuat { f32 x, y, z, w; } NvQuat;
 typedef struct NvMat4 { f32 e[16]; } NvMat4;
 
-static inline NvVec3 nv_vec3(f32 x, f32 y, f32 z) { return (NvVec3){x, y, z}; }
-static inline NvVec3 nv_vec3_add(NvVec3 a, NvVec3 b) { return (NvVec3){a.x + b.x, a.y + b.y, a.z + b.z}; }
-static inline NvVec3 nv_vec3_sub(NvVec3 a, NvVec3 b) { return (NvVec3){a.x - b.x, a.y - b.y, a.z - b.z}; }
-static inline NvVec3 nv_vec3_scale(NvVec3 v, f32 s) { return (NvVec3){v.x * s, v.y * s, v.z * s}; }
+static inline NvVec3 nv_vec3(f32 x, f32 y, f32 z) { return NV_LITERAL(NvVec3){x, y, z}; }
+static inline NvVec3 nv_vec3_add(NvVec3 a, NvVec3 b) { return NV_LITERAL(NvVec3){a.x + b.x, a.y + b.y, a.z + b.z}; }
+static inline NvVec3 nv_vec3_sub(NvVec3 a, NvVec3 b) { return NV_LITERAL(NvVec3){a.x - b.x, a.y - b.y, a.z - b.z}; }
+static inline NvVec3 nv_vec3_scale(NvVec3 v, f32 s) { return NV_LITERAL(NvVec3){v.x * s, v.y * s, v.z * s}; }
 static inline f32 nv_vec3_dot(NvVec3 a, NvVec3 b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
 
 static inline NvVec3 nv_vec3_cross(NvVec3 a, NvVec3 b)
 {
-    return (NvVec3){a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+    return NV_LITERAL(NvVec3){a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
 }
 
 static inline NvVec3 nv_vec3_normalize(NvVec3 v)
@@ -34,19 +34,19 @@ static inline NvVec3 nv_vec3_normalize(NvVec3 v)
     return nv_vec3_scale(v, 1.0f / length);
 }
 
-static inline NvQuat nv_quat_identity(void) { return (NvQuat){0.0f, 0.0f, 0.0f, 1.0f}; }
+static inline NvQuat nv_quat_identity(void) { return NV_LITERAL(NvQuat){0.0f, 0.0f, 0.0f, 1.0f}; }
 
 // `axis` must be normalized; `angle` is in radians.
 static inline NvQuat nv_quat_axis_angle(NvVec3 axis, f32 angle)
 {
     f32 s = sinf(angle * 0.5f);
-    return (NvQuat){axis.x * s, axis.y * s, axis.z * s, cosf(angle * 0.5f)};
+    return NV_LITERAL(NvQuat){axis.x * s, axis.y * s, axis.z * s, cosf(angle * 0.5f)};
 }
 
 // Rotation that applies `b` first, then `a`.
 static inline NvQuat nv_quat_mul(NvQuat a, NvQuat b)
 {
-    return (NvQuat){
+    return NV_LITERAL(NvQuat){
         a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
         a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
         a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
@@ -58,8 +58,8 @@ static inline NvQuat nv_quat_mul(NvQuat a, NvQuat b)
 // (q = Y * X * Z). Yaw and roll are in (-pi, pi], pitch in [-pi/2, pi/2].
 static inline NvQuat nv_quat_from_euler(NvVec3 e)
 {
-    return nv_quat_mul(nv_quat_mul(nv_quat_axis_angle((NvVec3){0, 1, 0}, e.y), nv_quat_axis_angle((NvVec3){1, 0, 0}, e.x)),
-                       nv_quat_axis_angle((NvVec3){0, 0, 1}, e.z));
+    return nv_quat_mul(nv_quat_mul(nv_quat_axis_angle(NV_LITERAL(NvVec3){0, 1, 0}, e.y), nv_quat_axis_angle(NV_LITERAL(NvVec3){1, 0, 0}, e.x)),
+                       nv_quat_axis_angle(NV_LITERAL(NvVec3){0, 0, 1}, e.z));
 }
 
 static inline NvVec3 nv_quat_to_euler(NvQuat q)
@@ -89,14 +89,14 @@ typedef struct NvBox { NvVec3 min, max; } NvBox;
 
 static inline NvBox nv_box_empty(void)
 {
-    return (NvBox){{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
+    return NV_LITERAL(NvBox){{1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}};
 }
 
 static inline b32 nv_box_is_empty(NvBox b) { return b.min.x > b.max.x; }
 
 static inline NvBox nv_box_add_point(NvBox b, NvVec3 p)
 {
-    return (NvBox){{fminf(b.min.x, p.x), fminf(b.min.y, p.y), fminf(b.min.z, p.z)},
+    return NV_LITERAL(NvBox){{fminf(b.min.x, p.x), fminf(b.min.y, p.y), fminf(b.min.z, p.z)},
                    {fmaxf(b.max.x, p.x), fmaxf(b.max.y, p.y), fmaxf(b.max.z, p.z)}};
 }
 
@@ -124,7 +124,7 @@ static inline NvBox nv_box_transform(NvBox b, NvMat4 m)
             out_h[row] += fabsf(m.e[col * 4 + row]) * h[col];
         }
     }
-    return (NvBox){{out_c[0] - out_h[0], out_c[1] - out_h[1], out_c[2] - out_h[2]},
+    return NV_LITERAL(NvBox){{out_c[0] - out_h[0], out_c[1] - out_h[1], out_c[2] - out_h[2]},
                    {out_c[0] + out_h[0], out_c[1] + out_h[1], out_c[2] + out_h[2]}};
 }
 
@@ -235,18 +235,18 @@ static inline NvMat4 nv_mat4_inverse(NvMat4 m)
     return r;
 }
 
-static inline NvVec3 nv_mat4_translation(NvMat4 m) { return (NvVec3){m.e[12], m.e[13], m.e[14]}; }
+static inline NvVec3 nv_mat4_translation(NvMat4 m) { return NV_LITERAL(NvVec3){m.e[12], m.e[13], m.e[14]}; }
 
 static inline NvVec3 nv_mat4_transform_dir(NvMat4 m, NvVec3 d)
 {
-    return (NvVec3){m.e[0] * d.x + m.e[4] * d.y + m.e[8] * d.z,
+    return NV_LITERAL(NvVec3){m.e[0] * d.x + m.e[4] * d.y + m.e[8] * d.z,
                     m.e[1] * d.x + m.e[5] * d.y + m.e[9] * d.z,
                     m.e[2] * d.x + m.e[6] * d.y + m.e[10] * d.z};
 }
 
 static inline NvVec3 nv_mat4_transform_point(NvMat4 m, NvVec3 p)
 {
-    return (NvVec3){m.e[0] * p.x + m.e[4] * p.y + m.e[8] * p.z + m.e[12],
+    return NV_LITERAL(NvVec3){m.e[0] * p.x + m.e[4] * p.y + m.e[8] * p.z + m.e[12],
                     m.e[1] * p.x + m.e[5] * p.y + m.e[9] * p.z + m.e[13],
                     m.e[2] * p.x + m.e[6] * p.y + m.e[10] * p.z + m.e[14]};
 }
@@ -254,7 +254,7 @@ static inline NvVec3 nv_mat4_transform_point(NvMat4 m, NvVec3 p)
 // The direction the local -Z axis points in world space (where a camera or light faces).
 static inline NvVec3 nv_mat4_forward(NvMat4 m)
 {
-    return nv_vec3_normalize((NvVec3){-m.e[8], -m.e[9], -m.e[10]});
+    return nv_vec3_normalize(NV_LITERAL(NvVec3){-m.e[8], -m.e[9], -m.e[10]});
 }
 
 // Rotates `v` by the unit quaternion `q`.
@@ -284,21 +284,21 @@ static inline void nv_mat4_decompose(NvMat4 m, NvVec3* translation, NvQuat* rota
     NvQuat q;
     if (trace > 0.0f) {
         f32 k = sqrtf(trace + 1.0f) * 2.0f;
-        q = (NvQuat){(m21 - m12) / k, (m02 - m20) / k, (m10 - m01) / k, 0.25f * k};
+        q = NV_LITERAL(NvQuat){(m21 - m12) / k, (m02 - m20) / k, (m10 - m01) / k, 0.25f * k};
     } else if (m00 > m11 && m00 > m22) {
         f32 k = sqrtf(1.0f + m00 - m11 - m22) * 2.0f;
-        q = (NvQuat){0.25f * k, (m01 + m10) / k, (m02 + m20) / k, (m21 - m12) / k};
+        q = NV_LITERAL(NvQuat){0.25f * k, (m01 + m10) / k, (m02 + m20) / k, (m21 - m12) / k};
     } else if (m11 > m22) {
         f32 k = sqrtf(1.0f + m11 - m00 - m22) * 2.0f;
-        q = (NvQuat){(m01 + m10) / k, 0.25f * k, (m12 + m21) / k, (m02 - m20) / k};
+        q = NV_LITERAL(NvQuat){(m01 + m10) / k, 0.25f * k, (m12 + m21) / k, (m02 - m20) / k};
     } else {
         f32 k = sqrtf(1.0f + m22 - m00 - m11) * 2.0f;
-        q = (NvQuat){(m02 + m20) / k, (m12 + m21) / k, 0.25f * k, (m10 - m01) / k};
+        q = NV_LITERAL(NvQuat){(m02 + m20) / k, (m12 + m21) / k, 0.25f * k, (m10 - m01) / k};
     }
     // IMPORTANT: Normalized, so a matrix rebuilt from the parts and split again (as the gizmo does
     // every frame) cannot drift: a quaternion slightly off unit length skews nv_mat4_trs.
     f32 length = sqrtf(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w);
-    *rotation = (NvQuat){q.x / length, q.y / length, q.z / length, q.w / length};
+    *rotation = NV_LITERAL(NvQuat){q.x / length, q.y / length, q.z / length, q.w / length};
 }
 
 // PCG32 (XSH RR 64/32), after M. E. O'Neill, "PCG: A Family of Simple Fast Space-Efficient Statistically Good

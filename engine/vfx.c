@@ -83,6 +83,7 @@ internal NvGpuBuffer create_buffer(NvGpu* gpu, const char* label, u32 usage, u64
 typedef struct BindingKind {
     u32 binding;
     NvGpuBindingKind kind;
+    u32 stride; // a storage binding's element, in bytes (the shader's StructuredBuffer<T>; the web backend does not need it)
 } BindingKind;
 
 internal NvGpuLayout create_layout(NvGpu* gpu, u32 stages, const BindingKind* kinds, u32 count)
@@ -93,6 +94,7 @@ internal NvGpuLayout create_layout(NvGpu* gpu, u32 stages, const BindingKind* ki
         entries[i].binding = kinds[i].binding;
         entries[i].stages = stages;
         entries[i].kind = kinds[i].kind;
+        entries[i].stride = kinds[i].stride;
     }
     return nv_gpu_create_layout(gpu, entries, count);
 }
@@ -296,13 +298,13 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
 
     const NvGpuBindingKind U = NV_GPU_BINDING_UNIFORM, RW = NV_GPU_BINDING_STORAGE_READ_WRITE, RO = NV_GPU_BINDING_STORAGE_READ;
     // Each pass binds only what it uses, so the indirect arguments are never bound where they are also read as arguments.
-    const BindingKind emit_kinds[] = {{0, U}, {1, RW}, {2, RW}, {3, RW}, {6, RW}, {7, RO}, {8, RO}, {9, RO}};
-    const BindingKind simulate_kinds[] = {{0, U}, {1, RW}, {2, RW}, {3, RW}, {4, RW}, {5, RW}, {6, RW}, {7, RO}};
-    const BindingKind prepare_a_kinds[] = {{6, RW}, {10, RW}};
-    const BindingKind prepare_b_kinds[] = {{6, RW}, {11, RW}};
-    const BindingKind init_kinds[] = {{0, U}, {2, RW}, {6, RW}};
-    const BindingKind render_kinds[] = {{0, U}, {1, RO}, {2, RO}, {3, RO}};
-    const BindingKind marks_kinds[] = {{0, U}, {1, RO}, {2, RO}};
+    const BindingKind emit_kinds[] = {{0, U, 0}, {1, RW, PARTICLE_BYTES}, {2, RW, 4}, {3, RW, 4}, {6, RW, 4}, {7, RO, EMITTER_BYTES}, {8, RO, sizeof(NvVfxBurst)}, {9, RO, 8}};
+    const BindingKind simulate_kinds[] = {{0, U, 0}, {1, RW, PARTICLE_BYTES}, {2, RW, 4}, {3, RW, 4}, {4, RW, 4}, {5, RW, 4}, {6, RW, 4}, {7, RO, EMITTER_BYTES}};
+    const BindingKind prepare_a_kinds[] = {{6, RW, 4}, {10, RW, 4}};
+    const BindingKind prepare_b_kinds[] = {{6, RW, 4}, {11, RW, 4}};
+    const BindingKind init_kinds[] = {{0, U, 0}, {2, RW, 4}, {6, RW, 4}};
+    const BindingKind render_kinds[] = {{0, U, 0}, {1, RO, PARTICLE_BYTES}, {2, RO, 4}, {3, RO, EMITTER_BYTES}};
+    const BindingKind marks_kinds[] = {{0, U, 0}, {1, RO, sizeof(NvVfxGpuSegment)}, {2, RO, sizeof(NvVfxGpuDecal)}};
     vfx->marks_layout = create_layout(gpu, NV_GPU_STAGE_VERTEX, marks_kinds, NV_ARRAY_COUNT(marks_kinds));
     vfx->layouts[0] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, emit_kinds, NV_ARRAY_COUNT(emit_kinds));
     vfx->layouts[1] = create_layout(gpu, NV_GPU_STAGE_COMPUTE, simulate_kinds, NV_ARRAY_COUNT(simulate_kinds));

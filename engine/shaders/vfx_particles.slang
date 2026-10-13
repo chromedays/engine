@@ -1,9 +1,9 @@
 // The particles' draw (engine/vfx.c): vertex pulling, six vertices per visible particle, additive and alpha blended.
 import vfx_shapes;
 
-[[vk::binding(1, 0)]] StructuredBuffer<Particle> particles;
-[[vk::binding(2, 0)]] StructuredBuffer<uint> visible;
-[[vk::binding(3, 0)]] StructuredBuffer<Emitter> emitters;
+[[vk::binding(1, 0)]] StructuredBuffer<Particle> particles : register(t1, space0);
+[[vk::binding(2, 0)]] StructuredBuffer<uint> visible : register(t2, space0);
+[[vk::binding(3, 0)]] StructuredBuffer<Emitter> emitters : register(t3, space0);
 
 struct VsOut {
     float4 clip : SV_Position;

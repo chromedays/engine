@@ -196,6 +196,11 @@ internal void copy_results(Sandbox* sandbox)
     Benchmark* benchmark = &sandbox->benchmark;
     char agent[256];
     nv_window_system_text(agent, sizeof(agent));
+    // Where the browser says nothing of the GPU, the backend knows its name (Direct3D 12).
+    if (sandbox->gpu.adapter_name[0]) {
+        umm used_by_agent = strlen(agent);
+        snprintf(agent + used_by_agent, sizeof(agent) - used_by_agent, ", GPU %s (%s)", sandbox->gpu.adapter_name, sandbox->gpu.backend_name);
+    }
     char text[4096];
     umm used = 0;
     char shadows[64];

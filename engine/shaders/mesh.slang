@@ -5,11 +5,11 @@ import renderer_frame;
 struct Material {
     float4 base_color;
 };
-[[vk::binding(3, 0)]] DepthTexture2D shadow_map;
-[[vk::binding(4, 0)]] SamplerComparisonState shadow_sampler;
-[[vk::binding(0, 1)]] ConstantBuffer<Material> material;
-[[vk::binding(1, 1)]] SamplerState material_sampler;
-[[vk::binding(2, 1)]] Texture2D<float4> base_color_texture;
+[[vk::binding(3, 0)]] DepthTexture2D shadow_map : register(t3, space0);
+[[vk::binding(4, 0)]] SamplerComparisonState shadow_sampler : register(s4, space0);
+[[vk::binding(0, 1)]] ConstantBuffer<Material> material : register(b0, space1);
+[[vk::binding(1, 1)]] SamplerState material_sampler : register(s1, space1);
+[[vk::binding(2, 1)]] Texture2D<float4> base_color_texture : register(t2, space1);
 
 // NOTE: slangc's WGSL ignores [[vk::location]] on vertex inputs and numbers them in order; the number of a TEXCOORD<n> semantic
 // is what it uses as the location (the pipelines in renderer.c name the locations), so every input and varying says it that way.
@@ -48,13 +48,13 @@ VsOut finish(float4x4 model, float3 position, float3 normal, float2 uv)
 [shader("vertex")]
 VsOut vs_static(StaticIn in, uint i : SV_InstanceID)
 {
-    return finish(objects[i].model, in.position, in.normal, in.uv);
+    return finish(objects[object_index(i)].model, in.position, in.normal, in.uv);
 }
 
 [shader("vertex")]
 VsOut vs_skinned(SkinnedIn in, uint i : SV_InstanceID)
 {
-    return finish(skinned_model(objects[i], in.joints, in.weights), in.position, in.normal, in.uv);
+    return finish(skinned_model(objects[object_index(i)], in.joints, in.weights), in.position, in.normal, in.uv);
 }
 
 // How much of the directional light reaches `world`: 1 lit, 0 in shadow. A comparison sampler

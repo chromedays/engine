@@ -305,66 +305,18 @@ internal bool on_key(int event_type, const EmscriptenKeyboardEvent* event, void*
     return io->WantCaptureKeyboard || claimed;
 }
 
-// A press in the view drags the camera: left orbits, right and middle pan. A left press that does
-// not move is a tap.
-internal b32 view_mouse(NvImgui* imgui, int event_type, const EmscriptenMouseEvent* event)
-{
-    f32 x = (f32)event->clientX;
-    f32 y = (f32)event->clientY;
-    if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
-        if (imgui->view_mouse_button || !nv_imgui_in_view(imgui, x, y))
-            return 0;
-        imgui->view_mouse_button = event->button + 1;
-        imgui->view_moved = 0;
-        imgui->view_press_x = imgui->view_mouse_x = x;
-        imgui->view_press_y = imgui->view_mouse_y = y;
-        imgui->view_press_mods = (event->ctrlKey || event->metaKey ? ImGuiMod_Ctrl : 0) |
-                                 (event->shiftKey ? ImGuiMod_Shift : 0) | (event->altKey ? ImGuiMod_Alt : 0);
-        if (imgui->view_grab && event->button == 0) {
-            imgui->view_grab_wait = 2;
-            imgui->view_tap_held = 0;
-            imgui->view_grab_touch = 0;
-        }
-        return 1;
-    }
-    if (!imgui->view_mouse_button)
-        return 0;
-    if (event_type == EMSCRIPTEN_EVENT_MOUSEMOVE) {
-        f32 dx = x - imgui->view_mouse_x;
-        f32 dy = y - imgui->view_mouse_y;
-        imgui->view_mouse_x = x;
-        imgui->view_mouse_y = y;
-        if (imgui->view_mouse_button == 1) {
-            imgui->view_pending.orbit_x += dx;
-            imgui->view_pending.orbit_y += dy;
-        } else {
-            imgui->view_pending.pan_x += dx;
-            imgui->view_pending.pan_y += dy;
-        }
-        if (fabsf(x - imgui->view_press_x) + fabsf(y - imgui->view_press_y) > 4.0f)
-            imgui->view_moved = 1;
-        return 1;
-    }
-    if (event_type == EMSCRIPTEN_EVENT_MOUSEUP && event->button + 1 == imgui->view_mouse_button) {
-        if (!imgui->view_moved && imgui->view_mouse_button == 1) {
-            if (imgui->view_grab_wait)
-                imgui->view_tap_held = 1;
-            else
-                nv_imgui_view_tap(imgui, x, y);
-        }
-        imgui->view_mouse_button = 0;
-        return 1;
-    }
-    return 0;
-}
-
 internal bool on_mouse(int event_type, const EmscriptenMouseEvent* event, void* userdata)
 {
     NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
     ImGuiIO_AddMouseSourceEvent(io, ImGuiMouseSource_Mouse);
     ImGuiIO_AddMousePosEvent(io, (f32)event->clientX, (f32)event->clientY);
-    if (view_mouse(imgui, event_type, event))
+    u32 mods = (event->ctrlKey || event->metaKey ? ImGuiMod_Ctrl : 0) | (event->shiftKey ? ImGuiMod_Shift : 0) |
+               (event->altKey ? ImGuiMod_Alt : 0);
+    NvMouseEvent kind = event_type == EMSCRIPTEN_EVENT_MOUSEDOWN ? NV_MOUSE_DOWN
+                        : event_type == EMSCRIPTEN_EVENT_MOUSEUP ? NV_MOUSE_UP
+                                                                 : NV_MOUSE_MOVE;
+    if (nv_imgui_view_mouse(imgui, kind, event->button, (f32)event->clientX, (f32)event->clientY, mods))
         return event_type != EMSCRIPTEN_EVENT_MOUSEMOVE;
 
     if (event_type == EMSCRIPTEN_EVENT_MOUSEDOWN || event_type == EMSCRIPTEN_EVENT_MOUSEUP) {
@@ -381,12 +333,10 @@ internal bool on_wheel(int event_type, const EmscriptenWheelEvent* event, void* 
     (void)event_type;
     NvImgui* imgui = userdata;
     ImGuiIO* io = igGetIO_Nil();
-    if (nv_imgui_in_view(imgui, io->MousePos.x, io->MousePos.y)) {
-        // One wheel notch (about 100 pixels, or 3 lines) zooms by about 15%.
-        f32 pixels = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f : (event->deltaMode == DOM_DELTA_LINE) ? 33.0f : 400.0f;
-        imgui->view_pending.dolly += (f32)event->deltaY * pixels * 0.0014f;
+    // A wheel notch is about 100 pixels, or 3 lines.
+    f32 pixels = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f : (event->deltaMode == DOM_DELTA_LINE) ? 33.0f : 400.0f;
+    if (nv_imgui_view_wheel(imgui, (f32)event->deltaY * pixels))
         return 1;
-    }
     // ImGui counts in lines; browsers usually report pixels.
     f32 scale = (event->deltaMode == DOM_DELTA_PIXEL) ? 1.0f / 100.0f : (event->deltaMode == DOM_DELTA_LINE) ? 1.0f / 3.0f : 1.0f;
     ImGuiIO_AddMouseWheelEvent(io, (f32)-event->deltaX * scale, (f32)-event->deltaY * scale);

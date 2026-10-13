@@ -53,7 +53,8 @@ typedef struct NvGpu {
     b32 has_timestamps; // the device can time passes
     u64 max_buffer_bytes;          // 0 when the device does not say
     u64 max_storage_binding_bytes; // 0 when the device does not say
-    const char* backend_name;      // "WebGPU"
+    const char* backend_name;      // "WebGPU", "D3D12"
+    char adapter_name[128];        // the GPU's name where the backend knows it (D3D12); empty on the web
 } NvGpu;
 
 // A texture format's name for logs ("BGRA8Unorm").
@@ -91,9 +92,17 @@ static inline u64 nv_gpu_texture_bytes(u32 width, u32 height, u32 mip_count, NvG
 b32 nv_gpu_create(NvGpu* gpu, NvWindow* window);
 
 // A shader as the build made it (nv_add_shader): the module's code, and the entry points are found by name. The fields are the
-// backend's: the web backend reads WGSL text.
+// backend's: the web backend reads WGSL text, the Windows one the DXIL of each entry point.
+typedef struct NvGpuShaderEntry {
+    const char* name;
+    const unsigned char* bytes;
+    umm size;
+} NvGpuShaderEntry;
+
 typedef struct NvGpuShaderCode {
     const char* wgsl;
+    const NvGpuShaderEntry* entries;
+    u32 entry_count;
 } NvGpuShaderCode;
 
 //
@@ -379,4 +388,12 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot);
 #if !defined(NDEBUG)
 // Makes the device report a validation error, for tests of the error path (the sandbox's debug error export).
 void nv_gpu_debug_raise_error(NvGpu* gpu);
+#endif
+
+#if !defined(NDEBUG) && defined(_WIN32)
+// Windows Debug builds, for the scripted runs (sandbox/debug_script.c): the canvas of the next frame, the part of it at (x, y)
+// of `width` x `height` pixels (0: all), as a PNG file at `path`. The file is written when that frame has been drawn, before the
+// call returns to the caller of nv_gpu_end_frame; nv_gpu_debug_screenshot_pending is true until then.
+void nv_gpu_debug_screenshot(NvGpu* gpu, const char* path, u32 x, u32 y, u32 width, u32 height);
+b32 nv_gpu_debug_screenshot_pending(const NvGpu* gpu);
 #endif

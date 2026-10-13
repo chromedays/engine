@@ -9,10 +9,10 @@ struct Params {
     float4 bloom;     // x: intensity (0 = off), yz: the valid size of bloom mip 0 in texels
     float4 bloom_tex; // xy: the size of that mip's texture
 };
-[[vk::binding(0, 0)]] ConstantBuffer<Params> p;
-[[vk::binding(1, 0)]] Texture2D<float4> scene;
-[[vk::binding(2, 0)]] Texture2D<float4> bloom_tex;
-[[vk::binding(3, 0)]] SamplerState bloom_sampler;
+[[vk::binding(0, 0)]] ConstantBuffer<Params> p : register(b0, space0);
+[[vk::binding(1, 0)]] Texture2D<float4> scene : register(t1, space0);
+[[vk::binding(2, 0)]] Texture2D<float4> bloom_tex : register(t2, space0);
+[[vk::binding(3, 0)]] SamplerState bloom_sampler : register(s3, space0);
 
 [shader("vertex")]
 float4 vs_main(uint i : SV_VertexID) : SV_Position

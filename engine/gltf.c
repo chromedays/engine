@@ -1,4 +1,5 @@
 #include "engine/gltf.h"
+#include "engine/file.h"
 #include "engine/image.h"
 #include "engine/log.h"
 
@@ -23,18 +24,20 @@ typedef struct Parsed {
     cgltf_data* data;
 } Parsed;
 
-internal Parsed parse_file(const char* path, NvArena* scratch)
+internal Parsed parse_file(const char* asset_path, NvArena* scratch)
 {
     cgltf_options options = {0};
     options.memory.alloc_func = cgltf_arena_alloc;
     options.memory.free_func = cgltf_arena_free;
     options.memory.user_data = scratch;
 
+    char path[520];
+    nv_file_resolve_path(asset_path, path, sizeof(path)); // cgltf opens it with fopen
     cgltf_data* data = NULL;
     if (cgltf_parse_file(&options, path, &data) != cgltf_result_success ||
         cgltf_load_buffers(&options, data, path) != cgltf_result_success ||
         cgltf_validate(data) != cgltf_result_success) {
-        nv_log(NV_LOG_ERROR, "nv", "failed to load %s", path);
+        nv_log(NV_LOG_ERROR, "nv", "failed to load %s", asset_path);
         return (Parsed){0};
     }
     return (Parsed){.ok = 1, .data = data};

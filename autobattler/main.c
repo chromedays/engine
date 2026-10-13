@@ -42,7 +42,7 @@ global const BattleRules fallback_rules = {
     .cell_size = 2.0f, .grid_width = 32, .grid_length = 48, .zone_rows = 14, .round_ticks = 1800, .retarget_ticks = 8,
     .gravity = 9.8f, .stop_fraction = 0.9f, .min_damage_fraction = 0.25f};
 
-internal void set_message(Game* game, b32 bad, const char* format, ...) __attribute__((format(printf, 3, 4)));
+internal void set_message(Game* game, b32 bad, const char* format, ...) NV_PRINTF_FORMAT(3, 4);
 
 internal void set_message(Game* game, b32 bad, const char* format, ...)
 {
@@ -461,13 +461,15 @@ int main(void)
 
     nv_window_create(&game->window, "autobattler");
     if (!nv_gpu_create(&game->gpu, &game->window)) {
-        nv_log(NV_LOG_ERROR, "battle", "fatal: failed to initialize WebGPU");
+        nv_log(NV_LOG_ERROR, "battle", "fatal: failed to initialize the GPU");
         return 1;
     }
     nv_renderer_init(&game->renderer, &game->gpu, &game->permanent);
     nv_imgui_init(&game->imgui, &game->gpu, &game->window, &game->permanent);
     nv_imgui_load_ui_font(&game->imgui, &game->permanent);
     nv_window_download_text(game->download_text, sizeof(game->download_text));
+    if (!game->download_text[0]) // nothing was downloaded (a native build, whose files are on the disk): the label names the backend
+        snprintf(game->download_text, sizeof(game->download_text), "%s", game->gpu.backend_name);
     nv_strings_set_language(nv_strings_system_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;

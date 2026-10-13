@@ -2,7 +2,7 @@
 struct DebugFrame {
     float4x4 view_proj;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<DebugFrame> frame;
+[[vk::binding(0, 0)]] ConstantBuffer<DebugFrame> frame : register(b0, space0);
 
 struct VsOut {
     float4 clip : SV_Position;

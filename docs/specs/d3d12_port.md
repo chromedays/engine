@@ -1,6 +1,6 @@
 # D3D12 포팅 스펙 (Windows 네이티브 빌드, 엔진의 GPU API)
 
-상태: 초안 (2026-10-12). "합의할 것"은 모두 정했다(2026-10-12). 이 스펙의 변경은 먼저 합의한다. **단계 0–2는 끝났고 검증했다**("찾은 것"); 단계 3부터는 Windows PC에서 한다.
+상태: 초안 (2026-10-12). "합의할 것"은 모두 정했다(2026-10-12). 이 스펙의 변경은 먼저 합의한다. **단계 0–3은 끝났고 검증했다**("찾은 것"); 단계 3부터는 Windows PC에서 한다.
 
 ### 목표
 
@@ -97,7 +97,8 @@ Agility SDK의 것을 쓴다(런타임과 버전이 맞는다).
 
 - **받기:** NuGet 패키지 `Microsoft.Direct3D.D3D12`(`.nupkg`는 zip이다)를 `cmake/shaders.cmake`가 DXC처럼 받는다: 버전과 SHA-256을
   고정하고, `NV_TOOLS_DIR`에 풀고, `NV_AGILITY_SDK`로 대신할 수 있다. Windows 호스트의 네이티브 빌드에서만 받는다. 버전은 단계 3에서
-  그때의 마지막 정식(프리뷰가 아닌) 버전으로 고정하고 여기 적는다.
+  그때의 마지막 정식(프리뷰가 아닌) 버전으로 고정했다: **1.619.6**(2026-10-12; `D3D12SDKVersion` 619). DXC는 **v1.9.2609**
+  (`dxc_2026_09_29.zip`).
 - **쓰기:** 헤더(`include/d3d12.h` 등)를 Windows SDK의 것보다 먼저 찾게 한다. 실행 파일이 런타임에게 두 기호를 내보낸다
   (`engine/gpu_d3d12.c`):
 
@@ -367,8 +368,10 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 ### 빌드
 
 - **컴파일러는 MSVC(`cl`)다** (합의함, 2026-10-12). 구성: Visual Studio의 "x64 Native Tools Command Prompt"에서
-  `cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release`(CMake가 `cl`을 찾는다). 단계 3에서 쓴 Visual Studio와 MSVC 버전을
-  여기 적는다. Emscripten이 아니면 MSVC만 받고, 그 밖의 네이티브 호스트와 컴파일러는 지금처럼 `FATAL_ERROR`다.
+  `cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release`(CMake가 `cl`을 찾는다). 단계 3에서 쓴 것: Visual Studio 2026 Community
+  18.9.2, MSVC 14.51.36231(`cl` x64), Windows SDK 10.0.26100.0, CMake 4.4.3, Ninja(Visual Studio 것). Emscripten이 아니면 MSVC만 받고,
+  그 밖의 네이티브 호스트와 컴파일러는 지금처럼 `FATAL_ERROR`다. 디버그 레이어를 쓰려면 Windows의 선택 기능 "그래픽 도구"(Graphics
+  Tools)가 필요하다("찾은 것").
 - 옵션 (우리 코드): `/std:c17`(C), `/std:c++17`(`anim.cpp`), `/W4`, `/utf-8`, `/Zc:preprocessor`. 외부 라이브러리는 `/w`.
   `CMakeLists.txt`의 `add_compile_options(-Wall -Wextra)`와 외부 라이브러리의 `-w`는 컴파일러에 따라 고른다.
   - `/utf-8`이 없으면 MSVC는 BOM 없는 소스를 시스템 코드 페이지(한국어 Windows에서는 CP949)로 읽어 한글 문자열을 깨뜨린다. 한글이 든
@@ -404,9 +407,14 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 
 - `EMSCRIPTEN_KEEPALIVE` 함수는 C 함수이므로 네이티브에서도 컴파일된다. 매크로 `NV_DEBUG_EXPORT`(웹은 `EMSCRIPTEN_KEEPALIVE`,
   네이티브는 비어 있음)로 바꾼다.
-- 네이티브 Debug 빌드는 `--script <file>`을 받는다. 한 줄에 명령 하나: `call <함수> <정수>...`, `frames <n>`, `screenshot <png>`,
-  `dump-vfx <json>`, `quit`. `call`은 이름에서 함수로 가는 표(`sandbox/debug_script.c`, 하네스가 쓰는 함수만)로 찾는다. 같은 경우
-  목록이 Playwright(웹)와 스크립트(네이티브) 둘을 몬다.
+- 네이티브 Debug 빌드는 `--script <file>`을 받는다(`sandbox/debug_script.c`). 한 줄에 명령 하나: `call <함수> <숫자>...`, `frames <n>`,
+  `screenshot <png> [viewport]`, `dump-vfx <json>`, `quit`. 단계 3에서 입력을 시험하려고 더한 것: `size <w> <h>`(클라이언트 영역을 그
+  픽셀로, 픽셀 비율 1로), `move`, `mouse down|up`, `wheel`, `key`, `modifiers`, `text`(WM_CHAR로 넣는 글자), `close`(닫기 단추: 저장한다).
+  `call`은 이름에서 함수로 가는 표(`sandbox/main.c`의 `sandbox_debug_calls`: `NV_DEBUG_EXPORT` 함수 전부와 그 인자 모양)로 찾는다. 같은
+  경우 목록이 Playwright(웹)와 스크립트(네이티브) 둘을 몬다. 끝낼 때 로그의 오류 수를 종료 코드로 돌려준다. 입력 명령은 창의 메시지
+  처리기로 보내는 메시지이고 진짜 포인터가 아니므로, 이 실행에서는 포인터가 창을 떠났다는 알림(WM_MOUSELEAVE)을 무시한다.
+- 파일 대화 상자는 사람이 있어야 하므로, Debug 빌드는 환경 변수 `NV_LOCAL_FILE`이 있으면 대화 상자를 건너뛰고 그 경로를 대답으로 쓴다
+  (`tests/local_file_test.c`가 그렇게 `nv_local_file_*`를 시험한다).
 - 스크린숏은 스왑체인 버퍼를 리드백해 WIC로 PNG를 쓴다.
 
 ### 검증
@@ -509,3 +517,35 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
   `simulateArgs`가 14997이 아니라 14683이었는데, 같은 케이스를 두 빌드에서 세 번씩 다시 돌리면 모두 14997이었다(기준선 파일도). V12 케이스는 Play
   안에서 실시간에 따라 갈리는 것으로 보고(V12-250k가 기준선에서 갈리는 것과 같다), `--exact`가 V12를 하나 놓치면 같은 케이스를 다시 돌려 본다.
 - CMake 3.30 이상이 필요하다(ozz-animation). 클라우드 이미지의 apt는 3.28이라 `pip install cmake`를 가상 환경에 설치했다.
+- **셰이더의 구조화 버퍼 원소 크기가 WGSL과 HLSL에서 다르다 (단계 3).** `renderer_frame.slang`의 `Object`(행렬 하나와 `uint` 하나)는 WGSL에서
+  구조체 크기가 정렬(16)로 올려져 80바이트이고, HLSL에서는 68바이트다. C의 `NvObjectData`는 80바이트이고 SRV의 `StructureByteStride`도 80으로
+  만들었는데, 셰이더는 DXIL에 구워진 68로 색인해서 첫 오브젝트 말고는 쓰레기 행렬을 읽었다(상자가 사라지거나 거대하게 그려졌다).
+  GPU 기반 검증이 "Structured buffer byte stride mismatch: 80, 68"로 짚었다. `uint` 셋(`uint3`가 아니다: WGSL의 vec3는 80에서 시작해 구조체를
+  96으로 만든다)을 명시적으로 더해 두 쪽을 80으로 맞췄다. 다른 구조화 버퍼(`Particle` 32, `Emitter` 128, `Burst` 64, `Segment` 80, `Decal` 48,
+  `uint2`, `float4x4`)는 두 쪽이 같은 크기이고, 검증이 더는 말하지 않는다.
+- **디버그 레이어는 Windows의 "그래픽 도구"가 있어야 뜬다 (단계 3).** Agility SDK의 `d3d12SDKLayers.dll`을 `D3D12Core.dll` 옆에 두어도(내보내는
+  기호와 `ID3D12DeviceFactory` 둘 다) `D3D12GetDebugInterface`가 `DXGI_ERROR_SDK_COMPONENT_MISSING`(0x887A002D)을 돌려줬다. 선택 기능 "그래픽
+  도구"를 설치하자 뜬다. 그 기능이 없는 PC에서는 로그에 한 줄 경고하고 검증 없이 돈다. `DXGI_CREATE_FACTORY_DEBUG`는 쓰지 않는다(DXGI 디버그
+  레이어도 그 기능의 것이다).
+- **디버그 레이어는 루트 서술자 테이블을 놓는 순간 자원의 상태를 본다 (단계 3).** 서술자 범위를 `DATA_STATIC_WHILE_SET_AT_EXECUTE`(기본)로
+  두면 `SetGraphicsRootDescriptorTable`에서 이미 상태를 검사하므로, 배리어를 큐에 넣고 그리기 직전에야 내보내면 "상태가 맞지 않는다"
+  오류가 난다. `prepare_command`는 배리어를 먼저 내보내고 그다음에 루트 인자를 놓는다.
+- **WIC의 PNG 인코더는 RGBA가 아니라 BGRA를 저장한다 (단계 3).** `SetPixelFormat`에 RGBA를 주면 BGRA를 돌려주고(인자가 입출력이다) 그
+  모양으로 써야 한다. 스크린숏의 빨강과 파랑이 바뀌어 있었다.
+- **C 라이브러리의 `sinf`, `cosf`, `tanf`, `atan2f`가 플랫폼마다 마지막 비트가 다르다 (단계 3).** `battle_test`의 황금 라운드는 틱 수, 결과, 남은
+  적 수가 MSVC에서도 같지만 해시(유닛의 float 비트)가 다르다. 그 해시 비교는 웹에서만 하고, 네이티브는 틱 수, 결과, 남은 적 수만 비교한다.
+  같은 규칙이 두 빌드에서 같은 라운드를 두는 것은 맞고, 비트까지 같은 것은 아니다.
+- **ozz-animation은 기본이 정적 C 런타임(`/MT`)이다 (단계 3).** `ozz_build_msvc_rt_dll`을 켜서 우리 코드와 같은 동적 런타임(`/MD`)으로 맞췄다.
+- **MSVC의 C++은 복합 리터럴 `(T){...}`를 받지 않는다 (단계 3).** `anim.cpp`가 포함하는 헤더(`math.h`, `window.h`, `mesh.h`)의 것을
+  `NV_LITERAL(T){...}`로 바꿨고, 지정 초기화(`.field =`)는 C++17에 없어 `nv_mesh_builder_data`를 일반 대입으로 고쳤다.
+- **GetModuleFileName 같은 호출에는 `UNICODE`가 필요하다 (단계 3).** `IDC_ARROW` 같은 자원 이름이 `UNICODE` 없이는 `char*`다. Windows 빌드는
+  `UNICODE`와 `_UNICODE`를 정의한다. Windows 헤더의 매크로(`SC_MOVE` 같은)가 샌드박스의 열거형 이름과 부딪히므로 `windows.h`를 포함하는
+  파일은 플랫폼 코드뿐이고(`engine/win32.h`), 샌드박스의 스크립트 실행기는 명령줄과 입력을 `engine/window_win32.h`를 통해 얻는다.
+- **단계 3의 검증 (2026-10-12).** Debug(디버그 레이어와 GPU 기반 검증 켬)와 Release 빌드가 `/W4`에서 경고 0개로 만들어지고 ctest 12개가
+  통과한다(`strings_test`와 `shader_layout_test`는 Node가 없어 건너뜀: "열린 일"). 스크립트로 확인한 것: 스크립트 실행의 로그에 오류 0개, 경고
+  0개; 쇼케이스 화면이 기준선의 S10과 눈으로 같다(색, 그림자, 선택 상자, 기즈모, 글자); Textures 탭이 깊이 미리보기까지 그린다; 마우스(탭
+  누르기, 검색 상자 누르기, 왼쪽 드래그로 궤도 회전(yaw 0.35 → -0.61), 휠로 줌(거리 5 → 3.285, 되돌리면 5), 뷰포트 밖의 휠은 줌하지
+  않음); 키(Ctrl+A, Ctrl+C, Backspace, Ctrl+V); 글자 입력("char"가 Scene 탭을 거르고 한글 "한글"이 보인다); 클립보드(시스템 클립보드의
+  텍스트와 "char한글"이 오간다); 저장과 다시 열기(msaa, 톤, 노출, 블룸이 새 프로세스에서 같고 `save_round_trip`이 참); 로컬 파일 열기, 저장,
+  제자리 저장, 바깥에서 바뀐 파일의 거부(`local_file_test`). **사람이 해야 하는 것: 진짜 한국어 입력기(IME)의 조합 창이 입력란 옆에 뜨는지**
+  (`WM_CHAR`로 들어오는 글자까지는 위에서 시험했다), Alt+Tab과 화면 배율 바뀜.

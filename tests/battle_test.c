@@ -1712,8 +1712,17 @@ internal void test_golden_rounds(void)
             if (battle.tick == 300)
                 at_300 = battle_hash(&battle);
         }
-        CHECK(battle.tick == golden[g].ticks && battle.outcome == golden[g].outcome && at_300 == golden[g].at_300);
+        // The round's length, outcome and survivors are the same everywhere. The hashes hold the units' float bits, and the C library's
+        // sinf, cosf, tanf and atan2f (the aim) give the last bit differently on each platform, so a native build has its own and
+        // only the web's are checked (found 2026-10-12, with MSVC).
+#if defined(__EMSCRIPTEN__)
+        CHECK(battle.tick == golden[g].ticks && (u32)battle.outcome == golden[g].outcome && at_300 == golden[g].at_300);
         CHECK(battle_hash(&battle) == golden[g].at_end && battle_alive_count(&battle, TEAM_ENEMY) == golden[g].enemies_left);
+#else
+        (void)at_300;
+        CHECK(battle.tick == golden[g].ticks && (u32)battle.outcome == golden[g].outcome);
+        CHECK(battle_alive_count(&battle, TEAM_ENEMY) == golden[g].enemies_left);
+#endif
     }
 }
 

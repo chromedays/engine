@@ -1,7 +1,7 @@
 // The same for a multisampled depth texture (the scene's with MSAA on): it shows sample 0.
 import preview_common;
 
-[[vk::binding(2, 0)]] DepthTexture2DMS d;
+[[vk::binding(2, 0)]] DepthTexture2DMS d : register(t2, space0);
 
 [shader("vertex")]
 VsOut vs_main(VsIn in)
