@@ -945,6 +945,14 @@ internal void show_no_gpu_message(const char* skipped)
 internal void enable_debug_layer(void)
 {
 #if !defined(NDEBUG)
+    // NV_D3D12_VALIDATION=0 turns both off: a run that measures time (the scripted benchmark) cannot afford them, and the GPU's passes
+    // and buffer copies are what it measures.
+    wchar_t setting[8];
+    DWORD setting_length = GetEnvironmentVariableW(L"NV_D3D12_VALIDATION", setting, NV_ARRAY_COUNT(setting));
+    if (setting_length > 0 && setting_length < NV_ARRAY_COUNT(setting) && setting[0] == L'0') {
+        nv_log(NV_LOG_INFO, "nv", "D3D12 debug layer off (NV_D3D12_VALIDATION=0)");
+        return;
+    }
     ID3D12Debug* debug = NULL;
     HRESULT debug_result = backend.device_factory
         ? ID3D12DeviceFactory_GetConfigurationInterface(backend.device_factory, &CLSID_D3D12Debug, &IID_ID3D12Debug, (void**)&debug)

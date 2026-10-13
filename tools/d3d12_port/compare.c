@@ -14,9 +14,10 @@
 //             most --over (a share, default 0.03) of the blocks, and in none more than --largest (default 40/255). The two limits
 //             are for thin lines, which the two rasterizers draw differently (the debug lines are 1 pixel and aliased on a GPU,
 //             antialiased in SwiftShader): a line moves the averages of a few blocks by a lot, a real mistake much more or in many
-//             more. `--diff <dir>` writes a picture of the differences (a block's brightness is its difference, 16 to the level;
+//             more. The effects' screens (V*) are held to five times the share and 2.75 times the largest block, since their
+//             translucent particles are unsorted and blend in the order the GPU's threads left them in. `--diff <dir>` writes a picture of the differences (a block's brightness is its difference, 16 to the level;
 //             blocks over the tolerance are red).
-// Effects (JSON dumps): counters, arguments and counts are exact; the live particles are compared sorted by (emitter, seed) with a
+// Effects (JSON dumps): counters, arguments and counts are exact (simulate's workgroup count may be the one a frame earlier or later, see compare_effects); the live particles are compared sorted by (emitter, seed) with a
 // relative error of 1e-4 (1e-3, a half float's ulp, for the values the shader keeps as halves).
 // --present: only what the current directory holds (a run of some cases). Exits with 1 when anything differs.
 
@@ -750,12 +751,70 @@ internal ImageDifference compare_images(const Image* a, const Image* b, const Js
 
 global const char* const field_names[12] = {"emitter", "seed", "x", "y", "z", "age", "vx", "vy", "vz", "life", "scale", "rotation"};
 
-internal b32 close_enough(f64 a, f64 b, b32 half)
+// Whether the particle value `field` (2 to 11: position, age, velocity, life, scale, rotation) of two builds is the same enough.
+// Between two builds of one renderer the error is relative (1e-4; 1e-3, a half float's ulp, for what the shader keeps as halves).
+// With --blocks, another GPU: sin, cos and exp differ in the last bits and flip the rounding of the half floats the particles keep
+// their velocity, life, scale and rotation in, one ulp a step, so the error is absolute and as large as a few steps of a half
+// float at the sizes the values have (the largest differences measured over every case: position 8 mm, velocity 0.008).
+internal b32 close_enough(f64 a, f64 b, u32 field)
 {
     if (options.exact)
         return a == b;
+    if (options.blocks) {
+        local_persist const f64 absolute[12] = {0, 0, 0.02, 0.02, 0.02, 1e-4, 0.02, 0.02, 0.02, 0.005, 0.005, 0.02};
+        return fabs(a - b) <= absolute[field];
+    }
+    b32 half = field >= 6;
     f64 scale = fmax(fabs(a), fabs(b));
     return fabs(a - b) <= (half ? 1e-3 : 1e-4) * scale + (half ? 6e-8 : 1e-6);
+}
+
+// A short text of a value, for a message: numbers and arrays of them, cut where `capacity` ends.
+internal void json_text(const Json* value, char* out, umm capacity)
+{
+    umm used = 0;
+    if (value->kind == JSON_NUMBER) {
+        snprintf(out, capacity, "%.9g", value->number);
+        return;
+    }
+    if (value->kind != JSON_ARRAY) {
+        snprintf(out, capacity, "...");
+        return;
+    }
+    used += (umm)snprintf(out + used, capacity - used, "[");
+    for (u32 i = 0; i < value->count && used + 24 < capacity; ++i)
+        used += (umm)snprintf(out + used, capacity - used, "%s%.9g", i ? "," : "", value->items[i].number);
+    snprintf(out + used, capacity - used, "]");
+}
+
+// What the culling counted may differ between two GPUs: a particle is visible when its sphere touches the frustum, and its position comes
+// from the GPU's own sin, cos and exp (the turbulence and the drag), so a few of the many particles near a plane fall on the other side.
+// Another renderer's run (--blocks) may count up to 3% (and 8) more or fewer visible particles; everything else is exact.
+internal b32 visible_count_slot(const char* key, u32 index)
+{
+    if (strcmp(key, "counters") == 0)
+        return index == 3 || index == 4 || index == 9;
+    if (strcmp(key, "drawArgs") == 0)
+        return index == 0 || index == 4;
+    return 0;
+}
+
+internal b32 effects_array_matches(const char* key, const Json* p, const Json* q)
+{
+    if (json_equal(p, q))
+        return 1;
+    if (!options.blocks || p->kind != JSON_ARRAY || q->kind != JSON_ARRAY || p->count != q->count)
+        return 0;
+    for (u32 i = 0; i < p->count; ++i) {
+        f64 a = p->items[i].number, b = q->items[i].number;
+        if (a == b)
+            continue;
+        // A draw argument is six vertices a particle.
+        f64 unit = strcmp(key, "drawArgs") == 0 ? 6.0 : 1.0;
+        if (!visible_count_slot(key, i) || fabs(a - b) / unit > fmax(8.0, 0.03 * fmax(a, b) / unit))
+            return 0;
+    }
+    return 1;
 }
 
 internal void compare_effects(const Json* a, const Json* b, Report* report)
@@ -778,7 +837,7 @@ internal void compare_effects(const Json* a, const Json* b, Report* report)
         if (!known)
             names[name_count++] = frames_b->keys[i];
     }
-    local_persist const char* const exact_keys[] = {"capacity", "counters", "simulateArgs", "drawArgs", "segments", "decals"};
+    local_persist const char* const exact_keys[] = {"capacity", "counters", "drawArgs", "segments", "decals"};
     for (u32 n = 0; n < name_count; ++n) {
         const Json* x = member(frames_a, names[n]);
         const Json* y = member(frames_b, names[n]);
@@ -792,8 +851,33 @@ internal void compare_effects(const Json* a, const Json* b, Report* report)
         for (u32 k = 0; k < NV_ARRAY_COUNT(exact_keys); ++k) {
             const Json* p = member(x, exact_keys[k]);
             const Json* q = member(y, exact_keys[k]);
-            if (!p || !q || !json_equal(p, q))
-                problem(report, "frame %s: %s differs", names[n], exact_keys[k]);
+            if (!p || !q || !effects_array_matches(exact_keys[k], p, q)) {
+                char text_p[200] = "", text_q[200] = "";
+                if (p) json_text(p, text_p, sizeof(text_p));
+                if (q) json_text(q, text_q, sizeof(text_q));
+                problem(report, "frame %s: %s %s against %s", names[n], exact_keys[k], text_p, text_q);
+            }
+        }
+        // simulate's workgroup count is made from the alive count at the start of the frame that wrote it, and the frames after it write it
+        // again: where the count crosses a multiple of 64, a dump a frame earlier or later reads the other value, and a Play that is still
+        // running (V12, whose count changes by thousands a frame with the real time) reads one of many. So the count may be one
+        // frame's away: up to 5% (and 1) apart, with the other two words equal.
+        const Json* sim_a = member(x, "simulateArgs");
+        const Json* sim_b = member(y, "simulateArgs");
+        if (!sim_a || !sim_b) {
+            problem(report, "frame %s: simulateArgs only in one", names[n]);
+        } else if (!json_equal(sim_a, sim_b)) {
+            b32 same_rest = sim_a->count == sim_b->count && sim_a->count >= 3;
+            for (u32 i = 1; same_rest && i < sim_a->count; ++i)
+                same_rest = sim_a->items[i].number == sim_b->items[i].number;
+            f64 first_a = sim_a->count ? sim_a->items[0].number : 0.0, first_b = sim_b->count ? sim_b->items[0].number : 0.0;
+            b32 timing = same_rest && !options.exact && fabs(first_a - first_b) <= fmax(1.0, 0.05 * fmax(first_a, first_b));
+            if (!timing) {
+                char text_p[200] = "", text_q[200] = "";
+                json_text(sim_a, text_p, sizeof(text_p));
+                json_text(sim_b, text_q, sizeof(text_q));
+                problem(report, "frame %s: simulateArgs %s against %s", names[n], text_p, text_q);
+            }
         }
         if (options.exact && !json_equal(x, y))
             problem(report, "frame %s: the dump differs", names[n]);
@@ -806,19 +890,34 @@ internal void compare_effects(const Json* a, const Json* b, Report* report)
             continue;
         }
         u32 bad = 0;
+        f64 largest_relative = 0.0;
+        f64 position_sum = 0.0, position_largest = 0.0, velocity_largest = 0.0;
+        u32 position_count = 0;
         char example[160] = "";
         for (u32 i = 0; i < particles_a->count; ++i) {
             const Json* row_a = &particles_a->items[i];
             const Json* row_b = &particles_b->items[i];
             for (u32 f = 0; f < 12 && f < row_a->count && f < row_b->count; ++f) {
                 f64 p = row_a->items[f].number, q = row_b->items[f].number;
-                b32 ok = f < 2 ? p == q : close_enough(p, q, f >= 6);
+                b32 ok = f < 2 ? p == q : close_enough(p, q, f);
+                if (f >= 2 && f <= 4) {
+                    f64 d = fabs(p - q);
+                    position_sum += d;
+                    ++position_count;
+                    if (d > position_largest)
+                        position_largest = d;
+                }
+                if (f >= 6 && f <= 8 && fabs(p - q) > velocity_largest)
+                    velocity_largest = fabs(p - q);
+                if (f >= 2 && fmax(fabs(p), fabs(q)) > 0.0 && fabs(p - q) / fmax(fabs(p), fabs(q)) > largest_relative)
+                    largest_relative = fabs(p - q) / fmax(fabs(p), fabs(q));
                 if (!ok && !bad++)
                     snprintf(example, sizeof(example), "particle %u %s %.9g against %.9g", i, field_names[f], p, q);
             }
         }
         if (bad)
-            problem(report, "frame %s: %u value(s) differ, first: %s", names[n], bad, example);
+            problem(report, "frame %s: %u value(s) differ (largest relative %.3g; position error mean %.3g largest %.3g m, velocity largest %.3g), first: %s", names[n], bad,
+                    largest_relative, position_count ? position_sum / position_count : 0.0, position_largest, velocity_largest, example);
     }
 }
 
@@ -897,8 +996,11 @@ internal void compare_screen(const char* baseline, const char* current, const ch
         // The scene drawn at a lower resolution (S7, S8) and shown with the nearest filter makes every line two to six screen pixels
         // wide, and the same line of the two rasterizers differs that much more.
         b32 low_resolution = strncmp(name, "S7-", 3) == 0 || strncmp(name, "S8-", 3) == 0;
-        f64 over_fraction = options.over_fraction * (low_resolution ? 2.0 : 1.0);
-        f64 largest = options.block_largest * (low_resolution ? 1.75 : 1.0);
+        // The effects' screens (V*) draw translucent particles unsorted, on purpose: their order is the order the GPU's threads put them in
+        // the alive list, so the same smoke has another color on top on another GPU, and a cloud of it moves many blocks by a lot.
+        b32 effects_screen = name[0] == 'V' && name[1] >= '0' && name[1] <= '9';
+        f64 over_fraction = options.over_fraction * (low_resolution ? 2.0 : effects_screen ? 5.0 : 1.0);
+        f64 largest = options.block_largest * (low_resolution ? 1.75 : effects_screen ? 2.75 : 1.0);
         if (d.blocks_over > over_fraction * d.blocks || d.block_max > largest)
             problem(&report, "%u of %u blocks of 8x8 differ by more than %g/255 in their averages (largest %.2f; %.1f%% of the blocks and up to %g/255 are allowed)",
                     d.blocks_over, d.blocks, options.block_tolerance, d.block_max, over_fraction * 100.0, largest);

@@ -18,6 +18,8 @@
 //   call <name> <number>...      a debug export, with its numbers (as the web calls Module._sandbox_debug_<name>); a result is logged
 //   frames <n>                   n frames before the next command
 //   wait-fixed <n>               frames until the fixed game clock (`call fixed_dt`) has run n frames
+//   benchmark <file>             runs the shown scene's benchmark (the Stress tab's Run) and writes its results table (the Copy button's text) to the
+//                                file when it is over; the next command waits for it
 //   screenshot <png> [viewport | <x> <y> <width> <height>]  the canvas (the scene's viewport, or a rectangle of it) of this frame as a
 //                                PNG file; the next command waits for it. A relative path is in the folder `--out` gives
 //   case <id> <dt> <counters 0|1>  starts <out>/<id>.json, the dumps of an effects case; case-frame <frame> <full|counters> adds the
@@ -51,6 +53,8 @@ typedef struct DebugScript {
     u32 dump_frame;
     b32 waiting_fixed;    // until the fixed clock (the `fixed_dt` export) has run this many frames
     u32 fixed_frames_wanted;
+    b32 waiting_benchmark; // until the benchmark run (the `benchmark` command) is over
+    char benchmark_path[PATH_CAPACITY];
 } DebugScript;
 
 global DebugScript script;
@@ -215,6 +219,14 @@ internal void run_command(Sandbox* sandbox, char* line)
         } else {
             nv_gpu_debug_screenshot(&sandbox->gpu, path, 0, 0, 0, 0);
         }
+    } else if (strcmp(command, "benchmark") == 0 && count == 2) {
+        benchmark_start(sandbox);
+        if (!sandbox->benchmark.running) {
+            nv_log(NV_LOG_ERROR, "script", "the shown scene has no benchmark to run");
+            exit(2);
+        }
+        resolve_path(script.benchmark_path, sizeof(script.benchmark_path), words[1]);
+        script.waiting_benchmark = 1;
     } else if (strcmp(command, "wait-fixed") == 0 && count == 2) {
         script.waiting_fixed = 1;
         script.fixed_frames_wanted = (u32)atoi(words[1]);
@@ -311,11 +323,25 @@ void debug_script_update(Sandbox* sandbox)
         }
         script.waiting_fixed = 0;
     }
+    if (script.waiting_benchmark) {
+        if (sandbox->benchmark.running)
+            return;
+        char table[4096];
+        benchmark_table_text(sandbox, table, sizeof(table));
+        FILE* file = fopen(script.benchmark_path, "wb");
+        if (!file) {
+            nv_log(NV_LOG_ERROR, "script", "cannot write %s", script.benchmark_path);
+            exit(2);
+        }
+        fputs(table, file);
+        fclose(file);
+        script.waiting_benchmark = 0;
+    }
     if (script.frames_left) {
         --script.frames_left;
         return;
     }
-    while (script.next_line && *script.next_line && !script.quit && !script.frames_left &&
+    while (script.next_line && *script.next_line && !script.quit && !script.frames_left && !script.dump_pending && !script.waiting_fixed && !script.waiting_benchmark &&
            !nv_gpu_debug_screenshot_pending(&sandbox->gpu)) {
         char* line = script.next_line;
         char* end = strchr(line, '\n');
@@ -332,7 +358,7 @@ void debug_script_update(Sandbox* sandbox)
         run_command(sandbox, line);
     }
     if (script.quit || !script.next_line || !*script.next_line) {
-        if (!nv_gpu_debug_screenshot_pending(&sandbox->gpu) && !script.frames_left) {
+        if (!nv_gpu_debug_screenshot_pending(&sandbox->gpu) && !script.frames_left && !script.dump_pending && !script.waiting_fixed && !script.waiting_benchmark) {
             u64 errors = nv_log_ring.arrived[NV_LOG_ERROR];
             u64 warnings = nv_log_ring.arrived[NV_LOG_WARNING];
             nv_log(NV_LOG_INFO, "script", "done: %llu error(s), %llu warning(s) in the log", (unsigned long long)errors,

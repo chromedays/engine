@@ -131,32 +131,31 @@ foreach ($case in $vfx.PSObject.Properties) {
         $lines += @("move 640 15", "frames 3", "mouse down", "frames 8", "mouse up", "frames 20")
     }
     if ($spec.PSObject.Properties["fast"]) { $lines += @("call set_resolution 0 4 0", "call set_msaa 1") }
-    $lines += @("frames 30", "call fixed_dt $($spec.dt.ToString('R', [Globalization.CultureInfo]::InvariantCulture))", "call restart_clips")
+    $lines += @("frames 30", "call fixed_dt $(([double]$spec.dt).ToString('R', [Globalization.CultureInfo]::InvariantCulture))", "call restart_clips")
     if ($spec.PSObject.Properties["play"]) { $lines += "call set_effects $($spec.play[0]) 0 0 0 0" }
 
     # What happens at each frame: fires, then the picture, then the dump.
     $events = @{}
-    function Add-Event($frame, $kind, $value) {
+    function Get-Event($frame) {
         if (-not $events.ContainsKey($frame)) { $events[$frame] = @{ fire = @(); shot = $false; dump = $false } }
-        if ($kind -eq "fire") { $events[$frame].fire += , $value } else { $events[$frame][$kind] = $true }
+        return $events[$frame]
     }
-    Add-Event 0 "fire" $null; $events[0].fire = @()
-    foreach ($fire in @($spec.fire)) { if ($null -ne $fire) { $events[0].fire += , $fire } }
+    foreach ($fire in @($spec.fire)) { if ($null -ne $fire) { $e = Get-Event 0; $e.fire += , $fire } }
+    (Get-Event 0) | Out-Null
     if ($spec.PSObject.Properties["fireAt"]) {
         foreach ($entry in $spec.fireAt.PSObject.Properties) {
-            Add-Event ([int]$entry.Name) "fire" $null
-            foreach ($fire in @($entry.Value)) { $events[[int]$entry.Name].fire += , $fire }
+            foreach ($fire in @($entry.Value)) { $e = Get-Event ([int]$entry.Name); $e.fire += , $fire }
         }
     }
-    foreach ($frame in @($spec.dump)) { Add-Event ([int]$frame) "dump" $true }
-    if ($spec.PSObject.Properties["shots"]) { foreach ($frame in @($spec.shots)) { Add-Event ([int]$frame) "shot" $true } }
+    foreach ($frame in @($spec.dump)) { (Get-Event ([int]$frame)).dump = $true }
+    if ($spec.PSObject.Properties["shots"]) { foreach ($frame in @($spec.shots)) { (Get-Event ([int]$frame)).shot = $true } }
     if ($spec.PSObject.Properties["afterwards"]) {
-        Add-Event ([int]$spec.afterwards.at) "fire" $null
-        foreach ($fire in @($spec.afterwards.fire)) { $events[[int]$spec.afterwards.at].fire += , $fire }
-        foreach ($frame in @($spec.afterwards.dump)) { Add-Event ([int]$frame) "dump" $true }
+        foreach ($fire in @($spec.afterwards.fire)) { $e = Get-Event ([int]$spec.afterwards.at); $e.fire += , $fire }
+        (Get-Event ([int]$spec.afterwards.at)) | Out-Null
+        foreach ($frame in @($spec.afterwards.dump)) { (Get-Event ([int]$frame)).dump = $true }
     }
     $counters = if ($spec.PSObject.Properties["counters"] -and $spec.counters) { 1 } else { 0 }
-    $lines += "case $id $($spec.dt.ToString('R', [Globalization.CultureInfo]::InvariantCulture)) $counters"
+    $lines += "case $id $(([double]$spec.dt).ToString('R', [Globalization.CultureInfo]::InvariantCulture)) $counters"
     foreach ($frame in ($events.Keys | Sort-Object { [int]$_ })) {
         $event = $events[$frame]
         $lines += @("call run_frames $frame", "wait-fixed $frame")

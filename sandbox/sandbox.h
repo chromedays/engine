@@ -728,6 +728,7 @@ b32 stress_tab_shown(Sandbox* sandbox);       // the shown scene has a generator
 void stress_after_frame(Sandbox* sandbox);    // after the frame's times are known: runs the benchmark
 void benchmark_start(Sandbox* sandbox);       // "Run benchmark": the shown scene's steps, in Play
 void benchmark_end(Sandbox* sandbox);         // Play ended: a run in progress is over (Stop put the parameters back)
+void benchmark_table_text(Sandbox* sandbox, char* text, umm capacity); // the results as the Copy button's text
 u32 stress_live_nodes(NvScene* scene);
 void stress_ui(Sandbox* sandbox);
 
