@@ -481,7 +481,7 @@ global u32 debug_frames, debug_frame_limit;
 internal void frame(void* userdata)
 {
     Sandbox* sandbox = userdata;
-    debug_script_update(sandbox);
+    nv_debug_script_update();
     nv_log_pump();
     f64 now = nv_time_seconds();
     f32 ui_dt = (f32)(now - sandbox->last_time);
@@ -1285,7 +1285,7 @@ NV_DEBUG_EXPORT unsigned sandbox_debug_save_crc(void)
 #if defined(_WIN32)
 // The scripted runs' `call` finds a debug export by name here (sandbox/debug_script.c). The letters before the `>` are the arguments (i: int,
 // f: float), the one after it the result (v: none, i: int, f: float, d: double, s: char*, u: unsigned).
-const DebugCall sandbox_debug_calls[] = {
+const NvDebugCall sandbox_debug_calls[] = {
     {"layout", "ii>f", (void*)sandbox_debug_layout},
     {"scene", "i>f", (void*)sandbox_debug_scene},
     {"set_fit", "i>v", (void*)sandbox_debug_set_fit},

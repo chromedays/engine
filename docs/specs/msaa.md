@@ -7,6 +7,8 @@
 
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
+참고 (2026-10-12, `d3d12_port.md`): 이 스펙의 WebGPU(`resolveTarget`, `Discard`, `WGPUTexture`)는 이제 `engine/gpu.h`의 API(`NvGpuTexture`, 패스의 resolve 대상과 저장 동작)다. 웹 백엔드는 WebGPU로, Windows 백엔드는 D3D12(`ResolveSubresource`)로 같은 4× 설정을 내고, 4×에서 S1·S2가 SwiftShader 기준선과 블록 평균으로 같다. 샘플 수가 1과 4뿐인 것은 두 백엔드에서 그대로다.
+
 ### 목표
 
 4× 다중 샘플 안티앨리어싱 (MSAA)으로 씬의 삼각형 가장자리를 부드럽게 한다. 지금 씬 패스는 픽셀당 샘플 하나로

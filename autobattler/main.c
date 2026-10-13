@@ -4,6 +4,7 @@
 
 #include "game.h"
 
+#include <engine/debug_script.h>
 #include <engine/file.h>
 
 
@@ -227,6 +228,7 @@ internal void poll_local_file(Game* game)
 internal void frame(void* userdata)
 {
     Game* game = userdata;
+    nv_debug_script_update();
     nv_log_pump();
     f64 now = nv_time_seconds();
     f32 dt = (f32)(now - game->last_time);
@@ -451,6 +453,30 @@ NV_DEBUG_EXPORT float battle_debug_project(float x, float y, float z, int axis)
 }
 #endif
 
+#if defined(_WIN32) && !defined(NDEBUG)
+// What a scripted run's `call` finds by name (engine/debug_script.h): the exports above, without their battle_debug_ prefix; "debug" is
+// battle_debug itself. The letters before the `>` are the arguments (i: int, f: float), the one after it the result.
+internal const NvDebugCall battle_debug_calls[] = {
+    {"debug", "i>i", (void*)battle_debug},
+    {"set_speed", "f>v", (void*)battle_debug_set_speed},
+    {"step", "i>v", (void*)battle_debug_step},
+    {"deploy", "iii>i", (void*)battle_debug_deploy},
+    {"start", ">i", (void*)battle_debug_start},
+    {"run", "i>v", (void*)battle_debug_run},
+    {"layout", "ii>f", (void*)battle_debug_layout},
+    {"project", "fffi>f", (void*)battle_debug_project},
+    {"unit_roles", "i>i", (void*)battle_debug_unit_roles},
+    {"set_role_filter", "i>v", (void*)battle_debug_set_role_filter},
+    {"project_action", "i>i", (void*)battle_debug_project_action},
+    {"load_test", ">i", (void*)battle_debug_load_test},
+};
+
+internal NvRect debug_script_viewport(void* user)
+{
+    return ((Game*)user)->layout.viewport;
+}
+#endif
+
 int main(void)
 {
     Game* game = &game_state;
@@ -489,6 +515,17 @@ int main(void)
     game->project_text = NV_PUSH_ARRAY(&game->permanent, PROJECT_MAX_SIZE + 1, char);
     view_build(game);
     load_built_in_project(game);
+#if defined(_WIN32) && !defined(NDEBUG)
+    nv_debug_script_init(&(NvDebugScriptDesc){
+        .window = &game->window,
+        .gpu = &game->gpu,
+        .arena = &game->permanent,
+        .calls = battle_debug_calls,
+        .call_count = NV_ARRAY_COUNT(battle_debug_calls),
+        .viewport = debug_script_viewport,
+        .user = game,
+    });
+#endif
     game->last_time = nv_time_seconds();
     nv_window_run(&game->window, frame, game);
     return 0;

@@ -1,6 +1,6 @@
 # D3D12 포팅 스펙 (Windows 네이티브 빌드, 엔진의 GPU API)
 
-상태: 초안 (2026-10-12). "합의할 것"은 모두 정했다(2026-10-12). 이 스펙의 변경은 먼저 합의한다. **단계 0–5는 끝났고 검증했다**("찾은 것"); 단계 3부터는 Windows PC에서 한다.
+상태: 초안 (2026-10-12). "합의할 것"은 모두 정했다(2026-10-12). 이 스펙의 변경은 먼저 합의한다. **단계 0–6은 끝났고 검증했다**(웹은 단계 7을 기다린다)("찾은 것"); 단계 3부터는 Windows PC에서 한다.
 
 ### 목표
 
@@ -407,12 +407,15 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 
 - `EMSCRIPTEN_KEEPALIVE` 함수는 C 함수이므로 네이티브에서도 컴파일된다. 매크로 `NV_DEBUG_EXPORT`(웹은 `EMSCRIPTEN_KEEPALIVE`,
   네이티브는 비어 있음)로 바꾼다.
-- 네이티브 Debug 빌드는 `--script <file>`을 받는다(`sandbox/debug_script.c`). 한 줄에 명령 하나: `call <함수> <숫자>...`, `frames <n>`,
-  `screenshot <png> [viewport]`, `dump-vfx <json>`, `quit`. 단계 3에서 입력을 시험하려고 더한 것: `size <w> <h>`(클라이언트 영역을 그
-  픽셀로, 픽셀 비율 1로), `move`, `mouse down|up`, `wheel`, `key`, `modifiers`, `text`(WM_CHAR로 넣는 글자), `close`(닫기 단추: 저장한다).
-  `call`은 이름에서 함수로 가는 표(`sandbox/main.c`의 `sandbox_debug_calls`: `NV_DEBUG_EXPORT` 함수 전부와 그 인자 모양)로 찾는다. 같은
+- 네이티브 Debug 빌드는 `--script <file> [--out <dir>]`을 받는다(`engine/debug_script.h`: 샌드박스와 오토배틀러가 같은 실행기를 쓴다). 한 줄에 명령
+  하나: `size <w> <h>`(클라이언트 영역을 그 픽셀로, 픽셀 비율 1로), `call <함수> <숫자>...`, `frames <n>`, `screenshot <png> [viewport | x y w h]`,
+  `move`, `mouse down|up`, `wheel`, `key`, `modifiers`, `text`(WM_CHAR로 넣는 글자), `close`(닫기 단추: 저장한다), `quit`. 앱이 더하는 명령(`NvDebugScriptDesc.command`):
+  샌드박스는 `wait-fixed <n>`(고정 시계가 n프레임 돌 때까지), `case <id> <dt> <counters>`, `case-frame <frame> <full|counters>`, `case-end`(효과의 덤프를
+  웹 하네스와 같은 JSON으로), `benchmark <file>`(Stress 씬의 Run을 돌려 Copy 단추와 같은 표를 쓴다). `call`은 이름에서 함수로 가는 표로 찾는다
+  (샌드박스는 `sandbox/main.c`의 `sandbox_debug_calls`, 오토배틀러는 `autobattler/main.c`의 `battle_debug_calls`: `NV_DEBUG_EXPORT` 함수와 그 인자 모양). 같은
   경우 목록이 Playwright(웹)와 스크립트(네이티브) 둘을 몬다. 끝낼 때 로그의 오류 수를 종료 코드로 돌려준다. 입력 명령은 창의 메시지
-  처리기로 보내는 메시지이고 진짜 포인터가 아니므로, 이 실행에서는 포인터가 창을 떠났다는 알림(WM_MOUSELEAVE)을 무시한다.
+  처리기로 보내는 메시지이고 진짜 포인터가 아니므로, 이 실행에서는 포인터가 창을 떠났다는 알림(WM_MOUSELEAVE)을 무시한다. 환경 변수(Debug만):
+  `NV_STORAGE_DIR`(저장 폴더), `NV_LOCAL_FILE`(대화 상자 대신 쓸 경로), `NV_D3D12_VALIDATION=0`(디버그 레이어와 GPU 기반 검증을 끈다: 시간을 재는 실행용).
 - 파일 대화 상자는 사람이 있어야 하므로, Debug 빌드는 환경 변수 `NV_LOCAL_FILE`이 있으면 대화 상자를 건너뛰고 그 경로를 대답으로 쓴다
   (`tests/local_file_test.c`가 그렇게 `nv_local_file_*`를 시험한다).
 - 스크린숏은 스왑체인 버퍼를 리드백해 WIC로 PNG를 쓴다.
@@ -617,3 +620,28 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
   장면 패스(파티클 그리기 포함)이고 `particles`는 컴퓨트 패스의 시간이다.
 - **단계 5의 검증 (2026-10-12).** `capture_native.ps1 -Cases V1..V12`가 만든 효과 12개(JSON 덤프와 화면 8장)를 `compare --blocks`로 기준선과 비교해 모두
   통과한다(위의 허용 안에서). 실행의 로그에 디버그 레이어와 GPU 기반 검증의 메시지가 0개다.
+- **스크립트 실행기는 엔진에 있다 (단계 6).** 오토배틀러도 같은 `--script`로 돌려야 하므로 실행기(`size`, `call`, `frames`, `screenshot`, 입력 명령, `quit`)를
+  `sandbox/debug_script.c`에서 `engine/debug_script.c/.h`로 옮겼다. 앱은 `call`이 찾을 표와, 자기만의 명령(`command`), 기다릴 일이 있는지(`busy`)를 준다. 샌드박스의
+  `case`, `wait-fixed`, `benchmark`는 `sandbox/debug_script.c`에 남았다. 옮긴 뒤에 같은 효과 케이스(V1, V3)와 S10이 기준선과 그대로 통과한다.
+- **오토배틀러의 한 라운드 (단계 6).** `capture_native.ps1 -Cases B1`이 `autobattler.exe`를 스크립트로 돌린다: 기본 프로젝트에 플레이어 부대 다섯을
+  놓고(`call deploy`), 시작해, 라운드가 끝날 때까지 돌린다(`call run`). 이 배치는 패배로 끝난다(754틱, 플레이어 0, 적 45: 6유닛 부대 다섯이 열 부대에 진다).
+  로그에 오류와 `[d3d12]` 메시지가 0개이고 그림 셋(`autobattler/battle-*.png`)에서 부대, 탄, 효과, 패널이 제대로 그려진다. 웹에는 이 그림이 없어 비교하지
+  않는다. 규칙은 그대로 GPU가 없는 `battle.c`이고 `battle_test`가 이미 돈다.
+- **단계 6의 검증 (2026-10-12).** Release와 Debug 빌드가 `/W4`에서 경고 0개로 만들어지고, ctest가 Release 12개, Debug 13개(`local_file_test` 포함)를 통과한다
+  (Node가 없어 `strings_test`와 `shader_layout_test`는 건너뛴다: 웹 CI가 돌린다). 샌드박스와 오토배틀러가 디버그 레이어와 GPU 기반 검증의 메시지 0개로 돈다. 웹 빌드는
+  단계 3–6에서 하기로 한 대로 검사하지 않았다(단계 7).
+
+### 만든 결과
+
+2026-10-12 단계 0–6의 끝에서 (웹은 단계 2에서 검증하고 그 뒤로는 검사하지 않았다):
+
+- **GPU:** `engine/gpu.h`(핸들, 버퍼, 텍스처, 바인드 그룹, 파이프라인, 패스, 컴퓨트, 간접 호출, 타임스탬프, 리드백)와 두 백엔드 `gpu_webgpu.c`, `gpu_d3d12.c`.
+  D3D12 백엔드는 자원 상태 추적, 업로드 링과 펜스, 뷰와 샘플러 힙, 루트 시그니처 캐시, 지연 해제를 한다.
+- **플랫폼:** `window`, `imgui`의 입력, `storage`, `local_file`, `image`가 플랫폼마다 소스 하나(`*_web.c`, `*_win32.c`). 플랫폼을 모르는 파일에는 `__EMSCRIPTEN__`이 없다.
+- **셰이더:** 같은 Slang 소스가 웹에서는 WGSL, Windows에서는 DXIL(SM 6.6)이 된다. 빌드가 DXC와 Agility SDK를 받는다.
+- **빌드:** `cmake -S . -B build-win -G Ninja`(MSVC)로 `sandbox.exe`, `autobattler.exe`. CI는 웹만 빌드한다.
+- **시험:** 네이티브 C 테스트(ctest), `--script`로 도는 Debug 실행, `tools/d3d12_port/`의 SwiftShader 기준선과 `compare`(하나의 비교 구현), `capture_native.ps1`(S1–S10, V1–V12, B1).
+- **문서:** `AGENTS.md`(Windows 빌드와 시험), `docs/CODING_STANDARD.md`(MSVC와 emcc 둘 다, 플랫폼별 소스의 예외, 의존성), 그리고 이 스펙과 GPU를 가리키던 `msaa.md`, `shadows.md`,
+  `textures.md`, `resolution.md`, `vfx.md`의 참고.
+- **남은 것:** 단계 7(웹을 클라우드에서 다시 검사: 사용자가 명령할 때). 사람이 해야 하는 검사: 실제 한국어 IME 조합, DPI가 다른 모니터 사이의 이동, Alt+Tab. 이 스펙이 정한 성능 목표는 없고,
+  벤치마크 표는 위에 기록만 했다(웹 쪽 표는 단계 7).

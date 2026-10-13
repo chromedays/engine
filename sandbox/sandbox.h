@@ -9,6 +9,7 @@
 #include <engine/anim.h>
 #include <engine/camera.h>
 #include <engine/chunk.h>
+#include <engine/debug_script.h>
 #include <engine/gltf.h>
 #include <engine/gpu.h>
 #include <engine/imgui.h>
@@ -863,20 +864,14 @@ void save_show_viewer(Sandbox* sandbox); // opens the save viewer (in the View t
 // end a jump or a crossfade; Debug builds check it at start and tests call it.
 b32 save_round_trip_matches(Sandbox* sandbox);
 
-// debug_script.c (Windows Debug builds): a scripted run, `sandbox.exe --script <file>` (docs/specs/d3d12_port.md, "Debug exports and
-// native tests"). Its `call` finds the debug exports of main.c by name in a table, sandbox_debug_calls.
+// debug_script.c (Windows Debug builds): the sandbox's part of a scripted run, `sandbox.exe --script <file>` (engine/debug_script.h;
+// docs/specs/d3d12_port.md, "Debug exports and native tests"). Its `call` finds the debug exports of main.c by name in a table,
+// sandbox_debug_calls.
 #if defined(_WIN32) && !defined(NDEBUG)
-typedef struct DebugCall {
-    const char* name;      // the export without its sandbox_debug_ prefix
-    const char* signature; // "arguments>result": i int, f float; v none, i int, f float, d double, s char*, u unsigned
-    void* function;
-} DebugCall;
-extern const DebugCall sandbox_debug_calls[];
+extern const NvDebugCall sandbox_debug_calls[];
 extern const u32 sandbox_debug_call_count;
 
-void debug_script_init(Sandbox* sandbox);   // reads the command line; does nothing without --script
-void debug_script_update(Sandbox* sandbox); // at the start of every frame
+void debug_script_init(Sandbox* sandbox); // reads the command line; does nothing without --script
 #else
 #define debug_script_init(sandbox) ((void)(sandbox))
-#define debug_script_update(sandbox) ((void)(sandbox))
 #endif

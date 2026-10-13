@@ -7,6 +7,8 @@
 
 상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
 
+참고 (2026-10-12, `d3d12_port.md`): 아래의 `WGPUTexture`, `WGPUTextureFormat`, `WGPUStoreOp_Discard`는 이제 `NvGpuTexture`, `NvGpuFormat`, 패스의 저장 동작이다(`engine/gpu.h`). 미리보기 파이프라인과 `textureLoad`로 깊이 읽기는 두 백엔드에서 같다(S9의 세 그림이 SwiftShader 기준선과 같다). "WebGPU 오류 없음"의 네이티브 쪽은 D3D12 디버그 레이어와 GPU 기반 검증의 메시지가 로그에 0개인 것이다.
+
 ### 목표
 
 엔진이 쓰는 텍스처를 샌드박스 안에서 본다: 캐릭터의 base color 맵, 그림자 맵, 씬의 깊이 타깃, ImGui의 글꼴 아틀라스.

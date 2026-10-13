@@ -27,6 +27,7 @@ if(NV_WEB)
         window_web.c)
 else()
     target_sources(nv PRIVATE
+        debug_script.c
         gpu_d3d12.c
         image_win32.c
         imgui_win32.c

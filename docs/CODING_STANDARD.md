@@ -32,6 +32,10 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - 엔진 모듈은 헤더 하나와 소스 하나이고, 둘 다 `engine/`에 나란히 둔다(`engine/scene.h`, `engine/scene.c`). include 경로는
   저장소 루트이므로 `#include <engine/scene.h>`로 포함한다. 엔진 안에서만 쓰는 헤더는 맨 위 주석에 그렇게 적고(지금은
   `engine/vfx_cpu.h`), 앱은 포함하지 않는다.
+  예외 하나: 플랫폼에 기대는 모듈(`window`, `imgui` 입력, `storage`, `local_file`, `image`, `gpu`)은 헤더 하나에 소스가 플랫폼마다 하나다
+  (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`). 소스는 `engine/CMakeLists.txt`가 플랫폼에 따라 고르고, 헤더는 플랫폼을
+  가리지 않으며(플랫폼 헤더는 `engine/window_win32.h`처럼 엔진 안에서만 쓴다), 한 플랫폼의 소스가 다른 플랫폼의 것을 호출하지 않는다.
+  Windows Debug 빌드의 스크립트 실행(`engine/debug_script.h`)처럼 한 플랫폼에만 있는 모듈은 파일 전체를 그 플랫폼 조건으로 감싼다.
 - 모든 파일이 `engine/base.h`를 (직접 또는 다른 엔진 헤더를 통해) 포함한다.
 
 ### 이름 짓기
@@ -184,6 +188,12 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 - An engine module is one header and one source, side by side in `engine/` (`engine/scene.h`, `engine/scene.c`). The
   include path is the repository root, so they are included as `#include <engine/scene.h>`. A header only the engine uses
   says so in its top comment (now `engine/vfx_cpu.h`), and the app does not include it.
+  One exception: a module that depends on the platform (`window`, `imgui`'s input, `storage`, `local_file`, `image`, `gpu`)
+  has one header and one source for each platform (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`).
+  `engine/CMakeLists.txt` picks the sources by platform, the header does not name a platform (a platform's own header, like
+  `engine/window_win32.h`, is private to the engine), and one platform's source never calls another's. A module that exists
+  on one platform only, like the Windows Debug build's scripted runs (`engine/debug_script.h`), wraps its whole file in that
+  platform's condition.
 - `engine/base.h` is included (directly or through another engine header) by every file.
 
 ### Naming

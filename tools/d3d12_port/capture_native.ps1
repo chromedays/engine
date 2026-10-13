@@ -14,7 +14,9 @@ param(
 $ErrorActionPreference = "Stop"
 $Cases = @($Cases | ForEach-Object { $_ -split "," } | Where-Object { $_ })  # -File gives "S1,V3" as one string
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$exe = Join-Path (Resolve-Path (Join-Path $root $Build)).Path "sandbox\sandbox.exe"
+$buildRoot = (Resolve-Path (Join-Path $root $Build)).Path
+$exe = Join-Path $buildRoot "sandbox\sandbox.exe"
+$battler = Join-Path $buildRoot "autobattler\autobattler.exe"
 New-Item -ItemType Directory -Force $Out | Out-Null
 $Out = (Resolve-Path $Out).Path
 $scripts = Join-Path $Out "scripts"
@@ -31,7 +33,7 @@ $settings = [ordered]@{
     S6 = @{ label = "shadows-off"; apply = @("call set_shadows 0 0") }
 }
 $fits = [ordered]@{ whole = 0; viewport = 1; stretch = 2 }
-$allIds = @($settings.Keys) + @("S7", "S8", "S9", "S10") + @($vfx.PSObject.Properties.Name)
+$allIds = @($settings.Keys) + @("S7", "S8", "S9", "S10") + @($vfx.PSObject.Properties.Name) + @("B1")
 if ($List) { $allIds -join " "; return }
 function Wanted($id) { return ($Cases.Count -eq 0) -or ($Cases -contains $id) }
 
@@ -43,7 +45,7 @@ $problems = New-Object System.Collections.Generic.List[string]
 $run = 0
 
 # Runs the sandbox with `$lines` as its script. The log's errors and warnings are the run's problems.
-function Invoke-Sandbox($name, [string[]]$lines) {
+function Invoke-Sandbox($name, [string[]]$lines, $program = $exe, $outDirectory = $Out) {
     $script:run++
     $file = Join-Path $scripts "$name.script"
     [IO.File]::WriteAllText($file, (($lines + "quit") -join "`n") + "`n", (New-Object Text.UTF8Encoding($false)))
@@ -51,7 +53,7 @@ function Invoke-Sandbox($name, [string[]]$lines) {
     New-Item -ItemType Directory -Force $store | Out-Null
     $env:NV_STORAGE_DIR = $store
     $log = Join-Path $scripts "$name.log"
-    $process = Start-Process -FilePath $exe -ArgumentList "--script", $file, "--out", $Out -WorkingDirectory (Split-Path $exe) `
+    $process = Start-Process -FilePath $program -ArgumentList "--script", $file, "--out", $outDirectory -WorkingDirectory (Split-Path $program) `
         -RedirectStandardError $log -PassThru
     $null = $process.Handle  # without this the exit code is not kept
     if (-not $process.WaitForExit(1800000)) { $process.Kill(); $problems.Add("${name}: timed out") }
@@ -114,6 +116,20 @@ if (Wanted "S10") {
     $lines = @("size 1280 720", "frames 30") + $still + @("screenshot S10-desktop.png", "move 139 15", "frames 3", "mouse down", "frames 8", "mouse up", "frames 40",
         "screenshot S10-desktop-menu.png", "frames 3")
     Invoke-Sandbox "S10" $lines
+}
+
+# ---- The auto-battler ------------------------------------------------------------------------
+
+if (Wanted "B1") {
+    # One round of the auto-battler (docs/specs/battle.md) on the project it ships with: five squads of the player's, placed as a
+    # tap would, against the stage's ten; the round runs to its end. The web has no picture of it to compare with, so the pictures go
+    # to a folder of their own, which compare does not read. The run's log must hold no error and no debug layer message.
+    $battleOut = Join-Path $Out "autobattler"
+    New-Item -ItemType Directory -Force $battleOut | Out-Null
+    $lines = @("size 1280 720", "frames 30", "call deploy 0 12 4", "call deploy 0 15 4", "call deploy 0 18 4", "call deploy 0 13 7", "call deploy 0 16 7",
+        "frames 20", "screenshot battle-deploy.png", "frames 3", "call start", "frames 10", "call run 40", "frames 5", "screenshot battle-fight.png", "frames 3",
+        "call run 3000", "frames 10", "call debug 0", "call debug 2", "call debug 3", "call debug 4", "screenshot battle-result.png", "frames 3")
+    Invoke-Sandbox "B1" $lines $battler $battleOut
 }
 
 # ---- Effects ---------------------------------------------------------------------------------
