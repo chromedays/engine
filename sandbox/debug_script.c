@@ -5,6 +5,7 @@
 #include <engine/file.h>
 #include <engine/window_win32.h>
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,11 @@
 //   size <width> <height>        the window's client area in pixels, at pixel ratio 1
 //   call <name> <number>...      a debug export, with its numbers (as the web calls Module._sandbox_debug_<name>); a result is logged
 //   frames <n>                   n frames before the next command
-//   screenshot <png> [viewport]  the canvas (or the scene's viewport) of this frame, a PNG file; the next command waits for it
+//   wait-fixed <n>               frames until the fixed game clock (`call fixed_dt`) has run n frames
+//   screenshot <png> [viewport | <x> <y> <width> <height>]  the canvas (the scene's viewport, or a rectangle of it) of this frame as a
+//                                PNG file; the next command waits for it. A relative path is in the folder `--out` gives
+//   case <id> <dt> <counters 0|1>  starts <out>/<id>.json, the dumps of an effects case; case-frame <frame> <full|counters> adds the
+//                                particle dump of that frame (the next command waits for it), case-end closes the file
 //   move <x> <y>                 the pointer, in client pixels
 //   mouse <down|up> [button]     a button of the mouse (left, middle or right) at the pointer
 //   wheel <notches>              the wheel at the pointer, positive away from the user
@@ -29,6 +34,7 @@
 
 #define SCRIPT_MAX_SIZE NV_KILOBYTES(64)
 #define SCRIPT_MAX_ARGUMENTS 8
+#define PATH_CAPACITY 520
 
 typedef struct DebugScript {
     b32 active;
@@ -36,6 +42,15 @@ typedef struct DebugScript {
     u32 frames_left; // frames to run before the next command
     b32 quit;
     s32 pointer_x, pointer_y;
+    char out_directory[PATH_CAPACITY]; // where a relative path goes; empty: where the program runs
+
+    // An effects case being written (docs/specs/d3d12_port.md, "Validation"): the particle dump of a frame, in the web harness's JSON.
+    FILE* case_file;
+    b32 case_has_frame;
+    b32 dump_pending;
+    u32 dump_frame;
+    b32 waiting_fixed;    // until the fixed clock (the `fixed_dt` export) has run this many frames
+    u32 fixed_frames_wanted;
 } DebugScript;
 
 global DebugScript script;
@@ -51,6 +66,8 @@ void debug_script_init(Sandbox* sandbox)
         exit(2);
     }
     script.active = 1;
+    if (!nv_window_win32_command_line_value("--out", script.out_directory, sizeof(script.out_directory)))
+        script.out_directory[0] = 0;
     script.next_line = (char*)file.bytes;
     nv_log(NV_LOG_INFO, "script", "running %s", path);
 }
@@ -103,6 +120,54 @@ internal u32 virtual_key_from_name(const char* name)
     exit(2);
 }
 
+// A path from a command: as it is when it names a drive or starts at a root, else under --out.
+internal void resolve_path(char* out, umm capacity, const char* path)
+{
+    b32 absolute = path[0] == '/' || path[0] == '\\' || (path[0] && path[1] == ':');
+    if (absolute || !script.out_directory[0])
+        snprintf(out, capacity, "%s", path);
+    else
+        snprintf(out, capacity, "%s/%s", script.out_directory, path);
+}
+
+internal void write_number(FILE* file, f64 value)
+{
+    if (value == floor(value) && fabs(value) < 1e15)
+        fprintf(file, "%lld", (long long)value);
+    else
+        fprintf(file, "%.9g", value);
+}
+
+// The dump of one frame, as the web harness writes it (tools/d3d12_port/capture.mjs, dumpOnce).
+internal void write_dump(Sandbox* sandbox)
+{
+    NvVfx* vfx = &sandbox->vfx;
+    FILE* file = script.case_file;
+    fprintf(file, "%s\"%u\":{\"capacity\":%u,\"counters\":[", script.case_has_frame ? "," : "", script.dump_frame, vfx->capacity);
+    for (u32 i = 0; i < 16; ++i)
+        fprintf(file, "%s%u", i ? "," : "", nv_vfx_debug_dump_counter(vfx, i));
+    fprintf(file, "],\"simulateArgs\":[");
+    for (u32 i = 0; i < 4; ++i)
+        fprintf(file, "%s%u", i ? "," : "", nv_vfx_debug_dump_args(vfx, 0, i));
+    fprintf(file, "],\"drawArgs\":[");
+    for (u32 i = 0; i < 8; ++i)
+        fprintf(file, "%s%u", i ? "," : "", nv_vfx_debug_dump_args(vfx, 1, i));
+    NvVfxStats stats = nv_vfx_stats(vfx);
+    fprintf(file, "],\"violations\":%u,\"segments\":%u,\"decals\":%u,\"particles\":[", nv_vfx_debug_dump_violations(vfx), stats.segments,
+            stats.decals);
+    u32 count = nv_vfx_debug_dump_particle_count(vfx);
+    for (u32 i = 0; i < count; ++i) {
+        fprintf(file, "%s[", i ? "," : "");
+        for (u32 field = 0; field < 12; ++field) {
+            fprintf(file, "%s", field ? "," : "");
+            write_number(file, nv_vfx_debug_dump_particle(vfx, i, field));
+        }
+        fprintf(file, "]");
+    }
+    fprintf(file, "]}");
+    script.case_has_frame = 1;
+}
+
 internal void run_command(Sandbox* sandbox, char* line)
 {
     // A text command keeps the rest of the line as it is.
@@ -140,12 +205,39 @@ internal void run_command(Sandbox* sandbox, char* line)
     } else if (strcmp(command, "frames") == 0 && count == 2) {
         script.frames_left = (u32)atoi(words[1]);
     } else if (strcmp(command, "screenshot") == 0 && count >= 2) {
+        char path[PATH_CAPACITY];
+        resolve_path(path, sizeof(path), words[1]);
         if (count == 3 && strcmp(words[2], "viewport") == 0) {
             NvRect v = sandbox->layout.viewport;
-            nv_gpu_debug_screenshot(&sandbox->gpu, words[1], v.x, v.y, v.width, v.height);
+            nv_gpu_debug_screenshot(&sandbox->gpu, path, v.x, v.y, v.width, v.height);
+        } else if (count == 6) {
+            nv_gpu_debug_screenshot(&sandbox->gpu, path, (u32)atoi(words[2]), (u32)atoi(words[3]), (u32)atoi(words[4]), (u32)atoi(words[5]));
         } else {
-            nv_gpu_debug_screenshot(&sandbox->gpu, words[1], 0, 0, 0, 0);
+            nv_gpu_debug_screenshot(&sandbox->gpu, path, 0, 0, 0, 0);
         }
+    } else if (strcmp(command, "wait-fixed") == 0 && count == 2) {
+        script.waiting_fixed = 1;
+        script.fixed_frames_wanted = (u32)atoi(words[1]);
+    } else if (strcmp(command, "case") == 0 && count == 4) {
+        char path[PATH_CAPACITY], file_name[160];
+        snprintf(file_name, sizeof(file_name), "%s.json", words[1]);
+        resolve_path(path, sizeof(path), file_name);
+        script.case_file = fopen(path, "wb");
+        if (!script.case_file) {
+            nv_log(NV_LOG_ERROR, "script", "cannot write %s", path);
+            exit(2);
+        }
+        script.case_has_frame = 0;
+        fprintf(script.case_file, "{\"case\":\"%s\",\"dt\":%.17g,\"counters\":%s,\"frames\":{", words[1], atof(words[2]),
+                atoi(words[3]) ? "true" : "false");
+    } else if (strcmp(command, "case-frame") == 0 && count == 3 && script.case_file) {
+        script.dump_frame = (u32)atoi(words[1]);
+        nv_vfx_debug_dump_start(&sandbox->vfx, strcmp(words[2], "full") == 0);
+        script.dump_pending = 1;
+    } else if (strcmp(command, "case-end") == 0 && script.case_file) {
+        fprintf(script.case_file, "}}");
+        fclose(script.case_file);
+        script.case_file = NULL;
     } else if (strcmp(command, "move") == 0 && count == 3) {
         script.pointer_x = atoi(words[1]);
         script.pointer_y = atoi(words[2]);
@@ -200,8 +292,25 @@ void debug_script_update(Sandbox* sandbox)
 {
     if (!script.active)
         return;
+    if (script.dump_pending) {
+        if (nv_vfx_debug_dump_state(&sandbox->vfx) != NV_VFX_DUMP_READY)
+            return; // the readbacks arrive in a frame or two: the next command waits for them
+        write_dump(sandbox);
+        nv_vfx_debug_dump_finish(&sandbox->vfx);
+        script.dump_pending = 0;
+    }
     if (nv_gpu_debug_screenshot_pending(&sandbox->gpu))
         return; // the picture is taken when this frame ends: the next command waits for it
+    if (script.waiting_fixed) {
+        // The frames the fixed clock has run, which the `frames` export tells.
+        for (u32 i = 0; i < sandbox_debug_call_count; ++i) {
+            if (strcmp(sandbox_debug_calls[i].name, "frames") == 0) {
+                if (((int (*)(void))sandbox_debug_calls[i].function)() < (int)script.fixed_frames_wanted)
+                    return;
+            }
+        }
+        script.waiting_fixed = 0;
+    }
     if (script.frames_left) {
         --script.frames_left;
         return;

@@ -1,4 +1,4 @@
-// Shared by capture.mjs and compare.mjs: the regression harness of the D3D12 port (docs/specs/d3d12_port.md).
+// Shared by capture.mjs (the comparison is compare.c): the regression harness of the D3D12 port (docs/specs/d3d12_port.md).
 // Run with Playwright on the module path, for example
 //   NODE_PATH=$(npm root -g) node tools/d3d12_port/capture.mjs --build build-debug --out out/current
 // The sandbox's debug exports only exist in Debug builds, so every run uses a Debug build.

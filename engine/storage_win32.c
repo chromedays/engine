@@ -44,6 +44,17 @@ void nv_storage_init(NvStorage* storage, const char* dir)
     (void)dir; // the web's mount point; here every target has its folder
     storage->dir = directory;
     storage->available = 0;
+#if !defined(NDEBUG)
+    // A Debug build can be told where to keep its files (NV_STORAGE_DIR: a folder that exists), so a scripted run starts from empty
+    // storage, as every browser launch of the web harness does, and leaves the developer's own save alone.
+    wchar_t folder[MAX_PATH];
+    DWORD folder_length = GetEnvironmentVariableW(L"NV_STORAGE_DIR", folder, MAX_PATH);
+    if (folder_length > 0 && folder_length < MAX_PATH) {
+        nv_win32_utf8_from_wide(folder, directory, sizeof(directory));
+        storage->available = 1;
+        return;
+    }
+#endif
     wchar_t base[MAX_PATH];
     DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH);
     if (length == 0 || length >= MAX_PATH) {

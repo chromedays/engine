@@ -202,29 +202,12 @@ async function uiScreens(context, wanted, out) {
 
 // ---- Effects ---------------------------------------------------------------------------------
 
-const EXPLOSION = 0, SPARKS = 1, SMOKE = 2, MISSILE = 3, LASER = 4, SCORCH = 5, SWARM = 6;
-const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
-
-// dt: the fixed step; fire: [effect, count] at frame 0 (or `fireAt`: frame -> list); dump: frames to dump, `full` or counters only;
-// shots: frames to photograph (at the default settings); fast: a small low-quality scene for cases with many frames.
-const VFX = {
-    V1: { dt: 1 / 60, fire: [[SPARKS, 1]], dump: range(0, 60), shots: [10, 40] },
-    V2: { dt: 1 / 60, fire: [[EXPLOSION, 1]], dump: [1, 2, 3, 4, 5, 30, 120, 200], shots: [4, 30, 120] },
-    V3: { dt: 1 / 60, fire: [[SWARM, 1]], dump: [1, 2, 3, 60, 120, 200], shots: [60] },
-    V4: { dt: 1 / 60, fire: [[SMOKE, 1]], dump: [1, 60, 180, 300, 320], shots: [180] },
-    V5: { dt: 1 / 30, fire: [[SPARKS, 1], [EXPLOSION, 1]], dump: [1, 2, 15, 50, 100] },
-    V6: { dt: 1 / 240, fire: [[SPARKS, 1], [EXPLOSION, 1]], dump: [1, 2, 60, 240, 800], fast: true },
-    V7: { dt: 1 / 60, fire: [[SPARKS, 10], [EXPLOSION, 5], [SWARM, 3]], dump: [1, 2, 3, 60, 200] },
-    V8: { dt: 1 / 60, fire: [], fireAt: Object.fromEntries(range(0, 12).map((i) => [i * 5, [[SPARKS, 1]]])), dump: [30, 60, 61, 120] },
-    V9: { dt: 1 / 60, fire: [[SWARM, 4200]], dump: [1, 2, 200], counters: true, fast: true },
-    V10: { dt: 1 / 60, fire: [[SWARM, 4200]], dump: [], afterwards: { at: 200, fire: [[SPARKS, 1]], dump: [201, 260] }, fast: true },
-    // The stress scene's `effects` behavior at the particle counts of its file; it runs in Play, so the steps are the
-    // behavior's own (dt 0.1: the particles live about 2.5 s). Counters only.
-    'V12-250k': { dt: 0.1, scene: 1, play: [250000], dump: [5, 25, 50], counters: true, fast: true },
-    'V12-1M': { dt: 0.1, scene: 1, play: [1000000], dump: [5, 25, 50], counters: true, fast: true },
-    'V12-2M': { dt: 0.1, scene: 1, play: [2000000], dump: [5, 25, 50], counters: true, fast: true },
-    V11: { dt: 1 / 60, fire: [[MISSILE, 3], [LASER, 1], [SCORCH, 1]], dump: [30, 90, 200], shots: [30, 90] },
-};
+// The cases are data, shared with the native runs (cases.json, which capture_native.ps1 reads too): effect numbers are 0 explosion,
+// 1 sparks, 2 smoke, 3 missile, 4 laser, 5 scorch, 6 swarm. dt: the fixed step; fire: [effect, count] at frame 0 (or `fireAt`:
+// frame -> list); dump: frames to dump, `full` or counters only; shots: frames to photograph (at the default settings); fast: a small
+// low-quality scene for cases with many frames; scene and play: the stress scene's `effects` behavior at the particle counts of its
+// file, which runs in Play, so the steps are the behavior's own (dt 0.1: the particles live about 2.5 s), counters only.
+const VFX = JSON.parse(fs.readFileSync(new URL('./cases.json', import.meta.url), 'utf8'));
 
 async function dumpOnce(page, counters) {
     await page.evaluate((full) => Module._sandbox_debug_vfx_dump_start(full ? 1 : 0), !counters);

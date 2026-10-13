@@ -93,8 +93,30 @@ internal LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LP
     }
 }
 
+#if !defined(NDEBUG)
+// A Debug build says where it stopped (an NV_ASSERT is a breakpoint): the return addresses as offsets into the executable, which
+// llvm-symbolizer turns into functions and lines (--obj=<exe> --relative-address <offset>).
+internal LONG WINAPI report_crash(EXCEPTION_POINTERS* pointers)
+{
+    void* frames[32];
+    USHORT count = CaptureStackBackTrace(0, 32, frames, NULL);
+    char* base = (char*)GetModuleHandleW(NULL);
+    fprintf(stderr, "[crash] exception 0x%08lx; stack, offsets into the executable:", (unsigned long)pointers->ExceptionRecord->ExceptionCode);
+    for (USHORT i = 0; i < count; ++i) {
+        if ((char*)frames[i] >= base && (char*)frames[i] < base + 0x10000000)
+            fprintf(stderr, " 0x%llx", (unsigned long long)((char*)frames[i] - base));
+    }
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 void nv_window_create(NvWindow* window, const char* title)
 {
+#if !defined(NDEBUG)
+    SetUnhandledExceptionFilter(report_crash);
+#endif
     NV_ASSERT(!state.hwnd);
     nv_time_seconds(); // starts the clock
     state.window = window;

@@ -167,6 +167,8 @@ typedef struct Buffer {
     D3D12_RESOURCE_STATES state;           // after the commands recorded so far
     D3D12_RESOURCE_STATES submitted_state; // after the commands already submitted: what the upload list finds it in
     b32 touched;                           // on the frame's list of resources whose state moved
+    u32 group_references;                  // bind groups that use it: they keep it alive after the program releases it, as in WebGPU
+    b32 released;                          // the program released it; it goes when the last group does
 } Buffer;
 
 typedef struct Texture {
@@ -175,6 +177,8 @@ typedef struct Texture {
     D3D12_RESOURCE_STATES state[MAX_MIPS];
     D3D12_RESOURCE_STATES submitted_state[MAX_MIPS];
     b32 touched;
+    u32 group_references;
+    b32 released;
     b32 sampled_depth; // a depth texture made typeless so a shader can read it
 } Texture;
 
@@ -1297,11 +1301,20 @@ NvGpuBuffer nv_gpu_create_buffer(NvGpu* gpu, const NvGpuBufferDesc* desc)
     return handle;
 }
 
+internal void destroy_buffer(NvGpuBuffer handle)
+{
+    defer_release((IUnknown*)buffer_of(handle)->resource);
+    pool_give(&buffer_pool, handle.index, handle.generation);
+}
+
+// A bind group keeps what it binds alive: a UI preview made this frame may be drawn after the renderer released its texture.
 void nv_gpu_release_buffer(NvGpu* gpu, NvGpuBuffer handle)
 {
     (void)gpu;
-    defer_release((IUnknown*)buffer_of(handle)->resource);
-    pool_give(&buffer_pool, handle.index, handle.generation);
+    Buffer* buffer = buffer_of(handle);
+    buffer->released = 1;
+    if (buffer->group_references == 0)
+        destroy_buffer(handle);
 }
 
 void nv_gpu_write_buffer(NvGpu* gpu, NvGpuBuffer handle, u64 offset, const void* bytes, umm size)
@@ -1383,11 +1396,19 @@ NvGpuTexture nv_gpu_create_texture(NvGpu* gpu, const NvGpuTextureDesc* desc)
     return (NvGpuTexture){index, generation};
 }
 
+internal void destroy_texture(NvGpuTexture handle)
+{
+    defer_release((IUnknown*)texture_of(handle)->resource);
+    pool_give(&texture_pool, handle.index, handle.generation);
+}
+
 void nv_gpu_release_texture(NvGpu* gpu, NvGpuTexture handle)
 {
     (void)gpu;
-    defer_release((IUnknown*)texture_of(handle)->resource);
-    pool_give(&texture_pool, handle.index, handle.generation);
+    Texture* texture = texture_of(handle);
+    texture->released = 1;
+    if (texture->group_references == 0)
+        destroy_texture(handle);
 }
 
 NvGpuTextureDesc nv_gpu_texture_desc(const NvGpu* gpu, NvGpuTexture handle)
@@ -1670,6 +1691,13 @@ NvGpuGroup nv_gpu_create_group(NvGpu* gpu, NvGpuLayout layout_handle, const NvGp
     // A dynamic uniform buffer is read at the offset the group is set with: its barrier is the buffer's, like the table's.
     for (u32 k = 0; k < dynamic; ++k)
         group->uses[group->use_count++] = (GroupUse){.buffer = group->dynamic_buffer[k], .state = D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER};
+    for (u32 i = 0; i < group->use_count; ++i) {
+        const GroupUse* use = &group->uses[i];
+        if (use->is_texture)
+            ++texture_of(use->texture)->group_references;
+        else
+            ++buffer_of(use->buffer)->group_references;
+    }
     return (NvGpuGroup){index, generation};
 }
 
@@ -1679,6 +1707,18 @@ void nv_gpu_release_group(NvGpu* gpu, NvGpuGroup handle)
     Group* group = group_of(handle);
     if (group->block != ~0u)
         defer_block(group->block, group->block_class);
+    for (u32 i = 0; i < group->use_count; ++i) {
+        const GroupUse* use = &group->uses[i];
+        if (use->is_texture) {
+            Texture* texture = texture_of(use->texture);
+            if (--texture->group_references == 0 && texture->released)
+                destroy_texture(use->texture);
+        } else {
+            Buffer* buffer = buffer_of(use->buffer);
+            if (--buffer->group_references == 0 && buffer->released)
+                destroy_buffer(use->buffer);
+        }
+    }
     pool_give(&group_pool, handle.index, handle.generation);
 }
 
@@ -1889,6 +1929,9 @@ NvGpuPipeline nv_gpu_create_render_pipeline(NvGpu* gpu, const NvGpuRenderPipelin
         pso.PS = shader_entry(desc->shader, desc->fragment_entry);
     pso.BlendState.RenderTarget[0] = blend_desc(desc->blend);
     pso.SampleMask = UINT_MAX;
+    // NOTE: Thin lines (the debug lines) are 1-pixel aliased lines. WebGPU's, on the baseline's Vulkan, are antialiased by the samples
+    // at one pixel's width, and D3D12's MultisampleEnable makes antialiased quads 1.4 pixels wide: neither matches, and the aliased
+    // ones are the closer (docs/specs/d3d12_port.md, "Found").
     pso.RasterizerState = (D3D12_RASTERIZER_DESC){
         .FillMode = D3D12_FILL_MODE_SOLID,
         .CullMode = desc->cull == NV_GPU_CULL_BACK ? D3D12_CULL_MODE_BACK : D3D12_CULL_MODE_NONE,
