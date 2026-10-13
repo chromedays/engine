@@ -8,9 +8,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-#if !defined(NDEBUG)
-#include <stdlib.h> // the debug dump
-#endif
 
 // The shaders' structs, as they are laid out in memory.
 typedef struct NvVfxGpuEmitter {
@@ -55,17 +52,12 @@ typedef struct NvVfxGpuDecal {
     f32 color[4];
 } NvVfxGpuDecal; // 48 bytes
 
-#if defined(NDEBUG)
-#define DEBUG_COPY_SRC 0
-#else
-#define DEBUG_COPY_SRC NV_GPU_BUFFER_COPY_SRC // the debug dump reads these back
-#endif
 #define PARTICLE_BYTES 32
 #define EMITTER_BYTES 128
 #define COUNTERS_COUNT 16
 #define MAX_JOBS 65535u
 #define STAGE_SLOTS 4096u // segments or decals the CPU stages before one upload
-#define STATS_SLOT 0       // the readback slot of the counters; the debug dump uses the ones after it
+#define STATS_SLOT 0       // the readback slot of the counters
 
 _Static_assert(sizeof(NvVfxGpuEmitter) == EMITTER_BYTES, "the shader reads 128-byte emitters");
 _Static_assert(sizeof(NvVfxBurst) == 64, "the shader reads 64-byte bursts");
@@ -281,17 +273,17 @@ void nv_vfx_init(NvVfx* vfx, NvGpu* gpu, NvVfxCapacity capacity, NvArena* arena)
 
     u64 capacity_u64 = particles;
     vfx->frame_buffer = create_buffer(gpu, "vfx frame", NV_GPU_BUFFER_UNIFORM, sizeof(VfxFrameUniforms));
-    vfx->particles = create_buffer(gpu, "particles", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * PARTICLE_BYTES);
-    vfx->free_list = create_buffer(gpu, "particle free list", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
-    vfx->alive[0] = create_buffer(gpu, "particle alive list A", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
-    vfx->alive[1] = create_buffer(gpu, "particle alive list B", NV_GPU_BUFFER_STORAGE | DEBUG_COPY_SRC, capacity_u64 * 4);
+    vfx->particles = create_buffer(gpu, "particles", NV_GPU_BUFFER_STORAGE, capacity_u64 * PARTICLE_BYTES);
+    vfx->free_list = create_buffer(gpu, "particle free list", NV_GPU_BUFFER_STORAGE, capacity_u64 * 4);
+    vfx->alive[0] = create_buffer(gpu, "particle alive list A", NV_GPU_BUFFER_STORAGE, capacity_u64 * 4);
+    vfx->alive[1] = create_buffer(gpu, "particle alive list B", NV_GPU_BUFFER_STORAGE, capacity_u64 * 4);
     vfx->visible = create_buffer(gpu, "particle visible list", NV_GPU_BUFFER_STORAGE, capacity_u64 * 4);
     vfx->counters = create_buffer(gpu, "particle counters", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_COPY_SRC, COUNTERS_COUNT * 4);
     vfx->emitter_buffer = create_buffer(gpu, "particle emitters", NV_GPU_BUFFER_STORAGE, (u64)NV_VFX_MAX_EMITTERS * EMITTER_BYTES);
     vfx->burst_buffer = create_buffer(gpu, "particle bursts", NV_GPU_BUFFER_STORAGE, (u64)NV_VFX_MAX_BURSTS * sizeof(NvVfxBurst));
     vfx->job_buffer = create_buffer(gpu, "particle spawn jobs", NV_GPU_BUFFER_STORAGE, (u64)MAX_JOBS * 8);
-    vfx->sim_args = create_buffer(gpu, "particle simulate arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT | DEBUG_COPY_SRC, 16);
-    vfx->draw_args = create_buffer(gpu, "particle draw arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT | DEBUG_COPY_SRC, 32);
+    vfx->sim_args = create_buffer(gpu, "particle simulate arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT, 16);
+    vfx->draw_args = create_buffer(gpu, "particle draw arguments", NV_GPU_BUFFER_STORAGE | NV_GPU_BUFFER_INDIRECT, 32);
 
     ring_init(vfx, &vfx->segments, "trail and beam segments", segments, sizeof(NvVfxGpuSegment), arena);
     ring_init(vfx, &vfx->decals, "decals", decals, sizeof(NvVfxGpuDecal), arena);
@@ -708,229 +700,3 @@ void nv_vfx_end_frame(NvVfx* vfx)
         vfx->stats.decals = ring_live(&vfx->decals, vfx->time);
     }
 }
-
-#if !defined(NDEBUG)
-// Debug dump for the regression tests (engine/vfx.h). Everything it needs is copied into readback slots between frames
-// (nv_gpu_copy_for_readback), so it sees the state after the last submitted frame. The readbacks arrive on the browser's event
-// loop and are taken when the state is asked for; the frame never waits.
-typedef struct NvVfxDumpParticle {
-    u32 emitter, seed;
-    f32 v[10]; // position, age, velocity, life, scale, rotation
-} NvVfxDumpParticle;
-
-typedef struct NvVfxDumpSource {
-    u32 slot; // the readback slot
-    const u8* mapped;
-} NvVfxDumpSource;
-
-struct NvVfxDump {
-    NvVfx* vfx;
-    b32 full;
-    NvVfxDumpState state;
-    u32 pending;
-    NvVfxDumpSource counters, sim_args, draw_args, free_list, alive, particles;
-    u32 counter_values[COUNTERS_COUNT];
-    u32 sim[4], draw[8];
-    u32 violations;
-    u32 particle_count;
-    NvVfxDumpParticle* particles_sorted;
-};
-
-internal f32 half_to_float(u32 h)
-{
-    u32 sign = (h >> 15) & 1u, exponent = (h >> 10) & 31u, fraction = h & 1023u;
-    f32 value;
-    if (exponent == 0)
-        value = ldexpf((f32)fraction, -24);
-    else if (exponent == 31)
-        value = fraction ? NAN : INFINITY;
-    else
-        value = ldexpf((f32)(fraction | 1024u), (int)exponent - 25);
-    return sign ? -value : value;
-}
-
-internal int compare_dump_particles(const void* a, const void* b)
-{
-    const NvVfxDumpParticle* x = a;
-    const NvVfxDumpParticle* y = b;
-    if (x->emitter != y->emitter) return x->emitter < y->emitter ? -1 : 1;
-    if (x->seed != y->seed) return x->seed < y->seed ? -1 : 1;
-    for (u32 i = 0; i < 10; ++i)
-        if (x->v[i] != y->v[i]) return x->v[i] < y->v[i] ? -1 : 1;
-    return 0;
-}
-
-internal void dump_process(struct NvVfxDump* dump)
-{
-    NvVfx* vfx = dump->vfx;
-    memcpy(dump->counter_values, dump->counters.mapped, sizeof(dump->counter_values));
-    memcpy(dump->sim, dump->sim_args.mapped, 16);
-    memcpy(dump->draw, dump->draw_args.mapped, 32);
-    const u32* c = dump->counter_values;
-    enum { C_FREE_ = 0, C_ALIVE_ = 1, C_VIS_ADD_ = 3, C_VIS_ALPHA_ = 4, C_DROPPED_ = 5, C_STAT_ALIVE_ = 8, C_STAT_VISIBLE_ = 9, C_STAT_DROPPED_ = 10 };
-    u32 violations = 0;
-    u32 free_count = c[C_FREE_], alive_count = c[C_ALIVE_];
-    u32 visible = c[C_VIS_ADD_] + c[C_VIS_ALPHA_];
-    if (dump->full && free_count + alive_count != vfx->capacity)
-        violations |= 1u;
-    if (visible > alive_count)
-        violations |= 4u;
-    // The draws take their vertex counts from the counters and draw one instance each.
-    if (dump->draw[0] != c[C_VIS_ADD_] * 6u || dump->draw[1] != 1u || dump->draw[2] != 0u || dump->draw[3] != 0u ||
-        dump->draw[4] != c[C_VIS_ALPHA_] * 6u || dump->draw[5] != 1u || dump->draw[6] != 0u || dump->draw[7] != 0u)
-        violations |= 16u;
-    if (c[C_STAT_ALIVE_] != alive_count || c[C_STAT_VISIBLE_] != visible || c[C_STAT_DROPPED_] != c[C_DROPPED_] || dump->sim[1] != 1u ||
-        dump->sim[2] != 1u)
-        violations |= 32u;
-
-    if (dump->full && free_count <= vfx->capacity && alive_count <= vfx->capacity) {
-        const u32* free_list = (const u32*)dump->free_list.mapped;
-        const u32* alive_list = (const u32*)dump->alive.mapped;
-        const u32* state = (const u32*)dump->particles.mapped;
-        u8* seen = calloc(vfx->capacity, 1);
-        for (u32 i = 0; i < free_count; ++i) {
-            if (free_list[i] >= vfx->capacity || seen[free_list[i]]++)
-                violations |= 2u;
-        }
-        dump->particles_sorted = malloc((umm)(alive_count ? alive_count : 1) * sizeof(NvVfxDumpParticle));
-        for (u32 i = 0; i < alive_count; ++i) {
-            u32 slot = alive_list[i];
-            if (slot >= vfx->capacity || seen[slot]++) {
-                violations |= 2u;
-                continue;
-            }
-            const u32* word = state + (umm)slot * (PARTICLE_BYTES / 4);
-            NvVfxDumpParticle* out = &dump->particles_sorted[dump->particle_count++];
-            f32 pos[3], age;
-            memcpy(pos, word, 12);
-            memcpy(&age, word + 3, 4);
-            out->emitter = word[6] & 0xFFFu;
-            out->seed = word[6] >> 12;
-            out->v[0] = pos[0]; out->v[1] = pos[1]; out->v[2] = pos[2];
-            out->v[3] = age;
-            out->v[4] = half_to_float(word[4] & 0xFFFFu);
-            out->v[5] = half_to_float(word[4] >> 16);
-            out->v[6] = half_to_float(word[5] & 0xFFFFu);
-            out->v[7] = half_to_float(word[5] >> 16); // life
-            out->v[8] = half_to_float(word[7] & 0xFFFFu);
-            out->v[9] = half_to_float(word[7] >> 16);
-            if (!(age < out->v[7]))
-                violations |= 8u;
-        }
-        for (u32 i = 0; i < vfx->capacity; ++i)
-            if (!seen[i]) {
-                violations |= 2u;
-                break;
-            }
-        free(seen);
-        qsort(dump->particles_sorted, dump->particle_count, sizeof(NvVfxDumpParticle), compare_dump_particles);
-    }
-    dump->violations = violations;
-}
-
-// Asks for the copy of `size` bytes of `from` in readback slot `slot`; false when the slot is still busy.
-internal b32 dump_copy(struct NvVfxDump* dump, NvVfxDumpSource* source, u32 slot, NvGpuBuffer from, u64 size)
-{
-    source->slot = slot;
-    source->mapped = NULL;
-    return nv_gpu_copy_for_readback(dump->vfx->gpu, slot, from, 0, (umm)size);
-}
-
-void nv_vfx_debug_dump_start(NvVfx* vfx, b32 full)
-{
-    if (vfx->dump && vfx->dump->state == NV_VFX_DUMP_MAPPING)
-        return;
-    nv_vfx_debug_dump_finish(vfx);
-    struct NvVfxDump* dump = calloc(1, sizeof(*dump));
-    vfx->dump = dump;
-    dump->vfx = vfx;
-    dump->full = full;
-    dump->state = NV_VFX_DUMP_MAPPING;
-    NvVfxDumpSource* sources[6];
-    u32 count = 0;
-    b32 ok = dump_copy(dump, &dump->counters, STATS_SLOT + 1, vfx->counters, COUNTERS_COUNT * 4);
-    sources[count++] = &dump->counters;
-    ok = ok && dump_copy(dump, &dump->sim_args, STATS_SLOT + 2, vfx->sim_args, 16);
-    sources[count++] = &dump->sim_args;
-    ok = ok && dump_copy(dump, &dump->draw_args, STATS_SLOT + 3, vfx->draw_args, 32);
-    sources[count++] = &dump->draw_args;
-    if (full) {
-        ok = ok && dump_copy(dump, &dump->free_list, STATS_SLOT + 4, vfx->free_list, (u64)vfx->capacity * 4);
-        sources[count++] = &dump->free_list;
-        // The list the last frame's simulate wrote is the one the next frame starts from.
-        ok = ok && dump_copy(dump, &dump->alive, STATS_SLOT + 5, vfx->alive[vfx->parity], (u64)vfx->capacity * 4);
-        sources[count++] = &dump->alive;
-        ok = ok && dump_copy(dump, &dump->particles, STATS_SLOT + 6, vfx->particles, (u64)vfx->capacity * PARTICLE_BYTES);
-        sources[count++] = &dump->particles;
-    }
-    dump->pending = count;
-    if (!ok) {
-        nv_log(NV_LOG_ERROR, "vfx", "dump: a readback slot was still busy");
-        dump->state = NV_VFX_DUMP_IDLE;
-    }
-}
-
-NvVfxDumpState nv_vfx_debug_dump_state(NvVfx* vfx)
-{
-    struct NvVfxDump* dump = vfx->dump;
-    if (dump && dump->state == NV_VFX_DUMP_MAPPING) {
-        NvVfxDumpSource* sources[] = {&dump->counters, &dump->sim_args, &dump->draw_args, &dump->free_list, &dump->alive, &dump->particles};
-        for (u32 i = 0; i < NV_ARRAY_COUNT(sources); ++i) {
-            NvVfxDumpSource* source = sources[i];
-            if (!source->slot || source->mapped)
-                continue;
-            NvGpuReadback readback = nv_gpu_poll_readback(vfx->gpu, source->slot);
-            if (readback.ok) {
-                source->mapped = readback.bytes;
-                --dump->pending;
-            }
-        }
-        if (dump->pending == 0) {
-            dump_process(dump);
-            dump->state = NV_VFX_DUMP_READY;
-        }
-    }
-    return dump ? dump->state : NV_VFX_DUMP_IDLE;
-}
-
-u32 nv_vfx_debug_dump_counter(const NvVfx* vfx, u32 index)
-{
-    return vfx->dump && vfx->dump->state == NV_VFX_DUMP_READY && index < COUNTERS_COUNT ? vfx->dump->counter_values[index] : 0;
-}
-
-u32 nv_vfx_debug_dump_args(const NvVfx* vfx, u32 which, u32 index)
-{
-    if (!vfx->dump || vfx->dump->state != NV_VFX_DUMP_READY)
-        return 0;
-    return which == 0 ? (index < 4 ? vfx->dump->sim[index] : 0) : (index < 8 ? vfx->dump->draw[index] : 0);
-}
-
-u32 nv_vfx_debug_dump_violations(const NvVfx* vfx)
-{
-    return vfx->dump && vfx->dump->state == NV_VFX_DUMP_READY ? vfx->dump->violations : 0;
-}
-
-u32 nv_vfx_debug_dump_particle_count(const NvVfx* vfx)
-{
-    return vfx->dump && vfx->dump->state == NV_VFX_DUMP_READY ? vfx->dump->particle_count : 0;
-}
-
-f64 nv_vfx_debug_dump_particle(const NvVfx* vfx, u32 index, u32 field)
-{
-    if (!vfx->dump || vfx->dump->state != NV_VFX_DUMP_READY || index >= vfx->dump->particle_count || field > 11)
-        return 0.0;
-    const NvVfxDumpParticle* p = &vfx->dump->particles_sorted[index];
-    if (field == 0) return (f64)p->emitter;
-    if (field == 1) return (f64)p->seed;
-    return (f64)p->v[field - 2];
-}
-
-void nv_vfx_debug_dump_finish(NvVfx* vfx)
-{
-    if (!vfx->dump || vfx->dump->state == NV_VFX_DUMP_MAPPING)
-        return;
-    free(vfx->dump->particles_sorted);
-    free(vfx->dump);
-    vfx->dump = NULL;
-}
-#endif

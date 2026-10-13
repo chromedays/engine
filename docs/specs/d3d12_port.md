@@ -649,8 +649,15 @@ PR로 올린다. 그 전에는 에이전트가 `master`에 합치거나 PR을 �
 - **플랫폼:** `window`, `imgui`의 입력, `storage`, `local_file`, `image`가 플랫폼마다 소스 하나(`*_web.c`, `*_win32.c`). 플랫폼을 모르는 파일에는 `__EMSCRIPTEN__`이 없다.
 - **셰이더:** 같은 Slang 소스가 웹에서는 WGSL, Windows에서는 DXIL(SM 6.6)이 된다. 빌드가 DXC와 Agility SDK를 받는다.
 - **빌드:** `cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64`(MSVC)로 `sandbox.exe`, `autobattler.exe`. CI는 웹만 빌드한다.
-- **시험:** 네이티브 C 테스트(ctest), `--script`로 도는 Debug 실행, `tools/d3d12_port/`의 SwiftShader 기준선과 `compare`(하나의 비교 구현), `capture_native.ps1`(S1–S10, V1–V12, B1).
+- **시험:** 네이티브 C 테스트(ctest), `--script`로 도는 Debug 실행, (지금은 지운) `tools/d3d12_port/`의 SwiftShader 기준선과 `compare`(하나의 비교 구현), `capture_native.ps1`(S1–S10, V1–V12, B1).
 - **문서:** `AGENTS.md`(Windows 빌드와 시험), `docs/CODING_STANDARD.md`(MSVC와 emcc 둘 다, 플랫폼별 소스의 예외, 의존성), 그리고 이 스펙과 GPU를 가리키던 `msaa.md`, `shadows.md`,
   `textures.md`, `resolution.md`, `vfx.md`의 참고.
-- **남은 것:** 단계 7(웹을 클라우드에서 다시 검사: 사용자가 명령할 때). 사람이 해야 하는 검사: 실제 한국어 IME 조합, DPI가 다른 모니터 사이의 이동, Alt+Tab. 이 스펙이 정한 성능 목표는 없고,
-  벤치마크 표는 위에 기록만 했다(웹 쪽 표는 단계 7).
+- **단계 7: 웹 검사 (2026-10-13, 커밋 `4ecbb2e`, 클라우드의 SwiftShader).** Debug 빌드로 S1–S10, V1–V12를 다시 찍어 기준선과 `compare --exact`로 비교했다:
+  50개 모두 통과하고(`V12-250k.json`은 기준선 자체가 반복되지 않아 건너뛴다) 캡처 중 WebGPU 오류가 0개다. Release 빌드는 쇼케이스가 로드되고 그려지며 Console에
+  경고와 오류가 0개다(디버그 내보내기가 없어 픽셀 비교는 못 한다). `ctest`는 Debug와 Release 모두 15개 중 15개가 통과한다. 웹은 고칠 것이 없었다.
+- **하네스를 지웠다 (단계 7의 끝).** `tools/d3d12_port/`(기준선, `capture.mjs`, `capture_native.ps1`, `compare.c`)와 그것만을 위한 것들을 지웠다: 엔진의
+  `nv_vfx_debug_dump*`와 `DEBUG_COPY_SRC`, 샌드박스의 내보내기 `fixed_dt`, `run_frames`, `frames`, `restart_clips`, `vfx_fire_n`, `vfx_dump_*`와 고정 시계,
+  `sandbox/debug_script.c`의 `case`, `case-frame`, `case-end`, `wait-fixed`(`benchmark`는 남았다). 모두 Git 기록(커밋 `4ecbb2e`)에 있다. 웹 빌드와 ctest는 지운 뒤에도
+  통과했다. `sandbox/debug_script.c`는 Windows 전용이라 클라우드에서 컴파일하지 못했다: Windows에서 Debug 빌드로 확인해야 한다.
+- **남은 것:** 사람이 해야 하는 검사: 실제 한국어 IME 조합, DPI가 다른 모니터 사이의 이동, Alt+Tab, 그리고 Windows에서 Debug 빌드가 컴파일되고 `--script`로 `benchmark`가 도는지. 이 스펙이 정한 성능
+  목표는 없고, 벤치마크 표는 위에 기록만 했다(웹 쪽 표는 만들지 않았다).

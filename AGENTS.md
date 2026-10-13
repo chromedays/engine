@@ -60,9 +60,7 @@ autobattler/               the auto-battler, a second executable with its own pa
                            battle_view.c (drawing, deployment input, the Battle panel), game.h (its state), strings.c (its Korean table)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
-tools/                     offline asset scripts (run with npx; nothing installed into the repo); tools/d3d12_port/ is the regression
-                           harness of the D3D12 port: the SwiftShader baseline (baseline/), the web capture (capture.mjs), the native
-                           capture (capture_native.ps1) and the one comparison tool for both (compare.c, plain C17)
+tools/                     offline asset scripts (run with npx; nothing installed into the repo)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
@@ -413,7 +411,7 @@ read and damage `/nv-save/state.nvs` (then `FS.syncfs(false, ...)`).
 A Windows PC has a display and a GPU, so the native build is run as it is, and its Debug build can be driven by a script
 (`docs/specs/d3d12_port.md`, "Debug exports and native tests"): `sandbox.exe --script <file> --out <dir>` (and `autobattler.exe`)
 runs one command a line in the app's frames (`size`, `call <export> <numbers>`, `frames`, `screenshot`, `move`, `mouse`, `wheel`,
-`key`, `text`, `close`, `quit`; the sandbox adds `case`, `wait-fixed` and `benchmark`; `engine/debug_script.h`) and exits with 1 when
+`key`, `text`, `close`, `quit`; the sandbox adds `benchmark`; `engine/debug_script.h`) and exits with 1 when
 the log holds an error. `call` finds the debug exports in the table the app gives (`sandbox_debug_calls` in `sandbox/main.c`,
 `battle_debug_calls` in `autobattler/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
 GPU-based validation, so a run with no `[d3d12]` message in its log is the native counterpart of "no WebGPU error";
@@ -421,10 +419,7 @@ GPU-based validation, so a run with no `[d3d12]` message in its log is the nativ
 and `NV_LOCAL_FILE` answers the file dialogs. `ctest --test-dir build-win -C Debug` (or `-C Release`) runs the C tests (no Node: the `.mjs` tests run only where
 Node is found).
 
-`tools/d3d12_port/` holds the regression harness: `capture_native.ps1 -Build build-win -Out build-win\capture [-Cases S1,V3,B1]` (the Debug configuration: only it has the scripted runs)
-makes the screens (S1-S10) and the effects dumps (V1-V12) of the cases the web harness (`capture.mjs`) also makes, and `compare`
-(`compare.c`, built with `cl /std:c17 /I<repo> compare.c`) sets them against the committed SwiftShader baseline (`--blocks` for a
-GPU, whose rasterizer differs; `--exact` for the web build against its own baseline). The tolerances and their reasons are in the
-spec's "Findings"; widen one only after finding its cause and writing it there. Test both a Release build and a Debug build here
-too, and the web build in the cloud only when told (stage 7 of the spec).
+The D3D12 port's regression harness (the SwiftShader baseline, the web and native captures, the comparison tool, and the debug exports and
+`case` script commands made only for it) was removed after the web re-check of stage 7 (`docs/specs/d3d12_port.md`, "만든 결과"). It is in
+Git history at commit `4ecbb2e`, under `tools/d3d12_port/`. Test both a Release build and a Debug build on Windows.
 

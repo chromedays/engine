@@ -472,12 +472,6 @@ void sandbox_stop_playing(Sandbox* sandbox)
     behaviors_stop(sandbox, sandbox_doc(sandbox));
 }
 
-#if !defined(NDEBUG)
-// The fixed game clock of sandbox_debug_fixed_dt: the step, frames run at it so far, and how many it may run.
-global f32 debug_fixed_dt;
-global u32 debug_frames, debug_frame_limit;
-#endif
-
 internal void frame(void* userdata)
 {
     Sandbox* sandbox = userdata;
@@ -488,14 +482,6 @@ internal void frame(void* userdata)
     f32 dt = ui_dt;
     sandbox->last_time = now;
     sandbox->time = now;
-#if !defined(NDEBUG)
-    // The game clock for the shader port's regression tests: a fixed step for a set number of frames, then stopped.
-    if (debug_fixed_dt > 0.0f) {
-        dt = debug_frames < debug_frame_limit ? debug_fixed_dt : 0.0f;
-        if (debug_frames < debug_frame_limit)
-            ++debug_frames;
-    }
-#endif
 
     NvGpuFrame gpu_frame = nv_gpu_begin_frame(&sandbox->gpu);
     if (!gpu_frame.ok)
@@ -720,87 +706,6 @@ NV_DEBUG_EXPORT void sandbox_debug_set_effects(int particles, int explosions, in
 NV_DEBUG_EXPORT void sandbox_debug_vfx_fire(int effect)
 {
     effects_fire(&sandbox_state, (u32)effect);
-}
-
-// For the shader port's regression tests (docs/specs/slang_shader_port.md). Runs the game clock at a fixed step
-// (0 goes back to real time): frames advance it by `dt` only up to the limit set by sandbox_debug_run_frames (to
-// begin with none), and are stopped (dt 0) beyond it. Resets the count of frames run and the effects.
-NV_DEBUG_EXPORT void sandbox_debug_fixed_dt(float dt)
-{
-    debug_fixed_dt = dt;
-    debug_frames = 0;
-    debug_frame_limit = 0;
-    if (dt > 0.0f) {
-        // The effects start over with the same clock and random numbers, so the same case gives the same particles.
-        // The clock is not zero: a zero clock releases every delayed burst at once (nv_vfx_update).
-        effects_clear(&sandbox_state);
-        sandbox_state.vfx.time = 1.0f;
-        sandbox_state.vfx.random = 0x2545F491u;
-        nv_random_seed(&sandbox_state.effects.rng, 0x9E3779B9u, 1); // what the behaviors' random points come from
-    }
-}
-
-// Lets the fixed clock run until `frames` frames have run in all since sandbox_debug_fixed_dt.
-NV_DEBUG_EXPORT void sandbox_debug_run_frames(int frames)
-{
-    debug_frame_limit = (u32)frames;
-}
-
-// Frames run at the fixed step so far.
-NV_DEBUG_EXPORT int sandbox_debug_frames(void)
-{
-    return (int)debug_frames;
-}
-
-// Restarts the shown scene's character clips from their start, so that a still frame shows the same pose every time.
-NV_DEBUG_EXPORT void sandbox_debug_restart_clips(void)
-{
-    behaviors_restart_clips(&sandbox_state, sandbox_doc(&sandbox_state));
-}
-
-// Fires an effect `count` times between two frames (the overflow case needs thousands): 0 to 5 as sandbox_debug_vfx_fire,
-// 6 the swarm burst of the `effects` behavior.
-NV_DEBUG_EXPORT void sandbox_debug_vfx_fire_n(int effect, int count)
-{
-    Sandbox* sandbox = &sandbox_state;
-    for (int i = 0; i < count; ++i) {
-        if (effect == 6) {
-            NvVec3 point = nv_vec3_add(effects_test_point(sandbox), nv_vec3(0.0f, 0.05f, 0.0f));
-            nv_vfx_burst(&sandbox->vfx, sandbox->effects.swarm, point, nv_vec3(0.0f, 1.0f, 0.0f), 1.0f);
-        } else {
-            effects_fire(sandbox, (u32)effect);
-        }
-    }
-}
-
-// The particle dump (engine/vfx.h): start it between frames, poll the state (0 idle, 1 reading, 2 ready), read, finish.
-NV_DEBUG_EXPORT void sandbox_debug_vfx_dump_start(int full)
-{
-    nv_vfx_debug_dump_start(&sandbox_state.vfx, full != 0);
-}
-
-NV_DEBUG_EXPORT int sandbox_debug_vfx_dump_state(void)
-{
-    return (int)nv_vfx_debug_dump_state(&sandbox_state.vfx);
-}
-
-NV_DEBUG_EXPORT double sandbox_debug_vfx_dump_get(int what, int index, int field)
-{
-    const NvVfx* vfx = &sandbox_state.vfx;
-    switch (what) {
-    case 0: return (double)nv_vfx_debug_dump_counter(vfx, (u32)index);
-    case 1: return (double)nv_vfx_debug_dump_args(vfx, (u32)index, (u32)field);
-    case 2: return (double)nv_vfx_debug_dump_violations(vfx);
-    case 3: return (double)nv_vfx_debug_dump_particle_count(vfx);
-    case 4: return nv_vfx_debug_dump_particle(vfx, (u32)index, (u32)field);
-    case 5: return (double)vfx->capacity;
-    }
-    return 0.0;
-}
-
-NV_DEBUG_EXPORT void sandbox_debug_vfx_dump_finish(void)
-{
-    nv_vfx_debug_dump_finish(&sandbox_state.vfx);
 }
 
 // The gizmo: 0 operation (0 move, 1 rotate, 2 scale), 1 local axes, 2 snap.
@@ -1299,15 +1204,6 @@ const NvDebugCall sandbox_debug_calls[] = {
     {"vfx", "i>i", (void*)sandbox_debug_vfx},
     {"set_effects", "iiiii>v", (void*)sandbox_debug_set_effects},
     {"vfx_fire", "i>v", (void*)sandbox_debug_vfx_fire},
-    {"fixed_dt", "f>v", (void*)sandbox_debug_fixed_dt},
-    {"run_frames", "i>v", (void*)sandbox_debug_run_frames},
-    {"frames", ">i", (void*)sandbox_debug_frames},
-    {"restart_clips", ">v", (void*)sandbox_debug_restart_clips},
-    {"vfx_fire_n", "ii>v", (void*)sandbox_debug_vfx_fire_n},
-    {"vfx_dump_start", "i>v", (void*)sandbox_debug_vfx_dump_start},
-    {"vfx_dump_state", ">i", (void*)sandbox_debug_vfx_dump_state},
-    {"vfx_dump_get", "iii>d", (void*)sandbox_debug_vfx_dump_get},
-    {"vfx_dump_finish", ">v", (void*)sandbox_debug_vfx_dump_finish},
     {"gizmo", "i>i", (void*)sandbox_debug_gizmo},
     {"state", "i>i", (void*)sandbox_debug_state},
     {"selected_position", "i>f", (void*)sandbox_debug_selected_position},

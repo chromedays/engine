@@ -2,8 +2,8 @@
 
 // Scripted runs of the Windows Debug build (docs/specs/d3d12_port.md, "Debug exports and native tests"): `<app>.exe --script <file>`
 // runs the file's commands, one a line, in the frames of the app, and ends the process with 1 when the log holds an error, else 0.
-// The web harness drives the same cases with Playwright, which calls the debug exports by name; here `call` finds them in the
-// table the app gives. A line that is empty or starts with # is skipped. `--out <dir>` is where a relative path of a command goes.
+// Playwright calls the debug exports by name on the web; here `call` finds them in the table the app gives.
+// A line that is empty or starts with # is skipped. `--out <dir>` is where a relative path of a command goes.
 //   size <width> <height>        the window's client area in pixels, at pixel ratio 1
 //   call <name> <number>...      a debug export, with its numbers; a result is logged
 //   frames <n>                   n frames before the next command
