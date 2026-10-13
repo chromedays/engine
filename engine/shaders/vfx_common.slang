@@ -11,7 +11,7 @@ struct Frame {
     float4 wind;
     uint4 counts;       // x: capacity
 };
-[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame;
+[[vk::binding(0, 0)]] ConstantBuffer<Frame> frame : register(b0, space0);
 
 // 32 bytes: where it is, how old, what it moves with and how long it lives (half floats), its
 // emitter and seed, and the scale it was fired with and its starting rotation (half floats).
@@ -84,10 +84,40 @@ float unit(uint h)
     return float(h >> 8u) * (1.0 / 16777216.0);
 }
 
+#if defined(NV_D3D12)
+// The bits of a half float, rounded to the nearest, ties to even, as WGSL's pack2x16float rounds (the baseline's SwiftShader does):
+// HLSL's f32tof16 rounds toward zero, which moves a particle's velocity by up to a half float's ulp.
+uint half_bits(float value)
+{
+    uint bits = asuint(value);
+    uint sign = (bits >> 16u) & 0x8000u;
+    uint magnitude = bits & 0x7FFFFFFFu;
+    if (magnitude >= 0x7F800000u) {
+        return sign | (magnitude > 0x7F800000u ? 0x7E00u : 0x7C00u); // NaN, or infinity
+    }
+    if (magnitude >= 0x477FF000u) {
+        return sign | 0x7C00u; // 65520 and up rounds to infinity
+    }
+    if (magnitude < 0x38800000u) {
+        // Below the smallest normal half (2^-14): a subnormal, whose step is 2^-24. HLSL's round() takes ties to even.
+        return sign | uint(round(abs(value) * 16777216.0));
+    }
+    // A normal: the exponent's bias goes from 127 to 15, and the 13 bits that do not fit are rounded off to even.
+    uint rounded = magnitude - 0x38000000u;
+    rounded += 0x0FFFu + ((rounded >> 13u) & 1u);
+    return sign | (rounded >> 13u);
+}
+#else
+uint half_bits(float value)
+{
+    return f32tof16(value);
+}
+#endif
+
 // Two half floats in one word, the first in the low half (what WGSL's pack2x16float does).
 uint pack_half2(float2 v)
 {
-    return f32tof16(v.x) | (f32tof16(v.y) << 16u);
+    return half_bits(v.x) | (half_bits(v.y) << 16u);
 }
 
 float2 unpack_half2(uint u)

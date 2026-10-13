@@ -4,9 +4,9 @@
 
 #include "game.h"
 
+#include <engine/debug_script.h>
 #include <engine/file.h>
 
-#include <emscripten/emscripten.h>
 
 #include <math.h>
 #include <stdarg.h>
@@ -43,7 +43,7 @@ global const BattleRules fallback_rules = {
     .cell_size = 2.0f, .grid_width = 32, .grid_length = 48, .zone_rows = 14, .round_ticks = 1800, .retarget_ticks = 8,
     .gravity = 9.8f, .stop_fraction = 0.9f, .min_damage_fraction = 0.25f};
 
-internal void set_message(Game* game, b32 bad, const char* format, ...) __attribute__((format(printf, 3, 4)));
+internal void set_message(Game* game, b32 bad, const char* format, ...) NV_PRINTF_FORMAT(3, 4);
 
 internal void set_message(Game* game, b32 bad, const char* format, ...)
 {
@@ -228,6 +228,7 @@ internal void poll_local_file(Game* game)
 internal void frame(void* userdata)
 {
     Game* game = userdata;
+    nv_debug_script_update();
     nv_log_pump();
     f64 now = nv_time_seconds();
     f32 dt = (f32)(now - game->last_time);
@@ -238,7 +239,7 @@ internal void frame(void* userdata)
     NvGpuFrame gpu_frame = nv_gpu_begin_frame(&game->gpu);
     if (!gpu_frame.ok)
         return;
-    WGPUTextureView target = gpu_frame.view;
+    NvGpuView target = gpu_frame.view;
     game_layout(game);
     game->imgui.view_rect = game->layout.viewport;
     nv_imgui_new_frame(&game->imgui, dt);
@@ -281,15 +282,10 @@ internal void frame(void* userdata)
     }
     view_update(game, effects_dt);
 
-    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(game->gpu.device, NULL);
-    nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, encoder, target);
-    nv_imgui_render(&game->imgui, encoder, target);
-    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
-    wgpuQueueSubmit(game->gpu.queue, 1, &commands);
-    wgpuCommandBufferRelease(commands);
-    wgpuCommandEncoderRelease(encoder);
-    nv_renderer_end_frame(&game->renderer);
+    nv_renderer_draw(&game->renderer, game->scene, NULL, game->layout.scene, target);
+    nv_imgui_render(&game->imgui, target);
     nv_gpu_end_frame(&game->gpu);
+    nv_renderer_end_frame(&game->renderer);
 }
 
 #if !defined(NDEBUG)
@@ -300,7 +296,7 @@ internal void frame(void* userdata)
 // local file's status (NvLocalFileStatus, as last polled), 18 whether the project has edits not yet saved, 19 the round's
 // length in ticks, 20 the declared roles, 21 the role filter (a mask), 22 the unit buttons the panel drew last frame, 23 the air
 // units alive.
-EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
+NV_DEBUG_EXPORT int battle_debug(int which)
 {
     const Game* game = &game_state;
     const Battle* battle = &game->battle;
@@ -338,7 +334,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug(int which)
 }
 
 // Sets the game clock's speed as the panel's buttons do: 0 pauses (keeping the speed), anything else is the speed.
-EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
+NV_DEBUG_EXPORT void battle_debug_set_speed(float speed)
 {
     game_state.paused = speed <= 0.0f;
     if (speed > 0.0f)
@@ -346,21 +342,21 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_set_speed(float speed)
 }
 
 // Asks for a step as the panel's buttons do (+1 forward, -1 back), taken by the next frame; it pauses.
-EMSCRIPTEN_KEEPALIVE void battle_debug_step(int direction)
+NV_DEBUG_EXPORT void battle_debug_step(int direction)
 {
     game_state.step = direction > 0 ? 1 : -1;
     game_state.paused = true;
 }
 
 // Loads `text` as a project named `name`, as a local file opened in the panel would be; 1 when it was good.
-EMSCRIPTEN_KEEPALIVE int battle_debug_load(const char* name, const char* text)
+NV_DEBUG_EXPORT int battle_debug_load(const char* name, const char* text)
 {
     return game_load_project(&game_state, name, text, strlen(text));
 }
 
 // Loads /test.abproj from the page's file system as a local file would be (a test writes it with FS.writeFile, since a string
 // cannot be passed in); 1 when it was good.
-EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
+NV_DEBUG_EXPORT int battle_debug_load_test(void)
 {
     umm mark = game_state.scratch.used;
     NvFileData data = nv_file_read(&game_state.scratch, "/test.abproj");
@@ -371,50 +367,50 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_load_test(void)
 
 // Presses a project button of the panel (ProjectAction: 0 Open..., 1 Reload, 2 Save, 3 Save as...); 1 when it started, 0 when
 // the button is disabled.
-EMSCRIPTEN_KEEPALIVE int battle_debug_project_action(int action)
+NV_DEBUG_EXPORT int battle_debug_project_action(int action)
 {
     return game_project_action(&game_state, (ProjectAction)action);
 }
 
 // The panel's project message, for tests.
-EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_message(void)
+NV_DEBUG_EXPORT const char* battle_debug_project_message(void)
 {
     return game_state.project_message;
 }
 
 // Changes rule `key` to `a` (and `b`, the grid's length) as the panel's Rules section does; 1 when the change was made.
-EMSCRIPTEN_KEEPALIVE int battle_debug_set_rule(const char* key, double a, double b)
+NV_DEBUG_EXPORT int battle_debug_set_rule(const char* key, double a, double b)
 {
     f64 values[BATTLE_RULE_MAX_VALUES] = {a, b};
     return game_set_rule(&game_state, key, values, strcmp(key, "grid") == 0 ? 2 : 1);
 }
 
 // The roles of unit type `def` as a bit mask (bit r is the r-th declared role), for tests.
-EMSCRIPTEN_KEEPALIVE int battle_debug_unit_roles(int def)
+NV_DEBUG_EXPORT int battle_debug_unit_roles(int def)
 {
     return (u32)def < BATTLE_MAX_UNIT_DEFS ? (int)game_state.defs.unit_roles[def] : 0;
 }
 
 // Sets the Battle panel's role filter as its toggles do, for tests.
-EMSCRIPTEN_KEEPALIVE void battle_debug_set_role_filter(int mask)
+NV_DEBUG_EXPORT void battle_debug_set_role_filter(int mask)
 {
     game_state.role_filter = (u32)mask;
 }
 
 // The project's text as Save would write it, for tests.
-EMSCRIPTEN_KEEPALIVE const char* battle_debug_project_text(void)
+NV_DEBUG_EXPORT const char* battle_debug_project_text(void)
 {
     return game_state.project_text;
 }
 
 // Places a player squad of unit type `def` with its footprint's corner nearest the grid's origin on cell (x, row), as a tap
 // would; 1 when it was placed.
-EMSCRIPTEN_KEEPALIVE int battle_debug_deploy(int def, int x, int row)
+NV_DEBUG_EXPORT int battle_debug_deploy(int def, int x, int row)
 {
     return game_state.defs_ok && battle_place(&game_state.battle, (u32)def, x, row);
 }
 
-EMSCRIPTEN_KEEPALIVE int battle_debug_start(void)
+NV_DEBUG_EXPORT int battle_debug_start(void)
 {
     nv_vfx_clear(&game_state.vfx);
     game_state.accumulator = 0.0f;
@@ -423,7 +419,7 @@ EMSCRIPTEN_KEEPALIVE int battle_debug_start(void)
 }
 
 // Runs `ticks` ticks at once, with the view's effects, as if the frames had been that long.
-EMSCRIPTEN_KEEPALIVE void battle_debug_run(int ticks)
+NV_DEBUG_EXPORT void battle_debug_run(int ticks)
 {
     for (int i = 0; i < ticks && game_state.battle.phase == BATTLE_FIGHT; ++i) {
         battle_tick(&game_state.battle);
@@ -432,7 +428,7 @@ EMSCRIPTEN_KEEPALIVE void battle_debug_run(int ticks)
 }
 
 // A region's rectangle in CSS pixels: region 0 the viewport, 1 the panel; component 0 x, 1 y, 2 width, 3 height.
-EMSCRIPTEN_KEEPALIVE float battle_debug_layout(int region, int component)
+NV_DEBUG_EXPORT float battle_debug_layout(int region, int component)
 {
     const Game* game = &game_state;
     f32 ratio = nv_window_pixel_ratio(&game->window);
@@ -442,7 +438,7 @@ EMSCRIPTEN_KEEPALIVE float battle_debug_layout(int region, int component)
 }
 
 // Where a world point is on screen, in CSS pixels (axis 0 x, 1 y), as the camera drew the last frame.
-EMSCRIPTEN_KEEPALIVE float battle_debug_project(float x, float y, float z, int axis)
+NV_DEBUG_EXPORT float battle_debug_project(float x, float y, float z, int axis)
 {
     Game* game = &game_state;
     NvMat4 view, projection;
@@ -457,6 +453,30 @@ EMSCRIPTEN_KEEPALIVE float battle_debug_project(float x, float y, float z, int a
 }
 #endif
 
+#if defined(_WIN32) && !defined(NDEBUG)
+// What a scripted run's `call` finds by name (engine/debug_script.h): the exports above, without their battle_debug_ prefix; "debug" is
+// battle_debug itself. The letters before the `>` are the arguments (i: int, f: float), the one after it the result.
+internal const NvDebugCall battle_debug_calls[] = {
+    {"debug", "i>i", (void*)battle_debug},
+    {"set_speed", "f>v", (void*)battle_debug_set_speed},
+    {"step", "i>v", (void*)battle_debug_step},
+    {"deploy", "iii>i", (void*)battle_debug_deploy},
+    {"start", ">i", (void*)battle_debug_start},
+    {"run", "i>v", (void*)battle_debug_run},
+    {"layout", "ii>f", (void*)battle_debug_layout},
+    {"project", "fffi>f", (void*)battle_debug_project},
+    {"unit_roles", "i>i", (void*)battle_debug_unit_roles},
+    {"set_role_filter", "i>v", (void*)battle_debug_set_role_filter},
+    {"project_action", "i>i", (void*)battle_debug_project_action},
+    {"load_test", ">i", (void*)battle_debug_load_test},
+};
+
+internal NvRect debug_script_viewport(void* user)
+{
+    return ((Game*)user)->layout.viewport;
+}
+#endif
+
 int main(void)
 {
     Game* game = &game_state;
@@ -467,14 +487,16 @@ int main(void)
 
     nv_window_create(&game->window, "autobattler");
     if (!nv_gpu_create(&game->gpu, &game->window)) {
-        nv_log(NV_LOG_ERROR, "battle", "fatal: failed to initialize WebGPU");
+        nv_log(NV_LOG_ERROR, "battle", "fatal: failed to initialize the GPU");
         return 1;
     }
     nv_renderer_init(&game->renderer, &game->gpu, &game->permanent);
     nv_imgui_init(&game->imgui, &game->gpu, &game->window, &game->permanent);
     nv_imgui_load_ui_font(&game->imgui, &game->permanent);
     nv_window_download_text(game->download_text, sizeof(game->download_text));
-    nv_strings_set_language(nv_strings_browser_language());
+    if (!game->download_text[0]) // nothing was downloaded (a native build, whose files are on the disk): the label names the backend
+        snprintf(game->download_text, sizeof(game->download_text), "%s", game->gpu.backend_name);
+    nv_strings_set_language(nv_strings_system_language());
 
     b32 touch = game->imgui.ui_scale > 1.0f;
     // Shadows (docs/specs/shadows.md) as in the sandbox: lighter on touch screens. The distance follows the camera
@@ -493,6 +515,17 @@ int main(void)
     game->project_text = NV_PUSH_ARRAY(&game->permanent, PROJECT_MAX_SIZE + 1, char);
     view_build(game);
     load_built_in_project(game);
+#if defined(_WIN32) && !defined(NDEBUG)
+    nv_debug_script_init(&(NvDebugScriptDesc){
+        .window = &game->window,
+        .gpu = &game->gpu,
+        .arena = &game->permanent,
+        .calls = battle_debug_calls,
+        .call_count = NV_ARRAY_COUNT(battle_debug_calls),
+        .viewport = debug_script_viewport,
+        .user = game,
+    });
+#endif
     game->last_time = nv_time_seconds();
     nv_window_run(&game->window, frame, game);
     return 0;

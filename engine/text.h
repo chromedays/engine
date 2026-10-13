@@ -39,7 +39,7 @@ typedef struct NvTextReader {
 
 // Reports an error at `line` (0 = the file as a whole). The first goes to `first_error`; the first NV_TEXT_LOGGED_ERRORS of
 // `*total` are logged.
-__attribute__((format(printf, 3, 4))) void nv_text_report(NvTextReader* reader, u32 line, const char* format, ...);
+NV_PRINTF_FORMAT(3, 4) void nv_text_report(NvTextReader* reader, u32 line, const char* format, ...);
 
 // How many bytes of a token a message shows: at most 24, cut before a character rather than inside it.
 int nv_text_shown(NvTextToken token);

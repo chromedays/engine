@@ -23,12 +23,19 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 
 - C17 규칙은 우리가 쓰는 코드에만 적용된다. 외부 라이브러리는 C나 C++일 수 있고(Dear ImGui와
   ozz-animation은 C++), 경고를 끈 채 있는 그대로 컴파일한다.
+- 우리 코드는 emcc(clang)와 MSVC 둘 다에서 컴파일되고(Windows 빌드는 `/W4`), 한쪽만 아는 문법(`__builtin_trap`, `__attribute__`, VLA, GNU 확장,
+  `typeof`)은 쓰지 않거나 `engine/base.h`의 매크로로 감싼다(`NV_TRAP`, `NV_PRINTF_FORMAT`). C++ 파일이 포함하는 헤더(`math.h` 등)의 복합 리터럴은
+  `NV_LITERAL(type){...}`로 쓴다(MSVC의 C++은 `(type){...}`를 받지 않는다). Windows 헤더는 `base.h`보다 먼저 포함한다(`internal` 매크로).
 - 우리 코드는 C17이고 `-Wall -Wextra`에서 경고 없이 컴파일된다. 유일한 예외는 C API가 없는 C++
   라이브러리의 래퍼다. 그 파일은 C++이고, C 헤더를 통해 `extern "C"` 함수만 내보내며, 가능한 한 얇게
   유지한다(현재는 ozz-animation 래퍼).
 - 엔진 모듈은 헤더 하나와 소스 하나이고, 둘 다 `engine/`에 나란히 둔다(`engine/scene.h`, `engine/scene.c`). include 경로는
   저장소 루트이므로 `#include <engine/scene.h>`로 포함한다. 엔진 안에서만 쓰는 헤더는 맨 위 주석에 그렇게 적고(지금은
   `engine/vfx_cpu.h`), 앱은 포함하지 않는다.
+  예외 하나: 플랫폼에 기대는 모듈(`window`, `imgui` 입력, `storage`, `local_file`, `image`, `gpu`)은 헤더 하나에 소스가 플랫폼마다 하나다
+  (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`). 소스는 `engine/CMakeLists.txt`가 플랫폼에 따라 고르고, 헤더는 플랫폼을
+  가리지 않으며(플랫폼 헤더는 `engine/window_win32.h`처럼 엔진 안에서만 쓴다), 한 플랫폼의 소스가 다른 플랫폼의 것을 호출하지 않는다.
+  Windows Debug 빌드의 스크립트 실행(`engine/debug_script.h`)처럼 한 플랫폼에만 있는 모듈은 파일 전체를 그 플랫폼 조건으로 감싼다.
 - 모든 파일이 `engine/base.h`를 (직접 또는 다른 엔진 헤더를 통해) 포함한다.
 
 ### 이름 짓기
@@ -132,6 +139,16 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - 생성된 WGSL의 검사에는 Dawn의 `tint`(BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc`는 자기가 쓴 WGSL을 검사하지
   않으므로, Chrome과 Edge가 쓰는 바로 그 WGSL 컴파일러로 빌드에서 검사한다. **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.**
   Dawn 공식 릴리스의 미리 컴파일된 바이너리(`bin/tint`)만 버전과 SHA-256을 고정해 쓰며, 소스에서 빌드하지 않는다.
+- Windows 빌드(`docs/specs/d3d12_port.md`)가 요구하는 것: Visual Studio의 MSVC(`cl`)와 Windows SDK(Win32, DXGI, WIC의 헤더와 라이브러리).
+  D3D12 헤더와 런타임은 아래 Agility SDK의 것을 쓴다.
+- 셰이더를 DXIL로 컴파일하려면 DirectX Shader Compiler(DXC, `dxc.exe`, `dxcompiler.dll`, 서명용 `dxil.dll`; Microsoft 라이선스와 LLVM(NCSA)
+  라이선스): D3D12는 DXIL(셰이더 모델 6.6)을 받고, Slang 묶음에는 DXC가 없다. **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.**
+  공식 GitHub 릴리스의 미리 빌드된 묶음(v1.9.2609)을 버전과 SHA-256을 고정해 내려받으며, 소스에서 빌드하지 않는다. 실행 파일과 함께 내놓지 않으므로
+  재배포 조건은 따로 필요 없다. FXC는 셰이더 모델 5.1까지만 컴파일하므로 쓸 수 없다.
+- D3D12 런타임에는 Microsoft의 Agility SDK(NuGet `Microsoft.Direct3D.D3D12` 1.619.6; Microsoft DirectX 소프트웨어 라이선스 조건):
+  `D3D12Core.dll`(Debug는 `d3d12SDKLayers.dll`도)을 실행 파일 옆의 `D3D12\`에 두어, OS에 들어 있는 런타임 대신 우리가 고정한 버전이 돈다.
+  그래서 헤더와 런타임과 디버그 레이어가 한 버전이고 Windows 업데이트에 흔들리지 않는다. 그 라이선스는 이 두 DLL의 재배포를 허용한다(패키지의
+  `distributable files.txt`). 버전과 SHA-256을 고정해 내려받는다. 대가는 패키지 하나(약 35 MB)다.
 - 그 밖의 것은 (단일 헤더 라이브러리라도) 이유를 글로 쓰고 먼저 합의해야 한다. 수학, 컨테이너, 문자열은
   여기서 작성한다.
 
@@ -161,12 +178,22 @@ visible, own your memory, and add abstraction only when repetition asks for it.
 
 - The C17 rule covers only the code we write. External libraries may be written in C or C++
   (Dear ImGui and ozz-animation are C++); they are compiled as they come, with their warnings off.
+- Our code compiles with both emcc (clang) and MSVC (`/W4` on Windows), and spells nothing only one of them knows (`__builtin_trap`,
+  `__attribute__`, VLAs, GNU extensions, `typeof`) except behind a macro of `engine/base.h` (`NV_TRAP`, `NV_PRINTF_FORMAT`). A compound
+  literal in a header that a C++ file includes (`math.h` and the like) is written `NV_LITERAL(type){...}` (MSVC's C++ does not take
+  `(type){...}`). Windows headers are included before `base.h` (its `internal` macro).
 - Our code is C17 and compiles warning-free with `-Wall -Wextra`. The one exception is the wrapper
   around a C++ library that has no C API: that file is C++, exposes only `extern "C"` functions
   through a C header, and stays as thin as possible (currently the ozz-animation wrapper).
 - An engine module is one header and one source, side by side in `engine/` (`engine/scene.h`, `engine/scene.c`). The
   include path is the repository root, so they are included as `#include <engine/scene.h>`. A header only the engine uses
   says so in its top comment (now `engine/vfx_cpu.h`), and the app does not include it.
+  One exception: a module that depends on the platform (`window`, `imgui`'s input, `storage`, `local_file`, `image`, `gpu`)
+  has one header and one source for each platform (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`).
+  `engine/CMakeLists.txt` picks the sources by platform, the header does not name a platform (a platform's own header, like
+  `engine/window_win32.h`, is private to the engine), and one platform's source never calls another's. A module that exists
+  on one platform only, like the Windows Debug build's scripted runs (`engine/debug_script.h`), wraps its whole file in that
+  platform's condition.
 - `engine/base.h` is included (directly or through another engine header) by every file.
 
 ### Naming
@@ -280,6 +307,18 @@ The table sets the shape of names. What a name has to say:
   WGSL it writes, so the build checks it with the same WGSL compiler Chrome and Edge use. **It runs only as a build-time tool and is
   linked into nothing.** Only the prebuilt binary from Dawn's official releases (`bin/tint`) is used, with the version and SHA-256
   pinned; it is not built from source.
+- What the Windows build asks of the platform (`docs/specs/d3d12_port.md`): Visual Studio's MSVC (`cl`) and the Windows SDK (the Win32, DXGI
+  and WIC headers and libraries). The D3D12 headers and runtime are the Agility SDK's, below.
+- The DirectX Shader Compiler (DXC: `dxc.exe`, `dxcompiler.dll` and `dxil.dll`, which signs; Microsoft's license and LLVM's NCSA license)
+  to compile shaders to DXIL: D3D12 takes DXIL (shader model 6.6), and Slang's package has no DXC. **It runs only as a build-time tool and
+  is linked into nothing.** The prebuilt package of the official GitHub release (v1.9.2609) is downloaded with the version and SHA-256
+  pinned; it is not built from source. Nothing of it ships with the executables, so its redistribution terms never apply. FXC compiles
+  shader model 5.1 at most, so it cannot be used.
+- Microsoft's Agility SDK (NuGet `Microsoft.Direct3D.D3D12` 1.619.6; the Microsoft DirectX software license terms) as the D3D12 runtime:
+  `D3D12Core.dll` (and `d3d12SDKLayers.dll` in Debug) sits in `D3D12\` beside the executable, so the version we pin runs instead of the
+  one in the OS. The headers, the runtime and the debug layer are then one version, and Windows Update does not move them. Its license
+  allows redistributing those two DLLs (the package's `distributable files.txt`). It is downloaded with the version and SHA-256 pinned.
+  The cost is one package (about 35 MB).
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 

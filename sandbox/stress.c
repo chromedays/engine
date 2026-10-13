@@ -1,6 +1,5 @@
 #include "sandbox.h"
 
-#include <emscripten/emscripten.h>
 
 #include <math.h>
 #include <stdio.h>
@@ -165,12 +164,6 @@ void stress_after_frame(Sandbox* sandbox)
         finish_run(sandbox);
 }
 
-EM_JS_DEPS(nv_stress, "$stringToUTF8");
-
-EM_JS(void, js_user_agent, (char* out, int size), {
-    stringToUTF8(navigator.userAgent, out, size);
-});
-
 // "585 x 497, scale 1/2" or "1280 x 720 fixed, shown x2": what the scene renders at.
 internal void resolution_text(Sandbox* sandbox, char* out, umm size)
 {
@@ -198,28 +191,39 @@ internal void shadow_settings_text(const NvShadowSettings* s, char* out, umm siz
                  s->filter == NV_SHADOW_FILTER_HIGH ? "High" : "Low", (f64)s->distance);
 }
 
-internal void copy_results(Sandbox* sandbox)
+// The results table the Copy button puts on the clipboard (a native script writes it to a file).
+void benchmark_table_text(Sandbox* sandbox, char* text, umm capacity)
 {
     Benchmark* benchmark = &sandbox->benchmark;
     char agent[256];
-    js_user_agent(agent, sizeof(agent));
-    char text[4096];
+    nv_window_system_text(agent, sizeof(agent));
+    // Where the browser says nothing of the GPU, the backend knows its name (Direct3D 12).
+    if (sandbox->gpu.adapter_name[0]) {
+        umm used_by_agent = strlen(agent);
+        snprintf(agent + used_by_agent, sizeof(agent) - used_by_agent, ", GPU %s (%s)", sandbox->gpu.adapter_name, sandbox->gpu.backend_name);
+    }
     umm used = 0;
     char shadows[64];
     shadow_settings_text(&benchmark->shadows, shadows, sizeof(shadows));
-    used += (umm)snprintf(text + used, sizeof(text) - used,
+    used += (umm)snprintf(text + used, capacity - used,
                           "nv benchmark: %s\ncommit: %s (%s build)\nbrowser: %s\ncanvas: %ux%u, GPU timestamps: %s\n"
                           "shadows: %s\nanti-aliasing: %s\nresolution: %s\n\n"
                           "step            frames  avg ms  worst ms  load %%  anim  scene  draw    ui    gpu  shadow  upscale  bloom  particles  alive\n",
                           sandbox_doc(sandbox)->desc->title, NV_GIT_COMMIT, NV_BUILD_NAME, agent, sandbox->gpu.width, sandbox->gpu.height, sandbox->gpu.has_timestamps ? "yes" : "no",
                           shadows, benchmark->msaa > 1 ? "MSAA 4x" : "off", benchmark->resolution);
-    for (u32 i = 0; i < benchmark->result_count && used < sizeof(text); ++i) {
+    for (u32 i = 0; i < benchmark->result_count && used < capacity; ++i) {
         const BenchmarkResult* r = &benchmark->results[i];
-        used += (umm)snprintf(text + used, sizeof(text) - used, "%-15s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f  %5.2f  %9.2f  %5.0f\n",
+        used += (umm)snprintf(text + used, capacity - used, "%-15s %6u  %6.2f  %8.2f  %6.0f  %4.2f  %5.2f  %4.2f  %4.2f  %5.2f  %6.2f  %7.2f  %5.2f  %9.2f  %5.0f\n",
                               benchmark->step_names[i], r->frames, r->average.frame, r->worst_frame, sandbox_load(&r->average),
                               r->average.anim, r->average.scene, r->average.draw, r->average.ui, r->average.gpu,
                               r->average.gpu_shadow, r->average.gpu_upscale, r->average.gpu_bloom, r->average.gpu_particles, r->particles);
     }
+}
+
+internal void copy_results(Sandbox* sandbox)
+{
+    char text[4096];
+    benchmark_table_text(sandbox, text, sizeof(text));
     igSetClipboardText(text);
 }
 

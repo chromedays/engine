@@ -2,6 +2,9 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#if defined(_MSC_VER)
+#    include <intrin.h> // __debugbreak
+#endif
 
 // NOTE: Fixed-width aliases so sizes are always explicit.
 typedef uint8_t  u8;
@@ -22,12 +25,36 @@ typedef size_t   umm;
 #define global        static
 #define local_persist static
 
+// Our code compiles with emcc (clang) and MSVC (docs/specs/d3d12_port.md, "Build"): what only one of them spells is wrapped here.
+#if defined(_MSC_VER)
+#    define NV_TRAP() __debugbreak() // the debugger stops on the spot
+#    define NV_PRINTF_FORMAT(format_index, first_arg)
+#else
+#    define NV_TRAP() __builtin_trap()
+#    define NV_PRINTF_FORMAT(format_index, first_arg) __attribute__((format(printf, format_index, first_arg)))
+#endif
+
+// A compound literal, `(type){...}`, for the headers anim.cpp includes: C++ has no such literal, and there it is `type{...}`. Only
+// plain braces work in both (C++17 has no designated initializers), and C code uses the plain compound literal.
+#if defined(__cplusplus)
+#    define NV_LITERAL(type) type
+#else
+#    define NV_LITERAL(type) (type)
+#endif
+
 #if !defined(NDEBUG)
-#    define NV_ASSERT(expr) do { if (!(expr)) __builtin_trap(); } while (0)
+#    define NV_ASSERT(expr) do { if (!(expr)) NV_TRAP(); } while (0)
 #else
 #    define NV_ASSERT(expr) ((void)0)
 #endif
 #define NV_INVALID_CODE_PATH NV_ASSERT(!"invalid code path")
+
+// Marks a function the debug harness calls by name: Playwright reads it as Module._name on the web build.
+#if defined(__EMSCRIPTEN__)
+#    define NV_DEBUG_EXPORT __attribute__((used, visibility("default")))
+#else
+#    define NV_DEBUG_EXPORT
+#endif
 
 #define NV_ARRAY_COUNT(array) (sizeof(array) / sizeof((array)[0]))
 #define NV_KILOBYTES(n) ((umm)(n) * 1024)

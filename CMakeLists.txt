@@ -1,9 +1,14 @@
 cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
-if(NOT EMSCRIPTEN)
-    message(FATAL_ERROR "nv builds for the web only. Configure with emcmake: "
-        "emcmake cmake -S . -B build -G Ninja")
+# Two builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU) and the Windows x64 build (MSVC, Direct3D 12).
+if(EMSCRIPTEN)
+    set(NV_WEB TRUE)
+elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+    set(NV_WINDOWS TRUE)
+else()
+    message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja) and for Windows x64 with MSVC "
+        "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64).")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -12,17 +17,29 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17) # ozz-animation and our wrapper around it
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-add_compile_options(-Wall -Wextra)
+if(NV_WEB)
+    add_compile_options(-Wall -Wextra)
+endif()
+# The warnings and the source encoding of our own code on MSVC are set below, after the external libraries: those come with
+# their own options (-w / /w) and must not get ours.
 
-# WebGPU comes from the browser through Emscripten's emdawnwebgpu port.
-add_library(webgpu INTERFACE)
-target_compile_options(webgpu INTERFACE --use-port=emdawnwebgpu)
-target_link_options(webgpu INTERFACE
-    --use-port=emdawnwebgpu
-    -sDEFAULT_TO_CXX   # the port's implementation is C++
-    -sASYNCIFY         # lets wgpuInstanceWaitAny yield to the browser during setup
-    -sALLOW_MEMORY_GROWTH
-    -sENVIRONMENT=web)
+if(NV_WEB)
+    # WebGPU comes from the browser through Emscripten's emdawnwebgpu port.
+    add_library(webgpu INTERFACE)
+    target_compile_options(webgpu INTERFACE --use-port=emdawnwebgpu)
+    target_link_options(webgpu INTERFACE
+        --use-port=emdawnwebgpu
+        -sDEFAULT_TO_CXX   # the port's implementation is C++
+        -sASYNCIFY         # lets wgpuInstanceWaitAny yield to the browser during setup
+        -sALLOW_MEMORY_GROWTH
+        -sENVIRONMENT=web)
+endif()
+# What switches off warnings of an external library: -w for clang, /w for MSVC.
+if(NV_WEB)
+    set(NV_NO_WARNINGS -w)
+else()
+    set(NV_NO_WARNINGS /w)
+endif()
 
 # Emits <target>.js, .wasm and .manifest.json plus index.html (from web/index.html.in) into the
 # target's directory, and installs them into <prefix>/<target>/ as an install component ("web" unless COMPONENT says
@@ -34,31 +51,45 @@ target_link_options(webgpu INTERFACE
 # ASSETS <dir> is PRELOAD <dir>@/assets.
 # Debug builds keep their DWARF debug info in <target>.debug.wasm next to the page. The page does
 # not download it; browser developer tools fetch it for source-level debugging.
+#
+# On Windows (MSVC) it makes the executable <target>.exe instead, with the application manifest (Per-Monitor V2 DPI, UTF-8 code
+# page) built in, and copies next to it what it reads: each PRELOAD directory to <path> under the executable's folder, which
+# nv_file_read maps a leading "/" to (ROOT and COMPONENT only matter to the web package), and the D3D12 runtime of the pinned
+# Agility SDK to D3D12\ (the debug layer too in Debug).
 function(nv_setup_executable target)
     cmake_parse_arguments(ARG "ROOT" "ASSETS;COMPONENT" "PRELOAD" ${ARGN})
     if(NOT ARG_COMPONENT)
         set(ARG_COMPONENT web)
     endif()
-    set_target_properties(${target} PROPERTIES SUFFIX ".js")
-    set(NV_WEB_TARGET "${target}")
-    configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
-    set(files
-        "$<TARGET_FILE_DIR:${target}>/${target}.js"
-        "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
-        "$<TARGET_FILE_DIR:${target}>/${target}.manifest.json"
-        "${CMAKE_CURRENT_BINARY_DIR}/index.html")
-    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-        target_link_options(${target} PRIVATE
-            "-gseparate-dwarf=$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm"
-            "-sSEPARATE_DWARF_URL=${target}.debug.wasm")
-        list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm")
+    set(files)
+    if(NV_WEB)
+        set_target_properties(${target} PROPERTIES SUFFIX ".js")
+        set(NV_WEB_TARGET "${target}")
+        configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
+        set(files
+            "$<TARGET_FILE_DIR:${target}>/${target}.js"
+            "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
+            "$<TARGET_FILE_DIR:${target}>/${target}.manifest.json"
+            "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+        if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+            target_link_options(${target} PRIVATE
+                "-gseparate-dwarf=$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm"
+                "-sSEPARATE_DWARF_URL=${target}.debug.wasm")
+            list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm")
+        endif()
+        # The page reads the build's version and the file sizes from the manifest (docs/specs/page_loading.md).
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
+                    -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"
+            VERBATIM)
+    else()
+        target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/engine/nv.manifest")
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DBIN=${NV_AGILITY_BIN} -DDEST=$<TARGET_FILE_DIR:${target}>/D3D12
+                    -P "${PROJECT_SOURCE_DIR}/cmake/copy_d3d12_runtime.cmake"
+            VERBATIM)
     endif()
-    # The page reads the build's version and the file sizes from the manifest (docs/specs/page_loading.md).
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
-                -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"
-        VERBATIM)
 
     set(preloads ${ARG_PRELOAD})
     if(ARG_ASSETS)
@@ -79,17 +110,28 @@ function(nv_setup_executable target)
                 endif()
             endforeach()
             list(APPEND packed_files ${found})
-            target_link_options(${target} PRIVATE "--preload-file=${preload}")
+            if(NV_WEB)
+                target_link_options(${target} PRIVATE "--preload-file=${preload}")
+            else()
+                string(REGEX REPLACE "^.*@" "" preload_path "${preload}")
+                add_custom_command(TARGET ${target} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different "${preload_dir}" "$<TARGET_FILE_DIR:${target}>${preload_path}"
+                    VERBATIM)
+            endif()
         endforeach()
-        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${packed_files})
-        list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.data")
+        if(NV_WEB)
+            set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS ${packed_files})
+            list(APPEND files "$<TARGET_FILE_DIR:${target}>/${target}.data")
+        endif()
     endif()
 
-    set(destination ${target})
-    if(ARG_ROOT)
-        set(destination .)
+    if(NV_WEB)
+        set(destination ${target})
+        if(ARG_ROOT)
+            set(destination .)
+        endif()
+        install(FILES ${files} DESTINATION ${destination} COMPONENT ${ARG_COMPONENT})
     endif()
-    install(FILES ${files} DESTINATION ${destination} COMPONENT ${ARG_COMPONENT})
 endfunction()
 
 # Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in the target's binary
@@ -105,7 +147,12 @@ function(nv_add_version target)
         COMMENT "Recording the commit")
     add_dependencies(${target} ${target}_version)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-    target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
+    if(NV_WEB)
+        target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
+    else()
+        # The Visual Studio generator keeps every configuration in one build folder, so CMAKE_BUILD_TYPE is empty.
+        target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="$<CONFIG>")
+    endif()
 endfunction()
 
 # Dear ImGui through cimgui, its C API. Only the sources are fetched; the library is defined
@@ -130,7 +177,7 @@ target_include_directories(cimgui PRIVATE ${cimgui_SOURCE_DIR}/imgui)
 target_compile_definitions(cimgui
     PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS
     INTERFACE CIMGUI_DEFINE_ENUMS_AND_STRUCTS) # C users get plain structs; cimgui.cpp must not
-target_compile_options(cimgui PRIVATE -w)
+target_compile_options(cimgui PRIVATE ${NV_NO_WARNINGS})
 
 # ImGuizmo (transform gizmos) through cimguizmo, its C API. Built into the cimgui library so it
 # shares ImGui's context.
@@ -156,7 +203,7 @@ FetchContent_MakeAvailable(cgltf)
 file(WRITE "${CMAKE_BINARY_DIR}/cgltf_impl.c" "#define CGLTF_IMPLEMENTATION\n#include <cgltf.h>\n")
 add_library(cgltf STATIC "${CMAKE_BINARY_DIR}/cgltf_impl.c")
 target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
-target_compile_options(cgltf PRIVATE -w)
+target_compile_options(cgltf PRIVATE ${NV_NO_WARNINGS})
 
 # ozz-animation: runtime and the offline builders we use to build skeletons and clips at load time.
 set(ozz_build_tools    OFF CACHE BOOL "" FORCE)
@@ -167,6 +214,7 @@ set(ozz_build_samples  OFF CACHE BOOL "" FORCE)
 set(ozz_build_howtos   OFF CACHE BOOL "" FORCE)
 set(ozz_build_tests    OFF CACHE BOOL "" FORCE)
 set(ozz_build_postfix  OFF CACHE BOOL "" FORCE)
+set(ozz_build_msvc_rt_dll ON CACHE BOOL "" FORCE) # the same C runtime as ours (MSVC): the dynamic one
 FetchContent_Declare(ozz
     GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
     GIT_TAG        0.17.0
@@ -175,11 +223,21 @@ FetchContent_Declare(ozz
     SYSTEM)          # its headers' warnings stay out of our builds
 FetchContent_MakeAvailable(ozz)
 foreach(ozz_target ozz_base ozz_animation ozz_animation_offline)
-    target_compile_options(${ozz_target} PRIVATE -w)
+    target_compile_options(${ozz_target} PRIVATE ${NV_NO_WARNINGS})
 endforeach()
 
-# Slang and Tint for the shaders (docs/specs/slang_shader_port.md), and nv_add_shader.
+# Slang and Tint for the shaders (docs/specs/slang_shader_port.md), and nv_add_shader. On Windows also DXC and the Agility SDK.
 include(cmake/shaders.cmake)
+
+# Our code on MSVC (docs/specs/d3d12_port.md, "Build"): /std:c17 and /std:c++17 come from CMAKE_C_STANDARD above. /utf-8 reads
+# the sources as UTF-8 (the Korean strings), /Zc:preprocessor is the standard preprocessor, /W4 has to show no warning.
+# What is set only for the warnings that standard C17 draws on MSVC alone says why:
+#   _CRT_SECURE_NO_WARNINGS: C4996 asks for the *_s functions for fopen, strncpy and the like, which are not standard C.
+# UNICODE and _UNICODE make resource names such as IDC_ARROW wide, as the W functions the platform code calls take them.
+if(NV_WINDOWS)
+    add_compile_options(/W4 /utf-8 /Zc:preprocessor)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+endif()
 
 enable_testing()
 add_subdirectory(engine)

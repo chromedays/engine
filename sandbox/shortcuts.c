@@ -1,17 +1,12 @@
 #include "sandbox.h"
 
 #include <cimguizmo.h>
-#include <emscripten.h>
 #include <stdio.h>
 #include <string.h>
 
 // The commands (docs/specs/shortcuts.md, search.md): one table drives the desktop UI's keys, the
 // menus' labels, the help window and the command palette's actions. A row without keys is
 // palette only.
-
-EM_JS(int, js_is_mac, (void), {
-    return /Mac|iPhone|iPad/.test(navigator.platform) ? 1 : 0;
-});
 
 // What must hold for a shortcut to apply.
 enum {
@@ -214,7 +209,7 @@ internal b32 is_mac(void)
 {
     local_persist s32 mac = -1;
     if (mac < 0)
-        mac = js_is_mac();
+        mac = nv_window_is_mac();
     return mac;
 }
 

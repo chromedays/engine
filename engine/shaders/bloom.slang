@@ -7,9 +7,9 @@ struct Pass {
     float2 src_tex;    // the source texture's size in texels
     float2 src_region; // the part of it that holds the image
 };
-[[vk::binding(0, 0)]] ConstantBuffer<Pass> p;
-[[vk::binding(1, 0)]] Texture2D<float4> src;
-[[vk::binding(2, 0)]] SamplerState samp;
+[[vk::binding(0, 0)]] ConstantBuffer<Pass> p : register(b0, space0);
+[[vk::binding(1, 0)]] Texture2D<float4> src : register(t1, space0);
+[[vk::binding(2, 0)]] SamplerState samp : register(s2, space0);
 
 [shader("vertex")]
 float4 vs_main(uint i : SV_VertexID) : SV_Position

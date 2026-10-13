@@ -25,8 +25,8 @@ struct Decal {
     float4 color;
 };
 
-[[vk::binding(1, 0)]] StructuredBuffer<Segment> segments;
-[[vk::binding(2, 0)]] StructuredBuffer<Decal> decals;
+[[vk::binding(1, 0)]] StructuredBuffer<Segment> segments : register(t1, space0);
+[[vk::binding(2, 0)]] StructuredBuffer<Decal> decals : register(t2, space0);
 
 static const float4 OUTSIDE = float4(2.0, 2.0, 2.0, 1.0);
 

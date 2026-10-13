@@ -272,6 +272,9 @@ global const NvStringPair entries[] = {
     {"%u new", "새 항목 %u개"},
     {"Hide", "숨기기"},
     {"Collapse the dock to its strip", "도크를 탭 줄로 접기"},
+    {"No GPU runs this program: it needs Direct3D 12 feature level 12_2 and shader model 6.6.\n\n%s",
+     "이 프로그램을 실행할 수 있는 GPU가 없습니다. Direct3D 12 기능 수준 12_2와 셰이더 모델 6.6이 필요합니다.\n\n%s"},
+    {"No GPU was found.", "GPU를 찾지 못했습니다."},
 };
 // clang-format on
 

@@ -3,9 +3,9 @@
 struct Uniforms {
     float4x4 mvp;
 };
-[[vk::binding(0, 0)]] ConstantBuffer<Uniforms> u;
-[[vk::binding(1, 0)]] SamplerState s;
-[[vk::binding(2, 0)]] Texture2D<float4> t;
+[[vk::binding(0, 0)]] ConstantBuffer<Uniforms> u : register(b0, space0);
+[[vk::binding(1, 0)]] SamplerState s : register(s1, space0);
+[[vk::binding(2, 0)]] Texture2D<float4> t : register(t2, space0);
 
 struct VsIn {
     float2 pos : TEXCOORD0;

@@ -108,6 +108,8 @@ typedef struct NvVfxFrame {
     NvMat4 view_proj;       // the scene pass's, reverse Z included
     NvVec3 camera_right, camera_up;
     u32 samples;            // of the scene pass
+    b32 timestamps;         // time the compute passes (nv_gpu_begin_compute_pass) into these slots
+    u32 timestamp_begin, timestamp_end;
 } NvVfxFrame;
 
 typedef struct NvVfx {
@@ -138,16 +140,15 @@ typedef struct NvVfx {
     b32 clear_requested;
 
     // GPU.
-    WGPUBuffer frame_buffer, particles, free_list, alive[2], visible, counters, emitter_buffer, burst_buffer, job_buffer;
-    WGPUBuffer sim_args, draw_args, stats_buffer;
-    WGPUShaderModule compute_module, render_module;
-    WGPUBindGroupLayout layouts[5];                // emit, simulate, prepare a, prepare b, init
-    WGPUComputePipeline emit_pipeline, simulate_pipeline, prepare_a_pipeline, prepare_b_pipeline, init_pipeline;
-    WGPUBindGroup emit_groups[2], simulate_groups[2]; // by which alive list is the current one
-    WGPUBindGroup prepare_a_group, prepare_b_group, init_group;
-    WGPUBindGroupLayout render_layout;
-    WGPUBindGroup render_group;
-    WGPURenderPipeline add_pipeline, alpha_pipeline;
+    NvGpuBuffer frame_buffer, particles, free_list, alive[2], visible, counters, emitter_buffer, burst_buffer, job_buffer;
+    NvGpuBuffer sim_args, draw_args;
+    NvGpuLayout layouts[5];                        // emit, simulate, prepare a, prepare b, init
+    NvGpuPipeline emit_pipeline, simulate_pipeline, prepare_a_pipeline, prepare_b_pipeline, init_pipeline;
+    NvGpuGroup emit_groups[2], simulate_groups[2]; // by which alive list is the current one
+    NvGpuGroup prepare_a_group, prepare_b_group, init_group;
+    NvGpuLayout render_layout;
+    NvGpuGroup render_group;
+    NvGpuPipeline add_pipeline, alpha_pipeline;
     u32 pipeline_samples;                          // of the render pipelines that exist
     u32 parity;                                    // which alive list the next frame starts from
 
@@ -158,17 +159,14 @@ typedef struct NvVfx {
         u32 pending, pending_start;   // staged slots, and the ring slot of the first
         void* staged;                 // [staging slots] as the shader reads them
         f32* death;                   // [capacity]: effect time at which each slot expires
-        WGPUBuffer buffer;
+        NvGpuBuffer buffer;
     } segments, decals;
-    WGPUShaderModule marks_module;
-    WGPUBindGroupLayout marks_layout;
-    WGPUBindGroup marks_group;
-    WGPURenderPipeline segment_pipeline, decal_pipeline;
+    NvGpuLayout marks_layout;
+    NvGpuGroup marks_group;
+    NvGpuPipeline segment_pipeline, decal_pipeline;
     u32 marks_frame;                  // counts frames, to count the live ones now and then
 
     NvVfxStats stats;
-    b32 stats_mapping;
-    b32 stats_copied;
 } NvVfx;
 
 // `capacity.particles` zero is NV_VFX_DEFAULT_PARTICLES. Allocates the CPU tables from `arena` and
@@ -206,19 +204,18 @@ void nv_vfx_decal(NvVfx* vfx, const NvVfxDecalStyle* style, NvVec3 position, f32
 // Removes every particle, segment and decal (Play and Stop) and forgets the bursts not yet spawned.
 void nv_vfx_clear(NvVfx* vfx);
 
-// The latest numbers the GPU reported.
-NvVfxStats nv_vfx_stats(const NvVfx* vfx);
+// The latest numbers the GPU reported (they come back a frame or two late).
+NvVfxStats nv_vfx_stats(NvVfx* vfx);
 
-// Called by the renderer. Records the emit, simulate and prepare passes (`timestamps`, when not
-// NULL, times them) after uploading what the CPU queued, and remakes the draw pipelines when the
-// scene pass's sample count changed.
-void nv_vfx_compute(NvVfx* vfx, WGPUCommandEncoder encoder, const NvVfxFrame* frame, const WGPUPassTimestampWrites* timestamps);
+// Called by the renderer. Records the emit, simulate and prepare passes into the frame's commands after uploading what the
+// CPU queued, and remakes the draw pipelines when the scene pass's sample count changed.
+void nv_vfx_compute(NvVfx* vfx, const NvVfxFrame* frame);
 
 // Draws the decals into the scene pass: after the opaque meshes, before everything else.
-void nv_vfx_draw_decals(NvVfx* vfx, WGPURenderPassEncoder pass);
+void nv_vfx_draw_decals(NvVfx* vfx);
 
 // Draws the segments, then the visible particles (alpha blended, then additive) into the scene pass.
-void nv_vfx_draw(NvVfx* vfx, WGPURenderPassEncoder pass);
+void nv_vfx_draw(NvVfx* vfx);
 
-// Starts reading the GPU's counters back; call after the frame's commands are submitted.
+// Call after the frame is submitted: counts the segments and decals still alive.
 void nv_vfx_end_frame(NvVfx* vfx);

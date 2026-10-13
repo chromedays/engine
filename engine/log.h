@@ -43,7 +43,7 @@ extern NvLog nv_log_ring;
 // Adds a message and writes it to the browser console as "[source] text". `source` is cut to 7
 // characters; text longer than NV_LOG_MAX_MESSAGE_SIZE is cut and ends in "...".
 void nv_log(NvLogLevel level, const char* source, const char* format, ...)
-    __attribute__((format(printf, 3, 4)));
+    NV_PRINTF_FORMAT(3, 4);
 
 // Moves the messages the page queued (Module.nvLog in web/index.html.in) into the ring. Call once
 // per frame. Does nothing where the page has no queue (Node tests).

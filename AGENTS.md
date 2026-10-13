@@ -17,18 +17,27 @@ Guidance for AI coding agents working in this repository.
 
 ## Project
 
-nv ("night view") is a C17 rendering engine on WebGPU that runs in the browser. It compiles to
-WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emdawnwebgpu` port.
-There is no native build.
+nv ("night view") is a C17 rendering engine that runs in the browser and on Windows from one source. The web build
+compiles to WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emdawnwebgpu` port. The Windows
+build (x64, MSVC) draws through Direct3D 12 (`docs/specs/d3d12_port.md`). There is no build for any other platform.
 
 ```
 engine/                    each module's header and source side by side, included as <engine/name.h>:
-                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.c/.h, gpu.c/.h,
-                           imgui.c/.h (Dear ImGui, ImGuizmo), renderer.c/.h (meshes, materials, skinning, debug lines),
+                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.h, gpu.h (the GPU API: handles,
+                           buffers, textures, bind groups, pipelines, passes; no backend header; gpu_webgpu.c is its web backend and
+                           the only file that calls WebGPU; gpu_d3d12.c is its Windows backend and the only file that calls D3D12), imgui.c/.h (Dear ImGui, ImGuizmo: drawing, previews),
+                           renderer.c/.h (meshes, materials, skinning, debug lines),
                            gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
                            C++ file), chunk.c/.h (tagged binary files), file.c/.h (reading a packed file whole into an arena),
-                           storage.c/.h (files kept in IndexedDB), local_file.c/.h (opening and saving files on the
+                           storage.h (files kept in IndexedDB), local_file.h (opening and saving files on the
                            user's computer through the browser's dialogs; docs/specs/local_files.md),
+                           image.h (decoding a JPEG or PNG to RGBA8),
+                           the web sources of the modules that depend on the platform: window_web.c, imgui_web.c (input, text
+                           agent, clipboard; with imgui_platform.h, engine-private), storage_web.c, local_file_web.c, image_web.c,
+                           the Windows sources of the same modules: window_win32.c (message loop, DPI; with window_win32.h,
+                           engine-private), imgui_win32.c (keys, IME, clipboard, cursor), storage_win32.c, local_file_win32.c,
+                           image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers); CMake picks one source of each,
+                           debug_script.c/.h (Windows Debug only: a scripted run, `--script`; see "Testing on Windows"),
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
                            GPU-free parts tests run; engine-private: app code does not include vfx_cpu.h),
@@ -52,7 +61,7 @@ autobattler/               the auto-battler, a second executable with its own pa
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
-tests/                     tests that need no browser, built for Node and run with ctest
+tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
                            build's version and file sizes for that page)
@@ -83,12 +92,37 @@ The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOO
 `slangc` and Dawn's `tint`, pinned by version and SHA-256, run only while building and linked into nothing. A host without a Dawn package
 (Linux and Windows on arm64) skips the Tint check with a warning; `NV_SLANGC` and `NV_TINT` name binaries of your own.
 
+### On Windows
+
+Requires Windows 11 x64, Visual Studio's MSVC (`cl`) and Windows SDK, CMake 3.30+ and Git LFS; no Emscripten. A GPU that
+supports Direct3D 12 feature level 12_2 and shader model 6.6 runs it (`docs/specs/d3d12_port.md`, "Minimum specification"); the
+Debug build's debug layer needs the "Graphics Tools" optional feature. The Windows build uses the Visual Studio generator (the web
+build keeps Ninja), which finds MSVC itself, so any prompt works. It keeps every configuration in one build folder, so a build says
+which one (`--config`), and the executables are in a folder named after it:
+
+```sh
+cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64
+cmake --build build-win --config Release -j
+build-win\sandbox\Release\sandbox.exe      # or build-win\autobattler\Release\autobattler.exe; Debug\ for the Debug build
+```
+
+The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
+runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
+`assets\` and `data\` beside themselves and keep their saves in `%LOCALAPPDATA%\nv\<target>\`. A native build is not built or
+published by CI, so a change to a file that does not know the platform, or to `engine/gpu.h`, is built for both the web and Windows
+before it is pushed.
+
 ## Conventions
 
 Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
-- `wgpuSurfacePresent` must not be called; the browser presents the canvas.
-- Blocking waits use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
+- Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
+- Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. A file that does not know the platform
+  includes none of their headers and never tests `__EMSCRIPTEN__` or `_WIN32` (debug exports are `NV_DEBUG_EXPORT`). Our code compiles
+  with emcc and MSVC (`/W4`, no warnings): no VLAs or GNU extensions, `NV_LITERAL(type){...}` for a compound literal that C++ also
+  sees, `NV_TRAP` and `NV_PRINTF_FORMAT` instead of `__builtin_trap` and `__attribute__`, and `windows.h` before `engine/base.h` (its
+  `internal` macro) where a file includes it at all. Shaders compile to WGSL for the web and to DXIL (shader model 6.6) for Windows.
+- Blocking waits (in `gpu_webgpu.c`) use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
   (`ASYNCIFY_IGNORE_INDIRECT` is off), so a frame may wait through Asyncify: a scene built on first show awaits its image decodes.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
 - ImGui input reads page client coordinates, which match canvas coordinates only because the page
@@ -97,7 +131,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `nv_imgui_new_frame` and `nv_imgui_render`.
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
   show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
-  in `engine/imgui.c`.
+  in `engine/imgui_web.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Pretendard
   Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
   syllable, not ImGui's built-in one.
@@ -119,14 +153,25 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - Shaders are Slang (`engine/shaders/*.slang`, `docs/specs/slang_shader_port.md`); no WGSL is written by hand. `nv_add_shader`
   (`engine/CMakeLists.txt`) makes each one in three steps that stop the build when one fails: `slangc` writes WGSL
   (`<build>/shaders/<name>.wgsl`, kept: the browser's and Tint's errors name its lines), `tint` checks it (`slangc` does not: it writes invalid WGSL
-  without a word), and the C header `shaders/<name>_wgsl.h` is made (`const char <name>_wgsl[]`, handed to `wgpuDeviceCreateShaderModule`).
-  The source must also compile to HLSL, for the D3D12 backend to come. Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
+  without a word), and the C header `shaders/<name>_shader.h` is made (`const char <name>_wgsl[]` and `const NvGpuShaderCode <name>_shader`, which the
+  pipeline descriptions of `engine/gpu.h` take).
+  The same source also compiles to DXIL (shader model 6.6, `cmake/make_dxil.cmake`) for the D3D12 backend: every resource has a
+  `register(...)` beside its `[[vk::binding]]` that says the same, a struct the C code lays out has explicit scalar padding (WGSL and HLSL
+  strides differ: `Object` has `padding0` to `padding2`), and `NV_D3D12` marks the few places that differ (`half_bits` in `vfx_common.slang`
+  rounds like WGSL's `pack2x16float`). Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
   the same as the bind group layout in C; a vertex input or a varying gets its location from the number of its `TEXCOORD<n>` semantic (the
   WGSL ignores `[[vk::location]]` and closes gaps, so a pipeline stops matching); a depth texture is `DepthTexture2D` or `DepthTexture2DMS`
   (`Texture2D<float>` writes `texture_2d<f32>`, which a comparison sampler and a depth binding refuse); `import` does not pass on what the
   imported module imports (`__exported import`) and only the entry points of the file `slangc` is given are compiled. A new binding or struct
   is a row in `tests/shader_layout_test.mjs` (reflection and the generated WGSL against the sizes and locations the C code relies on, which
   its `_Static_assert`s hold), and a browser run with no WebGPU error is the check Tint cannot be: it sees one shader, not the bind group layouts.
+- The GPU is used through `engine/gpu.h` only (`docs/specs/d3d12_port.md`, "GPU API"). Its objects are handles (an index and a generation) that
+  assert when stale; `nv_gpu_begin_frame` opens the frame's command list and `nv_gpu_end_frame` submits it, so `nv_renderer_draw` and
+  `nv_imgui_render` take only the target view. Buffer and texture writes take effect before every command of the next submit, wherever
+  they are made. Pass times and buffer reads come back by polling (`nv_gpu_poll_timestamps`, `nv_gpu_poll_readback`), a few frames late, and
+  a new request waits until the earlier one was taken. A use of the GPU the API lacks is a row in that spec's table and a function in the
+  backend, never a backend call from the renderer, the effects or an app.
+- A function Playwright calls by name is marked `NV_DEBUG_EXPORT` (`engine/base.h`; `EMSCRIPTEN_KEEPALIVE` on the web).
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
   `NvImgui.view` (orbit, pan, dolly, tap); the sandbox turns it into camera moves and picking
   (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
@@ -242,7 +287,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   color pipeline for channels, a depth pipeline reading with `textureLoad`). The depth target is
   samplable (`NvRenderer.depth_sampled`) and its depth stored only while the tab is shown. A new
   kind of texture belongs in its list (`gather`), and a texture it shows needs
-  `WGPUTextureUsage_TextureBinding`. Renderer textures carry a name (`nv_renderer_add_texture`).
+  `NV_GPU_TEXTURE_SAMPLED`. Renderer textures carry a name (`nv_renderer_add_texture`).
   Debug builds export `Module._sandbox_debug_textures_*`, `_sandbox_debug_preview_slots` and
   `_sandbox_debug_depth_sampled` for tests.
 - The first directional light casts shadows through one shadow map fitted to the view
@@ -360,3 +405,21 @@ Each Playwright browser launch starts with empty storage, and `page.reload()` ke
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can
 read and damage `/nv-save/state.nvs` (then `FS.syncfs(false, ...)`).
+
+## Testing on Windows
+
+A Windows PC has a display and a GPU, so the native build is run as it is, and its Debug build can be driven by a script
+(`docs/specs/d3d12_port.md`, "Debug exports and native tests"): `sandbox.exe --script <file> --out <dir>` (and `autobattler.exe`)
+runs one command a line in the app's frames (`size`, `call <export> <numbers>`, `frames`, `screenshot`, `move`, `mouse`, `wheel`,
+`key`, `text`, `close`, `quit`; the sandbox adds `benchmark`; `engine/debug_script.h`) and exits with 1 when
+the log holds an error. `call` finds the debug exports in the table the app gives (`sandbox_debug_calls` in `sandbox/main.c`,
+`battle_debug_calls` in `autobattler/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
+GPU-based validation, so a run with no `[d3d12]` message in its log is the native counterpart of "no WebGPU error";
+`NV_D3D12_VALIDATION=0` turns them off for a timed run, `NV_STORAGE_DIR` points the save at a folder (a run starts from empty storage)
+and `NV_LOCAL_FILE` answers the file dialogs. `ctest --test-dir build-win -C Debug` (or `-C Release`) runs the C tests (no Node: the `.mjs` tests run only where
+Node is found).
+
+The D3D12 port's regression harness (the SwiftShader baseline, the web and native captures, the comparison tool, and the debug exports and
+`case` script commands made only for it) was removed after the web re-check of stage 7 (`docs/specs/d3d12_port.md`, "만든 결과"). It is in
+Git history at commit `4ecbb2e`, under `tools/d3d12_port/`. Test both a Release build and a Debug build on Windows.
+

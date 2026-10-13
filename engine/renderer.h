@@ -21,8 +21,8 @@ typedef struct NvMaterialDesc {
 } NvMaterialDesc;
 
 typedef struct NvRenderMesh {
-    WGPUBuffer vertices;
-    WGPUBuffer indices;
+    NvGpuBuffer vertices;
+    NvGpuBuffer indices;
     u32 index_count;
     b32 skinned;
     NvBox bounds; // local; the bind pose for skinned meshes
@@ -80,15 +80,15 @@ typedef struct NvResolution {
 NvSceneOutput nv_renderer_scene_output(const NvResolution* resolution, NvRect viewport);
 
 typedef struct NvRenderTexture {
-    WGPUTexture texture;
-    WGPUTextureView view;
-    char name[NV_TEXTURE_NAME_MAX]; // also the WebGPU label, so browser tools show the same name
+    NvGpuTexture texture;
+    NvGpuView view;
+    char name[NV_TEXTURE_NAME_MAX]; // also the GPU label, so browser tools show the same name
 } NvRenderTexture;
 
 typedef struct NvRenderMaterial {
     NvMaterialDesc desc;
-    WGPUBuffer uniform;
-    WGPUBindGroup bind_group;
+    NvGpuBuffer uniform;
+    NvGpuGroup bind_group;
 } NvRenderMaterial;
 
 typedef struct NvDebugVertex {
@@ -165,20 +165,20 @@ typedef struct NvRenderer {
     NvRenderTexture textures[NV_MAX_TEXTURES];
     u32 texture_count;
 
-    WGPUBindGroupLayout frame_layout;
-    WGPUBindGroupLayout material_layout;
-    WGPURenderPipeline pipelines[2][2]; // [skinned][double_sided]
-    WGPURenderPipeline debug_pipeline;
-    WGPUSampler sampler;
+    NvGpuLayout frame_layout;
+    NvGpuLayout material_layout;
+    NvGpuPipeline pipelines[2][2]; // [skinned][double_sided]
+    NvGpuPipeline debug_pipeline;
+    NvGpuSampler sampler;
 
-    WGPUBuffer frame_buffer;
-    WGPUBuffer object_buffer;
-    WGPUBuffer skin_buffer;
-    WGPUBuffer debug_buffer;
-    WGPUBindGroup frame_group;
+    NvGpuBuffer frame_buffer;
+    NvGpuBuffer object_buffer;
+    NvGpuBuffer skin_buffer;
+    NvGpuBuffer debug_buffer;
+    NvGpuGroup frame_group;
 
-    WGPUTexture depth_texture;
-    WGPUTextureView depth_view;
+    NvGpuTexture depth_texture;
+    NvGpuView depth_view;
     u32 depth_width;
     u32 depth_height;
     // Set by the app: make the depth target samplable too (the texture viewer shows it). Off, it is
@@ -193,11 +193,12 @@ typedef struct NvRenderer {
     // resize does not remake them every frame). `scene_color` is what the upscale pass samples.
     u32 target_width, target_height;
     u32 scene_width, scene_height;    // the resolution of the last frame
-    WGPUTexture scene_color;
-    WGPUTextureView scene_color_view; // NV_SCENE_FORMAT, linear: rendered to and sampled through it
-    WGPURenderPipeline upscale_pipeline;
-    WGPUBuffer upscale_buffer;
-    WGPUBindGroup upscale_group;      // for the current scene_color_view
+    NvGpuTexture scene_color;
+    NvGpuView scene_color_view; // NV_SCENE_FORMAT, linear: rendered to and sampled through it
+    NvGpuLayout upscale_layout;
+    NvGpuPipeline upscale_pipeline;
+    NvGpuBuffer upscale_buffer;
+    NvGpuGroup upscale_group;   // for the current scene_color_view
 
     // Anti-aliasing (docs/specs/msaa.md). The app sets `msaa`: 1 is off, 4 is 4x MSAA (the only
     // counts WebGPU guarantees). nv_renderer_draw remakes the scene pipelines and the targets when it
@@ -205,10 +206,10 @@ typedef struct NvRenderer {
     // resolve target.
     u32 msaa;
     u32 scene_samples; // what the scene pipelines and the depth target have
-    WGPUTexture msaa_color;
-    WGPUTextureView msaa_color_view;
+    NvGpuTexture msaa_color;
+    NvGpuView msaa_color_view;
     u32 msaa_width, msaa_height;
-    WGPUTextureFormat msaa_format;
+    NvGpuFormat msaa_format;
 
     // Tone mapping and bloom, applied by the upscale pass.
     NvPostSettings post;
@@ -221,30 +222,28 @@ typedef struct NvRenderer {
     // scene targets' size. The scene color is downsampled into it (13 taps, a Karis average on the first
     // step), then each level is added back into the one above with a tent filter; the upscale pass
     // adds mip 0 to the scene. Made while `post.bloom` is on.
-    WGPUTexture bloom_texture;
-    WGPUTextureView bloom_views[NV_BLOOM_LEVELS]; // one mip level each
-    u32 bloom_width, bloom_height;                // of mip 0
-    WGPURenderPipeline bloom_down_first_pipeline, bloom_down_pipeline, bloom_up_pipeline;
-    WGPUBindGroupLayout bloom_layout;
-    WGPUBindGroup bloom_groups[NV_BLOOM_LEVELS + 1]; // by source: the scene color, then each mip
-    WGPUBuffer bloom_buffer;                         // one uniform block per pass, read with dynamic offsets
-    WGPUSampler bloom_sampler;                       // linear, clamped
-    WGPUTexture bloom_dummy;                         // 1x1 black, bound while there is no chain
-    WGPUTextureView bloom_dummy_view;
-    b32 bloom_recorded;                              // this frame's bloom passes wrote timestamps
-    b32 particles_recorded;                          // ... and the particle passes
+    NvGpuTexture bloom_texture;
+    NvGpuView bloom_views[NV_BLOOM_LEVELS]; // one mip level each
+    u32 bloom_width, bloom_height;          // of mip 0
+    NvGpuPipeline bloom_down_first_pipeline, bloom_down_pipeline, bloom_up_pipeline;
+    NvGpuLayout bloom_layout;
+    NvGpuGroup bloom_groups[NV_BLOOM_LEVELS + 1]; // by source: the scene color, then each mip
+    NvGpuBuffer bloom_buffer;                     // one uniform block per pass, read with dynamic offsets
+    NvGpuSampler bloom_sampler;                   // linear, clamped
+    NvGpuTexture bloom_dummy;                     // 1x1 black, bound while there is no chain
+    NvGpuView bloom_dummy_view;
 
     // Shadows. The app sets `shadows`; nv_renderer_draw remakes the map and the pipelines when the
     // size or the format changed. While shadows are off, a 1x1 map stays bound.
     NvShadowSettings shadows;
     u32 shadow_size;               // of the map that exists
     NvShadowFormat shadow_format;  // of the map and shadow_pipelines
-    WGPUTexture shadow_texture;
-    WGPUTextureView shadow_view;
-    WGPUSampler shadow_sampler;    // comparison, linear: hardware 2x2 PCF
-    WGPUBindGroupLayout shadow_frame_layout; // frame_layout without the map, for the shadow pass
-    WGPUBindGroup shadow_frame_group;
-    WGPURenderPipeline shadow_pipelines[2][2]; // [skinned][double_sided], depth only
+    NvGpuTexture shadow_texture;
+    NvGpuView shadow_view;
+    NvGpuSampler shadow_sampler;    // comparison, linear: hardware 2x2 PCF
+    NvGpuLayout shadow_frame_layout; // frame_layout without the map, for the shadow pass
+    NvGpuGroup shadow_frame_group;
+    NvGpuPipeline shadow_pipelines[2][2]; // [skinned][double_sided], depth only
     NvMat4 light_view_proj;        // the last frame's, for the light box
 
     // Per-frame CPU staging, from the permanent arena.
@@ -267,13 +266,7 @@ typedef struct NvRenderer {
 
     NvRenderStats stats;
 
-    // GPU time of the scene and shadow passes, where the device has timestamps. Results arrive a few frames
-    // late, through a buffer that is read back while no other readback is in flight.
-    WGPUQuerySet timestamp_queries;
-    WGPUBuffer timestamp_resolve;
-    WGPUBuffer timestamp_readback;
-    b32 timestamp_copied;   // this frame's timestamps are being copied to the readback buffer
-    b32 timestamp_mapping;  // the readback buffer is being mapped
+    // GPU time of the passes, where the device has timestamps. Results arrive a few frames late (nv_gpu_poll_timestamps).
     f64 gpu_ms;             // latest scene pass time; 0 without timestamps
     f64 gpu_shadow_ms;      // latest shadow pass time; 0 without timestamps or shadows
     f64 gpu_upscale_ms;     // latest upscale pass time; 0 without timestamps
@@ -283,7 +276,7 @@ typedef struct NvRenderer {
 
 void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena);
 
-// Call after the frame's commands are submitted: starts reading back the scene pass time.
+// Call after the frame is submitted (nv_gpu_end_frame).
 void nv_renderer_end_frame(NvRenderer* renderer);
 
 NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data);
@@ -293,7 +286,7 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data);
 void nv_renderer_replace_mesh(NvRenderer* renderer, NvMeshId id, const NvMeshData* data);
 
 // `rgba` is width * height * 4 bytes. Mipmaps are generated with `scratch`, which is left as it was.
-// `name` (NULL = "texture N") is shown by the texture viewer and given to WebGPU as the label.
+// `name` (NULL = "texture N") is shown by the texture viewer and given to the GPU API as the label.
 NvTextureId nv_renderer_add_texture(NvRenderer* renderer, const char* name, u32 width, u32 height, const u8* rgba,
                                     b32 srgb, NvArena* scratch);
 
@@ -334,11 +327,10 @@ NvNodeId nv_renderer_pick(NvRenderer* renderer, NvScene* scene, const NvSkin* sk
 // Queues a line for this frame, drawn on top of the scene.
 void nv_renderer_debug_line(NvRenderer* renderer, NvVec3 a, NvVec3 b, NvVec3 color);
 
-// Records the scene pass and the upscale pass. The scene is drawn at `output.width` x
+// Records the scene pass and the upscale pass in the frame's commands (nv_gpu_begin_frame). The scene is drawn at `output.width` x
 // `output.height` pixels (which set the camera's aspect ratio) into the renderer's own targets,
 // then shown in `output.image` of `target`, the canvas; the rest of the canvas is cleared to black.
 // A zeroed output means the whole target at its own resolution.
 // A skinned node is posed by `skins[node->animator.index]`; with no animator, or `skins` NULL,
 // it is drawn in its bind pose.
-void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output,
-                      WGPUCommandEncoder encoder, WGPUTextureView target);
+void nv_renderer_draw(NvRenderer* renderer, NvScene* scene, const NvSkin* skins, NvSceneOutput output, NvGpuView target);

@@ -14,11 +14,11 @@ struct SkinnedIn {
 [shader("vertex")]
 float4 vs_static(StaticIn in, uint i : SV_InstanceID) : SV_Position
 {
-    return mul(mul(frame.light_view_proj, objects[i].model), float4(in.position, 1.0));
+    return mul(mul(frame.light_view_proj, objects[object_index(i)].model), float4(in.position, 1.0));
 }
 
 [shader("vertex")]
 float4 vs_skinned(SkinnedIn in, uint i : SV_InstanceID) : SV_Position
 {
-    return mul(mul(frame.light_view_proj, skinned_model(objects[i], in.joints, in.weights)), float4(in.position, 1.0));
+    return mul(mul(frame.light_view_proj, skinned_model(objects[object_index(i)], in.joints, in.weights)), float4(in.position, 1.0));
 }

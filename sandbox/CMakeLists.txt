@@ -1,4 +1,4 @@
-add_executable(sandbox main.c behaviors.c console.c effects.c save.c scene_file.c scenes.c search.c selection.c shortcuts.c strings.c stress.c
+add_executable(sandbox main.c behaviors.c console.c debug_script.c effects.c save.c scene_file.c scenes.c search.c selection.c shortcuts.c strings.c stress.c
     textures.c ui.c ui_desktop.c ui_phone.c undo.c)
 target_link_libraries(sandbox PRIVATE nv)
 nv_setup_executable(sandbox ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets" PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")

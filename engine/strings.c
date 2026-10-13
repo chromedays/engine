@@ -1,6 +1,5 @@
 #include "engine/strings.h"
 
-#include <emscripten.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -26,14 +25,31 @@ void nv_strings_set_table(const NvStringPair* pairs, u32 count)
     }
 }
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+
 EM_JS(int, js_browser_is_korean, (void), {
     const language = (navigator.language || "").toLowerCase();
     return language.startsWith("ko") ? 1 : 0;
 });
 
+internal b32 system_is_korean(void)
+{
+    return js_browser_is_korean();
+}
+#elif defined(_WIN32)
+#include "engine/win32.h"
+
+// Korean when the user's Windows display language is.
+internal b32 system_is_korean(void)
+{
+    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_KOREAN;
+}
+#endif
+
 NvLanguage nv_strings_language(void) { return language; }
 void nv_strings_set_language(NvLanguage value) { language = value < NV_LANGUAGE_COUNT ? value : NV_LANGUAGE_EN; }
-NvLanguage nv_strings_browser_language(void) { return js_browser_is_korean() ? NV_LANGUAGE_KO : NV_LANGUAGE_EN; }
+NvLanguage nv_strings_system_language(void) { return system_is_korean() ? NV_LANGUAGE_KO : NV_LANGUAGE_EN; }
 
 // The entry for `length` bytes of English, or NULL.
 internal const NvStringPair* find(const char* english, umm length)

@@ -9,6 +9,7 @@
 #include <engine/anim.h>
 #include <engine/camera.h>
 #include <engine/chunk.h>
+#include <engine/debug_script.h>
 #include <engine/gltf.h>
 #include <engine/gpu.h>
 #include <engine/imgui.h>
@@ -728,6 +729,7 @@ b32 stress_tab_shown(Sandbox* sandbox);       // the shown scene has a generator
 void stress_after_frame(Sandbox* sandbox);    // after the frame's times are known: runs the benchmark
 void benchmark_start(Sandbox* sandbox);       // "Run benchmark": the shown scene's steps, in Play
 void benchmark_end(Sandbox* sandbox);         // Play ended: a run in progress is over (Stop put the parameters back)
+void benchmark_table_text(Sandbox* sandbox, char* text, umm capacity); // the results as the Copy button's text
 u32 stress_live_nodes(NvScene* scene);
 void stress_ui(Sandbox* sandbox);
 
@@ -861,3 +863,15 @@ void save_show_viewer(Sandbox* sandbox); // opens the save viewer (in the View t
 // Whether saving, loading that save and saving again gives the same bytes. It loads, so it may
 // end a jump or a crossfade; Debug builds check it at start and tests call it.
 b32 save_round_trip_matches(Sandbox* sandbox);
+
+// debug_script.c (Windows Debug builds): the sandbox's part of a scripted run, `sandbox.exe --script <file>` (engine/debug_script.h;
+// docs/specs/d3d12_port.md, "Debug exports and native tests"). Its `call` finds the debug exports of main.c by name in a table,
+// sandbox_debug_calls.
+#if defined(_WIN32) && !defined(NDEBUG)
+extern const NvDebugCall sandbox_debug_calls[];
+extern const u32 sandbox_debug_call_count;
+
+void debug_script_init(Sandbox* sandbox); // reads the command line; does nothing without --script
+#else
+#define debug_script_init(sandbox) ((void)(sandbox))
+#endif

@@ -89,35 +89,102 @@ endif()
 
 set(NV_SHADER_DIR "${PROJECT_SOURCE_DIR}/engine/shaders")
 
-# Builds <name> from engine/shaders/<source>: the WGSL (<build>/shaders/<name>.wgsl, kept: the browser's and tint's errors
-# name its lines), its check, the reflection (<name>.json, read by tests/shader_layout_test) and the C header
-# <build>/shaders/<name>_wgsl.h holding the WGSL as `const char <name>_wgsl[]`. Add the returned header to a target's sources:
+# The Windows build (docs/specs/d3d12_port.md): DXC compiles the HLSL to DXIL, the Agility SDK is the D3D12 runtime the executables
+# carry. Both are prebuilt packages pinned by version and SHA-256 and unpacked once; DXC only runs while building.
+#   NV_DXC:          a dxc.exe to use instead of downloading DXC ${NV_DXC_VERSION}
+#   NV_AGILITY_SDK:  the unpacked Microsoft.Direct3D.D3D12 package to use instead of downloading it
+# NV_AGILITY_SDK_VERSION (the number the executable hands the D3D12 loader) is the package's minor version: 1.619.6 is 619.
+if(NV_WINDOWS)
+    set(NV_DXC_VERSION 1.9.2609)
+    set(NV_DXC_ARCHIVE dxc_2026_09_29.zip)
+    set(NV_DXC_HASH ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1)
+    set(NV_AGILITY_SDK_PACKAGE 1.619.6)
+    set(NV_AGILITY_SDK_VERSION 619)
+    set(NV_AGILITY_SDK_HASH 08f0489281401aa430fc37322d6c3fc98a8025175aacd714c10d562f4963f1e9)
+
+    set(NV_DXC "" CACHE FILEPATH "A dxc.exe to use instead of downloading DXC ${NV_DXC_VERSION}")
+    set(NV_AGILITY_SDK "" CACHE PATH "An unpacked Microsoft.Direct3D.D3D12 package to use instead of downloading ${NV_AGILITY_SDK_PACKAGE}")
+
+    if(NV_DXC)
+        set(nv_dxc "${NV_DXC}")
+    else()
+        set(dxc_root "${NV_TOOLS_DIR}/dxc-${NV_DXC_VERSION}")
+        set(nv_dxc "${dxc_root}/bin/x64/dxc.exe")
+        if(NOT EXISTS "${nv_dxc}")
+            FetchContent_Declare(dxc
+                URL "https://github.com/microsoft/DirectXShaderCompiler/releases/download/v${NV_DXC_VERSION}/${NV_DXC_ARCHIVE}"
+                URL_HASH SHA256=${NV_DXC_HASH}
+                SOURCE_DIR "${dxc_root}"
+                SOURCE_SUBDIR no-cmake)
+            FetchContent_MakeAvailable(dxc)
+        endif()
+    endif()
+
+    if(NV_AGILITY_SDK)
+        set(agility_root "${NV_AGILITY_SDK}")
+    else()
+        set(agility_root "${NV_TOOLS_DIR}/agility-${NV_AGILITY_SDK_PACKAGE}")
+        if(NOT EXISTS "${agility_root}/build/native/bin/x64/D3D12Core.dll")
+            FetchContent_Declare(agility
+                URL "https://api.nuget.org/v3-flatcontainer/microsoft.direct3d.d3d12/${NV_AGILITY_SDK_PACKAGE}/microsoft.direct3d.d3d12.${NV_AGILITY_SDK_PACKAGE}.nupkg"
+                DOWNLOAD_NAME "microsoft.direct3d.d3d12.${NV_AGILITY_SDK_PACKAGE}.zip" # a .nupkg is a zip, which only the name tells CMake
+                URL_HASH SHA256=${NV_AGILITY_SDK_HASH}
+                SOURCE_DIR "${agility_root}"
+                SOURCE_SUBDIR no-cmake)
+            FetchContent_MakeAvailable(agility)
+        endif()
+    endif()
+    # The headers (d3d12.h and the rest) come before the Windows SDK's, so they match the runtime; the runtime goes beside the
+    # executables (nv_setup_executable).
+    set(NV_AGILITY_INCLUDE "${agility_root}/build/native/include")
+    set(NV_AGILITY_BIN "${agility_root}/build/native/bin/x64")
+endif()
+
+# Builds <name> from engine/shaders/<source> and the C header <build>/shaders/<name>_shader.h that holds it as
+# `const NvGpuShaderCode <name>_shader` (engine/gpu.h). Add the returned header to a target's sources:
 #   nv_add_shader(<name> <source.slang> <output header variable>)
+# Web: the WGSL (<build>/shaders/<name>.wgsl, kept: the browser's and tint's errors name its lines), its check, the reflection
+# (<name>.json, read by tests/shader_layout_test) and the header holding the WGSL as `const char <name>_wgsl[]`.
+# Windows: the DXIL of every entry point (<name>.<entry>.dxil, kept) and the header holding them. The source is compiled with
+# NV_D3D12 defined (engine/shaders/renderer_frame.slang, "object_index").
 function(nv_add_shader name source out_header)
     set(dir "${CMAKE_BINARY_DIR}/shaders")
-    set(wgsl "${dir}/${name}.wgsl")
-    set(header "${dir}/${name}_wgsl.h")
-    set(checked "${dir}/${name}.tint.wgsl")
-    set(commands
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${dir}"
-        # 1. Slang to WGSL, and the reflection of the layouts.
-        COMMAND "${nv_slangc}" "${NV_SHADER_DIR}/${source}" -I "${NV_SHADER_DIR}" -target wgsl -matrix-layout-column-major
-                -warnings-as-errors all -depfile "${wgsl}.d" -reflection-json "${dir}/${name}.json" -o "${wgsl}"
-        # The same source has to compile to HLSL too (the output is not used).
-        COMMAND ${CMAKE_COMMAND} -DSLANGC=${nv_slangc} -DSOURCE=${NV_SHADER_DIR}/${source} -DINCLUDE=${NV_SHADER_DIR}
-                -DOUTPUT=${dir}/${name}.hlsl.txt -P "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake")
-    if(nv_tint)
-        # 2. tint reads the WGSL as the browser will; its output only marks that the check passed.
-        list(APPEND commands COMMAND "${nv_tint}" --format=wgsl -o "${checked}" "${wgsl}")
+    set(header "${dir}/${name}_shader.h")
+    if(NV_WEB)
+        set(wgsl "${dir}/${name}.wgsl")
+        set(checked "${dir}/${name}.tint.wgsl")
+        set(commands
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${dir}"
+            # 1. Slang to WGSL, and the reflection of the layouts.
+            COMMAND "${nv_slangc}" "${NV_SHADER_DIR}/${source}" -I "${NV_SHADER_DIR}" -target wgsl -matrix-layout-column-major
+                    -warnings-as-errors all -depfile "${wgsl}.d" -reflection-json "${dir}/${name}.json" -o "${wgsl}"
+            # The same source has to compile to HLSL too (the output is not used).
+            COMMAND ${CMAKE_COMMAND} -DSLANGC=${nv_slangc} -DSOURCE=${NV_SHADER_DIR}/${source} -DINCLUDE=${NV_SHADER_DIR}
+                    -DOUTPUT=${dir}/${name}.hlsl.txt -P "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake")
+        if(nv_tint)
+            # 2. tint reads the WGSL as the browser will; its output only marks that the check passed.
+            list(APPEND commands COMMAND "${nv_tint}" --format=wgsl -o "${checked}" "${wgsl}")
+        endif()
+        # 3. The header, from the checked WGSL only.
+        list(APPEND commands COMMAND ${CMAKE_COMMAND} -DINPUT=${wgsl} -DOUTPUT=${header} -DNAME=${name}_wgsl -DSHADER=${name}_shader -DFIELD=wgsl
+                    -P "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake")
+        add_custom_command(OUTPUT "${wgsl}" "${header}" "${dir}/${name}.json"
+            ${commands}
+            DEPENDS "${NV_SHADER_DIR}/${source}" "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake" "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake"
+            DEPFILE "${wgsl}.d"
+            COMMENT "Shader ${name}"
+            VERBATIM)
+    else()
+        # One script does the three steps (cmake/make_dxil.cmake): the reflection and the HLSL (kept: DXC's errors name its lines),
+        # the DXIL of each entry point, and the header.
+        add_custom_command(OUTPUT "${header}" "${dir}/${name}.json"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${dir}"
+            COMMAND ${CMAKE_COMMAND} -DSLANGC=${nv_slangc} -DDXC=${nv_dxc} -DSOURCE=${NV_SHADER_DIR}/${source} -DINCLUDE=${NV_SHADER_DIR}
+                    -DDIR=${dir} -DNAME=${name} -P "${PROJECT_SOURCE_DIR}/cmake/make_dxil.cmake"
+            DEPENDS "${NV_SHADER_DIR}/${source}" "${PROJECT_SOURCE_DIR}/cmake/make_dxil.cmake"
+            DEPFILE "${dir}/${name}.d"
+            COMMENT "Shader ${name}"
+            VERBATIM)
     endif()
-    # 3. The header, from the checked WGSL only.
-    list(APPEND commands COMMAND ${CMAKE_COMMAND} -DINPUT=${wgsl} -DOUTPUT=${header} -DNAME=${name}_wgsl
-                -P "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake")
-    add_custom_command(OUTPUT "${wgsl}" "${header}" "${dir}/${name}.json"
-        ${commands}
-        DEPENDS "${NV_SHADER_DIR}/${source}" "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake" "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake"
-        DEPFILE "${wgsl}.d"
-        COMMENT "Shader ${name}"
-        VERBATIM)
     set(${out_header} "${header}" PARENT_SCOPE)
 endfunction()

@@ -248,7 +248,7 @@ typedef struct SceneReader {
     BehaviorDesc scratch; // a benchmark line's value, read the way a behavior's is
 } SceneReader;
 
-__attribute__((format(printf, 3, 4))) internal void fail(SceneReader* reader, u32 line, const char* format, ...)
+NV_PRINTF_FORMAT(3, 4) internal void fail(SceneReader* reader, u32 line, const char* format, ...)
 {
     char message[128];
     va_list arguments;

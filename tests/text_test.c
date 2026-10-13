@@ -194,7 +194,7 @@ int main(void)
         NvTextReader longer = {.file_name = "d.txt", .first_error = cut, .first_error_capacity = sizeof(cut)};
         char message[200];
         memset(message, 'x', sizeof(message));
-        message[198] = (char)0xEA; // the lead byte of a syllable, cut off by the end
+        message[198] = '\xEA'; // the lead byte of a syllable, cut off by the end
         message[199] = 0;
         nv_text_report(&longer, 7, "%s", message);
         CHECK(strncmp(cut, "d.txt:7: xxx", 12) == 0 && strlen(cut) < sizeof(cut));

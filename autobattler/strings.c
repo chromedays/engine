@@ -58,6 +58,9 @@ global const NvStringPair entries[] = {
     {"Layer: %s, targets: %s", "레이어: %s, 목표: %s"},
     {"Tap your zone (blue) to place a squad of the chosen unit; tap a placed squad to remove it. Drag to move the view, drag with the right button or two fingers to turn it, and use the wheel or pinch to zoom.",
      "내 구역(파란색)을 탭하면 고른 유닛의 분대를 놓고, 놓인 분대를 탭하면 지웁니다. 드래그로 화면을 옮기고, 오른쪽 버튼 드래그나 두 손가락으로 돌리고, 휠이나 핀치로 확대합니다."},
+    {"No GPU runs this program: it needs Direct3D 12 feature level 12_2 and shader model 6.6.\n\n%s",
+     "이 프로그램을 실행할 수 있는 GPU가 없습니다. Direct3D 12 기능 수준 12_2와 셰이더 모델 6.6이 필요합니다.\n\n%s"},
+    {"No GPU was found.", "GPU를 찾지 못했습니다."},
 };
 // clang-format on
 

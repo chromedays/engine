@@ -1,14 +1,19 @@
 #include "engine/log.h"
 
-#include <emscripten/emscripten.h>
-
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
-EM_JS_DEPS(nv_log, "$UTF8ToString,$stringToUTF8,$lengthBytesUTF8");
-
 NvLog nv_log_ring;
+
+//
+// Where messages go besides the ring, and where the page's own come from
+//
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/emscripten.h>
+
+EM_JS_DEPS(nv_log, "$UTF8ToString,$stringToUTF8,$lengthBytesUTF8");
 
 // One line for a message: the console shows "[source] text" in the color of its level.
 EM_JS(void, js_log_console, (int level, const char* source, const char* text), {
@@ -37,6 +42,64 @@ EM_JS(int, js_log_take_dropped, (void), {
     Module["nvLogDropped"] = 0;
     return dropped;
 });
+
+internal void console_write(NvLogLevel level, const char* source, const char* text)
+{
+    js_log_console((int)level, source, text);
+}
+
+internal f64 now_seconds(void)
+{
+    return emscripten_get_now() / 1000.0;
+}
+
+internal int page_dropped(void)
+{
+    return js_log_take_dropped();
+}
+
+internal int page_take(int* level, char* source, int source_size, char* text, int text_size, double* time)
+{
+    return js_log_take(level, source, source_size, text, text_size, time);
+}
+#elif defined(_WIN32)
+#include "engine/win32.h"
+
+// The console (standard error) and the debugger's output window, one line each, as "[source] text".
+internal void console_write(NvLogLevel level, const char* source, const char* text)
+{
+    (void)level;
+    fprintf(stderr, "[%s] %s\n", source, text);
+    wchar_t wide[NV_LOG_MAX_MESSAGE_SIZE + 16];
+    char line[NV_LOG_MAX_MESSAGE_SIZE + 16];
+    snprintf(line, sizeof(line), "[%s] %s\n", source, text);
+    if (nv_win32_wide_from_utf8(line, wide, NV_ARRAY_COUNT(wide)))
+        OutputDebugStringW(wide);
+}
+
+internal f64 now_seconds(void)
+{
+    LARGE_INTEGER counter, frequency;
+    QueryPerformanceCounter(&counter);
+    QueryPerformanceFrequency(&frequency);
+    local_persist LONGLONG first;
+    if (!first)
+        first = counter.QuadPart;
+    return (f64)(counter.QuadPart - first) / (f64)frequency.QuadPart;
+}
+
+// No page hands messages in here: everything on Windows calls nv_log itself.
+internal int page_dropped(void)
+{
+    return 0;
+}
+
+internal int page_take(int* level, char* source, int source_size, char* text, int text_size, double* time)
+{
+    (void)level, (void)source, (void)source_size, (void)text, (void)text_size, (void)time;
+    return -1;
+}
+#endif
 
 // Where a message is formatted (nv_log) or read from the page (nv_log_pump) before it goes in the
 // ring; one byte more than a message holds, for the terminator.
@@ -126,21 +189,21 @@ void nv_log(NvLogLevel level, const char* source, const char* format, ...)
     va_end(arguments);
     if (length < 0)
         length = 0;
-    js_log_console((int)level, source, message_buffer);
+    console_write(level, source, message_buffer);
     add(level, source, message_buffer, (umm)length > NV_LOG_MAX_MESSAGE_SIZE ? NV_LOG_MAX_MESSAGE_SIZE + 1 : (umm)length,
-        emscripten_get_now() / 1000.0);
+        now_seconds());
 }
 
 void nv_log_pump(void)
 {
-    int dropped = js_log_take_dropped();
+    int dropped = page_dropped();
     if (dropped > 0)
         nv_log(NV_LOG_WARNING, "nv", "%d page messages were dropped before they were read", dropped);
     for (;;) {
         int level = 0;
         char source[NV_LOG_SOURCE_SIZE];
         f64 time = 0.0;
-        int length = js_log_take(&level, source, (int)sizeof(source), message_buffer, (int)sizeof(message_buffer), &time);
+        int length = page_take(&level, source, (int)sizeof(source), message_buffer, (int)sizeof(message_buffer), &time);
         if (length < 0)
             break;
         add((NvLogLevel)level, source, message_buffer,
