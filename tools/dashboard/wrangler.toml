@@ -1,0 +1,30 @@
+# The build dashboard's Worker (docs/specs/build_dashboard.md). No secret is written here: GITHUB_WEBHOOK_SECRET,
+# DASHBOARD_TOKEN and GITHUB_TOKEN are set with `wrangler secret put` (tools/dashboard/README.md).
+name = "nv-builds"
+main = "src/worker.mjs"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[vars]
+REPO = "chromedays/engine"
+DEFAULT_BRANCH = "master"
+
+# The page; everything it does not have (/ws, /webhook, /api/*, /builds/*) goes to the Worker.
+[assets]
+directory = "public"
+
+[[r2_buckets]]
+binding = "BUILDS"
+bucket_name = "nv-builds"
+
+[[durable_objects.bindings]]
+name = "DASHBOARD"
+class_name = "Dashboard"
+
+# The free plan takes only SQLite-backed Durable Objects.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Dashboard"]
+
+[observability]
+enabled = true

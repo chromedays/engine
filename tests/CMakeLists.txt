@@ -39,8 +39,16 @@ else()
     if(NV_NODE)
         add_test(NAME strings_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox autobattler)
     else()
-        message(WARNING "No Node: strings_test and shader_layout_test are skipped (the web build's CI runs them)")
+        message(WARNING "No Node: strings_test, dashboard_test and shader_layout_test are skipped (the web build's CI runs them)")
     endif()
+endif()
+
+# The build dashboard's state logic (tools/dashboard/src/state.mjs): GitHub's events, CI's build records and the resync. A Node
+# script, like strings_test.
+if(NV_WEB)
+    add_test(NAME dashboard_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/dashboard_test.mjs)
+elseif(NV_NODE)
+    add_test(NAME dashboard_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/dashboard_test.mjs)
 endif()
 
 # nv_utf8_fit and nv_utf8_trim: text cut to fit stays valid UTF-8.

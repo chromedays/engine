@@ -1,0 +1,36 @@
+name: dashboard
+
+# Deploys the build dashboard's Worker (tools/dashboard, docs/specs/build_dashboard.md) when it changes on the default branch.
+# Until the Cloudflare secrets are set (tools/dashboard/README.md) it deploys nothing.
+on:
+  push:
+    branches: [master]
+    paths: ["tools/dashboard/**", ".github/workflows/dashboard.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/dashboard
+
+      - name: Deploy the Worker
+        working-directory: tools/dashboard
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::notice::The dashboard's secrets are not set: the Worker is not deployed (tools/dashboard/README.md)."
+            exit 0
+          fi
+          npx --yes wrangler@4.150.0 deploy
