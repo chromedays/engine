@@ -1,5 +1,5 @@
 # The Windows build (docs/specs/d3d12_port.md): the Visual Studio generator, every configuration in one build folder.
-# `just` lists the recipes; `just build Release`, `just run autobattler`, `just test Release`.
+# `just` lists the recipes; `just build Release`, `just run sandbox`, `just test Release`.
 
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
@@ -22,7 +22,7 @@ build config="Debug":
     if (-not (Test-Path {{build_dir}}/CMakeCache.txt)) { just configure }
     cmake --build {{build_dir}} --config {{config}} -j
 
-# Build, then run an executable (sandbox or autobattler); the arguments after the configuration go to it.
+# Build, then run an executable (the sandbox); the arguments after the configuration go to it.
 run app="sandbox" config="Debug" *args: (build config)
     & {{build_dir}}/{{app}}/{{config}}/{{app}}.exe {{args}}
 

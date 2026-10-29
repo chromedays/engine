@@ -33,22 +33,14 @@ endif()
 # The Korean UI strings: every wrapped English text has a row, and rows keep their printf conversions. The test is a Node script:
 # a build with no Node skips it (the web build's CI runs it).
 if(NV_WEB)
-    add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox autobattler)
+    add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox)
 else()
     find_program(NV_NODE node)
     if(NV_NODE)
-        add_test(NAME strings_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox autobattler)
+        add_test(NAME strings_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox)
     else()
-        message(WARNING "No Node: strings_test, dashboard_test and shader_layout_test are skipped (the web build's CI runs them)")
+        message(WARNING "No Node: strings_test and shader_layout_test are skipped (the web build's CI runs them)")
     endif()
-endif()
-
-# The build dashboard's state logic (tools/dashboard/src/state.mjs): GitHub's events, CI's build records and the resync. A Node
-# script, like strings_test.
-if(NV_WEB)
-    add_test(NAME dashboard_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/dashboard_test.mjs)
-elseif(NV_NODE)
-    add_test(NAME dashboard_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/dashboard_test.mjs)
 endif()
 
 # nv_utf8_fit and nv_utf8_trim: text cut to fit stays valid UTF-8.
@@ -75,12 +67,6 @@ nv_add_test(camera_test camera_test.c ${PROJECT_SOURCE_DIR}/engine/camera.c)
 
 # The line-based text reading in engine/text.c: lines, tokens, numbers, names and error reports.
 nv_add_test(text_test text_test.c ${PROJECT_SOURCE_DIR}/engine/text.c ${PROJECT_SOURCE_DIR}/engine/log.c)
-
-# The auto-battler's rules and definition files (autobattler/battle.c, defs.c): no GPU. It reads the repository's
-# autobattler/data directly.
-nv_add_file_test(battle_test battle_test.c ${PROJECT_SOURCE_DIR}/autobattler/battle.c ${PROJECT_SOURCE_DIR}/autobattler/defs.c
-    ${PROJECT_SOURCE_DIR}/engine/log.c ${PROJECT_SOURCE_DIR}/engine/text.c)
-target_compile_definitions(battle_test PRIVATE BATTLE_DATA_DIR="${PROJECT_SOURCE_DIR}/autobattler/data")
 
 # The scene file reader (sandbox/scene_file.c): no GPU. It reads the sandbox's own .nvscene files.
 nv_add_file_test(scene_file_test scene_file_test.c ${PROJECT_SOURCE_DIR}/sandbox/scene_file.c ${PROJECT_SOURCE_DIR}/engine/text.c
