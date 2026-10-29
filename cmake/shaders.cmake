@@ -148,7 +148,7 @@ endif()
 # Windows: the DXIL of every entry point (<name>.<entry>.dxil, kept) and the header holding them. The source is compiled with
 # NV_D3D12 defined (engine/shaders/renderer_frame.slang, "object_index").
 function(nv_add_shader name source out_header)
-    set(dir "${CMAKE_BINARY_DIR}/shaders")
+    set(dir "${PROJECT_BINARY_DIR}/shaders")
     set(header "${dir}/${name}_shader.h")
     if(NV_WEB)
         set(wgsl "${dir}/${name}.wgsl")
@@ -160,17 +160,17 @@ function(nv_add_shader name source out_header)
                     -warnings-as-errors all -depfile "${wgsl}.d" -reflection-json "${dir}/${name}.json" -o "${wgsl}"
             # The same source has to compile to HLSL too (the output is not used).
             COMMAND ${CMAKE_COMMAND} -DSLANGC=${nv_slangc} -DSOURCE=${NV_SHADER_DIR}/${source} -DINCLUDE=${NV_SHADER_DIR}
-                    -DOUTPUT=${dir}/${name}.hlsl.txt -P "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake")
+                    -DOUTPUT=${dir}/${name}.hlsl.txt -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_hlsl.cmake")
         if(nv_tint)
             # 2. tint reads the WGSL as the browser will; its output only marks that the check passed.
             list(APPEND commands COMMAND "${nv_tint}" --format=wgsl -o "${checked}" "${wgsl}")
         endif()
         # 3. The header, from the checked WGSL only.
         list(APPEND commands COMMAND ${CMAKE_COMMAND} -DINPUT=${wgsl} -DOUTPUT=${header} -DNAME=${name}_wgsl -DSHADER=${name}_shader -DFIELD=wgsl
-                    -P "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake")
+                    -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/embed_text.cmake")
         add_custom_command(OUTPUT "${wgsl}" "${header}" "${dir}/${name}.json"
             ${commands}
-            DEPENDS "${NV_SHADER_DIR}/${source}" "${PROJECT_SOURCE_DIR}/cmake/embed_text.cmake" "${PROJECT_SOURCE_DIR}/cmake/check_hlsl.cmake"
+            DEPENDS "${NV_SHADER_DIR}/${source}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/embed_text.cmake" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/check_hlsl.cmake"
             DEPFILE "${wgsl}.d"
             COMMENT "Shader ${name}"
             VERBATIM)
@@ -180,8 +180,8 @@ function(nv_add_shader name source out_header)
         add_custom_command(OUTPUT "${header}" "${dir}/${name}.json"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${dir}"
             COMMAND ${CMAKE_COMMAND} -DSLANGC=${nv_slangc} -DDXC=${nv_dxc} -DSOURCE=${NV_SHADER_DIR}/${source} -DINCLUDE=${NV_SHADER_DIR}
-                    -DDIR=${dir} -DNAME=${name} -P "${PROJECT_SOURCE_DIR}/cmake/make_dxil.cmake"
-            DEPENDS "${NV_SHADER_DIR}/${source}" "${PROJECT_SOURCE_DIR}/cmake/make_dxil.cmake"
+                    -DDIR=${dir} -DNAME=${name} -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/make_dxil.cmake"
+            DEPENDS "${NV_SHADER_DIR}/${source}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/make_dxil.cmake"
             DEPFILE "${dir}/${name}.d"
             COMMENT "Shader ${name}"
             VERBATIM)

@@ -47,7 +47,7 @@ foreach(shader mesh shadow debug_lines upscale bloom preview_color preview_depth
     list(APPEND NV_RENDERER_WGSL ${NV_${shader}_WGSL})
 endforeach()
 target_sources(nv PRIVATE ${NV_RENDERER_WGSL} ${NV_IMGUI_WGSL} ${NV_VFX_COMPUTE_WGSL} ${NV_VFX_PARTICLES_WGSL} ${NV_VFX_MARKS_WGSL})
-target_include_directories(nv PRIVATE ${CMAKE_BINARY_DIR})
+target_include_directories(nv PRIVATE ${PROJECT_BINARY_DIR})
 
 # Engine headers are included as <engine/name.h>, from the repository root.
 target_include_directories(nv PUBLIC ${PROJECT_SOURCE_DIR})

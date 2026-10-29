@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
+# The engine is also used as a Git submodule by an app that adds it with add_subdirectory (README.md, "Using the engine
+# from another repository"). Then only the engine is built: the sandbox, the auto-battler and the tests are this repository's own.
+option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
+option(NV_BUILD_AUTOBATTLER "Build the auto-battler" ${PROJECT_IS_TOP_LEVEL})
+option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
+
 # Two builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU) and the Windows x64 build (MSVC, Direct3D 12).
 if(EMSCRIPTEN)
     set(NV_WEB TRUE)
@@ -61,11 +67,13 @@ function(nv_setup_executable target)
     if(NOT ARG_COMPONENT)
         set(ARG_COMPONENT web)
     endif()
+    # This file's directory: the function is also called from an app that has the engine as a subdirectory.
+    set(root "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
     set(files)
     if(NV_WEB)
         set_target_properties(${target} PROPERTIES SUFFIX ".js")
         set(NV_WEB_TARGET "${target}")
-        configure_file("${PROJECT_SOURCE_DIR}/web/index.html.in"
+        configure_file("${root}/web/index.html.in"
             "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
         set(files
             "$<TARGET_FILE_DIR:${target}>/${target}.js"
@@ -81,13 +89,13 @@ function(nv_setup_executable target)
         # The page reads the build's version and the file sizes from the manifest (docs/specs/page_loading.md).
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
-                    -P "${PROJECT_SOURCE_DIR}/web/manifest.cmake"
+                    -P "${root}/web/manifest.cmake"
             VERBATIM)
     else()
-        target_sources(${target} PRIVATE "${PROJECT_SOURCE_DIR}/engine/nv.manifest")
+        target_sources(${target} PRIVATE "${root}/engine/nv.manifest")
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DBIN=${NV_AGILITY_BIN} -DDEST=$<TARGET_FILE_DIR:${target}>/D3D12
-                    -P "${PROJECT_SOURCE_DIR}/cmake/copy_d3d12_runtime.cmake"
+                    -P "${root}/cmake/copy_d3d12_runtime.cmake"
             VERBATIM)
     endif()
 
@@ -136,13 +144,14 @@ endfunction()
 
 # Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in the target's binary
 # directory (cmake/version.cmake rewrites it on every build, so it is never the commit of an older configure), and the build
-# type as NV_BUILD_NAME. Shown on build labels and in benchmark reports.
+# type as NV_BUILD_NAME. Shown on build labels and in benchmark reports. The commit is that of the project that calls it: an
+# app with the engine as a submodule names its own.
 #   nv_add_version(<target>)
 function(nv_add_version target)
     set(header "${CMAKE_CURRENT_BINARY_DIR}/nv_version.h")
     add_custom_target(${target}_version
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DOUTPUT=${header}
-                -P ${PROJECT_SOURCE_DIR}/cmake/version.cmake
+                -P ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/version.cmake
         BYPRODUCTS ${header}
         COMMENT "Recording the commit")
     add_dependencies(${target} ${target}_version)
@@ -200,8 +209,8 @@ FetchContent_Declare(cgltf
     GIT_SHALLOW    TRUE
     SOURCE_SUBDIR  no-cmake)
 FetchContent_MakeAvailable(cgltf)
-file(WRITE "${CMAKE_BINARY_DIR}/cgltf_impl.c" "#define CGLTF_IMPLEMENTATION\n#include <cgltf.h>\n")
-add_library(cgltf STATIC "${CMAKE_BINARY_DIR}/cgltf_impl.c")
+file(WRITE "${PROJECT_BINARY_DIR}/cgltf_impl.c" "#define CGLTF_IMPLEMENTATION\n#include <cgltf.h>\n")
+add_library(cgltf STATIC "${PROJECT_BINARY_DIR}/cgltf_impl.c")
 target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
 target_compile_options(cgltf PRIVATE ${NV_NO_WARNINGS})
 
@@ -239,8 +248,31 @@ if(NV_WINDOWS)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 endif()
 
-enable_testing()
+if(NV_BUILD_TESTS)
+    enable_testing()
+endif()
 add_subdirectory(engine)
-add_subdirectory(sandbox)
-add_subdirectory(autobattler)
-add_subdirectory(tests)
+if(NV_BUILD_SANDBOX)
+    add_subdirectory(sandbox)
+endif()
+if(NV_BUILD_AUTOBATTLER)
+    add_subdirectory(autobattler)
+endif()
+if(NV_BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
+
+# An app that adds the engine as a subdirectory gets what its own CMakeLists.txt and nv_setup_executable read: the platform, the
+# language standards, the options our code compiles with (it applies them to its own targets) and the D3D12 runtime's folder.
+if(NOT PROJECT_IS_TOP_LEVEL)
+    set(NV_COMPILE_OPTIONS -Wall -Wextra)
+    set(NV_COMPILE_DEFINITIONS)
+    if(NV_WINDOWS)
+        set(NV_COMPILE_OPTIONS /W4 /utf-8 /Zc:preprocessor)
+        set(NV_COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
+    endif()
+    foreach(var NV_WEB NV_WINDOWS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
+            CMAKE_C_STANDARD CMAKE_C_STANDARD_REQUIRED CMAKE_C_EXTENSIONS CMAKE_CXX_STANDARD CMAKE_CXX_STANDARD_REQUIRED)
+        set(${var} "${${var}}" PARENT_SCOPE)
+    endforeach()
+endif()

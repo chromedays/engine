@@ -61,6 +61,26 @@ ctest --test-dir build --output-on-failure # tests/, run under Node
 페이지는 WebGPU가 있는 브라우저에서 (파일로 열지 말고) HTTP(S)로 제공해야 한다: 최신 Chrome/Edge, Safari 26+, 또는
 Windows의 Firefox 141+.
 
+### 다른 저장소에서 엔진 쓰기
+
+앱은 이 저장소를 Git submodule로 `engine/`에 두고 `add_subdirectory(engine)`으로 더한다. 그러면 엔진(`nv` 라이브러리와
+`nv_setup_executable`, `nv_add_version`)만 빌드되고, 샌드박스, 오토배틀러, 테스트는 빌드되지 않는다(`NV_BUILD_SANDBOX`,
+`NV_BUILD_AUTOBATTLER`, `NV_BUILD_TESTS`로 켤 수 있다). 엔진은 앱의 디렉터리에 플랫폼(`NV_WEB`, `NV_WINDOWS`), C와 C++
+표준, 우리 코드의 컴파일 옵션(`NV_COMPILE_OPTIONS`, `NV_COMPILE_DEFINITIONS`)을 넘긴다. `nv_add_version`은 앱 저장소의
+커밋을 적는다.
+
+```cmake
+cmake_minimum_required(VERSION 3.30)
+project(game LANGUAGES C CXX)
+add_subdirectory(engine)
+add_compile_options(${NV_COMPILE_OPTIONS})
+add_compile_definitions(${NV_COMPILE_DEFINITIONS})
+add_executable(game main.c)
+target_link_libraries(game PRIVATE nv)
+nv_setup_executable(game ROOT PRELOAD "${PROJECT_SOURCE_DIR}/engine/assets/fonts@/assets/fonts")
+nv_add_version(game)
+```
+
 ### CI와 배포
 
 GitHub Actions (`.github/workflows/build.yml`)가 모든 push에서 Release와 Debug 웹 버전을 빌드하고 (`engine-web`
@@ -139,6 +159,26 @@ ctest --test-dir build --output-on-failure # tests/, run under Node
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
 recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
+
+### Using the engine from another repository
+
+An app keeps this repository as a Git submodule at `engine/` and adds it with `add_subdirectory(engine)`. Then only the engine
+is built (the `nv` library, `nv_setup_executable` and `nv_add_version`), not the sandbox, the auto-battler or the tests
+(`NV_BUILD_SANDBOX`, `NV_BUILD_AUTOBATTLER` and `NV_BUILD_TESTS` turn them on). The engine hands the app's directory the
+platform (`NV_WEB`, `NV_WINDOWS`), the C and C++ standards and the options our code compiles with (`NV_COMPILE_OPTIONS`,
+`NV_COMPILE_DEFINITIONS`). `nv_add_version` records the commit of the app's repository.
+
+```cmake
+cmake_minimum_required(VERSION 3.30)
+project(game LANGUAGES C CXX)
+add_subdirectory(engine)
+add_compile_options(${NV_COMPILE_OPTIONS})
+add_compile_definitions(${NV_COMPILE_DEFINITIONS})
+add_executable(game main.c)
+target_link_libraries(game PRIVATE nv)
+nv_setup_executable(game ROOT PRELOAD "${PROJECT_SOURCE_DIR}/engine/assets/fonts@/assets/fonts")
+nv_add_version(game)
+```
 
 ### CI and deployment
 
