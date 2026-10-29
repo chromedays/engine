@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+  <title>nv</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; background: #111; color: #ddd; font: 14px/1.4 system-ui, sans-serif; }
+    /* Pin the canvas to the visible viewport. 100vh is taller than the visible area on mobile
+       while the address bar is showing, which makes the page scroll. */
+    canvas { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+    #status { position: fixed; inset: 0; display: grid; place-items: center; padding: 16px; text-align: center; background: #111; }
+    #status.hidden { display: none; }
+    #status-box { width: min(320px, 100%); }
+    #bar { height: 6px; margin: 12px 0 8px; border-radius: 3px; background: #2a2a2a; overflow: hidden; }
+    #bar-fill { width: 0; height: 100%; background: #6ea8fe; transition: width 0.15s; }
+    #bar.busy #bar-fill { width: 30%; animation: busy 1.2s ease-in-out infinite; }
+    @keyframes busy { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+    #detail { color: #999; font-variant-numeric: tabular-nums; }
+    #status.error #status-box { width: min(720px, 100%); text-align: left; }
+    #stack { display: none; max-height: 50vh; overflow: auto; margin: 12px 0; padding: 8px; background: #1c1c1c;
+             color: #ccc; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
+    #copy { display: none; padding: 8px 14px; border: 0; border-radius: 4px; background: #2d5fa8; color: #fff; font: inherit; }
+    #status.error #stack, #status.error #copy { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="status">
+    <div id="status-box">
+      <div id="message">Loading</div>
+      <div id="bar"><div id="bar-fill"></div></div>
+      <div id="detail"></div>
+      <pre id="stack"></pre>
+      <button id="copy" type="button">Copy</button>
+    </div>
+  </div>
+  <script>
+    const target = "sandbox";
+    const status = document.getElementById("status");
+    const message = document.getElementById("message");
+    const bar = document.getElementById("bar");
+    const fill = document.getElementById("bar-fill");
+    const detail = document.getElementById("detail");
+    const fail = (text) => {
+      status.classList.remove("hidden");
+      message.textContent = text;
+      bar.style.display = "none";
+      detail.textContent = "";
+    };
+
+    // A crash (a failed NV_ASSERT in a Debug build traps as "unreachable") shows its stack on the
+    // page, since phones have no console to read it from.
+    const stack = document.getElementById("stack");
+    const crash = (error) => {
+      fail("The engine crashed.");
+      status.classList.add("error");
+      const text = String(error && error.stack ? error.stack : error);
+      stack.textContent = text;
+      document.getElementById("copy").onclick = () => {
+        if (navigator.clipboard) navigator.clipboard.writeText(message.textContent + "\n" + navigator.userAgent + "\n" + text).catch(() => {});
+      };
+    };
+    // The log (docs/specs/console.md). Messages from the page and from the engine's JavaScript are
+    // queued here, and nv_log_pump moves them into the engine's ring at the start of a frame.
+    // Nothing in this file calls into WebAssembly: printErr runs inside WebAssembly calls, where a
+    // re-entrant call could land in an Asyncify wait. Levels: 0 info, 1 warning, 2 error.
+    const logQueueMax = 512;
+    const queueLog = (level, source, text) => {
+      if (typeof Module === "undefined") return; // before the page has its Module
+      const queue = Module.nvLogQueue;
+      if (queue.length >= logQueueMax) {
+        queue.shift();
+        Module.nvLogDropped += 1;
+      }
+      queue.push({level, source, text: String(text), time: performance.now() / 1000});
+    };
+    const errorText = (error) => String(error && error.stack ? error.stack : error);
+    window.addEventListener("error", (event) => {
+      queueLog(2, "js", event.error ? errorText(event.error) : event.message);
+      crash(event.error || event.message);
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      queueLog(2, "js", errorText(event.reason));
+      crash(event.reason);
+    });
+    const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
+
+    // Right-dragging in the viewport pans the camera; keep the browser's context menu out of it.
+    document.getElementById("canvas").addEventListener("contextmenu", (event) => event.preventDefault());
+
+    var Module = {
+      canvas: document.getElementById("canvas"),
+      // For nv_window_download_text: which files are this page's own.
+      nvTarget: target,
+      nvLogQueue: [],
+      nvLogDropped: 0,
+      // For the engine's JavaScript (EM_JS): the console and the queue.
+      nvLog: (level, source, text) => {
+        const line = "[" + source + "] " + text;
+        if (level >= 2) console.error(line);
+        else if (level == 1) console.warn(line);
+        else console.log(line);
+        queueLog(level, source, text);
+      },
+      print: (text) => {
+        console.log(text);
+        queueLog(0, "stdout", text);
+      },
+      printErr: (text) => {
+        console.error(text);
+        queueLog(2, "stderr", text);
+      },
+      onAbort: (what) => fail("The engine stopped: " + what),
+      // Called by nv_window_run once loading is over.
+      nvRunning: () => status.classList.add("hidden"),
+    };
+
+    // The page downloads the engine and its assets itself, so it can show one progress bar for
+    // both, then hands them to the Emscripten loader. The manifest has the uncompressed sizes,
+    // which the browser cannot see when the server compresses the files.
+    async function download(name, onBytes) {
+      const response = await fetch(name);
+      if (!response.ok) throw new Error(response.status + " " + name);
+      const reader = response.body.getReader();
+      const chunks = [];
+      let size = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        size += value.length;
+        onBytes(value.length);
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return bytes;
+    }
+
+    async function start() {
+      const manifest = await (await fetch(target + ".manifest.json")).json();
+      const names = Object.keys(manifest);
+      const total = names.reduce((sum, name) => sum + manifest[name], 0);
+      let loaded = 0;
+      message.textContent = "Downloading";
+      const progress = (bytes) => {
+        loaded += bytes;
+        const ratio = Math.min(loaded / total, 1);
+        fill.style.width = (ratio * 100).toFixed(1) + "%";
+        detail.textContent = megabytes(loaded) + " / " + megabytes(total) + " MB";
+      };
+      progress(0);
+      const files = {};
+      await Promise.all(names.map(async (name) => { files[name] = await download(name, progress); }));
+
+      message.textContent = "Starting";
+      detail.textContent = "";
+      bar.classList.add("busy");
+      fill.style.width = "";
+      Module.instantiateWasm = (imports, done) => {
+        WebAssembly.instantiate(files[target + ".wasm"], imports)
+          .then((result) => done(result.instance, result.module))
+          .catch((error) => fail("The engine failed to start: " + error));
+        return {};
+      };
+      Module.getPreloadedPackage = (name) => files[target + ".data"].buffer;
+
+      const script = document.createElement("script");
+      script.src = target + ".js";
+      script.onerror = () => fail("Could not load " + script.src);
+      document.body.appendChild(script);
+    }
+
+    if (!navigator.gpu) {
+      fail("This browser does not support WebGPU. Try a recent Chrome, Edge, Safari 26+, or Firefox 141+ (Windows).");
+    } else {
+      start().catch((error) => fail("Could not download the engine: " + error.message));
+    }
+  </script>
+</body>
+</html>
