@@ -94,7 +94,7 @@ target_compile_definitions(file_test PRIVATE FILE_TEST_SOURCE="${CMAKE_CURRENT_S
 # The shaders' reflection (slangc's, written when they are built) against the layouts the C code relies on. On Windows the
 # reflection is of the HLSL (cmake/make_dxil.cmake), whose numbers are D3D12's registers rather than WebGPU's bindings.
 if(NV_WEB)
-    add_test(NAME shader_layout_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/shader_layout_test.mjs ${CMAKE_BINARY_DIR}/shaders)
+    add_test(NAME shader_layout_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/shader_layout_test.mjs ${PROJECT_BINARY_DIR}/shaders)
 endif()
 
 # Files on the user's computer on Windows (engine/local_file_win32.c). A Debug build takes the path the dialogs would give from
