@@ -139,6 +139,10 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - 생성된 WGSL의 검사에는 Dawn의 `tint`(BSD 3-Clause, `docs/specs/slang_shader_port.md`): `slangc`는 자기가 쓴 WGSL을 검사하지
   않으므로, Chrome과 Edge가 쓰는 바로 그 WGSL 컴파일러로 빌드에서 검사한다. **빌드 시점 도구로만 실행하고 어디에도 링크하지 않는다.**
   Dawn 공식 릴리스의 미리 컴파일된 바이너리(`bin/tint`)만 버전과 SHA-256을 고정해 쓰며, 소스에서 빌드하지 않는다.
+- Linux 빌드의 WebGPU 구현에는 Dawn 네이티브 WebGPU(`libwebgpu_dawn`, BSD 3-Clause): WebGPU 백엔드(`gpu_webgpu.c`)는 WebGPU의
+  C API로 쓰였고, Dawn이 그것을 네이티브로(Vulkan 위에서) 구현하므로, Linux 헤드리스 빌드는 웹 빌드와 같은 백엔드를 화면 없이 돌린다.
+  `tint`와 같은, 고정된 Dawn 패키지에서 헤더와 정적 라이브러리를 가져오며(`cmake/shaders.cmake`에 버전과 SHA-256이 이미 고정되어 있다),
+  실행 파일에 정적으로 링크한다. Dawn을 소스에서 빌드하지 않는다.
 - Windows 빌드(`docs/specs/d3d12_port.md`)가 요구하는 것: Visual Studio의 MSVC(`cl`)와 Windows SDK(Win32, DXGI, WIC의 헤더와 라이브러리).
   D3D12 헤더와 런타임은 아래 Agility SDK의 것을 쓴다.
 - 셰이더를 DXIL로 컴파일하려면 DirectX Shader Compiler(DXC, `dxc.exe`, `dxcompiler.dll`, 서명용 `dxil.dll`; Microsoft 라이선스와 LLVM(NCSA)
@@ -307,6 +311,11 @@ The table sets the shape of names. What a name has to say:
   WGSL it writes, so the build checks it with the same WGSL compiler Chrome and Edge use. **It runs only as a build-time tool and is
   linked into nothing.** Only the prebuilt binary from Dawn's official releases (`bin/tint`) is used, with the version and SHA-256
   pinned; it is not built from source.
+- Dawn's native WebGPU (`libwebgpu_dawn`, BSD 3-Clause) as the Linux build's WebGPU implementation: the WebGPU backend
+  (`gpu_webgpu.c`) is written against WebGPU's C API, which Dawn implements natively (Vulkan under it), so the Linux
+  headless build runs the same backend the web build runs, offscreen. It comes from the same pinned Dawn package as
+  `tint` — its headers and static library, version and SHA-256 already pinned in `cmake/shaders.cmake` — and is linked
+  statically into the executable; Dawn is not built from source.
 - What the Windows build asks of the platform (`docs/specs/d3d12_port.md`): Visual Studio's MSVC (`cl`) and the Windows SDK (the Win32, DXGI
   and WIC headers and libraries). The D3D12 headers and runtime are the Agility SDK's, below.
 - The DirectX Shader Compiler (DXC: `dxc.exe`, `dxcompiler.dll` and `dxil.dll`, which signs; Microsoft's license and LLVM's NCSA license)
