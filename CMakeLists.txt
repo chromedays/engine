@@ -6,14 +6,22 @@ project(engine LANGUAGES C CXX)
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
 
-# Two builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU) and the Windows x64 build (MSVC, Direct3D 12).
+# Three builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU), the Windows x64 build
+# (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, headless: no window, frames render offscreen).
 if(EMSCRIPTEN)
     set(NV_WEB TRUE)
 elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NV_LINUX TRUE)
+    set(NV_HEADLESS TRUE)
+    # The sandbox and the Node-run tests belong to the web and Windows builds for now.
+    set(NV_BUILD_SANDBOX OFF)
+    set(NV_BUILD_TESTS OFF)
 else()
-    message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja) and for Windows x64 with MSVC "
-        "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64).")
+    message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja), for Windows x64 with MSVC "
+        "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64) and for Linux "
+        "(cmake -S . -B build -G Ninja).")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -22,8 +30,12 @@ set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 17) # ozz-animation and our wrapper around it
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-if(NV_WEB)
+if(NV_WEB OR NV_LINUX)
     add_compile_options(-Wall -Wextra)
+endif()
+if(NV_LINUX)
+    # Strict C17 hides POSIX declarations (clock_gettime, sysconf, mkdir): ask for them.
+    add_compile_definitions(_POSIX_C_SOURCE=200809L)
 endif()
 # The warnings and the source encoding of our own code on MSVC are set below, after the external libraries: those come with
 # their own options (-w / /w) and must not get ours.
@@ -40,10 +52,10 @@ if(NV_WEB)
         -sENVIRONMENT=web)
 endif()
 # What switches off warnings of an external library: -w for clang, /w for MSVC.
-if(NV_WEB)
-    set(NV_NO_WARNINGS -w)
-else()
+if(NV_WINDOWS)
     set(NV_NO_WARNINGS /w)
+else()
+    set(NV_NO_WARNINGS -w)
 endif()
 
 # Emits <target>.js, .wasm and .manifest.json plus index.html (from web/index.html.in) into the
@@ -90,7 +102,7 @@ function(nv_setup_executable target)
             COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:${target}> -DTARGET=${target}
                     -P "${root}/web/manifest.cmake"
             VERBATIM)
-    else()
+    elseif(NV_WINDOWS)
         target_sources(${target} PRIVATE "${root}/engine/nv.manifest")
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -DCONFIG=$<CONFIG> -DBIN=${NV_AGILITY_BIN} -DDEST=$<TARGET_FILE_DIR:${target}>/D3D12
@@ -237,6 +249,22 @@ endforeach()
 # Slang and Tint for the shaders (docs/specs/slang_shader_port.md), and nv_add_shader. On Windows also DXC and the Agility SDK.
 include(cmake/shaders.cmake)
 
+if(NV_LINUX)
+    # WebGPU on Linux is Dawn's native implementation, from the same pinned Dawn package cmake/shaders.cmake
+    # downloads for tint: its headers and the static libwebgpu_dawn. Linked statically, so executables carry it.
+    if(NOT dawn_root OR NOT EXISTS "${dawn_root}/lib64/libwebgpu_dawn.a")
+        message(FATAL_ERROR "The pinned Dawn package for this host is unavailable, so there is no WebGPU to link. "
+            "Set NV_TINT to a tint binary or build on linux-x86_64.")
+    endif()
+    add_library(webgpu_dawn STATIC IMPORTED GLOBAL)
+    set_target_properties(webgpu_dawn PROPERTIES
+        IMPORTED_LOCATION "${dawn_root}/lib64/libwebgpu_dawn.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${dawn_root}/include")
+    find_package(Threads REQUIRED)
+    add_library(webgpu INTERFACE)
+    target_link_libraries(webgpu INTERFACE webgpu_dawn Threads::Threads ${CMAKE_DL_LIBS} stdc++)
+endif()
+
 # Our code on MSVC (docs/specs/d3d12_port.md, "Build"): /std:c17 and /std:c++17 come from CMAKE_C_STANDARD above. /utf-8 reads
 # the sources as UTF-8 (the Korean strings), /Zc:preprocessor is the standard preprocessor, /W4 has to show no warning.
 # What is set only for the warnings that standard C17 draws on MSVC alone says why:
@@ -267,7 +295,7 @@ if(NOT PROJECT_IS_TOP_LEVEL)
         set(NV_COMPILE_OPTIONS /W4 /utf-8 /Zc:preprocessor)
         set(NV_COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     endif()
-    foreach(var NV_WEB NV_WINDOWS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
+    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
             CMAKE_C_STANDARD CMAKE_C_STANDARD_REQUIRED CMAKE_C_EXTENSIONS CMAKE_CXX_STANDARD CMAKE_CXX_STANDARD_REQUIRED)
         set(${var} "${${var}}" PARENT_SCOPE)
     endforeach()

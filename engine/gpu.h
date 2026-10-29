@@ -155,6 +155,7 @@ typedef enum NvGpuTextureUsage {
     NV_GPU_TEXTURE_SAMPLED       = 1 << 0,
     NV_GPU_TEXTURE_RENDER_TARGET = 1 << 1, // color or depth
     NV_GPU_TEXTURE_COPY_DST      = 1 << 2, // written by nv_gpu_write_texture
+    NV_GPU_TEXTURE_COPY_SRC      = 1 << 3, // read back by nv_gpu_copy_texture_for_readback
 } NvGpuTextureUsage;
 
 typedef struct NvGpuTextureDesc {
@@ -384,6 +385,12 @@ typedef struct NvGpuReadback {
 } NvGpuReadback;
 b32 nv_gpu_copy_for_readback(NvGpu* gpu, u32 slot, NvGpuBuffer source, u64 offset, umm size);
 NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot);
+
+// Copies a texture's first mip for the CPU to read, after the frame's commands so far (outside a frame, at
+// once), through the same slots and poll as nv_gpu_copy_for_readback. The polled bytes are the texels tightly
+// packed, row after row with no padding, width * height * the format's bytes in all. The texture needs
+// NV_GPU_TEXTURE_COPY_SRC. Returns false, copying nothing, while the slot's earlier request has not been polled.
+b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture texture);
 
 #if !defined(NDEBUG)
 // Makes the device report a validation error, for tests of the error path (the sandbox's debug error export).

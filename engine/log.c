@@ -99,6 +99,37 @@ internal int page_take(int* level, char* source, int source_size, char* text, in
     (void)level, (void)source, (void)source_size, (void)text, (void)text_size, (void)time;
     return -1;
 }
+#else
+#include <time.h>
+
+// The console (standard error), one line each, as "[source] text".
+internal void console_write(NvLogLevel level, const char* source, const char* text)
+{
+    (void)level;
+    fprintf(stderr, "[%s] %s\n", source, text);
+}
+
+internal f64 now_seconds(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    local_persist struct timespec first;
+    if (!first.tv_sec && !first.tv_nsec)
+        first = now;
+    return (f64)(now.tv_sec - first.tv_sec) + (f64)(now.tv_nsec - first.tv_nsec) / 1000000000.0;
+}
+
+// No page hands messages in here: everything on Linux calls nv_log itself.
+internal int page_dropped(void)
+{
+    return 0;
+}
+
+internal int page_take(int* level, char* source, int source_size, char* text, int text_size, double* time)
+{
+    (void)level, (void)source, (void)source_size, (void)text, (void)text_size, (void)time;
+    return -1;
+}
 #endif
 
 // Where a message is formatted (nv_log) or read from the page (nv_log_pump) before it goes in the

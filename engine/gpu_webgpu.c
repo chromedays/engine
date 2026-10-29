@@ -2,10 +2,18 @@
 #include "engine/log.h"
 #include "engine/window.h"
 
+#if defined(__EMSCRIPTEN__)
 #include <emscripten/emscripten.h>
 #include <webgpu/webgpu.h>
+#else
+// Dawn's native WebGPU (Linux, headless): its header, like the emdawnwebgpu port's, carries the
+// extensions this file uses (wgpuInstanceWaitAny, TimedWaitAny, WaitAnyOnly callbacks).
+#include <dawn/webgpu.h>
+#include <unistd.h>
+#endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // The WebGPU backend of engine/gpu.h. The objects of the API are handles into pools of WebGPU objects, kept here.
@@ -14,6 +22,7 @@
 #define SV_FMT "%.*s"
 #define SV_ARG(sv) (int)((sv).data ? ((sv).length == WGPU_STRLEN ? strlen((sv).data) : (sv).length) : 0), (sv).data
 
+#if defined(__EMSCRIPTEN__)
 EM_JS_DEPS(nv_gpu, "$stringToUTF8");
 
 // What the page can tell about the machine. The browser hides the CPU's model, so this is what a
@@ -29,6 +38,21 @@ EM_JS(void, js_system_info, (int* cores, f32* memory_gb, int* screen_width, int*
     const data = navigator.userAgentData;
     stringToUTF8((data && data.platform) || navigator.platform || "", platform, platform_size);
 });
+#else
+// The same facts on Linux, from the system: no screen and no pixel ratio headless (both stay 0 and 1).
+internal void js_system_info(int* cores, f32* memory_gb, int* screen_width, int* screen_height, f32* pixel_ratio,
+                             char* platform, int platform_size)
+{
+    *cores = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_size = sysconf(_SC_PAGESIZE);
+    *memory_gb = pages > 0 && page_size > 0 ? (f32)((f64)pages * (f64)page_size / 1073741824.0) : 0.0f;
+    *screen_width = 0;
+    *screen_height = 0;
+    *pixel_ratio = 1.0f;
+    snprintf(platform, (umm)platform_size, "Linux");
+}
+#endif
 
 //
 // Formats
@@ -62,6 +86,7 @@ internal WGPUTextureFormat wgpu_format(NvGpuFormat format)
     }
 }
 
+#if defined(__EMSCRIPTEN__)
 internal NvGpuFormat format_from_wgpu(WGPUTextureFormat format)
 {
     switch (format) {
@@ -75,6 +100,7 @@ internal NvGpuFormat format_from_wgpu(WGPUTextureFormat format)
     default:                               return NV_GPU_FORMAT_NONE;
     }
 }
+#endif
 
 //
 // Handle pools
@@ -191,6 +217,12 @@ typedef struct Readback {
     u64 capacity;
     umm size;
     const void* mapped;
+    // A texture copy: the mapped rows are `src_pitch` apart and are packed tightly into `packed`,
+    // which `mapped` then points at and `size` counts, as a buffer copy's bytes would read.
+    u8* packed;
+    u32 src_pitch;
+    u32 row_bytes;
+    u32 rows;
 } Readback;
 
 typedef struct Backend {
@@ -331,6 +363,7 @@ internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter
 }
 
 
+#if defined(__EMSCRIPTEN__)
 internal NvGpuFormat srgb_view_format(NvGpuFormat format)
 {
     switch (format) {
@@ -339,11 +372,18 @@ internal NvGpuFormat srgb_view_format(NvGpuFormat format)
     default: return format;
     }
 }
+#endif
 
 internal void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
+#if !defined(__EMSCRIPTEN__)
+    // Headless there is no surface to configure: the frame's texture is made in nv_gpu_begin_frame.
+    nv_log(NV_LOG_INFO, "nv", "headless color target: %ux%u, format %s (offscreen texture, no surface)",
+           gpu->width, gpu->height, nv_gpu_format_name(gpu->surface_format));
+    return;
+#endif
 
     WGPUSurfaceConfiguration config = WGPU_SURFACE_CONFIGURATION_INIT;
     config.device = backend.device;
@@ -407,9 +447,15 @@ internal void log_system(NvGpu* gpu)
     char agent[256];
     nv_window_system_text(agent, sizeof(agent));
 
+#if defined(__EMSCRIPTEN__)
     nv_log(NV_LOG_INFO, "nv", "CPU: %d logical cores, memory %s%.0f GB (browser-rounded), platform %s, WebAssembly 32-bit; the browser hides the CPU model",
            cores, memory_gb > 0.0f ? "" : "unknown ", memory_gb, platform[0] ? platform : "unknown");
     nv_log(NV_LOG_INFO, "nv", "browser: %s", agent);
+#else
+    (void)agent;
+    nv_log(NV_LOG_INFO, "nv", "CPU: %d logical cores, memory %.0f GB, platform %s",
+           cores, memory_gb, platform[0] ? platform : "unknown");
+#endif
 
     WGPUAdapterInfo info = WGPU_ADAPTER_INFO_INIT;
     if (wgpuAdapterGetInfo(backend.adapter, &info) == WGPUStatus_Success) {
@@ -430,9 +476,14 @@ internal void log_system(NvGpu* gpu)
 
     NvWindow* window = gpu->window;
     f32 ratio = window->pixel_ratio > 0.0f ? window->pixel_ratio : pixel_ratio;
+#if defined(__EMSCRIPTEN__)
     nv_log(NV_LOG_INFO, "nv", "display: screen %dx%d, canvas %ux%u CSS pixels, device pixel ratio %.2f, framebuffer %ux%u pixels",
            screen_width, screen_height, (u32)((f32)gpu->width / ratio + 0.5f), (u32)((f32)gpu->height / ratio + 0.5f), (f64)ratio,
            gpu->width, gpu->height);
+#else
+    (void)screen_width, (void)screen_height, (void)ratio;
+    nv_log(NV_LOG_INFO, "nv", "display: none (headless), framebuffer %ux%u pixels", gpu->width, gpu->height);
+#endif
 }
 
 internal void release_gpu(NvGpu* gpu)
@@ -469,6 +520,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         goto fail;
     }
 
+#if defined(__EMSCRIPTEN__)
     WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = WGPU_EMSCRIPTEN_SURFACE_SOURCE_CANVAS_HTML_SELECTOR_INIT;
     canvas.selector = (WGPUStringView){window->canvas_selector, WGPU_STRLEN};
     WGPUSurfaceDescriptor surface_desc = WGPU_SURFACE_DESCRIPTOR_INIT;
@@ -478,6 +530,8 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         nv_log(NV_LOG_ERROR, "nv", "failed to create canvas surface");
         goto fail;
     }
+#endif
+    // Headless (Dawn native) there is no surface: the adapter is asked for without one.
 
     AdapterRequest adapter = request_adapter(backend.instance, backend.surface);
     if (!adapter.ok)
@@ -497,6 +551,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         gpu->max_storage_binding_bytes = limits.maxStorageBufferBindingSize;
     }
 
+#if defined(__EMSCRIPTEN__)
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(backend.surface, backend.adapter, &caps);
     if (caps.formatCount == 0) {
@@ -513,6 +568,11 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         nv_log(NV_LOG_ERROR, "nv", "canvas format is not one nv uses");
         goto fail;
     }
+#else
+    // No canvas picks the format headless: the frame texture is RGBA8 sRGB, as a canvas would offer.
+    gpu->config_format = NV_GPU_FORMAT_RGBA8_SRGB;
+    gpu->surface_format = NV_GPU_FORMAT_RGBA8_SRGB;
+#endif
 
     if (gpu->has_timestamps) {
         WGPUQuerySetDescriptor query_desc = {.type = WGPUQueryType_Timestamp, .count = NV_GPU_MAX_TIMESTAMPS};
@@ -600,6 +660,7 @@ internal WGPUTextureUsage wgpu_texture_usage(u32 usage)
     if (usage & NV_GPU_TEXTURE_SAMPLED)       result |= WGPUTextureUsage_TextureBinding;
     if (usage & NV_GPU_TEXTURE_RENDER_TARGET) result |= WGPUTextureUsage_RenderAttachment;
     if (usage & NV_GPU_TEXTURE_COPY_DST)      result |= WGPUTextureUsage_CopyDst;
+    if (usage & NV_GPU_TEXTURE_COPY_SRC)      result |= WGPUTextureUsage_CopySrc;
     return result;
 }
 
@@ -1031,6 +1092,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     if (gpu->width == 0 || gpu->height == 0)
         return (NvGpuFrame){0}; // canvas is hidden or collapsed
 
+#if defined(__EMSCRIPTEN__)
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(backend.surface, &surface_texture);
     switch (surface_texture.status) {
@@ -1050,6 +1112,20 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     }
 
     backend.current_texture = surface_texture.texture;
+#else
+    // Headless the frame's texture is made for the frame and released with it in nv_gpu_end_frame,
+    // as a surface texture is.
+    WGPUTextureDescriptor frame_desc = WGPU_TEXTURE_DESCRIPTOR_INIT;
+    frame_desc.size = (WGPUExtent3D){gpu->width, gpu->height, 1};
+    frame_desc.format = wgpu_format(gpu->surface_format);
+    frame_desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc;
+    frame_desc.mipLevelCount = 1;
+    frame_desc.sampleCount = 1;
+    frame_desc.dimension = WGPUTextureDimension_2D;
+    backend.current_texture = wgpuDeviceCreateTexture(backend.device, &frame_desc);
+    if (!backend.current_texture)
+        return (NvGpuFrame){0};
+#endif
     WGPUTextureViewDescriptor view_desc = WGPU_TEXTURE_VIEW_DESCRIPTOR_INIT;
     view_desc.format = wgpu_format(gpu->surface_format);
     backend.current_view = wgpuTextureCreateView(backend.current_texture, &view_desc);
@@ -1308,6 +1384,9 @@ b32 nv_gpu_resolve_timestamps(NvGpu* gpu, u32 count)
 NvGpuTimestamps nv_gpu_poll_timestamps(NvGpu* gpu)
 {
     (void)gpu;
+#if !defined(__EMSCRIPTEN__)
+    wgpuInstanceProcessEvents(backend.instance); // no browser loop turns the callbacks here
+#endif
     if (backend.timestamp_state != READBACK_READY)
         return (NvGpuTimestamps){0};
     backend.timestamp_state = READBACK_IDLE;
@@ -1321,7 +1400,19 @@ internal void readback_map_done(WGPUMapAsyncStatus status, WGPUStringView messag
     (void)message, (void)userdata2;
     Readback* readback = userdata1;
     if (status == WGPUMapAsyncStatus_Success) {
-        readback->mapped = wgpuBufferGetConstMappedRange(readback->buffer, 0, readback->size);
+        const u8* mapped = wgpuBufferGetConstMappedRange(readback->buffer, 0, readback->size);
+        if (mapped && readback->row_bytes) {
+            // A texture copy: pack the pitch-padded rows tightly, as gpu.h promises.
+            readback->packed = malloc((umm)readback->row_bytes * readback->rows);
+            if (readback->packed) {
+                for (u32 row = 0; row < readback->rows; ++row)
+                    memcpy(readback->packed + (umm)row * readback->row_bytes, mapped + (umm)row * readback->src_pitch,
+                           readback->row_bytes);
+                readback->size = (umm)readback->row_bytes * readback->rows;
+                mapped = readback->packed;
+            }
+        }
+        readback->mapped = mapped;
         readback->state = readback->mapped ? READBACK_READY : READBACK_IDLE;
     } else {
         nv_log(NV_LOG_ERROR, "wgpu", "reading a buffer back failed (%d)", (int)status);
@@ -1329,43 +1420,97 @@ internal void readback_map_done(WGPUMapAsyncStatus status, WGPUStringView messag
     }
 }
 
-b32 nv_gpu_copy_for_readback(NvGpu* gpu, u32 slot, NvGpuBuffer source, u64 offset, umm size)
+// Takes a slot for a copy of `size` bytes into its buffer. False while the slot's earlier request
+// has not been polled, as the readback functions promise.
+internal Readback* readback_begin(u32 slot, u64 size)
 {
-    (void)gpu;
-    NV_ASSERT(slot < NV_GPU_MAX_READBACKS && !backend.render_pass && !backend.compute_pass);
     Readback* readback = &backend.readbacks[slot];
     if (readback->state != READBACK_IDLE && readback->state != READBACK_TAKEN)
-        return 0;
+        return NULL;
     if (readback->state == READBACK_TAKEN)
         wgpuBufferUnmap(readback->buffer);
     readback->state = READBACK_IDLE;
     readback->mapped = NULL;
-    u64 rounded = ((u64)size + 3u) & ~(u64)3u;
-    if (rounded > readback->capacity) {
+    free(readback->packed);
+    readback->packed = NULL;
+    readback->src_pitch = 0;
+    readback->row_bytes = 0;
+    readback->rows = 0;
+    if (size > readback->capacity) {
         if (readback->buffer)
             wgpuBufferRelease(readback->buffer);
         WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
         desc.label = (WGPUStringView){"readback", WGPU_STRLEN};
         desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
-        desc.size = rounded;
+        desc.size = size;
         readback->buffer = wgpuDeviceCreateBuffer(backend.device, &desc);
-        readback->capacity = rounded;
+        readback->capacity = size;
     }
-    readback->size = (umm)rounded;
+    readback->size = (umm)size;
+    return readback;
+}
 
-    WGPUCommandEncoder encoder = backend.encoder;
-    if (!encoder)
-        encoder = wgpuDeviceCreateCommandEncoder(backend.device, NULL);
-    wgpuCommandEncoderCopyBufferToBuffer(encoder, buffer_of(source), offset, readback->buffer, 0, rounded);
+// The copy is in `encoder`: submits it at once when it is not the frame's encoder, and starts the map.
+internal void readback_end_copy(Readback* readback, WGPUCommandEncoder encoder)
+{
     readback->state = READBACK_COPIED;
     if (!backend.encoder) {
-        // Outside a frame: submit the copy at once.
         WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
         wgpuQueueSubmit(backend.queue, 1, &commands);
         wgpuCommandBufferRelease(commands);
         wgpuCommandEncoderRelease(encoder);
         map_readbacks();
     }
+}
+
+b32 nv_gpu_copy_for_readback(NvGpu* gpu, u32 slot, NvGpuBuffer source, u64 offset, umm size)
+{
+    (void)gpu;
+    NV_ASSERT(slot < NV_GPU_MAX_READBACKS && !backend.render_pass && !backend.compute_pass);
+    u64 rounded = ((u64)size + 3u) & ~(u64)3u;
+    Readback* readback = readback_begin(slot, rounded);
+    if (!readback)
+        return 0;
+
+    WGPUCommandEncoder encoder = backend.encoder;
+    if (!encoder)
+        encoder = wgpuDeviceCreateCommandEncoder(backend.device, NULL);
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, buffer_of(source), offset, readback->buffer, 0, rounded);
+    readback_end_copy(readback, encoder);
+    return 1;
+}
+
+b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture handle)
+{
+    (void)gpu;
+    NV_ASSERT(slot < NV_GPU_MAX_READBACKS && !backend.render_pass && !backend.compute_pass);
+    Texture* texture = texture_of(handle);
+    NV_ASSERT(texture->desc.usage & NV_GPU_TEXTURE_COPY_SRC);
+    u32 bytes_per_texel = nv_gpu_format_bytes(texture->desc.format);
+    NV_ASSERT(bytes_per_texel && texture->desc.samples <= 1);
+    u32 row_bytes = texture->desc.width * bytes_per_texel;
+    u32 pitch = (row_bytes + 255u) & ~255u; // a copy's rows are 256 bytes apart in the buffer
+    Readback* readback = readback_begin(slot, (u64)pitch * texture->desc.height);
+    if (!readback)
+        return 0;
+    readback->src_pitch = pitch;
+    readback->row_bytes = row_bytes;
+    readback->rows = texture->desc.height;
+
+    WGPUCommandEncoder encoder = backend.encoder;
+    if (!encoder)
+        encoder = wgpuDeviceCreateCommandEncoder(backend.device, NULL);
+    WGPUTexelCopyTextureInfo source = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    source.texture = texture->texture;
+    WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+    layout.bytesPerRow = pitch;
+    layout.rowsPerImage = texture->desc.height;
+    WGPUTexelCopyBufferInfo destination = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
+    destination.buffer = readback->buffer;
+    destination.layout = layout;
+    WGPUExtent3D copy_size = {texture->desc.width, texture->desc.height, 1};
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &copy_size);
+    readback_end_copy(readback, encoder);
     return 1;
 }
 
@@ -1373,6 +1518,9 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot)
 {
     (void)gpu;
     NV_ASSERT(slot < NV_GPU_MAX_READBACKS);
+#if !defined(__EMSCRIPTEN__)
+    wgpuInstanceProcessEvents(backend.instance); // no browser loop turns the callbacks here
+#endif
     Readback* readback = &backend.readbacks[slot];
     if (readback->state != READBACK_READY)
         return (NvGpuReadback){0};
