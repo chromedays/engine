@@ -61,6 +61,8 @@ autobattler/               the auto-battler, a second executable with its own pa
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
+tools/dashboard/           the build dashboard (docs/specs/build_dashboard.md): a Cloudflare Worker and Durable Object (src/), its page
+                           (public/index.html), publish.sh (CI's upload to R2) and README.md (the one-time setup, running it locally)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
@@ -69,6 +71,7 @@ docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
 .github/workflows/build.yml  CI: Release and Debug web builds, staged for Pages in the gh-pages branch
 .github/workflows/pages.yml  deploys gh-pages to GitHub Pages after each build
+.github/workflows/dashboard.yml  deploys the dashboard's Worker when tools/dashboard/ changes on master
 ```
 
 Where code goes: `engine/` holds what any app would need (rendering, GPU, window, scene, glTF,
@@ -360,6 +363,12 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   becomes `-`; a branch named `release`, `debug` or `autobattler` is not published). Builds are staged in the `gh-pages` branch (one
   commit, rewritten by CI) and deployed by `.github/workflows/pages.yml`. Debug builds keep their DWARF in `<target>.debug.wasm`,
   which only browser developer tools download.
+- The build dashboard (`tools/dashboard/`, `docs/specs/build_dashboard.md`) shows the auto-battler's Release and Debug builds of master
+  and of every branch with an open pull request, from R2, and updates open pages live from GitHub's webhooks. CI's `publish` and
+  `publish-opened` jobs upload them (`tools/dashboard/publish.sh`); they skip with a notice while the secrets are unset. No secret is
+  written in the repository: tokens live only in GitHub Actions secrets and Worker secrets. Jobs that use secrets run only for this
+  repository's pushes and branches, never `pull_request_target`. Its state rules (`src/state.mjs`) are plain functions that
+  `tests/dashboard_test.mjs` runs; the Worker is tried with `wrangler dev` (`tools/dashboard/README.md`).
 - The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
   rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
   `battle_remove`, `battle_start` and `battle_retry`. The rules (grid, round time, gravity and so on), the units, weapons and the

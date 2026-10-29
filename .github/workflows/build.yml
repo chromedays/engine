@@ -138,6 +138,105 @@ jobs:
           echo "::error::Could not update gh-pages"
           exit 1
 
+  # The build dashboard (docs/specs/build_dashboard.md): the auto-battler's Release and Debug builds of the default branch and
+  # of every branch with an open pull request go to Cloudflare R2, which the dashboard's Worker serves. It runs only for pushes
+  # to this repository, so code from a fork never runs with the secrets; until they are set (tools/dashboard/README.md) it
+  # publishes nothing.
+  publish:
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    needs: web
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      BRANCH: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+    steps:
+      - name: Decide
+        id: decide
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$DASHBOARD_TOKEN" ] || [ -z "$DASHBOARD_URL" ]; then
+            echo "::notice::The dashboard's secrets are not set: nothing is published (tools/dashboard/README.md)."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          elif [ "$BRANCH" = "$DEFAULT_BRANCH" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            # A branch is published while it has an open pull request; opening one publishes its last build (publish-opened).
+            open=$(gh api "repos/$REPO/pulls?head=${REPO%%/*}:$BRANCH&state=open" --jq length)
+            echo "publish=$([ "$open" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.decide.outputs.publish == 'true'
+        with:
+          sparse-checkout: tools/dashboard
+
+      - uses: actions/download-artifact@v4
+        if: steps.decide.outputs.publish == 'true'
+        with:
+          name: engine-web
+          path: build
+
+      - name: Upload to R2
+        if: steps.decide.outputs.publish == 'true'
+        run: tools/dashboard/publish.sh build/autobattler
+
+  # Opening (or reopening) a pull request publishes its branch's newest build without building again: the push's run made it.
+  # A run still going is waited for; its own publish job may publish too, which does no harm. Only pull requests from this
+  # repository's branches get here; a fork's never reach the secrets.
+  publish-opened:
+    if: >-
+      github.event_name == 'pull_request' && (github.event.action == 'opened' || github.event.action == 'reopened')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+    steps:
+      - name: Find the push's build
+        id: find
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$DASHBOARD_TOKEN" ] || [ -z "$DASHBOARD_URL" ]; then
+            echo "::notice::The dashboard's secrets are not set: nothing is published (tools/dashboard/README.md)."
+            exit 0
+          fi
+          run=$(gh run list -R "$REPO" --workflow build.yml --event push --commit "$SHA" --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run" ]; then
+            echo "::notice::No push build of $SHA; the branch's next push publishes it."
+            exit 0
+          fi
+          gh run watch -R "$REPO" "$run" --exit-status > /dev/null
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.find.outputs.run
+        with:
+          sparse-checkout: tools/dashboard
+
+      - name: Upload to R2
+        if: steps.find.outputs.run
+        run: |
+          gh run download -R "$REPO" "${{ steps.find.outputs.run }}" -n engine-web -D build
+          tools/dashboard/publish.sh build/autobattler
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: web

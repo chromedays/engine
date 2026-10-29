@@ -149,6 +149,9 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   `D3D12Core.dll`(Debug는 `d3d12SDKLayers.dll`도)을 실행 파일 옆의 `D3D12\`에 두어, OS에 들어 있는 런타임 대신 우리가 고정한 버전이 돈다.
   그래서 헤더와 런타임과 디버그 레이어가 한 버전이고 Windows 업데이트에 흔들리지 않는다. 그 라이선스는 이 두 DLL의 재배포를 허용한다(패키지의
   `distributable files.txt`). 버전과 SHA-256을 고정해 내려받는다. 대가는 패키지 하나(약 35 MB)다.
+- 빌드 대시보드(`tools/dashboard/`, `docs/specs/build_dashboard.md`)의 배포와 R2 업로드에는 Cloudflare의 CLI인 Wrangler(`wrangler@4.150.0`,
+  MIT 또는 Apache 2.0): Worker, Durable Object, R2를 다루는 공식 도구이고, 같은 도구가 `wrangler dev`로 셋 모두를 로컬에서 돌린다.
+  **CI와 로컬 시험에서 `npx`로 버전을 고정해 실행할 뿐, 저장소에 설치하지 않고 어디에도 링크하지 않는다.** Worker 코드 자체는 의존성이 없다.
 - 그 밖의 것은 (단일 헤더 라이브러리라도) 이유를 글로 쓰고 먼저 합의해야 한다. 수학, 컨테이너, 문자열은
   여기서 작성한다.
 
@@ -319,6 +322,10 @@ The table sets the shape of names. What a name has to say:
   one in the OS. The headers, the runtime and the debug layer are then one version, and Windows Update does not move them. Its license
   allows redistributing those two DLLs (the package's `distributable files.txt`). It is downloaded with the version and SHA-256 pinned.
   The cost is one package (about 35 MB).
+- Cloudflare's CLI, Wrangler (`wrangler@4.150.0`, MIT or Apache 2.0), to deploy the build dashboard (`tools/dashboard/`,
+  `docs/specs/build_dashboard.md`) and upload builds to R2: it is the official tool for Workers, Durable Objects and R2, and the same
+  tool runs all three locally (`wrangler dev`). **CI and local tests run it through `npx` with the version pinned; it is not
+  installed into the repository and is linked into nothing.** The Worker's code itself has no dependencies.
 - Anything else (even a single-header library) needs a written reason and agreement first. Math,
   containers and strings are written here.
 

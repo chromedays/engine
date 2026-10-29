@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>nv builds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+[hidden] { display: none !important; }
+/* Layout: one 980px column, read top to bottom: one grid of build cards (master pinned first,
+   then every branch), the live activity feed, then storage. Dark first, like the engine's own pages (night view); the sea green of the
+   sandbox's Cthulhu mark is the logo only. Live changes flash the card they touch, once. */
+:root {
+  --bg: #0e1220;
+  --surface: #151a2b;
+  --surface-2: #1c2237;
+  --line: #2a3150;
+  --fg: #e3e6f2;
+  --muted: #8d95b2;
+  --accent: #79a2f4;
+  --accent-ink: #0e1220;
+  --mark: #90d080;
+  --ok: #6fcf8f;
+  --bad: #f2806f;
+  --warn: #e6b65c;
+  --font: "IBM Plex Sans KR", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 8px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f5fa; --surface: #ffffff; --surface-2: #eaeef6; --line: #d6dbe8; --fg: #151a2b; --muted: #59617f;
+    --accent: #2d5fcc; --accent-ink: #ffffff; --mark: #3f8f3a; --ok: #1d8549; --bad: #c43f2d; --warn: #9a6400;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f3f5fa; --surface: #ffffff; --surface-2: #eaeef6; --line: #d6dbe8; --fg: #151a2b; --muted: #59617f;
+  --accent: #2d5fcc; --accent-ink: #ffffff; --mark: #3f8f3a; --ok: #1d8549; --bad: #c43f2d; --warn: #9a6400;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.page { max-width: 980px; margin: 0 auto; padding-block: 28px 56px; display: grid; gap: 28px; }
+a { color: var(--accent); text-underline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.mono { font-family: var(--mono); font-size: 0.92em; }
+.muted { color: var(--muted); }
+h1, h2 { margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 26px; font-weight: 700; }
+h2 { font-size: 18px; font-weight: 600; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+
+/* Header */
+header { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.logo { width: 44px; height: 44px; flex: none; color: var(--mark); }
+.logo svg { display: block; width: 100%; height: 100%; }
+.head-text { flex: 1 1 280px; min-width: 0; display: grid; gap: 2px; }
+.head-text p { margin: 0; color: var(--muted); max-width: 62ch; }
+.head-side { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.lang { display: flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
+.lang button { font: 500 13px var(--font); color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--surface-2); color: var(--fg); }
+
+/* Sections */
+.section-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.section-head p { margin: 0; color: var(--muted); font-size: 14px; }
+.btn { display: inline-flex; align-items: baseline; gap: 8px; text-decoration: none; font: 600 14px var(--font); padding: 7px 14px; border-radius: 6px; border: 1px solid var(--line); color: var(--fg); background: var(--surface-2); white-space: nowrap; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn .size { font: 400 12px var(--mono); opacity: 0.8; }
+.btn:hover { filter: brightness(1.08); }
+.label { font: 12.5px/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.label a { color: inherit; }
+
+/* Chips: state in form as well as words */
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--font); padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.chip.plain::before { display: none; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.chip.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.chip.run::before { animation: pulse 1.2s ease-in-out infinite; }
+.chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.chip a { color: inherit; text-decoration: none; }
+.conn { font-size: 12.5px; padding: 5px 10px; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+
+/* Activity: the live feed, newest first */
+.activity { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.activity ol { list-style: none; margin: 0; padding: 0; }
+.activity li { display: grid; grid-template-columns: 5.5em 7px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 9px 16px; border-top: 1px solid var(--line); font-size: 14px; }
+.activity li:first-child { border-top: 0; }
+.activity time { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.activity .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); align-self: center; }
+.activity .dot.ok { background: var(--ok); } .activity .dot.bad { background: var(--bad); } .activity .dot.warn { background: var(--warn); } .activity .dot.accent { background: var(--accent); }
+.activity .text { min-width: 0; overflow-wrap: anywhere; }
+.activity .text .mono, .activity .text b { color: var(--fg); }
+.activity .text b { font-weight: 600; }
+.activity .quiet { padding: 14px 16px; color: var(--muted); font-size: 14px; }
+.activity li.fresh { animation: flash 1.8s ease-out; }
+
+/* Site size meter */
+.meter-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; display: grid; gap: 14px; }
+.meter-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.meter-top .used { font: 600 22px var(--mono); font-variant-numeric: tabular-nums; }
+.meter-top .used small { font-size: 14px; color: var(--muted); font-weight: 400; }
+.meter { position: relative; margin-top: 12px; height: 26px; border-radius: 5px; background: var(--surface-2); display: flex; overflow: visible; }
+.meter .seg { height: 100%; transition: width 0.6s ease; }
+.meter .seg:first-child { border-radius: 5px 0 0 5px; }
+.seg.master { background: var(--accent); }
+.seg.merged { background: repeating-linear-gradient(135deg, var(--warn) 0 6px, color-mix(in srgb, var(--warn) 70%, var(--surface)) 6px 12px); }
+.seg.work { background: var(--muted); }
+.seg.next { border: 1.5px dashed var(--bad); border-left: 0; border-radius: 0 5px 5px 0; background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.limit { position: absolute; top: -6px; bottom: -6px; width: 2px; background: var(--bad); }
+.limit span { position: absolute; top: -20px; transform: translateX(-50%); font: 500 11px var(--mono); color: var(--bad); white-space: nowrap; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 7px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+.legend b { font: 500 12.5px var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.meter-note { margin: 0; font-size: 14px; display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: baseline; }
+.meter-note .warn-text { color: var(--muted); }
+.linkish { font: 600 14px var(--font); color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+/* Branches */
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.search { flex: 1 1 220px; min-width: 0; font: 14px var(--font); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
+.search::placeholder { color: var(--muted); }
+.filters { display: flex; gap: 4px; flex-wrap: wrap; }
+.filters button { font: 500 13px var(--font); color: var(--muted); background: none; border: 1px solid transparent; border-radius: 6px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.filters button[aria-pressed="true"] { color: var(--fg); background: var(--surface); border-color: var(--line); }
+.filters .n { font: 12px var(--mono); margin-left: 4px; opacity: 0.75; }
+.sort { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.sort select { font: 13px var(--font); color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+.banner[hidden] { display: none; }
+.banner { border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); border-radius: var(--radius); padding: 10px 14px; font-size: 14px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.row { display: grid; grid-template-rows: 1fr auto; gap: 14px; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.row.master { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.row-main { min-width: 0; display: grid; gap: 6px; align-content: start; }
+.row-title { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+.row-head { display: grid; gap: 2px; min-width: 0; }
+.pr-title { font: 600 15.5px/1.35 var(--font); color: var(--fg); text-decoration: none; overflow-wrap: anywhere; text-wrap: pretty; }
+a.pr-title:hover { text-decoration: underline; }
+.pr-num { color: var(--muted); font-weight: 500; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.row.master .pr-title { font-family: var(--mono); }
+.branch-sub { font: 11.5px/1.4 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.subject { font-size: 13.5px; overflow-wrap: anywhere; }
+.row .label { font-size: 12px; }
+.note { font-size: 13px; color: var(--warn); overflow-wrap: anywhere; }
+.note.bad { color: var(--bad); }
+.note.ok { color: var(--ok); }
+.note.muted { color: var(--muted); }
+.row-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.row-actions .btn { padding: 5px 11px; font-size: 13px; }
+.row-actions .none { font-size: 12.5px; color: var(--muted); padding: 5px 4px; }
+.row.dim .pr-title, .row.dim .subject { color: var(--muted); }
+.row.flash { animation: flash 1.8s ease-out; }
+.empty { grid-column: 1 / -1; padding: 24px 16px; color: var(--muted); text-align: center; border: 1px dashed var(--line); border-radius: var(--radius); }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); } to { background: var(--surface); } }
+@media (prefers-reduced-motion: reduce) {
+  .chip.run::before { animation: none; }
+  .row.flash, .activity li.fresh { animation: none; outline: 1px solid var(--accent); outline-offset: -1px; }
+  .meter .seg { transition: none; }
+}
+
+footer { display: grid; gap: 6px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; }
+footer p { margin: 0; max-width: 80ch; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 22px; }
+  .activity li { grid-template-columns: 4.5em 7px minmax(0, 1fr); padding-inline: 12px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div class="logo" id="logo" aria-hidden="true"></div>
+    <div class="head-text">
+      <h1 data-t="title"></h1>
+      <p data-t="lead"></p>
+    </div>
+    <div class="head-side">
+      <span id="conn" role="status" aria-live="polite"></span>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="lang-en" data-lang="en">EN</button>
+        <button type="button" id="lang-ko" data-lang="ko">한국어</button>
+      </div>
+    </div>
+  </header>
+
+
+  <div class="banner" id="paused-banner" hidden></div>
+
+  <section aria-labelledby="branches-title">
+    <div class="section-head"><h2 id="branches-title" data-t="branches_h"></h2><p data-t="branches_note"></p></div>
+    <div class="toolbar">
+      <input class="search" id="search" type="search" autocomplete="off">
+      <div class="filters" id="filters" role="group"></div>
+      <label class="sort"><span data-t="sort"></span>
+        <select id="sort">
+          <option value="newest" data-t="s_newest"></option>
+          <option value="name" data-t="s_name"></option>
+          <option value="size" data-t="s_size"></option>
+        </select>
+      </label>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+
+  <section aria-labelledby="activity-title">
+    <div class="section-head"><h2 id="activity-title" data-t="activity_h"></h2><p data-t="activity_note"></p></div>
+    <div class="activity" id="activity" aria-live="polite"></div>
+  </section>
+
+  <section class="meter-card" aria-labelledby="site-title">
+    <div class="meter-top">
+      <div><div class="eyebrow" id="site-title" data-t="site_h"></div></div>
+      <div class="used" id="used"></div>
+    </div>
+    <div class="meter" id="meter" role="img"></div>
+    <div class="legend" id="legend"></div>
+    <p class="meter-note"><span class="warn-text" data-t="site_warn"></span></p>
+    <p class="meter-note"><span id="free-hint"></span><button type="button" class="linkish" id="show-merged" data-t="show_them"></button></p>
+  </section>
+
+  <footer>
+    <p id="src-deploy"></p>
+    <p data-t="src_live"></p>
+  </footer>
+</div>
+
+<script>
+// The build dashboard's page (docs/specs/build_dashboard.md). Everything it shows comes from the Worker over one WebSocket:
+// the whole state when it connects and again after every change.
+
+// The sandbox's mark (sandbox/ui.c, icon_cthulhu), one character a pixel.
+const CTHULHU = [
+  "................", ".....######.....", "...##########...", "..############..",
+  "..############..", "..##..####..##..", "..##..####..##..", "..############..",
+  "..############..", "..###.####.###..", "..##..#..#..##..", ".##..##..##..##.",
+  ".##..#....#..##.", ".#..##....##..#.", "....#......#....", "................",
+];
+
+const FREE_MB = 10240; // R2 stores 10 GB free, then $0.015 per GB-month
+const MIB = 1024 * 1024;
+const PING_MS = 30000;
+const DOWN_AFTER = 3; // failed connects before the page says live updates are paused
+
+const STRINGS = {
+  en: {
+    title: "nv builds",
+    lead: "Every build CI has published: master's builds first, then each pull request's, each with a Release and a Debug build. Pushes, pull requests and CI results show up here within seconds.",
+    live: "Live", connecting: "Connecting", retry: s => `Reconnecting in ${s} s`, paused: "Live updates paused",
+    paused_banner: (when, s) => `Live updates are paused because the connection to the server keeps failing. The list is as of ${when}. Trying again in ${s} s.`,
+    default_branch: "Default branch",
+    autobattler: "Auto-battler",
+    release: "Release", debug: "Debug",
+    activity_h: "Activity",
+    activity_note: "What changed since you opened the page",
+    activity_none: "Nothing yet. A push, a pull request or a CI result appears here as it happens.",
+    a_push: (n, sha, s) => `${n} got ${sha}: ${s}`,
+    a_passed: (n, sha) => `CI passed on ${n} at ${sha}, and its build is up`,
+    a_failed: (n, sha) => `CI failed on ${n} at ${sha}`,
+    a_opened: n => `${n} opened`,
+    a_merged: n => `${n} merged`,
+    a_closed: n => `${n} closed without merging`,
+    a_delete: n => `${n}: branch deleted, and its build removed`,
+    a_lost: "Connection lost",
+    a_back: n => n ? `Reconnected and caught up: ${n} missed ${n === 1 ? "change" : "changes"} applied` : "Reconnected; nothing was missed",
+    ago_s: s => s < 5 ? "now" : s < 60 ? `${s} s ago` : `${Math.floor(s / 60)} min ago`,
+    site_h: "Storage",
+    of_limit: used => `${used} <small>of 10 GB free</small>`,
+    site_warn: "Builds are kept in Cloudflare R2. The first 10 GB are free; past that, each GB costs $0.015 a month.",
+    leg_master: "master", leg_merged: "Branches already in master", leg_work: "Branches with work not in master",
+    free_hint: (n, mb) => `Deleting the ${n} branches already in master frees ${mb}. A deleted branch's build is removed at once.`,
+    show_them: "Show them",
+    meter_label: used => `${used} of 10 GB free used`,
+    branches_h: "Builds",
+    branches_note: "master first, then each pull request's branch, each with a Release and a Debug build. Deleting the branch removes its builds.",
+    search: "Filter by pull request, branch or commit",
+    f_all: "All", f_open: "Open PR", f_work: "Not in master", f_merged: "In master",
+    sort: "Sort", s_newest: "Newest", s_name: "Name", s_size: "Size",
+    ci_passed: "CI passed", ci_failed: "CI failed", ci_running: "Building",
+    pr_open: "Open", pr_merged: "Merged", pr_closed: "Closed",
+    in_master: "In master",
+    ahead: n => n === 1 ? "1 commit not in master" : `${n} commits not in master`,
+    note_running: (newer, cur) => `${newer} is building. This build is ${cur}.`,
+    note_failed: (bad, cur) => `CI failed on ${bad}. This build is ${cur}, the last commit that passed.`,
+    note_first: sha => `${sha} is the branch's first build. Its links appear when CI passes.`,
+    no_build: "No build yet",
+    loading: "Connecting to the dashboard…",
+    empty: "No build matches.",
+    src_deploy: "Builds, sizes and “in master” come from the record CI uploads with each build.",
+    src_live: "Pushes, pull requests and CI results come from the dashboard's server, which GitHub notifies as they happen. Each time the page connects it receives the full current state, so it never shows a stale list, and the server checks GitHub every 5 minutes in case a notification was lost.",
+    ago: n => n === 0 ? "today" : n === 1 ? "yesterday" : `${n} days ago`,
+  },
+  ko: {
+    title: "nv 빌드",
+    lead: "CI가 게시한 모든 빌드입니다. master가 먼저, 그다음 PR마다 Release·Debug 빌드가 있습니다. push, PR, CI 결과가 몇 초 안에 여기에 나타납니다.",
+    live: "실시간", connecting: "연결 중", retry: s => `${s}초 후 재연결`, paused: "실시간 갱신 중지",
+    paused_banner: (when, s) => `서버와의 연결이 계속 실패해 실시간 갱신이 멈췄습니다. 목록은 ${when} 기준입니다. ${s}초 후 다시 시도합니다.`,
+    default_branch: "기본 브랜치",
+    autobattler: "오토배틀러",
+    release: "Release", debug: "Debug",
+    activity_h: "활동",
+    activity_note: "페이지를 연 뒤로 바뀐 것",
+    activity_none: "아직 없습니다. push, PR, CI 결과가 생기는 대로 여기에 나타납니다.",
+    a_push: (n, sha, s) => `${n}에 ${sha}: ${s}`,
+    a_passed: (n, sha) => `${n}의 ${sha} CI 통과, 빌드 올라감`,
+    a_failed: (n, sha) => `${n}의 ${sha} CI 실패`,
+    a_opened: n => `${n} 열림`,
+    a_merged: n => `${n} 머지됨`,
+    a_closed: n => `${n} 머지 없이 닫힘`,
+    a_delete: n => `${n}: 브랜치 삭제됨, 빌드도 지워짐`,
+    a_lost: "연결 끊김",
+    a_back: n => n ? `재연결하고 따라잡음: 놓친 변경 ${n}개 반영` : "재연결함, 놓친 변경 없음",
+    ago_s: s => s < 5 ? "방금" : s < 60 ? `${s}초 전` : `${Math.floor(s / 60)}분 전`,
+    site_h: "저장 공간",
+    of_limit: used => `${used} <small>/ 무료 10 GB</small>`,
+    site_warn: "빌드는 Cloudflare R2에 둡니다. 10 GB까지 무료이고, 그 뒤로는 GB당 월 $0.015입니다.",
+    leg_master: "master", leg_merged: "master에 이미 들어간 브랜치", leg_work: "master에 없는 작업이 있는 브랜치",
+    free_hint: (n, mb) => `master에 이미 들어간 브랜치 ${n}개를 지우면 ${mb}가 빕니다. 브랜치를 지우면 빌드도 바로 지워집니다.`,
+    show_them: "보기",
+    meter_label: used => `무료 10 GB 중 ${used} 사용`,
+    branches_h: "빌드",
+    branches_note: "master가 먼저, 그다음 PR 브랜치마다 Release·Debug 빌드가 있습니다. 브랜치를 지우면 빌드도 지워집니다.",
+    search: "PR, 브랜치, 커밋으로 찾기",
+    f_all: "전체", f_open: "열린 PR", f_work: "master에 없음", f_merged: "master에 있음",
+    sort: "정렬", s_newest: "최신순", s_name: "이름순", s_size: "크기순",
+    ci_passed: "CI 통과", ci_failed: "CI 실패", ci_running: "빌드 중",
+    pr_open: "열림", pr_merged: "머지됨", pr_closed: "닫힘",
+    in_master: "master에 있음",
+    ahead: n => `master에 없는 커밋 ${n}개`,
+    note_running: (newer, cur) => `${newer}을(를) 빌드 중입니다. 이 빌드는 ${cur}입니다.`,
+    note_failed: (bad, cur) => `${bad}에서 CI가 실패했습니다. 이 빌드는 마지막으로 통과한 ${cur}입니다.`,
+    note_first: sha => `${sha}이(가) 이 브랜치의 첫 빌드입니다. CI를 통과하면 링크가 생깁니다.`,
+    no_build: "아직 빌드 없음",
+    loading: "대시보드에 연결하는 중…",
+    empty: "맞는 빌드가 없습니다.",
+    src_deploy: "빌드, 크기, \"master에 있음\"은 CI가 빌드마다 올리는 기록에서 옵니다.",
+    src_live: "push, PR, CI 결과는 대시보드 서버에서 옵니다. GitHub가 일이 생길 때마다 서버에 알립니다. 페이지는 연결할 때마다 현재 상태 전체를 받으므로 낡은 목록을 보여 주지 않고, 서버는 알림을 놓쳤을 때를 대비해 5분마다 GitHub를 다시 확인합니다.",
+    ago: n => n === 0 ? "오늘" : n === 1 ? "어제" : `${n}일 전`,
+  },
+};
+
+let savedLang = null;
+try { savedLang = localStorage.getItem("nv-builds-lang"); } catch (e) {}
+const state = {
+  lang: savedLang in STRINGS ? savedLang : (navigator.language || "").startsWith("ko") ? "ko" : "en",
+  filter: "all", sort: "newest", query: "",
+};
+
+const $ = id => document.getElementById(id);
+const t = (key, ...args) => { const v = STRINGS[state.lang][key]; return typeof v === "function" ? v(...args) : v; };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const mb = bytes => `${(bytes / MIB).toFixed(1)} MB`;
+const folder = branch => branch.replaceAll("/", "-");
+const short = sha => sha.slice(0, 7);
+const daysAgo = iso => Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000));
+const day = iso => new Intl.DateTimeFormat(state.lang, { month: "short", day: "numeric" }).format(new Date(iso));
+const when = iso => new Intl.DateTimeFormat(state.lang, { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+const code = s => `<span class="mono">${esc(s)}</span>`;
+const repoUrl = () => `https://github.com/${snap.repo}`;
+const commitLink = sha => `<a href="${repoUrl()}/commit/${sha}" target="_blank" rel="noopener">${short(sha)}</a>`;
+
+// snap: the Worker's last snapshot. seen: the newest activity id the page has listed. feed: what Activity lists, newest
+// first (the Worker's entries since the page opened, and the page's own connection entries). flashed: cards changed by
+// the last snapshot.
+let snap = null, seen = 0, feed = [], flashed = new Set(), asOf = null;
+const conn = { state: "connecting", wait: 0, failures: 0, ws: null, timer: null, ping: null, wasLive: false };
+
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  conn.ws = ws;
+  ws.onopen = () => {
+    conn.failures = 0;
+    clearInterval(conn.ping);
+    conn.ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send("ping"); }, PING_MS);
+  };
+  ws.onmessage = e => {
+    if (e.data === "pong") return;
+    const message = JSON.parse(e.data);
+    if (message.type === "snapshot") receive(message.state);
+  };
+  ws.onclose = () => {
+    clearInterval(conn.ping);
+    if (conn.ws !== ws) return;
+    if (conn.state === "live") feed.unshift({ local: "lost", tone: "bad", at: Date.now(), fresh: true });
+    ++conn.failures;
+    conn.state = conn.failures >= DOWN_AFTER ? "down" : "retry";
+    // Reconnect with backoff: 1, 2, 4 ... 30 s. The snapshot on connect brings in whatever was missed.
+    conn.wait = Math.min(30, 2 ** (conn.failures - 1));
+    const tick = () => {
+      if (--conn.wait > 0) { renderConn(); conn.timer = setTimeout(tick, 1000); return; }
+      connect();
+    };
+    conn.timer = setTimeout(tick, 1000);
+    render();
+  };
+}
+
+function receive(next) {
+  const newest = next.activity.length ? next.activity[next.activity.length - 1].id : 0;
+  if (!snap) {
+    seen = newest;
+  } else {
+    const missed = next.activity.filter(a => a.id > seen);
+    if (conn.state !== "live") feed.unshift({ local: "back", tone: "ok", count: missed.length, at: Date.now(), fresh: true });
+    for (const a of missed) feed.unshift({ ...a, fresh: true });
+    feed.length = Math.min(feed.length, 30);
+    seen = Math.max(seen, newest);
+    const names = new Set([...Object.keys(snap.branches), ...Object.keys(next.branches)]);
+    for (const name of names) {
+      if (JSON.stringify(snap.branches[name]) !== JSON.stringify(next.branches[name])) flashed.add(name);
+    }
+  }
+  snap = next;
+  asOf = new Date().toISOString();
+  conn.state = "live";
+  render();
+}
+
+function drawLogo() {
+  let rects = "";
+  CTHULHU.forEach((row, y) => {
+    for (let x = 0; x < row.length; ) {
+      if (row[x] !== "#") { ++x; continue; }
+      let end = x;
+      while (row[end] === "#") ++end;
+      rects += `<rect x="${x}" y="${y}" width="${end - x}" height="1"/>`;
+      x = end;
+    }
+  });
+  $("logo").innerHTML = `<svg viewBox="0 0 16 16" shape-rendering="crispEdges" fill="currentColor">${rects}</svg>`;
+}
+
+// What a card's CI chip and note say, from its build and the newest commit the Worker knows of.
+function status(b) {
+  if (conn.state === "down") return { ci: null, note: null };
+  const { build, head } = b;
+  if (!build) return { ci: b.ci, note: head ? [b.ci === "failed" ? "bad" : "", t("note_first", short(head.sha))] : null };
+  if (!head || head.sha === build.sha) return { ci: b.ci, note: null };
+  if (b.ci === "running") return { ci: "running", note: ["", t("note_running", short(head.sha), short(build.sha))] };
+  if (b.ci === "failed") return { ci: "failed", note: ["bad", t("note_failed", short(head.sha), short(build.sha))] };
+  return { ci: b.ci, note: null };
+}
+
+function ciChip(ci) {
+  if (!ci) return "";
+  const cls = { passed: "ok", failed: "bad", running: "warn run" }[ci];
+  return `<span class="chip ${cls}">${t("ci_" + ci)}</span>`;
+}
+
+function prChip(pr) {
+  if (conn.state === "down" || !pr) return "";
+  const cls = { open: "accent", merged: "plain", closed: "plain" }[pr.state];
+  return `<span class="chip ${cls}">${t("pr_" + pr.state)}</span>`;
+}
+
+function renderConn() {
+  const el = $("conn");
+  if (conn.state === "live") el.innerHTML = `<span class="chip ok run conn">${t("live")}</span>`;
+  else if (conn.state === "connecting") el.innerHTML = `<span class="chip warn run conn">${t("connecting")}</span>`;
+  else if (conn.state === "retry") el.innerHTML = `<span class="chip warn conn">${t("retry", conn.wait)}</span>`;
+  else el.innerHTML = `<span class="chip bad conn">${t("paused")}</span>`;
+  $("paused-banner").hidden = conn.state !== "down" || !snap;
+  if (conn.state === "down" && snap) $("paused-banner").textContent = t("paused_banner", when(asOf), conn.wait);
+}
+
+// How Activity names a branch: its pull request, or the branch itself (master).
+function nameOf(a) {
+  return a.number ? `<b>#${a.number}</b> ${esc(a.title)}` : code(a.branch);
+}
+
+function renderActivity() {
+  const now = Date.now();
+  $("activity").innerHTML = feed.length ? `<ol>${feed.map(a => {
+    let text;
+    if (a.local === "lost") text = t("a_lost");
+    else if (a.local === "back") text = t("a_back", a.count);
+    else if (a.kind === "push") text = t("a_push", nameOf(a), code(short(a.sha)), esc(a.subject || ""));
+    else if (a.kind === "passed" || a.kind === "failed") text = t("a_" + a.kind, nameOf(a), code(short(a.sha)));
+    else text = t("a_" + a.kind, nameOf(a));
+    const tone = a.tone || { passed: "ok", merged: "ok", failed: "bad", opened: "accent", closed: "warn", delete: "warn" }[a.kind] || "";
+    return `<li class="${a.fresh ? "fresh" : ""}"><time>${t("ago_s", Math.floor((now - a.at) / 1000))}</time><i class="dot ${tone}"></i><span class="text">${text}</span></li>`;
+  }).join("")}</ol>` : `<div class="quiet">${t("activity_none")}</div>`;
+  feed.forEach(a => { a.fresh = false; });
+}
+
+function renderMeter() {
+  if (!snap) return;
+  const all = Object.entries(snap.branches).filter(([, b]) => b.build);
+  const isMaster = ([name]) => name === snap.defaultBranch;
+  const sum = list => list.reduce((a, [, b]) => a + b.build.stored, 0);
+  const merged = all.filter(e => !isMaster(e) && e[1].build.ahead === 0);
+  const work = all.filter(e => !isMaster(e) && e[1].build.ahead !== 0);
+  const parts = [
+    { cls: "master", bytes: sum(all.filter(isMaster)), label: t("leg_master") },
+    { cls: "merged", bytes: sum(merged), label: t("leg_merged") },
+    { cls: "work", bytes: sum(work), label: t("leg_work") },
+  ];
+  const used = parts.reduce((a, p) => a + p.bytes, 0);
+  const pct = v => `${(v / MIB / FREE_MB) * 100}%`;
+  $("used").innerHTML = t("of_limit", mb(used));
+  $("meter").setAttribute("aria-label", t("meter_label", mb(used)));
+  $("meter").innerHTML = parts.map(p => `<div class="seg ${p.cls}" style="width:${pct(p.bytes)}" title="${esc(p.label)}: ${mb(p.bytes)}"></div>`).join("");
+  const swatch = cls => ({ master: "var(--accent)", merged: "var(--warn)", work: "var(--muted)" }[cls]);
+  $("legend").innerHTML = parts.map(p => `<span><i style="background:${swatch(p.cls)}"></i>${esc(p.label)} <b>${mb(p.bytes)}</b></span>`).join("");
+  $("free-hint").textContent = t("free_hint", merged.length, mb(sum(merged)));
+}
+
+function buttons(name, build) {
+  if (!build) return `<span class="none">${t("no_build")}</span>`;
+  const base = `/builds/${encodeURIComponent(folder(name))}`;
+  return `<a class="btn primary" href="${base}/release/" target="_blank" rel="noopener">${t("release")}<span class="size">${mb(build.release)}</span></a>
+        <a class="btn" href="${base}/debug/" target="_blank" rel="noopener">${t("debug")}<span class="size">${mb(build.debug)}</span></a>`;
+}
+
+function label(b) {
+  const c = b.build || b.head;
+  if (!c) return "";
+  const date = c.date ? `<span>·</span><span>${day(c.date)}, ${t("ago", daysAgo(c.date))}</span>` : "";
+  const size = b.build ? `<span>·</span><span>${mb(b.build.stored)}</span>` : "";
+  return `<div class="label">${commitLink(c.sha)}${date}${size}</div>`;
+}
+
+// master's card, pinned first.
+function masterCard() {
+  const name = snap.defaultBranch;
+  const b = snap.branches[name];
+  if (!b) return "";
+  const s = status(b);
+  const c = b.build || b.head;
+  return `<div class="row master${flashed.has(name) ? " flash" : ""}" data-branch="${esc(name)}">
+      <div class="row-main">
+        <div class="row-head"><span class="pr-title">${esc(name)}</span><span class="branch-sub">${t("default_branch")}</span></div>
+        <div class="row-title">${ciChip(s.ci)}</div>
+        ${c && c.subject ? `<div class="subject">${esc(c.subject)}</div>` : ""}
+        ${label(b)}
+        ${s.note ? `<div class="note ${s.note[0]}">${esc(s.note[1])}</div>` : ""}
+      </div>
+      <div class="row-actions">${buttons(name, b.build)}</div>
+    </div>`;
+}
+
+// One card per branch with a pull request.
+function cards() {
+  return Object.entries(snap.branches).filter(([name, b]) => name !== snap.defaultBranch && b.pr).map(([name, b]) => ({ name, b }));
+}
+
+function category({ b }) {
+  const ahead = b.build ? b.build.ahead : null;
+  return { open: conn.state !== "down" && b.pr.state === "open", work: ahead !== 0, merged: ahead === 0 };
+}
+
+function renderBranches() {
+  if (!snap) {
+    $("filters").innerHTML = "";
+    $("list").innerHTML = `<div class="empty">${t("loading")}</div>`;
+    return;
+  }
+  const all = cards();
+  const counts = { all: all.length + 1, open: 0, work: 0, merged: 0 };
+  all.forEach(r => { const c = category(r); for (const k of ["open", "work", "merged"]) counts[k] += c[k] ? 1 : 0; });
+  $("filters").innerHTML = ["all", "open", "work", "merged"].map(f =>
+    `<button type="button" id="filter-${f}" data-filter="${f}" aria-pressed="${state.filter === f}">${t("f_" + f)}<span class="n">${counts[f]}</span></button>`).join("");
+
+  const q = state.query.trim().toLowerCase();
+  const head = r => r.b.build || r.b.head || { sha: "", subject: "" };
+  const matches = r => !q || [r.name, r.b.pr.title, head(r).subject || "", "#" + r.b.pr.number].some(v => v.toLowerCase().includes(q)) || head(r).sha.startsWith(q);
+  const shown = all.filter(r => (state.filter === "all" || category(r)[state.filter]) && matches(r));
+  const latest = r => Date.parse((r.b.head && r.b.head.date) || (r.b.build && r.b.build.date) || 0) || 0;
+  const by = {
+    newest: (a, b) => latest(b) - latest(a),
+    name: (a, b) => a.b.pr.title.localeCompare(b.b.pr.title),
+    size: (a, b) => (b.b.build ? b.b.build.stored : 0) - (a.b.build ? a.b.build.stored : 0),
+  };
+  shown.sort(by[state.sort]);
+  const master = snap.branches[snap.defaultBranch];
+  const showMaster = state.filter === "all" && master
+    && (!q || snap.defaultBranch.includes(q) || ((master.build || master.head || {}).subject || "").toLowerCase().includes(q));
+
+  $("list").innerHTML = shown.length || showMaster ? (showMaster ? masterCard() : "") + shown.map(({ name, b }) => {
+    const s = status(b);
+    const where = !b.build ? "" : b.build.ahead === 0 ? `<span class="chip warn plain">${t("in_master")}</span>`
+      : b.build.ahead ? `<span class="chip plain">${t("ahead", b.build.ahead)}</span>` : "";
+    const subject = (b.head && b.head.subject) || (b.build && b.build.subject);
+    const cls = ["row", b.build && b.build.ahead === 0 ? "dim" : "", flashed.has(name) ? "flash" : ""].join(" ");
+    return `<div class="${cls}" data-branch="${esc(name)}">
+      <div class="row-main">
+        <div class="row-head">
+          <a class="pr-title" href="${repoUrl()}/pull/${b.pr.number}" target="_blank" rel="noopener"><span class="pr-num">#${b.pr.number}</span>${esc(b.pr.title)}</a>
+          <span class="branch-sub">${esc(name)}</span>
+        </div>
+        <div class="row-title">${ciChip(s.ci)}${prChip(b.pr)}${where}</div>
+        ${subject ? `<div class="subject">${esc(subject)}</div>` : ""}
+        ${label(b)}
+        ${s.note ? `<div class="note ${s.note[0]}">${esc(s.note[1])}</div>` : ""}
+      </div>
+      <div class="row-actions">${buttons(name, b.build)}</div>
+    </div>`;
+  }).join("") : `<div class="empty">${t("empty")}</div>`;
+}
+
+function renderText() {
+  document.documentElement.lang = state.lang;
+  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = t(el.dataset.t); });
+  $("search").placeholder = t("search");
+  $("search").setAttribute("aria-label", t("search"));
+  $("lang-en").setAttribute("aria-pressed", state.lang === "en");
+  $("lang-ko").setAttribute("aria-pressed", state.lang === "ko");
+  $("src-deploy").textContent = t("src_deploy");
+}
+
+function render() {
+  renderText();
+  renderConn();
+  renderBranches();
+  renderActivity();
+  renderMeter();
+  flashed.clear();
+}
+
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => {
+  state.lang = b.dataset.lang;
+  try { localStorage.setItem("nv-builds-lang", state.lang); } catch (e) {}
+  render();
+}));
+$("filters").addEventListener("click", e => {
+  const b = e.target.closest("button[data-filter]");
+  if (b) { state.filter = b.dataset.filter; renderBranches(); }
+});
+$("sort").addEventListener("change", e => { state.sort = e.target.value; renderBranches(); });
+$("search").addEventListener("input", e => { state.query = e.target.value; renderBranches(); });
+$("show-merged").addEventListener("click", () => {
+  state.filter = "merged";
+  renderBranches();
+  $("branches-title").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+setInterval(renderActivity, 5000);
+
+drawLogo();
+render();
+connect();
+</script>
+</body>
+</html>
