@@ -15,9 +15,8 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 함께 그리는 [Pretendard](https://github.com/orioncactus/pretendard)이고, SIL Open Font License를 따른다
 (`assets/fonts/Pretendard-LICENSE.txt`).
 
-실행:
-- Release: https://chromedays.github.io/engine/release/
-- Debug (`NV_ASSERT` 켜짐, 크래시가 페이지에 스택을 보여 줌): https://chromedays.github.io/engine/debug/
+실행: [빌드 대시보드](https://nv-builds.haik0925.workers.dev)가 master와 열린 PR마다 오토배틀러의 Release와 Debug(`NV_ASSERT`
+켜짐, 크래시가 페이지에 스택을 보여 줌) 빌드를 보여 준다. 샌드박스는 CI의 `engine-web` 아티팩트를 내려받아 로컬에서 띄운다.
 
 ### 구성
 
@@ -65,9 +64,8 @@ Windows의 Firefox 141+.
 ### CI와 배포
 
 GitHub Actions (`.github/workflows/build.yml`)가 모든 push에서 Release와 Debug 웹 버전을 빌드하고 (`engine-web`
-아티팩트로 함께 내려받을 수 있음), 기본 브랜치로의 모든 push에서 그것을 GitHub Pages의 `release/`와 `debug/` 아래에
-배포한다. **Settings > Pages > Source: GitHub Actions**에서 Pages를 한 번 켠다. 무료 GitHub 플랜에서는 Pages가
-동작하려면 저장소가 공개여야 한다.
+아티팩트로 함께 내려받을 수 있음), 기본 브랜치와 열린 PR이 있는 브랜치의 오토배틀러 빌드를 Cloudflare R2에 올려 빌드
+대시보드에 등록한다(`docs/specs/build_dashboard.md`, 설정은 `tools/dashboard/README.md`).
 
 `v0.1.0` 같은 태그를 push하면 웹 빌드가 GitHub Release에 zip으로도 게시된다.
 
@@ -89,9 +87,9 @@ are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`). The UI font is
 [Pretendard](https://github.com/orioncactus/pretendard), which draws English and Korean, under the
 SIL Open Font License (`assets/fonts/Pretendard-LICENSE.txt`).
 
-Live:
-- Release: https://chromedays.github.io/engine/release/
-- Debug (`NV_ASSERT` on, crashes show their stack on the page): https://chromedays.github.io/engine/debug/
+Live: the [build dashboard](https://nv-builds.haik0925.workers.dev) shows the auto-battler's Release and Debug (`NV_ASSERT` on,
+crashes show their stack on the page) builds of master and of every open pull request. The sandbox is run locally from CI's
+`engine-web` artifact.
 
 ### Layout
 
@@ -145,10 +143,9 @@ recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 ### CI and deployment
 
 GitHub Actions (`.github/workflows/build.yml`) builds a Release and a Debug web version on every
-push (downloadable together as the `engine-web` artifact) and deploys them to GitHub Pages, under
-`release/` and `debug/`, on every push to the default branch.
-Enable Pages once under **Settings > Pages > Source: GitHub Actions**. On the free GitHub plan the
-repository must be public for Pages to work.
+push (downloadable together as the `engine-web` artifact), and uploads the auto-battler's builds of the default branch and
+of every branch with an open pull request to Cloudflare R2, where the build dashboard serves them
+(`docs/specs/build_dashboard.md`; setup in `tools/dashboard/README.md`).
 
 Pushing a tag like `v0.1.0` also publishes the web build as a zip on a GitHub Release.
 

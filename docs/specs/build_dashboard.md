@@ -91,8 +91,8 @@ Durable Object가 저장소(`state` 키 하나)에 둔다. 브랜치마다:
 
 `.github/workflows/dashboard.yml`: master에서 `tools/dashboard/`가 바뀌면 `wrangler deploy`로 Worker를 배포한다(수동 실행도 된다).
 
-GitHub Pages(`stage`, `pages.yml`)는 아직 그대로다. 대시보드가 동작하는 것을 확인한 뒤 따로 걷어 낸다(샌드박스 빌드를 어디에 둘지와
-함께 정한다).
+GitHub Pages(`stage` 잡, `pages.yml`)는 대시보드가 동작하는 것을 확인한 뒤 걷어 냈다(2026-10-29). 샌드박스 빌드는 이제 어디에도
+올라가지 않고 `engine-web` 아티팩트에만 있다.
 
 ## 보안
 

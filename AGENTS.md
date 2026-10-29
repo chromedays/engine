@@ -69,8 +69,7 @@ web/                       index.html.in (the page: downloads the sandbox with a
                            build's version and file sizes for that page)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
-.github/workflows/build.yml  CI: Release and Debug web builds, staged for Pages in the gh-pages branch
-.github/workflows/pages.yml  deploys gh-pages to GitHub Pages after each build
+.github/workflows/build.yml  CI: Release and Debug web builds, and their upload to the build dashboard
 .github/workflows/dashboard.yml  deploys the dashboard's Worker when tools/dashboard/ changes on master
 ```
 
@@ -357,12 +356,10 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 - There are two executables, `sandbox` (the engine's test ground, with an editor UI) and `autobattler` (`docs/specs/battle.md`), each with its own page.
   `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])` packs the files a program reads
   into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at `/assets`), `autobattler` only the
-  font folder and its `data/` (`PRELOAD`), and its own install `COMPONENT`. CI installs the editor's Release build to `release/` and
-  Debug build to `debug/` on Pages (the site root has nothing), and the auto-battler's to `autobattler/release/` and
-  `autobattler/debug/`; every other pushed branch publishes only its Debug builds, to `<branch>/` and `autobattler/<branch>/` (`/`
-  becomes `-`; a branch named `release`, `debug` or `autobattler` is not published). Builds are staged in the `gh-pages` branch (one
-  commit, rewritten by CI) and deployed by `.github/workflows/pages.yml`. Debug builds keep their DWARF in `<target>.debug.wasm`,
-  which only browser developer tools download.
+  font folder and its `data/` (`PRELOAD`), and its own install `COMPONENT`. CI installs both builds of both executables into the
+  `engine-web` artifact (`release/`, `debug/`, `autobattler/release/`, `autobattler/debug/`); only the auto-battler's are published, on
+  the build dashboard. The sandbox has no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in
+  `<target>.debug.wasm`, which only browser developer tools download.
 - The build dashboard (`tools/dashboard/`, `docs/specs/build_dashboard.md`) shows the auto-battler's Release and Debug builds of master
   and of every branch with an open pull request, from R2, and updates open pages live from GitHub's webhooks. CI's `publish` and
   `publish-opened` jobs upload them (`tools/dashboard/publish.sh`); they skip with a notice while the secrets are unset. No secret is
