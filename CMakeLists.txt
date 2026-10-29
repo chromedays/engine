@@ -2,9 +2,8 @@ cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
 # The engine is also used as a Git submodule by an app that adds it with add_subdirectory (README.md, "Using the engine
-# from another repository"). Then only the engine is built: the sandbox, the auto-battler and the tests are this repository's own.
+# from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
-option(NV_BUILD_AUTOBATTLER "Build the auto-battler" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
 
 # Two builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU) and the Windows x64 build (MSVC, Direct3D 12).
@@ -52,7 +51,7 @@ endif()
 # otherwise).
 #   nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])
 # ROOT installs into <prefix>/ instead, so the page is the package's index.html.
-# COMPONENT names the install component: executables that are deployed apart (docs/specs/battle.md) take one each.
+# COMPONENT names the install component: executables that are deployed apart take one each.
 # PRELOAD packs each <dir> at <path> in the executable's file system, readable with fopen; they ship as <target>.data.
 # ASSETS <dir> is PRELOAD <dir>@/assets.
 # Debug builds keep their DWARF debug info in <target>.debug.wasm next to the page. The page does
@@ -254,9 +253,6 @@ endif()
 add_subdirectory(engine)
 if(NV_BUILD_SANDBOX)
     add_subdirectory(sandbox)
-endif()
-if(NV_BUILD_AUTOBATTLER)
-    add_subdirectory(autobattler)
 endif()
 if(NV_BUILD_TESTS)
     add_subdirectory(tests)

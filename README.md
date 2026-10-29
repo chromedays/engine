@@ -15,8 +15,8 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 함께 그리는 [Pretendard](https://github.com/orioncactus/pretendard)이고, SIL Open Font License를 따른다
 (`assets/fonts/Pretendard-LICENSE.txt`).
 
-실행: [빌드 대시보드](https://nv-builds.haik0925.workers.dev)가 master와 열린 PR마다 오토배틀러의 Release와 Debug(`NV_ASSERT`
-켜짐, 크래시가 페이지에 스택을 보여 줌) 빌드를 보여 준다. 샌드박스는 CI의 `engine-web` 아티팩트를 내려받아 로컬에서 띄운다.
+샌드박스는 CI의 `engine-web` 아티팩트를 내려받아 로컬에서 띄운다. 이 엔진을 쓰는 오토배틀러는 별도 저장소
+[chromedays/autobattler](https://github.com/chromedays/autobattler)에 있고, 그 빌드는 [빌드 대시보드](https://nv-builds.haik0925.workers.dev)에서 볼 수 있다.
 
 ### 구성
 
@@ -64,8 +64,8 @@ Windows의 Firefox 141+.
 ### 다른 저장소에서 엔진 쓰기
 
 앱은 이 저장소를 Git submodule로 `engine/`에 두고 `add_subdirectory(engine)`으로 더한다. 그러면 엔진(`nv` 라이브러리와
-`nv_setup_executable`, `nv_add_version`)만 빌드되고, 샌드박스, 오토배틀러, 테스트는 빌드되지 않는다(`NV_BUILD_SANDBOX`,
-`NV_BUILD_AUTOBATTLER`, `NV_BUILD_TESTS`로 켤 수 있다). 엔진은 앱의 디렉터리에 플랫폼(`NV_WEB`, `NV_WINDOWS`), C와 C++
+`nv_setup_executable`, `nv_add_version`)만 빌드되고, 샌드박스와 테스트는 빌드되지 않는다(`NV_BUILD_SANDBOX`,
+`NV_BUILD_TESTS`로 켤 수 있다). 엔진은 앱의 디렉터리에 플랫폼(`NV_WEB`, `NV_WINDOWS`), C와 C++
 표준, 우리 코드의 컴파일 옵션(`NV_COMPILE_OPTIONS`, `NV_COMPILE_DEFINITIONS`)을 넘긴다. `nv_add_version`은 앱 저장소의
 커밋을 적는다.
 
@@ -84,8 +84,7 @@ nv_add_version(game)
 ### CI와 배포
 
 GitHub Actions (`.github/workflows/build.yml`)가 모든 push에서 Release와 Debug 웹 버전을 빌드하고 (`engine-web`
-아티팩트로 함께 내려받을 수 있음), 기본 브랜치와 열린 PR이 있는 브랜치의 오토배틀러 빌드를 Cloudflare R2에 올려 빌드
-대시보드에 등록한다(`docs/specs/build_dashboard.md`, 설정은 `tools/dashboard/README.md`).
+아티팩트로 함께 내려받을 수 있음), 테스트를 돌린다.
 
 `v0.1.0` 같은 태그를 push하면 웹 빌드가 GitHub Release에 zip으로도 게시된다.
 
@@ -107,9 +106,8 @@ are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`). The UI font is
 [Pretendard](https://github.com/orioncactus/pretendard), which draws English and Korean, under the
 SIL Open Font License (`assets/fonts/Pretendard-LICENSE.txt`).
 
-Live: the [build dashboard](https://nv-builds.haik0925.workers.dev) shows the auto-battler's Release and Debug (`NV_ASSERT` on,
-crashes show their stack on the page) builds of master and of every open pull request. The sandbox is run locally from CI's
-`engine-web` artifact.
+The sandbox is run locally from CI's `engine-web` artifact. The auto-battler, which uses this engine, lives in its own repository,
+[chromedays/autobattler](https://github.com/chromedays/autobattler), and its builds are on the [build dashboard](https://nv-builds.haik0925.workers.dev).
 
 ### Layout
 
@@ -163,8 +161,8 @@ recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 ### Using the engine from another repository
 
 An app keeps this repository as a Git submodule at `engine/` and adds it with `add_subdirectory(engine)`. Then only the engine
-is built (the `nv` library, `nv_setup_executable` and `nv_add_version`), not the sandbox, the auto-battler or the tests
-(`NV_BUILD_SANDBOX`, `NV_BUILD_AUTOBATTLER` and `NV_BUILD_TESTS` turn them on). The engine hands the app's directory the
+is built (the `nv` library, `nv_setup_executable` and `nv_add_version`), not the sandbox or the tests
+(`NV_BUILD_SANDBOX` and `NV_BUILD_TESTS` turn them on). The engine hands the app's directory the
 platform (`NV_WEB`, `NV_WINDOWS`), the C and C++ standards and the options our code compiles with (`NV_COMPILE_OPTIONS`,
 `NV_COMPILE_DEFINITIONS`). `nv_add_version` records the commit of the app's repository.
 
@@ -183,9 +181,7 @@ nv_add_version(game)
 ### CI and deployment
 
 GitHub Actions (`.github/workflows/build.yml`) builds a Release and a Debug web version on every
-push (downloadable together as the `engine-web` artifact), and uploads the auto-battler's builds of the default branch and
-of every branch with an open pull request to Cloudflare R2, where the build dashboard serves them
-(`docs/specs/build_dashboard.md`; setup in `tools/dashboard/README.md`).
+push (downloadable together as the `engine-web` artifact) and runs the tests.
 
 Pushing a tag like `v0.1.0` also publishes the web build as a zip on a GitHub Release.
 

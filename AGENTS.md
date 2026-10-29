@@ -55,29 +55,26 @@ sandbox/                   the sandbox (the engine's test ground): main.c (windo
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), sandbox.h (shared state)
-autobattler/               the auto-battler, a second executable with its own page (docs/specs/battle.md): battle.c/.h (the rules and
-                           the 30 Hz tick; no GPU), defs.c (reads data/default.abproj), main.c (window, frame loop),
-                           battle_view.c (drawing, deployment input, the Battle panel), game.h (its state), strings.c (its Korean table)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo)
-tools/dashboard/           the build dashboard (docs/specs/build_dashboard.md): a Cloudflare Worker and Durable Object (src/), its page
-                           (public/index.html), publish.sh (CI's upload to R2) and README.md (the one-time setup, running it locally)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
                            build's version and file sizes for that page)
 docs/CODING_STANDARD.md    coding standard (read before writing code)
 docs/specs/                feature specs (read the relevant one before working on a feature)
-.github/workflows/build.yml  CI: Release and Debug web builds, and their upload to the build dashboard
-.github/workflows/dashboard.yml  deploys the dashboard's Worker when tools/dashboard/ changes on master
+.github/workflows/build.yml  CI: Release and Debug web builds and the tests
 ```
 
 Where code goes: `engine/` holds what any app would need (rendering, GPU, window, scene, glTF,
 animation, chunks, storage, log, ImGui's platform glue) and never refers to `Sandbox`; `sandbox/` holds what
 only this editor needs (its scenes, panels, search, shortcuts, saved state, undo, strings). Ask "would
 another app use this?": yes goes in the engine, no in the sandbox. Dependencies point one way, `sandbox` to
-`engine`; `autobattler/` is a second app on the same terms and uses nothing from `sandbox/`.
+`engine`. Other apps live in their own repositories and use this one as a Git submodule at `engine/` (the auto-battler,
+github.com/chromedays/autobattler; README.md, "Using the engine from another repository"); they use nothing from `sandbox/`, and
+nothing here refers to them. A change to the engine's API or its CMake functions (`nv_setup_executable`, `nv_add_version`) is one
+they have to follow.
 
 ## Build and run
 
@@ -105,10 +102,10 @@ which one (`--config`), and the executables are in a folder named after it:
 ```sh
 cmake -S . -B build-win -G "Visual Studio 18 2026" -A x64
 cmake --build build-win --config Release -j
-build-win\sandbox\Release\sandbox.exe      # or build-win\autobattler\Release\autobattler.exe; Debug\ for the Debug build
+build-win\sandbox\Release\sandbox.exe      # Debug\ for the Debug build
 ```
 
-The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run autobattler Release`, `just test`,
+The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run sandbox Release`, `just test`,
 `just script <file>`; `just` lists them, and each takes Debug by default.
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
@@ -188,7 +185,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
   stays behind the panel.
 - The sandbox's scenes are files (`sandbox/data/*.nvscene`, `docs/specs/scene_file.md`), listed in `sandbox/scenes.c`, read by
-  `sandbox/scene_file.c` (line-based text, `engine/text.c`, shared with the auto-battler); the first is built at start and the others when first shown, each into a
+  `sandbox/scene_file.c` (line-based text, `engine/text.c`); the first is built at start and the others when first shown, each into a
   `SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
   (Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
   and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of
@@ -280,7 +277,7 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   rects, rows, scroll, selection) for tests.
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
   (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
-  viewport's width; both executables draw it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+  viewport's width; every app draws it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
   `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
   makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
   (`Sandbox.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
@@ -353,37 +350,16 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model, under the `parent` it is given; call `nv_anim_init`
   first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so a generator keeps the characters it made.
-- There are two executables, `sandbox` (the engine's test ground, with an editor UI) and `autobattler` (`docs/specs/battle.md`), each with its own page.
-  `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])` packs the files a program reads
-  into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at `/assets`), `autobattler` only the
-  font folder and its `data/` (`PRELOAD`), and its own install `COMPONENT`. CI installs both builds of both executables into the
-  `engine-web` artifact (`release/`, `debug/`, `autobattler/release/`, `autobattler/debug/`); only the auto-battler's are published, on
-  the build dashboard. The sandbox has no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in
-  `<target>.debug.wasm`, which only browser developer tools download.
-- The build dashboard (`tools/dashboard/`, `docs/specs/build_dashboard.md`) shows the auto-battler's Release and Debug builds of master
-  and of every branch with an open pull request, from R2, and updates open pages live from GitHub's webhooks. CI's `publish` and
-  `publish-opened` jobs upload them (`tools/dashboard/publish.sh`); they skip with a notice while the secrets are unset. No secret is
-  written in the repository: tokens live only in GitHub Actions secrets and Worker secrets. Jobs that use secrets run only for this
-  repository's pushes and branches, never `pull_request_target`. Its state rules (`src/state.mjs`) are plain functions that
-  `tests/dashboard_test.mjs` runs; the Worker is tried with `wrangler dev` (`tools/dashboard/README.md`).
-- The auto-battler (`docs/specs/battle.md`): `battle.c` is the rules and reads no GPU, ImGui or clock, so `tests/battle_test.c` runs whole
-  rounds; the view (`battle_view.c`) steps it with `battle_tick` at a fixed 30 Hz and only reads it, changing it through `battle_place`,
-  `battle_remove`, `battle_start` and `battle_retry`. The rules (grid, round time, gravity and so on), the units, weapons and the
-  stage are one text file, `autobattler/data/default.abproj` (`docs/specs/abproj.md`), read by `defs_read_project` in `defs.c` (a bad
-  file blocks Start and is reported with its line). The panel opens, reloads and saves a local `.abproj` (`engine/local_file.h`;
-  abproj.md, "Loading and saving"): a good file is put in place by `game_load_project`, a bad one leaves the project in use, and Save
-  writes the kept text as it was read. The panel's Rules section edits that text in place, before a round only (`defs_rule_set`,
-  `game_set_rule`; abproj.md, "Editing the rules"): a change rewrites only that rule's values and is read whole, a bad one is refused. A new key goes in `defs.c`'s field tables and the spec's tables. The format stays at version 1 while it is in development
-  (abproj.md, "Versions"). A unit def is placed as a squad (`squad` units on `footprint` cells a side; battle.md, "Squads"), by its footprint's
-  corner nearest the grid's origin; a rule is read from `defs->rules`, never from a macro, and tests try the format only with text of their own, never
-  with the file's values. Its
-  viewport and its panel must not overlap (input that starts in the viewport skips ImGui). UI text goes through `T()`/`TL()` with rows in
-  `autobattler/strings.c`, like the sandbox's. Debug builds export `Module._battle_debug(n)`, `_battle_debug_deploy`, `_battle_debug_start`,
-  `_battle_debug_run`, `_battle_debug_set_speed`, `_battle_debug_step`, `_battle_debug_layout`, `_battle_debug_project`, `_battle_debug_load`,
-  `_battle_debug_project_action`, `_battle_debug_project_message`, `_battle_debug_set_rule`, `_battle_debug_project_text`, `_battle_debug_unit_roles`, `_battle_debug_set_role_filter` and `_battle_debug_load_test` for tests. Roles (`roles`) are for people sorting units: `battle.c` never reads them, so no round depends on them. A unit's `layer` (ground or air) and a weapon's `targets` decide what can hit what; air units fly at `altitude`, and a shell passes units whose layer its weapon cannot target. Speed controls change only
-  how many ticks a frame runs (the game clock), never the tick, and the effects take the same game clock's dt. Stepping back is `battle_seek` (a replay from the start, which
-  the deterministic rules make exact). A touch on a panel widget takes a few frames to
-  count as a tap: tests that touch buttons wait about two seconds.
+- The sandbox is this repository's executable. `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])`
+  packs the files a program reads into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at
+  `/assets`) and its `data/`. CI installs its Release and Debug builds into the `engine-web` artifact (`release/`, `debug/`). The sandbox has
+  no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
+  developer tools download.
+- `NV_BUILD_SANDBOX` and `NV_BUILD_TESTS` default to on only when this is the top-level project, so an app that adds the engine as a
+  subdirectory builds the engine alone. The functions an app calls find the engine's files through `CMAKE_CURRENT_FUNCTION_LIST_DIR`,
+  never `PROJECT_SOURCE_DIR` (the caller's project there), and the engine passes its parent the variables it needs (end of
+  `CMakeLists.txt`). `tests/strings_test.mjs` takes folders relative to this repository's root, and an app runs it on its own folder
+  (`strings_test.mjs ../src`), so keep that.
 
 ## Assets
 
@@ -408,8 +384,8 @@ There is no physical display in cloud sessions. Headless Chromium renders WebGPU
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
-`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds); `battle_test` reads the
-auto-battler's `autobattler/data/` directly.
+A touch on a panel widget takes a few frames to count as a tap: tests that touch buttons wait about two seconds.
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
 Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can
@@ -418,11 +394,10 @@ read and damage `/nv-save/state.nvs` (then `FS.syncfs(false, ...)`).
 ## Testing on Windows
 
 A Windows PC has a display and a GPU, so the native build is run as it is, and its Debug build can be driven by a script
-(`docs/specs/d3d12_port.md`, "Debug exports and native tests"): `sandbox.exe --script <file> --out <dir>` (and `autobattler.exe`)
+(`docs/specs/d3d12_port.md`, "Debug exports and native tests"): `sandbox.exe --script <file> --out <dir>`
 runs one command a line in the app's frames (`size`, `call <export> <numbers>`, `frames`, `screenshot`, `move`, `mouse`, `wheel`,
 `key`, `text`, `close`, `quit`; the sandbox adds `benchmark`; `engine/debug_script.h`) and exits with 1 when
-the log holds an error. `call` finds the debug exports in the table the app gives (`sandbox_debug_calls` in `sandbox/main.c`,
-`battle_debug_calls` in `autobattler/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
+the log holds an error. `call` finds the debug exports in the table the app gives (`sandbox_debug_calls` in `sandbox/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
 GPU-based validation, so a run with no `[d3d12]` message in its log is the native counterpart of "no WebGPU error";
 `NV_D3D12_VALIDATION=0` turns them off for a timed run, `NV_STORAGE_DIR` points the save at a folder (a run starts from empty storage)
 and `NV_LOCAL_FILE` answers the file dialogs. `ctest --test-dir build-win -C Debug` (or `-C Release`) runs the C tests (no Node: the `.mjs` tests run only where

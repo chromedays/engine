@@ -2,7 +2,7 @@
 
 #include "engine/base.h"
 
-// Reading line-based text files (docs/specs/abproj.md, "Syntax"): one statement per line, a key and its values separated by
+// Reading line-based text files (docs/specs/scene_file.md): one statement per line, a key and its values separated by
 // spaces, '#' comments, nesting by indentation with spaces. This is the shared part of the readers (the auto-battler's project
 // file); what the keys mean is the reader's. No GPU, so tests run it under Node.
 //
