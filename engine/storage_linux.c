@@ -22,7 +22,8 @@ internal void full_path(const char* name, char* out, umm capacity)
 
 internal void set_error(const char* what, const char* path)
 {
-    snprintf(last_error, sizeof(last_error), "%s %s", what, path);
+    // Bounded precisions: the error buffer is smaller than a full path, by design.
+    snprintf(last_error, sizeof(last_error), "%.40s %.100s", what, path);
     nv_log(NV_LOG_WARNING, "nv", "%s", last_error);
 }
 
