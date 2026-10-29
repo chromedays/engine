@@ -430,9 +430,9 @@ float는 같은 빌드 안에서 결정적이고 `sinf` 같은 libm 함수도 �
 
 ### 실행 파일
 
-- **페이지:** 기본 브랜치의 Release는 Pages의 `autobattler/release/`, Debug는 `autobattler/debug/`, 다른 브랜치의 Debug는
-  `autobattler/<branch>/`(`/`는 `-`가 된다). 샌드박스의 폴더(`release/`, `debug/`, `<branch>/`)는 그대로다. 샌드박스와 따로
-  내려받는다.
+- **페이지:** 기본 브랜치와 열린 PR이 있는 브랜치의 Release와 Debug가 빌드 대시보드에 올라간다(`docs/specs/build_dashboard.md`;
+  처음에는 Pages의 `autobattler/release/`, `autobattler/debug/`, `autobattler/<branch>/`였고 2026-10-29에 옮겼다). 샌드박스와
+  따로 내려받는다.
   - 루트 `CMakeLists.txt`에 `add_subdirectory(autobattler)`.
   - `nv_setup_executable`에 `PRELOAD <폴더>@<패키지 안 경로> ...` 인수를 더한다(`ASSETS <폴더>`는 `<폴더>@/assets`와 같다).
     게임은 정의 파일 폴더 `autobattler/data`를 `/data`에, 글꼴 폴더 `assets/fonts`만 `/assets/fonts`에 넣는다.
@@ -1029,9 +1029,9 @@ In a folder of its own, `autobattler/`, with its own executable, apart from the 
 
 ### Executable
 
-- **Page:** the default branch's Release at `autobattler/release/` on Pages and its Debug at `autobattler/debug/`; other
-  branches' Debug at `autobattler/<branch>/` (`/` becomes `-`). The sandbox's folders (`release/`, `debug/`, `<branch>/`)
-  stay as they are. Downloaded apart from the sandbox.
+- **Page:** the Release and Debug builds of the default branch and of every branch with an open pull request are on the build
+  dashboard (`docs/specs/build_dashboard.md`; at first on Pages at `autobattler/release/`, `autobattler/debug/` and
+  `autobattler/<branch>/`, moved 2026-10-29). Downloaded apart from the sandbox.
   - The root `CMakeLists.txt` gets `add_subdirectory(autobattler)`.
   - `nv_setup_executable` gets a `PRELOAD <dir>@<path in the package> ...` argument (`ASSETS <dir>` is `<dir>@/assets`). The game
     puts the definition folder `autobattler/data` at `/data` and only the font folder `assets/fonts` at `/assets/fonts`, not all of
