@@ -290,7 +290,7 @@ const STRINGS = {
     branches_h: "Builds",
     branches_note: "master first, then each pull request's branch, each with a Release and a Debug build. Deleting the branch removes its builds.",
     search: "Filter by pull request, branch or commit",
-    f_all: "All", f_open: "Open PR", f_work: "Not in master", f_merged: "In master",
+    f_all: "All", f_open: "master + open PRs", f_work: "Not in master", f_merged: "In master",
     sort: "Sort", s_newest: "Newest", s_name: "Name", s_size: "Size",
     ci_passed: "CI passed", ci_failed: "CI failed", ci_running: "Building",
     pr_open: "Open", pr_merged: "Merged", pr_closed: "Closed",
@@ -337,7 +337,7 @@ const STRINGS = {
     branches_h: "빌드",
     branches_note: "master가 먼저, 그다음 PR 브랜치마다 Release·Debug 빌드가 있습니다. 브랜치를 지우면 빌드도 지워집니다.",
     search: "PR, 브랜치, 커밋으로 찾기",
-    f_all: "전체", f_open: "열린 PR", f_work: "master에 없음", f_merged: "master에 있음",
+    f_all: "전체", f_open: "master + 열린 PR", f_work: "master에 없음", f_merged: "master에 있음",
     sort: "정렬", s_newest: "최신순", s_name: "이름순", s_size: "크기순",
     ci_passed: "CI 통과", ci_failed: "CI 실패", ci_running: "빌드 중",
     pr_open: "열림", pr_merged: "머지됨", pr_closed: "닫힘",
@@ -359,7 +359,7 @@ let savedLang = null;
 try { savedLang = localStorage.getItem("nv-builds-lang"); } catch (e) {}
 const state = {
   lang: savedLang in STRINGS ? savedLang : (navigator.language || "").startsWith("ko") ? "ko" : "en",
-  filter: "all", sort: "newest", query: "",
+  filter: "open", sort: "newest", query: "",
 };
 
 const $ = id => document.getElementById(id);
@@ -562,7 +562,7 @@ function cards() {
 
 function category({ b }) {
   const ahead = b.build ? b.build.ahead : null;
-  return { open: conn.state !== "down" && b.pr.state === "open", work: ahead !== 0, merged: ahead === 0 };
+  return { open: b.pr.state === "open", work: ahead !== 0, merged: ahead === 0 };
 }
 
 function renderBranches() {
@@ -572,9 +572,9 @@ function renderBranches() {
     return;
   }
   const all = cards();
-  const counts = { all: all.length + 1, open: 0, work: 0, merged: 0 };
+  const counts = { all: all.length + 1, open: 1, work: 0, merged: 0 };
   all.forEach(r => { const c = category(r); for (const k of ["open", "work", "merged"]) counts[k] += c[k] ? 1 : 0; });
-  $("filters").innerHTML = ["all", "open", "work", "merged"].map(f =>
+  $("filters").innerHTML = ["open", "all", "work", "merged"].map(f =>
     `<button type="button" id="filter-${f}" data-filter="${f}" aria-pressed="${state.filter === f}">${t("f_" + f)}<span class="n">${counts[f]}</span></button>`).join("");
 
   const q = state.query.trim().toLowerCase();
@@ -589,7 +589,8 @@ function renderBranches() {
   };
   shown.sort(by[state.sort]);
   const master = snap.branches[snap.defaultBranch];
-  const showMaster = state.filter === "all" && master
+  // master is part of the default view (master and the open pull requests) and of All.
+  const showMaster = (state.filter === "all" || state.filter === "open") && master
     && (!q || snap.defaultBranch.includes(q) || ((master.build || master.head || {}).subject || "").toLowerCase().includes(q));
 
   $("list").innerHTML = shown.length || showMaster ? (showMaster ? masterCard() : "") + shown.map(({ name, b }) => {
