@@ -150,7 +150,7 @@ endif()
 function(nv_add_shader name source out_header)
     set(dir "${PROJECT_BINARY_DIR}/shaders")
     set(header "${dir}/${name}_shader.h")
-    if(NV_WEB)
+    if(NV_WEB OR NV_LINUX)
         set(wgsl "${dir}/${name}.wgsl")
         set(checked "${dir}/${name}.tint.wgsl")
         set(commands

@@ -2551,6 +2551,16 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot)
     return (NvGpuReadback){.ok = 1, .bytes = readback->mapped, .size = readback->size};
 }
 
+// Not implemented on this backend yet (the headless Linux renderer is its first user): texture
+// readback on Windows arrives with the first Windows caller. Copying a texture into a readback
+// buffer is the shape it takes, as nv_gpu_debug_screenshot's does.
+b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture texture)
+{
+    (void)gpu, (void)slot, (void)texture;
+    NV_ASSERT(!"nv_gpu_copy_texture_for_readback is not implemented on the D3D12 backend");
+    return 0;
+}
+
 #if !defined(NDEBUG)
 void nv_gpu_debug_raise_error(NvGpu* gpu)
 {

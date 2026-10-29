@@ -25,6 +25,14 @@ if(NV_WEB)
         local_file_web.c
         storage_web.c
         window_web.c)
+elseif(NV_LINUX)
+    target_sources(nv PRIVATE
+        gpu_webgpu.c
+        image_linux.c
+        imgui_headless.c
+        local_file_linux.c
+        storage_linux.c
+        window_headless.c)
 else()
     target_sources(nv PRIVATE
         debug_script.c
@@ -54,6 +62,8 @@ target_include_directories(nv PUBLIC ${PROJECT_SOURCE_DIR})
 if(NV_WEB)
     # IDBFS keeps engine/storage.h's files in IndexedDB.
     target_link_options(nv PUBLIC -lidbfs.js)
+    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
+elseif(NV_LINUX)
     target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
 else()
     # The Agility SDK's headers come before the Windows SDK's, so they match the runtime the executables carry; the loader reads

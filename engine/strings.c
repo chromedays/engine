@@ -45,6 +45,18 @@ internal b32 system_is_korean(void)
 {
     return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_KOREAN;
 }
+#else
+#include <stdlib.h>
+#include <string.h>
+
+// Korean when the locale says so (LANG or LC_ALL, e.g. "ko_KR.UTF-8").
+internal b32 system_is_korean(void)
+{
+    const char* locale = getenv("LC_ALL");
+    if (!locale || !locale[0])
+        locale = getenv("LANG");
+    return locale && strncmp(locale, "ko", 2) == 0;
+}
 #endif
 
 NvLanguage nv_strings_language(void) { return language; }
