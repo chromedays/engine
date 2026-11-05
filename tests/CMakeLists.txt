@@ -30,16 +30,18 @@ if(NV_WEB)
     target_compile_options(gpu_format_test PRIVATE --use-port=emdawnwebgpu)
 endif()
 
-# The Korean UI strings: every wrapped English text has a row, and rows keep their printf conversions. The test is a Node script:
-# a build with no Node skips it (the web build's CI runs it).
+# Node scripts: the Korean UI strings (every wrapped English text has a row, and rows keep their printf conversions) and the
+# development server for web builds (tools/dev_server.mjs). A build with no Node skips them (the web build's CI runs them).
 if(NV_WEB)
     add_test(NAME strings_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox)
+    add_test(NAME dev_server_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/dev_server_test.mjs)
 else()
     find_program(NV_NODE node)
     if(NV_NODE)
         add_test(NAME strings_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/strings_test.mjs sandbox)
+        add_test(NAME dev_server_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/dev_server_test.mjs)
     else()
-        message(WARNING "No Node: strings_test and shader_layout_test are skipped (the web build's CI runs them)")
+        message(WARNING "No Node: strings_test, dev_server_test and shader_layout_test are skipped (the web build's CI runs them)")
     endif()
 endif()
 

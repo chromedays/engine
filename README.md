@@ -38,7 +38,7 @@ sandbox/             샌드박스: 쇼케이스 씬 (행성과 달, 검을 든 �
                      스트레스 씬의 Fire effects 워크로드)
 assets/              바이너리 에셋 (Git LFS)
 tests/               브라우저가 필요 없는 테스트 (Node에서 ctest로 실행)
-tools/               오프라인 에셋 스크립트
+tools/               오프라인 에셋 스크립트와 웹 빌드의 개발 서버(dev_server.mjs)
 web/                 HTML 페이지 템플릿
 docs/                코딩 표준과 기능 스펙
 ```
@@ -56,6 +56,13 @@ emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 python3 -m http.server -d build/sandbox 8000   # open http://localhost:8000/
 ctest --test-dir build --output-on-failure # tests/, run under Node
+```
+
+고치면서 볼 때는 `http.server` 대신 개발 서버를 쓴다(`docs/specs/dev_server.md`). 소스 파일을 저장하면 sandbox를 다시 빌드하고, 빌드가
+바뀌면 열린 페이지를 다시 불러온다. Emscripten SDK에 들어 있는 Node만 쓴다.
+
+```sh
+node tools/dev_server.mjs --build build --root build/sandbox   # open http://localhost:8000/
 ```
 
 페이지는 WebGPU가 있는 브라우저에서 (파일로 열지 말고) HTTP(S)로 제공해야 한다: 최신 Chrome/Edge, Safari 26+, 또는
@@ -135,7 +142,7 @@ sandbox/             the sandbox: scenes read from text files (sandbox/data/*.nv
                      and the stress scene's effects workload)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
-tools/               offline asset scripts
+tools/               offline asset scripts and the web builds' development server (dev_server.mjs)
 web/                 HTML page template
 docs/                coding standard and feature specs
 ```
@@ -153,6 +160,13 @@ emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 python3 -m http.server -d build/sandbox 8000   # open http://localhost:8000/
 ctest --test-dir build --output-on-failure # tests/, run under Node
+```
+
+While working on it, use the development server instead of `http.server` (`docs/specs/dev_server.md`): it rebuilds the sandbox when a
+source file is saved and reloads the open pages when the build changes. It needs only the Node that the Emscripten SDK brings.
+
+```sh
+node tools/dev_server.mjs --build build --root build/sandbox   # open http://localhost:8000/
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
