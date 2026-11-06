@@ -5,6 +5,8 @@
 
 ## 한국어
 
+참고 (2026-11-06): 아이콘 글꼴 Lucide를 UI 글꼴에 합친다("아이콘" 절). 아래 "범위 밖"의 아이콘 글꼴은 이것으로 바뀌었다.
+
 참고 (2026-10-03): UI 글꼴은 이제 Pretendard Regular 하나다(`assets/fonts/Pretendard-Regular.ttf`). 라틴과 한글 11,172
 음절이 모두 한 파일에 있어서, Inter, 한글 서브셋(`Hangul-Subset.ttf`), `tools/subset_hangul.sh`와 `nv_imgui_set_font`의
 폴백 인자는 없어졌다. 크기는 14 px 그대로다(두 글꼴의 세로 지표가 거의 같다). 아래의 Inter와 서브셋 이야기는 그 전의 설계다.
@@ -129,13 +131,35 @@ Dear ImGui 1.92 (우리가 빌드하는 버전)에는 동적 글꼴이 있다: T
 - 옛 글꼴의 픽셀 위치에 맞춰 쓴 Playwright 스크립트 (메뉴 항목, Reset 대화 상자의 버튼, Scene 트리의 행)는
   엉뚱한 곳을 클릭하므로 새 좌표가 필요하다; 샌드박스의 동작은 바뀌지 않았다.
 
+### 아이콘
+
+결정(2026-11-06): 버튼에 글자 대신 아이콘을 쓸 수 있게, 아이콘 글꼴을 UI 글꼴에 합친다. 후보는 Lucide(ISC, 2,191개, 선
+아이콘), Font Awesome 6 Free(글꼴 OFL, 아이콘 CC BY 4.0), 이 엔진의 그리기 목록으로 직접 그리기였고, 고른 것은 Lucide다.
+
+- **파일:** `assets/fonts/Lucide.ttf`(lucide-static 1.61.0의 `font/lucide.ttf`, 932 KB, gzip 약 430 KB)와
+  `assets/fonts/Lucide-LICENSE.txt`(ISC, Feather에서 온 아이콘의 MIT 포함). Git LFS(`*.ttf`). 서브셋은 하지 않는다: 아이콘을
+  더할 때마다 다시 자르는 도구가 필요 없게, Pretendard처럼 크기를 대가로 치른다.
+- **합치기:** `nv_imgui_load_ui_font`가 Pretendard 뒤에 Lucide를 `MergeMode`로 더한다(`nv_imgui_merge_icon_font`). Lucide의
+  글리프는 개인 영역(U+E000–U+F8FF)에 있는데 Pretendard에도 그 영역에 자기 글리프가 있고, ImGui는 앞선 소스의 글리프를 쓰므로,
+  `nv_imgui_set_font`는 그 영역을 빼고 더한다(`GlyphExcludeRanges`). 아이콘은 em을 어센더부터 채우므로 0.1 em 내려
+  (`GlyphOffset`) 옆 글자의 가운데에 맞춘다. ImGui는 오프셋을 기준 크기로 받으므로 UI 글꼴과 아이콘 글꼴 모두 14 px를 기준
+  크기로 더한다(그려지는 크기는 전처럼 스타일이 정한다). 아이콘 글꼴이 없거나 깨졌으면 경고만 하고, 아이콘은 빠진 글리프 상자다.
+- **이름:** `engine/icons.h`의 `NV_ICON_<이름>`(Lucide의 이름을 대문자로, `-`는 `_`: `NV_ICON_PLAY`, `NV_ICON_STEP_BACK`)이
+  UTF-8 문자열이라 어떤 ImGui 글자에도 쓴다(`NV_ICON_PLAY " Play"`). 머리 파일은 `tools/lucide_icons.mjs`가 같은 릴리스의
+  `codepoints.json`에서 만든다. Lucide의 코드 포인트는 릴리스마다 움직일 수 있으므로 글꼴과 머리 파일은 언제나 한 릴리스에서
+  함께 가져온다(스크립트 머리말의 순서).
+- **쓰는 법:** 아이콘만 있는 버튼은 툴팁(`igSetItemTooltip`, `T()`)으로 이름을 보인다.
+
 ### 범위 밖
 
 - 역할별 별도 글꼴 (나머지는 Inter인데 Console은 고정폭), 굵게와 기울임.
-- 사용자가 준 글꼴 파일, 아이콘 글꼴, 이모지.
+- 사용자가 준 글꼴 파일, 이모지. (아이콘 글꼴은 2026-11-06에 더했다: "아이콘" 절.)
 - FreeType 힌팅 (위, 견본이 요구할 때까지).
 
 ## English
+
+Note (2026-11-06): the Lucide icon font is merged into the UI font ("Icons"). The icon font under "Out of scope" below is
+superseded by it.
 
 Note (2026-10-03): the UI font is now Pretendard Regular alone (`assets/fonts/Pretendard-Regular.ttf`). Latin and all
 11,172 Hangul syllables are in one file, so Inter, the Hangul subset (`Hangul-Subset.ttf`), `tools/subset_hangul.sh` and the
@@ -275,8 +299,29 @@ Every phase is checked in Release and Debug in headless Chromium, the desktop UI
   dialog's buttons, rows of the Scene tree) click the wrong places and need new coordinates; the
   sandbox's behavior is unchanged.
 
+### Icons
+
+Decision (2026-11-06): an icon font is merged into the UI font, so buttons can show icons instead of words. The candidates were
+Lucide (ISC, 2,191 line icons), Font Awesome 6 Free (font OFL, icons CC BY 4.0) and drawing them with ImGui's draw lists; Lucide
+was chosen.
+
+- **Files:** `assets/fonts/Lucide.ttf` (`font/lucide.ttf` of lucide-static 1.61.0, 932 KB, about 430 KB gzipped) and
+  `assets/fonts/Lucide-LICENSE.txt` (ISC, with the MIT terms of the icons that came from Feather), in Git LFS (`*.ttf`). It is not
+  subset: as with Pretendard, its size is the price of needing no tool to cut it again whenever an icon is added.
+- **Merging:** `nv_imgui_load_ui_font` adds Lucide after Pretendard with `MergeMode` (`nv_imgui_merge_icon_font`). Lucide's
+  glyphs are in the private use area (U+E000 to U+F8FF), where Pretendard has glyphs of its own, and ImGui takes the earlier
+  source's glyph, so `nv_imgui_set_font` adds its font without that area (`GlyphExcludeRanges`). An icon fills the em from the
+  ascender, so it is lowered by a tenth of an em (`GlyphOffset`) to sit centered on the letters beside it. ImGui takes the offset
+  at a reference size, so the UI font and the icon font are both added at 14 px as their reference (the size drawn is still the
+  style's). A missing or bad icon font is a warning only, and icons are then the missing glyph's box.
+- **Names:** `NV_ICON_<name>` in `engine/icons.h` (Lucide's name upper-cased, `-` as `_`: `NV_ICON_PLAY`, `NV_ICON_STEP_BACK`)
+  is a UTF-8 string, so it goes in any ImGui text (`NV_ICON_PLAY " Play"`). `tools/lucide_icons.mjs` writes the header from the same
+  release's `codepoints.json`. Lucide's code points may move between releases, so the font and the header are always taken from one
+  release together (the steps at the top of the script).
+- **Use:** a button that is an icon alone names itself in a tooltip (`igSetItemTooltip`, `T()`).
+
 ### Out of scope
 
 - Separate fonts per role (a monospaced Console while the rest is Inter), bold and italic.
-- User-supplied font files, an icon font, and emoji.
+- User-supplied font files and emoji. (An icon font was added on 2026-11-06: "Icons".)
 - FreeType hinting (above, until the specimen asks for it).

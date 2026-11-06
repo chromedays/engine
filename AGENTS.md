@@ -23,7 +23,7 @@ build (x64, MSVC) draws through Direct3D 12 (`docs/specs/d3d12_port.md`). There 
 
 ```
 engine/                    each module's header and source side by side, included as <engine/name.h>:
-                           base.h (types, asserts, arenas), math.h, scene.c/.h, window.h, gpu.h (the GPU API: handles,
+                           base.h (types, asserts, arenas), math.h, icons.h (the icon font's NV_ICON_* strings; generated), scene.c/.h, window.h, gpu.h (the GPU API: handles,
                            buffers, textures, bind groups, pipelines, passes; no backend header; gpu_webgpu.c is its web backend and
                            the only file that calls WebGPU; gpu_d3d12.c is its Windows backend and the only file that calls D3D12), imgui.c/.h (Dear ImGui, ImGuizmo: drawing, previews),
                            renderer.c/.h (meshes, materials, skinning, debug lines),
@@ -56,7 +56,8 @@ sandbox/                   the sandbox (the engine's test ground): main.c (windo
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), sandbox.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
-                           assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
+                           assets/fonts/ holds the UI font (Pretendard: English and Korean in one file) and the icon font
+                           (Lucide, merged into it)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo) and dev_server.mjs (the web
                            builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
@@ -145,7 +146,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
   in `engine/imgui_web.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Pretendard
   Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
-  syllable, not ImGui's built-in one.
+  syllable, not ImGui's built-in one. The Lucide icons are merged into it: `NV_ICON_*` from `engine/icons.h` is a string that
+  draws the icon in any ImGui text, and a button that is an icon alone names itself in a tooltip. `engine/icons.h` is generated
+  (`tools/lucide_icons.mjs`) from the same Lucide release as the font; never edit it by hand.
 - The sandbox has two editor UIs, chosen once at start from the primary pointer (`Sandbox.ui_mode`; touch
   gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `sandbox_layout` fills
   `Sandbox.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top

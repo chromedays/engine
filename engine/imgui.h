@@ -163,13 +163,20 @@ typedef struct NvImgui {
 void nv_imgui_init(NvImgui* imgui, NvGpu* gpu, NvWindow* window, NvArena* arena);
 
 // Makes the TrueType font in `ttf` (`size` bytes, which must outlive the ImGui context) the font of
-// every window, at `pixel_size` CSS pixels (before the touch scale). Call before the first frame;
-// returns false, keeping the built-in font, if `ttf` is empty or no font.
+// every window, at `pixel_size` CSS pixels (before the touch scale). Its glyphs in the private use area (U+E000 to U+F8FF)
+// are left out, for an icon font merged after it. Call before the first frame; returns false, keeping the built-in font, if
+// `ttf` is empty or no font.
 b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size);
 
+// Merges the icon font in `ttf` (`size` bytes, kept as for nv_imgui_set_font) into the font nv_imgui_set_font set, so its
+// glyphs (in the private use area) draw in any text at the text's size. Call right after it; false if there is no font to
+// merge into, or `ttf` is empty or no font.
+b32 nv_imgui_merge_icon_font(NvImgui* imgui, void* ttf, u32 size);
+
 // The UI font (docs/specs/fonts.md): Pretendard Regular, which has both Latin (drawn after Inter) and all 11,172 Hangul
-// syllables, 14 px, read from /assets/fonts/ into `arena` for good, since ImGui keeps pointing at the bytes. A file that is
-// missing or no font is logged as a warning and the built-in font stays (false).
+// syllables, 14 px, with the Lucide icons merged in (engine/icons.h: NV_ICON_PLAY and the others), read from /assets/fonts/
+// into `arena` for good, since ImGui keeps pointing at the bytes. A missing or bad UI font is logged as a warning and the
+// built-in font stays (false); a missing or bad icon font is a warning only, and icons show as boxes.
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena);
 
 // Copies `text` into `out`, cut and ended with "..." if it is wider than `room` pixels. The cut is the longest one that fits

@@ -428,6 +428,10 @@ void nv_imgui_new_frame(NvImgui* imgui, f32 delta_seconds)
     igNewFrame();
 }
 
+// The Unicode private use area, where icon fonts put their glyphs. The UI font leaves it to them: ImGui takes a glyph from the
+// first of a font's sources that has it, and Pretendard has glyphs of its own there, which would hide a merged icon font's.
+global const ImWchar private_use_area[] = {0xE000, 0xF8FF, 0};
+
 b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
 {
     (void)imgui;
@@ -436,8 +440,10 @@ b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
     ImGuiIO* io = igGetIO_Nil();
     ImFontConfig* config = ImFontConfig_ImFontConfig();
     config->FontDataOwnedByAtlas = false; // the caller keeps the bytes
-    // Size 0: the font is dynamic, drawn at whatever size the style asks for.
-    ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, 0.0f, config, NULL);
+    config->GlyphExcludeRanges = private_use_area;
+    // The font is dynamic, drawn at whatever size the style asks for; `pixel_size` is only its reference size, which a merged
+    // font's GlyphOffset is given at (ImGui scales it to the size drawn).
+    ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, pixel_size, config, NULL);
     ImFontConfig_destroy(config);
     if (!font)
         return 0;
@@ -446,8 +452,28 @@ b32 nv_imgui_set_font(NvImgui* imgui, void* ttf, u32 size, f32 pixel_size)
     return 1;
 }
 
-#define UI_FONT_FILE "/assets/fonts/Pretendard-Regular.ttf"
-#define UI_FONT_SIZE 14.0f // CSS pixels, before the touch scale
+b32 nv_imgui_merge_icon_font(NvImgui* imgui, void* ttf, u32 size)
+{
+    (void)imgui;
+    ImGuiIO* io = igGetIO_Nil();
+    if (size == 0 || !io->FontDefault)
+        return 0;
+    ImFontConfig* config = ImFontConfig_ImFontConfig();
+    config->FontDataOwnedByAtlas = false;
+    config->MergeMode = true; // into the font added last: the UI font
+    // An icon fills the font's em from its ascender; this lowers it by a tenth of an em (at the UI font's reference size), so it
+    // sits centered on the letters beside it.
+    // ImGui wants an offset given at a reference size of the merged font's own: the UI font's, so the icons are not scaled.
+    f32 reference_size = igGetStyle()->FontSizeBase;
+    config->GlyphOffset.y = reference_size * 0.1f;
+    ImFont* font = ImFontAtlas_AddFontFromMemoryTTF(io->Fonts, ttf, (int)size, reference_size, config, NULL);
+    ImFontConfig_destroy(config);
+    return font != NULL;
+}
+
+#define UI_FONT_FILE   "/assets/fonts/Pretendard-Regular.ttf"
+#define ICON_FONT_FILE "/assets/fonts/Lucide.ttf"
+#define UI_FONT_SIZE   14.0f // CSS pixels, before the touch scale
 
 b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
 {
@@ -458,6 +484,10 @@ b32 nv_imgui_load_ui_font(NvImgui* imgui, NvArena* arena)
         nv_log(NV_LOG_WARNING, "imgui", "the UI font could not be loaded: using the built-in font");
         return 0;
     }
+    // Without the icons the text still draws; an icon is then the missing glyph's box.
+    NvFileData icons = nv_file_read(arena, ICON_FONT_FILE);
+    if (!icons.ok || !nv_imgui_merge_icon_font(imgui, icons.bytes, (u32)icons.size))
+        nv_log(NV_LOG_WARNING, "imgui", "the icon font %s could not be loaded: icons show as boxes", ICON_FONT_FILE);
     return 1;
 }
 
