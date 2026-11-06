@@ -57,7 +57,8 @@ sandbox/                   the sandbox (the engine's test ground): main.c (windo
                            multiple selection), sandbox.h (shared state)
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file)
-tools/                     offline asset scripts (run with npx; nothing installed into the repo)
+tools/                     offline asset scripts (run with npx; nothing installed into the repo) and dev_server.mjs (the web
+                           builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
@@ -85,6 +86,14 @@ install it with `apt-get install -y git-lfs && git lfs install --local && git lf
 emcmake cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 python3 -m http.server -d build/sandbox 8000   # then open http://localhost:8000/
+```
+
+While working on it, serve the page with the development server instead (`docs/specs/dev_server.md`): it rebuilds the sandbox when
+a source file is saved and reloads the open pages when the build changes. It uses only Node, which the Emscripten SDK brings; apps
+that use the engine run it as `node engine/tools/dev_server.mjs --build build`. It serves; CI and the dashboard never use it.
+
+```sh
+node tools/dev_server.mjs --build build --root build/sandbox   # http://localhost:8000/; --no-build only reloads
 ```
 
 The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOOLS_DIR`, by default under the build directory): Slang's
