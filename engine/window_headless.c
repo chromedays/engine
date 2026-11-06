@@ -69,6 +69,8 @@ f64 nv_time_seconds(void)
     return (f64)(now.tv_sec - first.tv_sec) + (f64)(now.tv_nsec - first.tv_nsec) / 1000000000.0;
 }
 
+global b32 quit_asked;
+
 void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void* userdata)
 {
     // Nothing ever hides: the callback is kept, as the header promises, and never called.
@@ -78,11 +80,16 @@ void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void*
 
 // NOTE: A deliberate break with this function's contract, which is to never return: headless a run
 // is a fixed number of frames (NV_HEADLESS_FRAMES, 300 by default), then control comes back so the
-// program can finish what it made and exit.
+// program can finish what it made and exit. nv_quit ends the run early, after the frame that asked.
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
     (void)window;
     u32 frames = size_from_env("NV_HEADLESS_FRAMES", 300);
-    for (u32 i = 0; i < frames; ++i)
+    for (u32 i = 0; i < frames && !quit_asked; ++i)
         frame(userdata);
+}
+
+void nv_quit(void)
+{
+    quit_asked = 1;
 }

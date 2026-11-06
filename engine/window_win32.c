@@ -259,6 +259,13 @@ void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
     }
 }
 
+void nv_quit(void)
+{
+    // Posted, so it is taken between frames: WM_CLOSE calls the hidden callback and destroys the window, and the loop exits on
+    // the WM_QUIT that follows (the close button's path).
+    PostMessageW(state.hwnd, WM_CLOSE, 0, 0);
+}
+
 b32 nv_window_win32_command_line_value(const char* option, char* out, umm capacity)
 {
     wchar_t wide_option[64];

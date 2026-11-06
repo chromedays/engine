@@ -22,6 +22,8 @@
              color: #ccc; font: 12px/1.4 ui-monospace, monospace; white-space: pre-wrap; word-break: break-all; }
     #copy { display: none; padding: 8px 14px; border: 0; border-radius: 4px; background: #2d5fa8; color: #fff; font: inherit; }
     #status.error #stack, #status.error #copy { display: block; }
+    #reload { display: none; margin: 12px auto 0; padding: 8px 14px; border: 0; border-radius: 4px; background: #2d5fa8; color: #fff; font: inherit; }
+    #status.ended #reload { display: block; }
   </style>
 </head>
 <body>
@@ -33,6 +35,7 @@
       <div id="detail"></div>
       <pre id="stack"></pre>
       <button id="copy" type="button">Copy</button>
+      <button id="reload" type="button" onclick="location.reload()">Reload</button>
     </div>
   </div>
   <script>
@@ -89,8 +92,17 @@
     // Right-dragging in the viewport pans the camera; keep the browser's context menu out of it.
     document.getElementById("canvas").addEventListener("contextmenu", (event) => event.preventDefault());
 
+    // The page address's options are the program's arguments (argv after the program name), as a command line would give them:
+    // each name as --name, then its value when it has one. ?editor is --editor; ?x=1&y is --x 1 --y.
+    const pageArguments = [];
+    for (const [name, value] of new URLSearchParams(location.search)) {
+      pageArguments.push("--" + name);
+      if (value) pageArguments.push(value);
+    }
+
     var Module = {
       canvas: document.getElementById("canvas"),
+      arguments: pageArguments,
       // For nv_window_download_text: which files are this page's own.
       nvTarget: target,
       nvLogQueue: [],
@@ -114,6 +126,11 @@
       onAbort: (what) => fail("The engine stopped: " + what),
       // Called by nv_window_run once loading is over.
       nvRunning: () => status.classList.add("hidden"),
+      // Called once the program ended (nv_quit): its frames have stopped, so the canvas would only show the last one.
+      nvEnded: () => {
+        fail("The program has ended. Reload the page to start it again.");
+        status.classList.add("ended");
+      },
     };
 
     // The page downloads the engine and its assets itself, so it can show one progress bar for

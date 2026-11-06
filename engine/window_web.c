@@ -107,9 +107,39 @@ EM_JS(void, js_notify_running, (void), {
     if (Module["nvRunning"]) Module["nvRunning"]();
 });
 
+// Tells the page that the program ended (nv_quit), so it can cover the canvas with a line that says so.
+EM_JS(void, js_notify_ended, (void), {
+    if (Module["nvEnded"]) Module["nvEnded"]();
+});
+
+// What nv_window_run runs each frame, and whether nv_quit asked for the end.
+global struct {
+    NvWindow* window;
+    NvFrameFn frame;
+    b32 quit;
+} run;
+
+// The app's frame, then the end if it asked for one: the loop is cancelled between frames, never inside one.
+internal void run_frame(void* userdata)
+{
+    run.frame(userdata);
+    if (!run.quit)
+        return;
+    if (run.window->on_hidden)
+        run.window->on_hidden(run.window->on_hidden_data);
+    emscripten_cancel_main_loop();
+    js_notify_ended();
+}
+
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
-    (void)window;
+    run.window = window;
+    run.frame = frame;
     js_notify_running();
-    emscripten_set_main_loop_arg(frame, userdata, 0, 1);
+    emscripten_set_main_loop_arg(run_frame, userdata, 0, 1);
+}
+
+void nv_quit(void)
+{
+    run.quit = 1;
 }
