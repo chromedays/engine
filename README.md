@@ -13,7 +13,7 @@ WebAssembly로 컴파일된다; WebGPU 호출은 Emscripten의 `emdawnwebgpu` �
 불러오고 스켈레탈 애니메이션은 [ozz-animation](https://github.com/guillaumeblanc/ozz-animation) 위에서 돈다. 캐릭터와
 애니메이션은 Quaternius의 CC0 팩이다 (`assets/quaternius/LICENSE.txt` 참고). UI 글꼴은 영어와 한국어를
 함께 그리는 [Pretendard](https://github.com/orioncactus/pretendard)이고, SIL Open Font License를 따른다
-(`assets/fonts/Pretendard-LICENSE.txt`).
+(`assets/fonts/Pretendard-LICENSE.txt`). 아이콘은 [Lucide](https://lucide.dev)이고 ISC License를 따른다(`assets/fonts/Lucide-LICENSE.txt`).
 
 샌드박스는 CI의 `engine-web` 아티팩트를 내려받아 로컬에서 띄운다. 이 엔진을 쓰는 오토배틀러는 별도 저장소
 [chromedays/autobattler](https://github.com/chromedays/autobattler)에 있고, 그 빌드는 [빌드 대시보드](https://nv-builds.haik0925.workers.dev)에서 볼 수 있다.
@@ -111,7 +111,8 @@ models load with [cgltf](https://github.com/jkuhlmann/cgltf) and skeletal animat
 [ozz-animation](https://github.com/guillaumeblanc/ozz-animation). The character and animations
 are Quaternius's CC0 packs (see `assets/quaternius/LICENSE.txt`). The UI font is
 [Pretendard](https://github.com/orioncactus/pretendard), which draws English and Korean, under the
-SIL Open Font License (`assets/fonts/Pretendard-LICENSE.txt`).
+SIL Open Font License (`assets/fonts/Pretendard-LICENSE.txt`). The icons are [Lucide](https://lucide.dev), under the ISC License
+(`assets/fonts/Lucide-LICENSE.txt`).
 
 The sandbox is run locally from CI's `engine-web` artifact. The auto-battler, which uses this engine, lives in its own repository,
 [chromedays/autobattler](https://github.com/chromedays/autobattler), and its builds are on the [build dashboard](https://nv-builds.haik0925.workers.dev).
