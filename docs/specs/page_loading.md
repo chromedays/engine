@@ -40,6 +40,16 @@ GitHub Pages는 모든 파일에 `Cache-Control: max-age=600`을 보낸다. 브�
 
 빌드 라벨의 내려받은 양(`nv_window_download_text`)은 Resource Timing의 경로로 찾으므로 쿼리 문자열과 상관없다.
 
+### 인수와 끝 (2026-11-06)
+
+- **인수:** 페이지 주소의 쿼리가 프로그램의 인수(`main`의 `argv`에서 프로그램 이름 다음)가 된다(`Module.arguments`). 명령줄처럼 이름마다
+  `--<이름>`, 값이 있으면 그 뒤에 값: `?editor`는 `--editor`, `?x=1&y`는 `--x 1 --y`. 그래서 앱은 웹과 Windows에서 같은 `argv`를 읽는다
+  (Windows 실행 파일은 콘솔 서브시스템이라 `argv`가 명령줄이다). 파일을 받을 때의 `?v=`는 파일 주소의 것이라 상관없다.
+- **끝:** 앱이 `nv_quit`(`engine/window.h`)을 부르면 그 프레임이 끝난 뒤 메인 루프가 멈추고(`emscripten_cancel_main_loop`), 페이지가 캔버스를
+  "The program has ended. Reload the page to start it again."과 Reload 버튼으로 덮는다(`Module.nvEnded`). 탭은 닫지 않는다. `exit()`는 쓰지
+  않는다: 메인 루프가 런타임을 살려 두므로 `exit()`는 부른 프레임에서 빠져나오기만 하고 다음 프레임이 그대로 돈다. 런타임을 끝내는
+  `emscripten_force_exit`도 쓰지 않는다: `EXIT_RUNTIME` 없는 빌드에서는 런타임을 끝내지 못하고 Debug 빌드에서 경고를 오류 출력에 남긴다.
+
 ### 바꾼 때의 한 번
 
 배포 직후에는 캐시에 남은 옛 `index.html`(최대 10분)이 새 형식의 매니페스트를 읽지 못해 실패할 수 있다. 다시 읽으면 된다. 형식을 바꾼
@@ -92,6 +102,19 @@ minutes after a deploy one file can be of the new build and another of the old o
 
 The build label's downloaded amount (`nv_window_download_text`) finds the files by their Resource Timing path, so the query string
 does not matter to it.
+
+### Arguments and the end (2026-11-06)
+
+- **Arguments:** the page address's query becomes the program's arguments (`main`'s `argv` after the program name;
+  `Module.arguments`). As on a command line, each name is `--<name>`, followed by its value when it has one: `?editor` is
+  `--editor`, `?x=1&y` is `--x 1 --y`. So an app reads the same `argv` on the web and on Windows (the Windows executable is a
+  console program, so its `argv` is the command line). The `?v=` of the file downloads belongs to the files' addresses and is
+  not affected.
+- **The end:** when the app calls `nv_quit` (`engine/window.h`), the main loop stops once that frame has ended
+  (`emscripten_cancel_main_loop`), and the page covers the canvas with "The program has ended. Reload the page to start it
+  again." and a Reload button (`Module.nvEnded`). The tab is not closed. `exit()` is not used: the main loop keeps the runtime
+  alive, so `exit()` only leaves the frame it is called in and the next frame runs as before. Nor is `emscripten_force_exit`,
+  which cannot end the runtime in a build without `EXIT_RUNTIME` and, in a Debug build, writes a warning to the error output.
 
 ### Once, at the change
 

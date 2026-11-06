@@ -71,3 +71,10 @@ typedef void (*NvFrameFn)(void* userdata);
 // IMPORTANT: Hands control to the browser's requestAnimationFrame loop (Windows: the message loop) and never returns, so any
 // state `frame` uses must not live on the caller's stack.
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata);
+
+// Ends the program once the frame that asks has run to its end, after calling the window's hidden callback
+// (nv_window_on_hidden) as a closing window does. Windows: the process exits with 0, as when the window is closed. The web: the
+// frame loop stops and the page covers the canvas with a line that says the program ended (a reload starts it again); the tab
+// stays, since closing it is the browser's. A plain exit() is not enough there: the frame loop keeps the runtime alive, so
+// exit() leaves only the frame it is called in and the next frame runs as before. Headless: nv_window_run returns.
+void nv_quit(void);
