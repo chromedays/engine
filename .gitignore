@@ -7,3 +7,4 @@ build-win*/
 build-debug/
 build-release/
 build-visual/
+build-linux/

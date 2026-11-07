@@ -125,8 +125,11 @@ build-win\sandbox\Release\sandbox.exe      # Debug\ for the Debug build
 ```
 
 The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run sandbox Release`, `just test`,
-`just script <file>`; `just` lists them, and each takes Debug by default. Its only non-Windows recipes are the Linux
-visual regression test's (`just visual`, `just visual-update-ref`; shell recipes, marked `[unix]`).
+`just script <file>`; `just` lists them, and each takes Debug by default. On Linux the same names are shell recipes marked
+`[linux]`: `just configure`, `just build`, `just test`, `just clean` (Ninja, a folder for each configuration:
+`build-linux/Debug`, `build-linux/Release`, with the downloaded tools in `build-linux/tools`); there is no `run` or `script`
+there yet, since Linux builds no sandbox. The Linux visual regression test has `just visual` and `just visual-update-ref`
+(marked `[unix]`).
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
 runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
