@@ -43,6 +43,7 @@
 just visual ─▶ cmake 구성/빌드 (build-visual, Debug, NV_LINUX_WINDOWED + NV_BUILD_VISUAL_TEST)
             ─▶ visual_test <out>     창을 열고 3프레임을 그리고 <out>/triangle.png를 쓴다
             ─▶ compare.mjs           odiff로 tests/visual/baseline/triangle.png와 비교한다
+                                     report.html/report.json을 쓰고 마지막 줄에 그 링크를 출력한다 (visual_report.md)
 just visual-update-ref ─▶ 같은 캡처 뒤 기준 그림을 덮어쓴다 (검토는 사람의 몫이다)
 ```
 
@@ -55,6 +56,7 @@ just visual-update-ref ─▶ 같은 캡처 뒤 기준 그림을 덮어쓴다 (�
 | `tests/visual/baseline/triangle.png` | 기준 그림. Git LFS (`*.png` 패턴이 이미 있다) |
 | `cmake/odiff.cmake` | odiff 고정 다운로드. `NV_ODIFF`가 있으면 그것을 쓴다 |
 | `tools/visual/compare.mjs` | odiff 실행, 합격 규칙 적용, 결과 출력 |
+| `tools/visual/report.mjs` | 결과 페이지(`report.html`, 그림을 안에 담은 파일 하나)와 `report.json`. `docs/specs/visual_report.md` |
 
 CMake 옵션 두 개를 더한다. 둘 다 기본은 꺼짐이라 기존 빌드는 달라지지 않는다.
 
@@ -106,7 +108,7 @@ CMake 옵션 두 개를 더한다. 둘 다 기본은 꺼짐이라 기존 빌드�
 - 크기가 다르면 무조건 실패다 (레이아웃 차이).
 - odiff 임계값(`--threshold`)은 0.05, 다른 픽셀이 전체의 0.1% 이하이면 합격이다.
   odiff는 다른 픽셀 수와 비율을 보고만 하므로, 비율 규칙은 `compare.mjs`가 출력을 읽어 적용한다.
-- diff 그림은 실제 그림 옆에 `<이름>.diff.png`로 남긴다. 실패 출력은 기준/실제/diff 세 경로를 말한다.
+- diff 그림은 실제 그림 옆에 `<이름>.diff.png`로 남긴다. 같은 픽셀은 흰색, 다른 픽셀은 빨강이다(odiff `--diff-overlay 1`, `visual_report.md`). 실패 출력은 기준/실제/diff 세 경로를 말한다.
 - 기준 그림이 없으면 실패하고 `just visual-update-ref`를 안내한다. 러너가 기준을 스스로 만들지 않는다.
 
 ### 결정성

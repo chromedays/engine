@@ -67,7 +67,9 @@ tools/                     offline asset scripts (run with npx; nothing installe
                            builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
 tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest;
                            tests/visual/ is the exception: the visual regression test's capture app and its baselines
-                           (docs/specs/visual_regression.md), run explicitly with `just visual`, never by ctest or CI
+                           (docs/specs/visual_regression.md), run explicitly with `just visual`, never by ctest or CI; it ends
+                           with a link to its result page, build-visual/visual-out/report.html (and report.json for scripts;
+                           tools/visual/report.mjs, docs/specs/visual_report.md)
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
                            build's version and file sizes for that page)
