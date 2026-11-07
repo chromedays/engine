@@ -36,6 +36,8 @@ global struct xdg_toplevel* wayland_toplevel;
 global b32 wayland_configured; // the first xdg_surface.configure was acked: buffers may follow
 global b32 close_asked;
 global b32 quit_asked;
+// The frame callback asked for with the last frame: NULL once the compositor answered (it wants the next frame).
+global struct wl_callback* frame_callback;
 global u32 framebuffer_width;
 global u32 framebuffer_height;
 
@@ -197,31 +199,65 @@ void nv_window_on_hidden(NvWindow* window, void (*hidden)(void* userdata), void*
     window->on_hidden_data = userdata;
 }
 
-// One non-blocking turn of the compositor's event queue: the close event is all that is read.
-internal void pump_events(void)
+// One turn of the compositor's event queue, waiting up to `timeout_ms` for an event (0: not at all).
+internal void pump_events(int timeout_ms)
 {
     while (wl_display_prepare_read(wayland_display) != 0)
         wl_display_dispatch_pending(wayland_display);
     wl_display_flush(wayland_display);
     struct pollfd polled = {.fd = wl_display_get_fd(wayland_display), .events = POLLIN};
-    if (poll(&polled, 1, 0) > 0 && (polled.revents & POLLIN))
+    if (poll(&polled, 1, timeout_ms) > 0 && (polled.revents & POLLIN))
         wl_display_read_events(wayland_display);
     else
         wl_display_cancel_read(wayland_display);
     wl_display_dispatch_pending(wayland_display);
 }
 
+internal void frame_done(void* data, struct wl_callback* callback, u32 time)
+{
+    (void)data, (void)time;
+    wl_callback_destroy(callback);
+    frame_callback = NULL;
+}
+
+global const struct wl_callback_listener frame_listener = {frame_done};
+
+// How long a frame waits for the compositor's frame callback before it is drawn anyway. NOTE: A compositor sends none to a window
+// that is covered or hidden; without this, such a window would draw nothing more, and a program that needs its frames (the visual
+// test, opened behind a fullscreen window) would never end. The present cannot block meanwhile: it is Mailbox (gpu_webgpu.c).
+#define FRAME_WAIT_SECONDS 1.0
+
 // NOTE: The headless backend's break with this function's contract, which is to never return:
 // the loop runs until nv_quit or the window's close, then control comes back so the program can
 // finish what it made and exit with its own code.
+//
+// Each frame asks the compositor for a frame callback and the next frame waits for it, reading events meanwhile, so the frames
+// keep the compositor's pace and a close or a key is read whether or not the window is shown.
 void nv_window_run(NvWindow* window, NvFrameFn frame, void* userdata)
 {
+    f64 asked_at = 0.0;
     while (!quit_asked && !close_asked) {
-        pump_events();
+        pump_events(0);
+        while (frame_callback && !quit_asked && !close_asked) {
+            f64 left = FRAME_WAIT_SECONDS - (nv_time_seconds() - asked_at);
+            if (left <= 0.0)
+                break;
+            pump_events((int)(left * 1000.0) + 1);
+        }
         if (quit_asked || close_asked)
             break;
+        if (frame_callback) { // not answered: the window is covered or hidden
+            wl_callback_destroy(frame_callback);
+            frame_callback = NULL;
+        }
+        // Asked before the frame, so the present's commit carries it; the commit after it carries it when the frame presented
+        // nothing (a commit with nothing else pending changes nothing).
+        frame_callback = wl_surface_frame(wayland_surface);
+        wl_callback_add_listener(frame_callback, &frame_listener, NULL);
+        asked_at = nv_time_seconds();
         frame(userdata);
-        wl_display_flush(wayland_display); // the present's commit is in the queue: send it now
+        wl_surface_commit(wayland_surface);
+        wl_display_flush(wayland_display);
     }
     if (window->on_hidden)
         window->on_hidden(window->on_hidden_data);

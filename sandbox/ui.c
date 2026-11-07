@@ -477,7 +477,7 @@ void ui_inspector_tab(Sandbox* sandbox)
         }
     }
     if (search_row(sandbox, "Position", "transform move translate"))
-        igDragFloat3(TL("Position"), &node->position.x, 0.02f, 0.0f, 0.0f, "%.2f", 0);
+        igDragFloat3(TL("Position"), (f32*)&node->position, 0.02f, 0.0f, 0.0f, "%.2f", 0);
     // Rotation as pitch (X), yaw (Y) and roll (Z) in degrees; the quaternion is only rewritten when
     // edited, so looking at a node never changes it.
     if (search_row(sandbox, "Rotation", "transform euler pitch yaw roll")) {
@@ -492,7 +492,7 @@ void ui_inspector_tab(Sandbox* sandbox)
             node->rotation = nv_quat_from_euler(nv_vec3(degrees[0] * NV_PI / 180.0f, degrees[1] * NV_PI / 180.0f, degrees[2] * NV_PI / 180.0f));
     }
     if (search_row(sandbox, "Scale", "transform size"))
-        igDragFloat3(TL("Scale"), &node->scale.x, 0.01f, 0.01f, 100.0f, "%.2f", 0);
+        igDragFloat3(TL("Scale"), (f32*)&node->scale, 0.01f, 0.01f, 100.0f, "%.2f", 0);
 
     // A node with a mesh of its own can be hidden, and then has none for the scene: its runtime remembers it.
     NodeRuntime* runtime = doc_node(doc, view->selected);
@@ -524,7 +524,7 @@ void ui_inspector_tab(Sandbox* sandbox)
     if (node->light.type) {
         search_section(sandbox, "Light");
         if (search_row(sandbox, "Color##light", "light"))
-            igColorEdit3(TL("Color##light"), &node->light.color.x, ImGuiColorEditFlags_Float);
+            igColorEdit3(TL("Color##light"), (f32*)&node->light.color, ImGuiColorEditFlags_Float);
         if (search_row(sandbox, "Intensity", "light brightness"))
             igSliderFloat(TL("Intensity"), &node->light.intensity, 0.0f, 3.0f, "%.2f", 0);
     }

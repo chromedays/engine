@@ -191,6 +191,7 @@ internal u32 pool_take(Pool* pool, u32* generation)
 // The slot of a handle that is live: asserts on a null, released or reused handle.
 internal void* pool_item(const Pool* pool, u32 index, u32 generation)
 {
+    (void)generation; // read by the asserts only, which a Release build leaves out
     NV_ASSERT(index > 0 && index < pool->top);
     NV_ASSERT(pool->generations[index] == generation && (generation & 1));
     return pool->items + (umm)index * pool->item_size;
@@ -231,6 +232,7 @@ typedef struct Readback {
 } Readback;
 
 typedef struct Backend {
+    WGPUPresentMode present_mode; // the surface's: Fifo, or on Linux Mailbox when it is offered (configure_surface)
     NvGpu* gpu;
     WGPUInstance instance;
     WGPUSurface surface;
@@ -414,11 +416,12 @@ internal void configure_surface(NvGpu* gpu)
     config.width = gpu->width;
     config.height = gpu->height;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
-    config.presentMode = WGPUPresentMode_Fifo;
+    config.presentMode = backend.present_mode;
     wgpuSurfaceConfigure(backend.surface, &config);
     // The scene and the UI draw straight into the swapchain's view: there is no offscreen color buffer.
-    nv_log(NV_LOG_INFO, "nv", "swapchain and color target: %ux%u, canvas format %s, render view %s, present mode Fifo (vsync)",
-           gpu->width, gpu->height, nv_gpu_format_name(gpu->config_format), nv_gpu_format_name(gpu->surface_format));
+    nv_log(NV_LOG_INFO, "nv", "swapchain and color target: %ux%u, canvas format %s, render view %s, present mode %s",
+           gpu->width, gpu->height, nv_gpu_format_name(gpu->config_format), nv_gpu_format_name(gpu->surface_format),
+           backend.present_mode == WGPUPresentMode_Mailbox ? "Mailbox (paced by the compositor's frame callbacks)" : "Fifo (vsync)");
 }
 
 internal const char* adapter_backend_name(WGPUBackendType type)
@@ -611,6 +614,17 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         }
     }
     gpu->surface_format = srgb_view_format(gpu->config_format);
+    // Fifo waits in the present for the compositor to take the frame, and a Wayland compositor takes none from a window that is
+    // covered or hidden, so a Fifo present there would never return (the loop could not even read the close). Mailbox replaces the
+    // waiting frame instead; the window paces the frames with the compositor's frame callbacks (window_linux.c). The web offers Fifo
+    // only, and keeps it.
+    backend.present_mode = WGPUPresentMode_Fifo;
+#if NV_PLATFORM_LINUX
+    for (umm i = 0; i < caps.presentModeCount; ++i) {
+        if (caps.presentModes[i] == WGPUPresentMode_Mailbox)
+            backend.present_mode = WGPUPresentMode_Mailbox;
+    }
+#endif
     wgpuSurfaceCapabilitiesFreeMembers(caps);
     if (gpu->config_format == NV_GPU_FORMAT_NONE) {
         nv_log(NV_LOG_ERROR, "nv", "canvas format is not one nv uses");

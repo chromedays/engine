@@ -67,6 +67,7 @@ AGENTS.md의 "Third-party libraries" 규칙에 따라 후보를 비교했다. �
 | 적용 | `nv_window_framebuffer_size`가 새 크기를 돌려주면 `gpu_webgpu.c`가 이미 서피스를 다시 구성한다(`nv_gpu_begin_frame`). 버퍼 배율은 그 프레임의 present가 하는 commit에 함께 실린다 |
 | 숨김 콜백 | 웹과 Windows처럼 저장할 마지막 기회다. toplevel이 `activated` 상태를 잃을 때(Windows의 `WM_ACTIVATEAPP`), `suspended` 상태가 될 때(`xdg_wm_base` v6: 다른 작업 공간, 최소화), 닫힐 때 부른다 |
 | suspended | 그리지 않고 이벤트를 기다린다(`poll`을 막히게). Windows의 최소화와 같다 |
+| 프레임 속도 | 단계 1에서 했다. 프레임마다 `wl_surface.frame`을 요청하고, 다음 프레임은 컴포지터가 답할 때까지 이벤트를 읽으며 기다린다. 1초 안에 답이 없으면(창이 가려졌거나 숨었다) 그래도 그린다. present 모드는 서피스가 주면 Mailbox, 아니면 Fifo다(`gpu_webgpu.c`). NOTE: Fifo의 present는 컴포지터가 프레임을 가져가기를 기다리는데, 가려진 창에서는 가져가지 않아 영영 돌아오지 않았다("찾은 것") |
 | 루프와 닫기 | 지금처럼 `xdg_toplevel.close`나 `nv_quit` 뒤에 `nv_window_run`이 돌아오고, 숨김 콜백을 부른다. 샌드박스의 `main`은 그 뒤 `return 0`이다 |
 
 창 코드는 입력을 모른다. `imgui_linux.c`에는 지금처럼 `nv_window_linux_wayland`로 `wl_display`와 `wl_surface`만 준다.
@@ -96,7 +97,7 @@ Wayland는 객체마다 리스너를 따로 달 수 있어서 창과 입력 사�
 | 무엇 | 어떻게 |
 |---|---|
 | 빌드 | Linux 창 빌드에서는 `NV_BUILD_SANDBOX`를 끄지 않는다(최상위 프로젝트일 때 기본 켬, 다른 플랫폼과 같다). 헤드리스 빌드에서는 지금처럼 끈다. `NV_BUILD_TESTS`는 이미 켜져 있다(다른 플랫폼과 같다) |
-| 에셋 경로 | `file.c`의 `nv_file_resolve_path`가 맨 앞의 `/`를 실행 파일 폴더로 바꾼다(`readlink("/proc/self/exe")`). Windows 분기와 같은 규칙이다 |
+| 에셋 경로 | `file.c`의 `nv_file_resolve_path`: `/`로 시작하는 경로는 먼저 실행 파일 폴더(`readlink("/proc/self/exe")`) 밑에서 찾고, 거기 있으면 그것을, 없으면 주어진 그대로 쓴다. NOTE: Windows는 맨 앞의 `/`를 언제나 실행 파일 폴더로 바꾸지만, Linux에서는 진짜 절대 경로도 `/`로 시작한다(저장 폴더, 테스트가 읽는 저장소 안의 파일). 웹의 `/assets`, `/data`는 실행 파일 옆에 있으므로 먼저 찾아진다 |
 | 저장 | `$XDG_DATA_HOME/nv/<target>/`, 없으면 `~/.local/share/nv/<target>/`(합의함, 2026-11-07). `<target>`은 실행 파일 이름이다(Windows의 `%LOCALAPPDATA%\nv\<target>\`). `NV_STORAGE_DIR`는 Windows와 같은 뜻이다(테스트가 빈 저장에서 시작). `~/.local/state`(`$XDG_STATE_HOME`)도 보았으나, 저장에는 편집 상태만이 아니라 씬을 편집한 내용이 들어 있어 데이터 쪽이 맞다 |
 | 다시 시작 | `nv_storage_flush_then_reload`는 Windows처럼 자기 자신을 다시 실행한다(`/proc/self/exe`를 같은 인자로 `execv`) |
 | 이미지 | 했다(`image_decoding.md`): `image_linux.c`가 stb_image로 디코딩하고, stb의 할당은 모두 호출자의 아레나에서 한다. 샌드박스의 scratch 아레나(128 MB)에 chess.glb와 함께 들어간다 |
@@ -153,7 +154,7 @@ Linux에는 자동으로 입력을 넣을 수단이 없다(Wayland는 다른 앱
 
 | 위험 | 대응 |
 |---|---|
-| Dawn(Vulkan)의 FIFO present가 창이 보이지 않을 때(다른 작업 공간) 막힐 수 있다 | suspended 동안에는 그리지 않는다. 그래도 막히면 "찾은 것"에 적고 present 모드를 본다 |
+| Dawn(Vulkan)의 FIFO present가 창이 보이지 않을 때 막힌다 | 실제로 일어났다(단계 1, "찾은 것"). Mailbox와 frame callback으로 고쳤다("창"의 "프레임 속도") |
 | 컴포지터마다 다르다(GNOME에는 서버 장식이 없어 제목 표시줄이 없다) | 코어와 xdg-shell만 쓰므로 차이가 작다. 확인은 개발 PC의 Hyprland에서만 한다 |
 | 손으로만 확인해서 회귀를 놓친다 | 단계마다 확인 목록을 "찾은 것"에 남긴다. 입력이 없는 부분은 ctest와 `just visual`이 지킨다 |
 
@@ -163,4 +164,19 @@ Linux에는 자동으로 입력을 넣을 수단이 없다(Wayland는 다른 앱
 
 ### 찾은 것
 
-없음.
+#### 단계 1 (2026-11-07)
+
+- **경로:** Linux에서는 진짜 절대 경로도 `/`로 시작하므로, Windows처럼 맨 앞의 `/`를 언제나 실행 파일 폴더로 바꾸면 저장 파일과
+  테스트(`file_test`, `scene_file_test`)의 경로가 깨진다. 그래서 실행 파일 옆에서 먼저 찾고, 없으면 주어진 그대로 쓴다("에셋 경로").
+- **가려진 창에서 멈춘다:** 편집기가 전체 화면인 작업 공간에 샌드박스가 그 뒤로 열렸다. 몇 프레임 뒤 Fifo의 present가 드라이버 안에서
+  돌아오지 않았다(`drm_syncobj_array_wait_timeout`, 20초 넘게). 프레임 루프가 멈추므로 이벤트도 읽지 못한다. `visual_test`는 3프레임만
+  그려서 걸리지 않았다. Mailbox와 frame callback으로 고친 뒤 같은 자리에서 돌린 샌드박스는 `poll`에서 기다리며 계속 돌았고, `visual_test`도
+  1초에 합격했다.
+- **GCC가 처음 컴파일한 샌드박스의 경고:** `sandbox/ui.c`의 `igDragFloat3`/`igColorEdit3`에 `&v.x`(4바이트)를 넘기는 것을 12바이트
+  읽기로 경고해 `(f32*)&v`로 바꿨다. `sandbox/save.c`는 64바이트 이름을 32바이트 칸에 복사하는 것을 경고해, 칸에 들어가지 않는
+  이름(장면 ID보다 길어 클립일 수 없다)은 알 수 없는 클립처럼 버린다. `engine/storage_linux.c`의 `full_path`는 잘린 경로가 다른 파일을
+  가리키지 않도록 들어가지 않으면 실패한다. `engine/gpu_webgpu.c`의 `pool_item`은 Release에서 쓰지 않는 인자를 `(void)`로 밝힌다.
+- **확인:** Linux Debug와 Release가 우리 코드의 경고 없이 빌드되고 ctest 15개가 통과한다. `just visual` 합격. Debug 샌드박스가
+  `NV_STORAGE_DIR`의 폴더에 `state.nvs`를 쓰고, 로그에 경고와 오류가 없다(씬 파일과 UI 글꼴을 읽었다).
+- **확인하지 못한 것:** 그림(사용자가 본다). 컴포지터의 닫기로 끝나는 길: Hyprland 0.56의 `hyprctl dispatch`는 Lua 문법이고, 인자 없는
+  `hl.dsp.window.close()`는 포커스된 창을 닫으므로 다른 창을 닫을 위험이 있어 쓰지 않았다(창 고르는 인자의 형식은 확인하지 못했다).
