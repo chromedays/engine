@@ -4,3 +4,5 @@ compile_commands.json
 dist/
 .shader-tools/
 build-win*/
+build-debug/
+build-release/
