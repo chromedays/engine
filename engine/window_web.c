@@ -61,15 +61,6 @@ void nv_window_download_text(char* out, umm capacity)
         snprintf(out, capacity, "%.1f MB from cache", unpacked / mb);
 }
 
-EM_JS(int, js_is_mac, (void), {
-    return /Mac|iPhone|iPad/.test(navigator.platform) ? 1 : 0;
-});
-
-b32 nv_window_is_mac(void)
-{
-    return js_is_mac();
-}
-
 EM_JS_DEPS(nv_window, "$stringToUTF8");
 
 EM_JS(void, js_user_agent, (char* out, int size), {

@@ -38,7 +38,7 @@ Ctrl+S가 브라우저의 "페이지 저장" 대화 상자를 연다.
 | 반복 | Undo와 Redo만 누르고 있는 동안 반복한다; 나머지는 누를 때마다 한 번 발동한다 |
 | 브라우저 자체 키 | 엔진에 모든 keydown에서 묻는 훅 `NvImgui.claims_key(data, key, mods)`가 생긴다: 그것이 예라고 하면 ImGui가 키보드를 원하지 않아도 `on_key`가 이벤트를 소비한다 (`preventDefault`). 샌드박스가 표로 답하므로, Ctrl+S는 웹 페이지가 아니라 샌드박스를 저장한다. 브라우저가 페이지에 결코 주지 않는 키는 바인딩하지 않는다: Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab, Ctrl+Shift+W/T/N, Ctrl+1–Ctrl+9, Ctrl+Q, F11. 새로고침 (F5, Ctrl+R)과 개발자 도구 (F12, Ctrl+Shift+I)는 일부러 브라우저에 남긴다 |
 | 위치로 키 | 글자는 `imgui.c`가 이미 읽듯 물리적 위치 (`KeyboardEvent.code`)로 맞추므로, W, E, R은 어떤 배열에서든 함께 있다. 라벨은 US 배열의 키를 이름 붙인다. `?`도 위치로 Shift+Slash다 |
-| macOS | Cmd는 이미 Ctrl로 도착한다 (`imgui.c`). 라벨은 macOS (`navigator.platform`으로)에서 "Ctrl" 대신 "Cmd"라고 하며, 기본 글꼴에 ⌘ 글리프가 없으므로 글자로 쓴다 |
+| macOS | 지원하지 않는다. 라벨은 어디서나 "Ctrl"이다. 브라우저의 Cmd는 Ctrl로 도착하므로(`imgui_web.c`) Mac의 브라우저에서도 키는 동작한다 |
 | 도움말 | **Help > Keyboard shortcuts**와 `?` 키가 모든 행을 그룹별로, 키와 함께, 적용되지 않는 동안은 회색으로 나열하는 창을 연다. Escape나 창의 닫기 버튼이 닫는다 |
 | 테스트 | Debug 빌드는 기존 `_sandbox_debug_playing`, `_sandbox_debug_view`, `_sandbox_debug_undo_done` 옆에 `Module._sandbox_debug_gizmo(n)` (0 작업, 1 로컬, 2 스냅), `_sandbox_debug_docks_shown(n)`, `_sandbox_debug_selected()`를 export한다. Playwright가 키를 누르고 그것들을 확인하며, 자체 리스너로 가져온 키의 `defaultPrevented`를 확인한다 |
 | 서드파티 | 없음 |
@@ -158,7 +158,7 @@ Recommendation: our table, fired through `igShortcut_Nil`. No third-party librar
 | Repeat | Only Undo and Redo repeat while held; everything else fires once per press |
 | The browser's own keys | The engine gains a hook, `NvImgui.claims_key(data, key, mods)`, asked on every keydown: when it says yes, `on_key` consumes the event (`preventDefault`) even though ImGui does not want the keyboard. The sandbox answers from the table, so Ctrl+S saves the sandbox and not the web page. Keys a browser never gives to a page are never bound: Ctrl+W, Ctrl+T, Ctrl+N, Ctrl+Tab, Ctrl+Shift+W/T/N, Ctrl+1 to Ctrl+9, Ctrl+Q, F11. Reload (F5, Ctrl+R) and developer tools (F12, Ctrl+Shift+I) are left to the browser on purpose |
 | Keys by position | Letters are matched by physical position (`KeyboardEvent.code`), as `imgui.c` already reads them, so W, E and R sit together on any layout. Labels name the US-layout key. `?` is Shift+Slash by position too |
-| macOS | Cmd already arrives as Ctrl (`imgui.c`). Labels say "Cmd" instead of "Ctrl" on macOS (from `navigator.platform`), spelled out since the default font has no ⌘ glyph |
+| macOS | Not supported. Labels say "Ctrl" everywhere. A browser's Cmd arrives as Ctrl (`imgui_web.c`), so the keys still work in a browser on a Mac |
 | Help | **Help > Keyboard shortcuts** and the `?` key open a window listing every row by group, with its keys, greyed while it does not apply. Escape or the window's close button closes it |
 | Tests | Debug builds export `Module._sandbox_debug_gizmo(n)` (0 operation, 1 local, 2 snap), `_sandbox_debug_docks_shown(n)` and `_sandbox_debug_selected()`, beside the existing `_sandbox_debug_playing`, `_sandbox_debug_view` and `_sandbox_debug_undo_done`. Playwright presses the keys and checks those, and checks `defaultPrevented` on a claimed key with a listener of its own |
 | Third-party | None |

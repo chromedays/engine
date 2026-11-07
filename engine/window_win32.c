@@ -183,11 +183,6 @@ void nv_window_download_text(char* out, umm capacity)
     out[0] = 0; // nothing was downloaded: the files are on the disk
 }
 
-b32 nv_window_is_mac(void)
-{
-    return 0;
-}
-
 // Windows 10.0.<build>, as the system says it (a manifest without the newest "supported OS" would make GetVersionEx lie).
 internal b32 windows_build(u32* build)
 {

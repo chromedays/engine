@@ -45,11 +45,6 @@ void nv_window_download_text(char* out, umm capacity)
         out[0] = 0; // nothing was downloaded: the executable is the program
 }
 
-b32 nv_window_is_mac(void)
-{
-    return 0;
-}
-
 void nv_window_system_text(char* out, umm capacity)
 {
     struct utsname name;

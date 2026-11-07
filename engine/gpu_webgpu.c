@@ -1,6 +1,10 @@
 #include "engine/gpu.h"
+#include "engine/image.h"
 #include "engine/log.h"
 #include "engine/window.h"
+#if defined(NV_LINUX_WINDOWED)
+#include "engine/window_linux.h"
+#endif
 
 #if NV_PLATFORM_WEB
 #include <emscripten/emscripten.h>
@@ -86,7 +90,8 @@ internal WGPUTextureFormat wgpu_format(NvGpuFormat format)
     }
 }
 
-#if NV_PLATFORM_WEB
+#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
+// Both surface builds (the page's canvas, the Wayland window) read the surface's formats back.
 internal NvGpuFormat format_from_wgpu(WGPUTextureFormat format)
 {
     switch (format) {
@@ -251,6 +256,15 @@ typedef struct Backend {
 
     Readback readbacks[NV_GPU_MAX_READBACKS];
 
+#if NV_DEBUG && NV_PLATFORM_LINUX
+    // A screenshot asked for (nv_gpu_debug_screenshot), taken by the frame it was asked in.
+    b32 screenshot_pending;
+    char screenshot_path[520];
+    u32 screenshot_x, screenshot_y, screenshot_width, screenshot_height;
+    u32 screenshot_pitch; // the readback buffer's rows, 256 bytes apart as a copy asks
+    WGPUBuffer screenshot_buffer;
+#endif
+
     // The shader modules made so far, by the code they were made from.
     const char* module_codes[16];
     WGPUShaderModule modules[16];
@@ -363,7 +377,7 @@ internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter
 }
 
 
-#if NV_PLATFORM_WEB
+#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
 internal NvGpuFormat srgb_view_format(NvGpuFormat format)
 {
     switch (format) {
@@ -378,7 +392,7 @@ internal void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
-#if NV_PLATFORM_LINUX
+#if NV_PLATFORM_LINUX && !defined(NV_LINUX_WINDOWED)
     // Headless there is no surface to configure: the frame's texture is made in nv_gpu_begin_frame.
     nv_log(NV_LOG_INFO, "nv", "headless color target: %ux%u, format %s (offscreen texture, no surface)",
            gpu->width, gpu->height, nv_gpu_format_name(gpu->surface_format));
@@ -394,6 +408,9 @@ internal void configure_surface(NvGpu* gpu)
         config.viewFormats = &view_format;
     }
     config.usage = WGPUTextureUsage_RenderAttachment;
+#if defined(NV_LINUX_WINDOWED) && NV_DEBUG
+    config.usage |= WGPUTextureUsage_CopySrc; // the debug screenshot copies the canvas before present
+#endif
     config.width = gpu->width;
     config.height = gpu->height;
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
@@ -482,7 +499,11 @@ internal void log_system(NvGpu* gpu)
            gpu->width, gpu->height);
 #else
     (void)screen_width, (void)screen_height, (void)ratio;
+#if defined(NV_LINUX_WINDOWED)
+    nv_log(NV_LOG_INFO, "nv", "display: Wayland window, framebuffer %ux%u pixels (fixed)", gpu->width, gpu->height);
+#else
     nv_log(NV_LOG_INFO, "nv", "display: none (headless), framebuffer %ux%u pixels", gpu->width, gpu->height);
+#endif
 #endif
 }
 
@@ -530,6 +551,23 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         nv_log(NV_LOG_ERROR, "nv", "failed to create canvas surface");
         goto fail;
     }
+#elif defined(NV_LINUX_WINDOWED)
+    void* wayland_display = NULL;
+    void* wayland_surface = NULL;
+    if (!nv_window_linux_wayland(window, &wayland_display, &wayland_surface)) {
+        nv_log(NV_LOG_ERROR, "nv", "the window has no Wayland surface to draw into");
+        goto fail;
+    }
+    WGPUSurfaceSourceWaylandSurface wayland = WGPU_SURFACE_SOURCE_WAYLAND_SURFACE_INIT;
+    wayland.display = wayland_display;
+    wayland.surface = wayland_surface;
+    WGPUSurfaceDescriptor surface_desc = WGPU_SURFACE_DESCRIPTOR_INIT;
+    surface_desc.nextInChain = &wayland.chain;
+    backend.surface = wgpuInstanceCreateSurface(backend.instance, &surface_desc);
+    if (!backend.surface) {
+        nv_log(NV_LOG_ERROR, "nv", "failed to create Wayland surface");
+        goto fail;
+    }
 #endif
     // Headless (Dawn native) there is no surface: the adapter is asked for without one.
 
@@ -551,7 +589,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         gpu->max_storage_binding_bytes = limits.maxStorageBufferBindingSize;
     }
 
-#if NV_PLATFORM_WEB
+#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(backend.surface, backend.adapter, &caps);
     if (caps.formatCount == 0) {
@@ -560,8 +598,18 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         goto fail;
     }
     // NOTE: Canvases only offer linear formats, but accept the sRGB twin as a view format.
-    // Rendering through that view gamma-corrects shader output.
+    // Rendering through that view gamma-corrects shader output. A native surface offers more
+    // (Dawn's Vulkan one leads with RGBA16Float): the canvas this API models is 8-bit, and the
+    // compositor expects it too, so the first 8-bit format offered is the config format.
     gpu->config_format = format_from_wgpu(caps.formats[0]);
+    for (umm i = 0; i < caps.formatCount; ++i) {
+        NvGpuFormat offered = format_from_wgpu(caps.formats[i]);
+        if (offered == NV_GPU_FORMAT_BGRA8 || offered == NV_GPU_FORMAT_BGRA8_SRGB || offered == NV_GPU_FORMAT_RGBA8 ||
+            offered == NV_GPU_FORMAT_RGBA8_SRGB) {
+            gpu->config_format = offered;
+            break;
+        }
+    }
     gpu->surface_format = srgb_view_format(gpu->config_format);
     wgpuSurfaceCapabilitiesFreeMembers(caps);
     if (gpu->config_format == NV_GPU_FORMAT_NONE) {
@@ -1092,7 +1140,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     if (gpu->width == 0 || gpu->height == 0)
         return (NvGpuFrame){0}; // canvas is hidden or collapsed
 
-#if NV_PLATFORM_WEB
+#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(backend.surface, &surface_texture);
     switch (surface_texture.status) {
@@ -1169,6 +1217,112 @@ internal void timestamps_map_done(WGPUMapAsyncStatus status, WGPUStringView mess
     }
 }
 
+#if NV_DEBUG && NV_PLATFORM_LINUX
+void nv_gpu_debug_screenshot(NvGpu* gpu, const char* path, u32 x, u32 y, u32 width, u32 height)
+{
+    NV_ASSERT(!backend.screenshot_pending);
+    snprintf(backend.screenshot_path, sizeof(backend.screenshot_path), "%s", path);
+    backend.screenshot_x = x;
+    backend.screenshot_y = y;
+    backend.screenshot_width = width ? width : gpu->width;
+    backend.screenshot_height = height ? height : gpu->height;
+    backend.screenshot_pending = 1;
+}
+
+b32 nv_gpu_debug_screenshot_pending(const NvGpu* gpu)
+{
+    (void)gpu;
+    return backend.screenshot_pending;
+}
+
+// The frame's commands are submitted: copies the part of the canvas asked for into a readback
+// buffer, in the queue after them and before the canvas is presented.
+internal void record_screenshot_copy(void)
+{
+    NvGpu* gpu = backend.gpu;
+    NV_ASSERT(backend.screenshot_x + backend.screenshot_width <= gpu->width &&
+              backend.screenshot_y + backend.screenshot_height <= gpu->height);
+    // The canvas is an 8-bit format (nv_gpu_create picks one); its texel is 4 bytes in either order.
+    NV_ASSERT(nv_gpu_format_bytes(gpu->config_format) == 4);
+    backend.screenshot_pitch = (backend.screenshot_width * 4 + 255u) & ~255u; // a copy's rows are 256 bytes apart
+    WGPUBufferDescriptor desc = WGPU_BUFFER_DESCRIPTOR_INIT;
+    desc.label = (WGPUStringView){"screenshot", WGPU_STRLEN};
+    desc.usage = WGPUBufferUsage_MapRead | WGPUBufferUsage_CopyDst;
+    desc.size = (u64)backend.screenshot_pitch * backend.screenshot_height;
+    backend.screenshot_buffer = wgpuDeviceCreateBuffer(backend.device, &desc);
+
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(backend.device, NULL);
+    WGPUTexelCopyTextureInfo source = WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
+    source.texture = backend.current_texture;
+    source.origin = (WGPUOrigin3D){backend.screenshot_x, backend.screenshot_y, 0};
+    WGPUTexelCopyBufferLayout layout = WGPU_TEXEL_COPY_BUFFER_LAYOUT_INIT;
+    layout.bytesPerRow = backend.screenshot_pitch;
+    layout.rowsPerImage = backend.screenshot_height;
+    WGPUTexelCopyBufferInfo destination = WGPU_TEXEL_COPY_BUFFER_INFO_INIT;
+    destination.buffer = backend.screenshot_buffer;
+    destination.layout = layout;
+    WGPUExtent3D copy_size = {backend.screenshot_width, backend.screenshot_height, 1};
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &copy_size);
+    WGPUCommandBuffer commands = wgpuCommandEncoderFinish(encoder, NULL);
+    wgpuQueueSubmit(backend.queue, 1, &commands);
+    wgpuCommandBufferRelease(commands);
+    wgpuCommandEncoderRelease(encoder);
+}
+
+typedef struct ScreenshotMap {
+    const u8* mapped;
+} ScreenshotMap;
+
+internal void screenshot_map_done(WGPUMapAsyncStatus status, WGPUStringView message, void* userdata1, void* userdata2)
+{
+    (void)message, (void)userdata2;
+    ScreenshotMap* map = userdata1;
+    if (status == WGPUMapAsyncStatus_Success)
+        map->mapped = wgpuBufferGetConstMappedRange(backend.screenshot_buffer, 0,
+                                                     (umm)backend.screenshot_pitch * backend.screenshot_height);
+}
+
+// The copy is submitted: waits for it, then writes the part asked for as a PNG. The canvas's
+// channel order is its config format's (BGRA where the surface offers that), alpha always opaque.
+internal void write_screenshot(void)
+{
+    umm size = (umm)backend.screenshot_pitch * backend.screenshot_height;
+    ScreenshotMap map = {0};
+    WGPUBufferMapCallbackInfo callback = WGPU_BUFFER_MAP_CALLBACK_INFO_INIT;
+    callback.mode = WGPUCallbackMode_WaitAnyOnly;
+    callback.callback = screenshot_map_done;
+    callback.userdata1 = &map;
+    wait_for(backend.instance, wgpuBufferMapAsync(backend.screenshot_buffer, WGPUMapMode_Read, 0, size, callback));
+
+    u32 width = backend.screenshot_width;
+    u32 height = backend.screenshot_height;
+    u8* rgba = malloc((umm)width * height * 4);
+    if (map.mapped && rgba) {
+        b32 bgra = backend.gpu->config_format == NV_GPU_FORMAT_BGRA8 || backend.gpu->config_format == NV_GPU_FORMAT_BGRA8_SRGB;
+        for (u32 row = 0; row < height; ++row) {
+            const u8* in = map.mapped + (umm)row * backend.screenshot_pitch;
+            u8* out = rgba + (umm)row * width * 4;
+            for (u32 column = 0; column < width; ++column) {
+                out[column * 4 + 0] = in[column * 4 + (bgra ? 2 : 0)];
+                out[column * 4 + 1] = in[column * 4 + 1];
+                out[column * 4 + 2] = in[column * 4 + (bgra ? 0 : 2)];
+                out[column * 4 + 3] = 255;
+            }
+        }
+        if (nv_image_write_png(backend.screenshot_path, rgba, width, height))
+            nv_log(NV_LOG_INFO, "nv", "screenshot %s (%ux%u)", backend.screenshot_path, width, height);
+    } else {
+        nv_log(NV_LOG_ERROR, "nv", "screenshot %s failed: the readback did not map", backend.screenshot_path);
+    }
+    free(rgba);
+    if (map.mapped)
+        wgpuBufferUnmap(backend.screenshot_buffer);
+    wgpuBufferRelease(backend.screenshot_buffer);
+    backend.screenshot_buffer = NULL;
+    backend.screenshot_pending = 0;
+}
+#endif
+
 void nv_gpu_end_frame(NvGpu* gpu)
 {
     (void)gpu;
@@ -1195,8 +1349,20 @@ void nv_gpu_end_frame(NvGpu* gpu)
     }
     map_readbacks();
 
-    // NOTE: No wgpuSurfacePresent here: the browser presents the canvas when the animation frame
-    // callback returns (and emdawnwebgpu aborts if it is called).
+#if NV_DEBUG && NV_PLATFORM_LINUX
+    if (backend.screenshot_pending)
+        record_screenshot_copy();
+#endif
+#if defined(NV_LINUX_WINDOWED)
+    // A native surface is presented by hand; the screenshot's copy is already queued ahead of it.
+    wgpuSurfacePresent(backend.surface);
+#endif
+#if NV_DEBUG && NV_PLATFORM_LINUX
+    if (backend.screenshot_pending)
+        write_screenshot();
+#endif
+    // NOTE: On the web there is no wgpuSurfacePresent here: the browser presents the canvas when
+    // the animation frame callback returns (and emdawnwebgpu aborts if it is called).
     nv_gpu_release_view(gpu, backend.current_view_handle);
     backend.current_view_handle = (NvGpuView){0};
     wgpuTextureRelease(backend.current_texture);
