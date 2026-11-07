@@ -33,6 +33,8 @@ elseif(NV_LINUX)
         # build directory from the system's protocol file; it is generated, so its warnings are off like a library's.
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+        # The keyboard's keymap (engine/imgui_linux.c): the compositor sends it as an XKB file, which libxkbcommon reads.
+        pkg_check_modules(XKBCOMMON REQUIRED IMPORTED_TARGET xkbcommon)
         pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
         pkg_get_variable(wayland_protocols_dir wayland-protocols pkgdatadir)
         find_program(NV_WAYLAND_SCANNER wayland-scanner REQUIRED)
@@ -55,7 +57,7 @@ elseif(NV_LINUX)
             window_linux.c
             "${xdg_shell_header}"
             "${xdg_shell_source}")
-        target_link_libraries(nv PRIVATE PkgConfig::WAYLAND_CLIENT)
+        target_link_libraries(nv PRIVATE PkgConfig::WAYLAND_CLIENT PkgConfig::XKBCOMMON)
     else()
         target_sources(nv PRIVATE
             gpu_webgpu.c

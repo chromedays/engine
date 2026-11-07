@@ -154,6 +154,10 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - stb의 `stb_image_write`(public domain / MIT, 단일 헤더): Linux의 PNG 쓰기(`engine/image_linux.c`)에 쓴다. PNG 인코딩(deflate)은
   이 프로젝트의 목적이 아니고, Windows는 WIC가, 웹은 브라우저가 하지만 Linux에는 같은 자리의 것이 없다. 저장소 커밋을 고정해
   FetchContent로 받고, 구현은 cgltf처럼 경고를 끈 별도 번역 단위에 둔다.
+- libxkbcommon(MIT, 시스템 패키지 `xkbcommon`): Linux 창 빌드의 키보드(`engine/imgui_linux.c`, `docs/specs/linux_wayland.md`). Wayland는 키를
+  evdev 키 코드로 보내고, 그것을 읽는 법(자판 배열, 모디파이어, 글자)은 컴포지터가 보내는 XKB 키맵 파일에 있다. 그 파일을 읽는 것은 이
+  프로젝트의 목적이 아니고, evdev 표를 직접 쓰면 글자가 자판 배열을 따르지 않는다. GLFW, SDL, GTK, Qt가 쓰는 것이며, Windows SDK처럼
+  플랫폼이 준다.
 - stb의 `stb_image`(public domain / MIT, 단일 헤더): Linux의 JPEG와 PNG 디코딩(`engine/image_linux.c`,
   `docs/specs/image_decoding.md`)에만 쓴다. 웹은 브라우저가, Windows는 WIC가 디코딩하지만 Linux에는 같은 자리의 것이 없다. 모든
   플랫폼에서 쓰는 것도 재 보았으나 웹에서 느리고 wasm 메모리를 늘려서 Linux로 한정했다. `stb_image_write`와 같은 고정 커밋에서 오고,
@@ -348,6 +352,11 @@ The table sets the shape of names. What a name has to say:
   (deflate) is not the point of this project, and where Windows has WIC and the web its browser, Linux has nothing in that place.
   A commit of its repository is pinned and fetched with FetchContent, and the implementation sits in its own translation unit
   with warnings off, like cgltf's.
+- libxkbcommon (MIT, the system package `xkbcommon`) for the Linux windowed build's keyboard (`engine/imgui_linux.c`,
+  `docs/specs/linux_wayland.md`): Wayland sends keys as evdev key codes, and how to read them (the layout, the modifiers, the text)
+  is in the XKB keymap file the compositor sends. Reading that file is not the point of this project, and a table of evdev codes of
+  our own would type text that ignores the layout. GLFW, SDL, GTK and Qt use it; the platform provides it, as it does the Windows
+  SDK.
 - stb's `stb_image` (public domain / MIT, a single header) for decoding JPEG and PNG on Linux only (`engine/image_linux.c`,
   `docs/specs/image_decoding.md`): the web decodes with its browser and Windows with WIC, and Linux has nothing in that place.
   Using it on every platform was measured too, and it was slower on the web and grew the wasm memory, so it stays on Linux. It
