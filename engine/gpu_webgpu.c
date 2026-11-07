@@ -503,7 +503,8 @@ internal void log_system(NvGpu* gpu)
 #else
     (void)screen_width, (void)screen_height, (void)ratio;
 #if NV_PLATFORM_LINUX && !NV_HEADLESS
-    nv_log(NV_LOG_INFO, "nv", "display: Wayland window, framebuffer %ux%u pixels (fixed)", gpu->width, gpu->height);
+    nv_log(NV_LOG_INFO, "nv", "display: Wayland window, framebuffer %ux%u pixels at pixel ratio %.0f", gpu->width, gpu->height,
+           (f64)nv_window_pixel_ratio(gpu->window));
 #else
     nv_log(NV_LOG_INFO, "nv", "display: none (headless), framebuffer %ux%u pixels", gpu->width, gpu->height);
 #endif
