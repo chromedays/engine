@@ -2,7 +2,7 @@
 #include "engine/image.h"
 #include "engine/log.h"
 #include "engine/window.h"
-#if defined(NV_LINUX_WINDOWED)
+#if NV_PLATFORM_LINUX && !NV_HEADLESS
 #include "engine/window_linux.h"
 #endif
 
@@ -10,7 +10,7 @@
 #include <emscripten/emscripten.h>
 #include <webgpu/webgpu.h>
 #else
-// Dawn's native WebGPU (Linux, headless): its header, like the emdawnwebgpu port's, carries the
+// Dawn's native WebGPU (Linux, windowed or headless): its header, like the emdawnwebgpu port's, carries the
 // extensions this file uses (wgpuInstanceWaitAny, TimedWaitAny, WaitAnyOnly callbacks).
 #include <dawn/webgpu.h>
 #include <unistd.h>
@@ -90,7 +90,7 @@ internal WGPUTextureFormat wgpu_format(NvGpuFormat format)
     }
 }
 
-#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
+#if !NV_HEADLESS
 // Both surface builds (the page's canvas, the Wayland window) read the surface's formats back.
 internal NvGpuFormat format_from_wgpu(WGPUTextureFormat format)
 {
@@ -377,7 +377,7 @@ internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter
 }
 
 
-#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
+#if !NV_HEADLESS
 internal NvGpuFormat srgb_view_format(NvGpuFormat format)
 {
     switch (format) {
@@ -392,7 +392,7 @@ internal void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
-#if NV_PLATFORM_LINUX && !defined(NV_LINUX_WINDOWED)
+#if NV_HEADLESS
     // Headless there is no surface to configure: the frame's texture is made in nv_gpu_begin_frame.
     nv_log(NV_LOG_INFO, "nv", "headless color target: %ux%u, format %s (offscreen texture, no surface)",
            gpu->width, gpu->height, nv_gpu_format_name(gpu->surface_format));
@@ -408,7 +408,7 @@ internal void configure_surface(NvGpu* gpu)
         config.viewFormats = &view_format;
     }
     config.usage = WGPUTextureUsage_RenderAttachment;
-#if defined(NV_LINUX_WINDOWED) && NV_DEBUG
+#if NV_PLATFORM_LINUX && !NV_HEADLESS && NV_DEBUG
     config.usage |= WGPUTextureUsage_CopySrc; // the debug screenshot copies the canvas before present
 #endif
     config.width = gpu->width;
@@ -499,7 +499,7 @@ internal void log_system(NvGpu* gpu)
            gpu->width, gpu->height);
 #else
     (void)screen_width, (void)screen_height, (void)ratio;
-#if defined(NV_LINUX_WINDOWED)
+#if NV_PLATFORM_LINUX && !NV_HEADLESS
     nv_log(NV_LOG_INFO, "nv", "display: Wayland window, framebuffer %ux%u pixels (fixed)", gpu->width, gpu->height);
 #else
     nv_log(NV_LOG_INFO, "nv", "display: none (headless), framebuffer %ux%u pixels", gpu->width, gpu->height);
@@ -551,7 +551,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         nv_log(NV_LOG_ERROR, "nv", "failed to create canvas surface");
         goto fail;
     }
-#elif defined(NV_LINUX_WINDOWED)
+#elif NV_PLATFORM_LINUX && !NV_HEADLESS
     void* wayland_display = NULL;
     void* wayland_surface = NULL;
     if (!nv_window_linux_wayland(window, &wayland_display, &wayland_surface)) {
@@ -589,7 +589,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         gpu->max_storage_binding_bytes = limits.maxStorageBufferBindingSize;
     }
 
-#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
+#if !NV_HEADLESS
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(backend.surface, backend.adapter, &caps);
     if (caps.formatCount == 0) {
@@ -1140,7 +1140,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     if (gpu->width == 0 || gpu->height == 0)
         return (NvGpuFrame){0}; // canvas is hidden or collapsed
 
-#if NV_PLATFORM_WEB || defined(NV_LINUX_WINDOWED)
+#if !NV_HEADLESS
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(backend.surface, &surface_texture);
     switch (surface_texture.status) {
@@ -1353,7 +1353,7 @@ void nv_gpu_end_frame(NvGpu* gpu)
     if (backend.screenshot_pending)
         record_screenshot_copy();
 #endif
-#if defined(NV_LINUX_WINDOWED)
+#if NV_PLATFORM_LINUX && !NV_HEADLESS
     // A native surface is presented by hand; the screenshot's copy is already queued ahead of it.
     wgpuSurfacePresent(backend.surface);
 #endif

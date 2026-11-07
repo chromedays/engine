@@ -45,7 +45,7 @@ clean config="Debug":
 [private]
 [unix]
 _visual-capture:
-    cmake -S . -B build-visual -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNV_LINUX_WINDOWED=ON -DNV_BUILD_VISUAL_TEST=ON
+    cmake -S . -B build-visual -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNV_HEADLESS=OFF -DNV_BUILD_VISUAL_TEST=ON
     cmake --build build-visual --target visual_test
     mkdir -p build-visual/visual-out
     build-visual/tests/visual/visual_test build-visual/visual-out

@@ -40,7 +40,7 @@
 ### 구성
 
 ```
-just visual ─▶ cmake 구성/빌드 (build-visual, Debug, NV_LINUX_WINDOWED + NV_BUILD_VISUAL_TEST)
+just visual ─▶ cmake 구성/빌드 (build-visual, Debug, NV_HEADLESS 끔 + NV_BUILD_VISUAL_TEST)
             ─▶ visual_test <out>     창을 열고 3프레임을 그리고 <out>/triangle.png를 쓴다
             ─▶ compare.mjs           odiff로 tests/visual/baseline/triangle.png와 비교한다
                                      report.html/report.json을 쓰고 마지막 줄에 그 링크를 출력한다 (visual_report.md)
@@ -58,10 +58,12 @@ just visual-update-ref ─▶ 같은 캡처 뒤 기준 그림을 덮어쓴다 (�
 | `tools/visual/compare.mjs` | odiff 실행, 합격 규칙 적용, 결과 출력 |
 | `tools/visual/report.mjs` | 결과 페이지(`report.html`, 그림을 안에 담은 파일 하나)와 `report.json`. `docs/specs/visual_report.md` |
 
-CMake 옵션 두 개를 더한다. 둘 다 기본은 꺼짐이라 기존 빌드는 달라지지 않는다.
+CMake 옵션 두 개를 더한다.
 
-- `NV_LINUX_WINDOWED`: Linux에서 `window_headless.c` 대신 `window_linux.c`를 고르고 `NV_HEADLESS`를 끈다.
-- `NV_BUILD_VISUAL_TEST`: `tests/visual/`을 더한다. `NV_LINUX_WINDOWED`가 없으면 구성 오류로 멈춘다.
+- `NV_HEADLESS`: Linux에서 `window_linux.c` 대신 `window_headless.c`를 고른다(창 없이 화면 밖에 그린다). 기본은
+  꺼짐이라 Linux 빌드는 Wayland 창으로 그린다. (처음에는 반대 뜻의 `NV_LINUX_WINDOWED`가 기본 꺼짐으로 있었다.)
+  엔진 C 코드에는 `NV_HEADLESS`가 0이나 1로 정의되고, 웹과 Windows에서는 늘 0이다. 그 둘에서 켜면 구성 오류로 멈춘다.
+- `NV_BUILD_VISUAL_TEST`: `tests/visual/`을 더한다. `NV_HEADLESS`가 켜져 있으면 구성 오류로 멈춘다.
 
 ### 창 백엔드
 

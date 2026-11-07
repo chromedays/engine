@@ -5,22 +5,19 @@ project(engine LANGUAGES C CXX)
 # from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
-# The Linux build is headless unless this asks for its Wayland window (docs/specs/visual_regression.md); the visual regression
-# test's app is what needs the window, and it is built only when asked for.
-option(NV_LINUX_WINDOWED "Linux: a Wayland window instead of the headless build" OFF)
-option(NV_BUILD_VISUAL_TEST "Build the visual regression test app (needs NV_LINUX_WINDOWED)" OFF)
+# The Linux build draws into a Wayland window (docs/specs/visual_regression.md) unless this asks for the headless build (no
+# window, frames render offscreen). The visual regression test's app needs the window, and it is built only when asked for.
+option(NV_HEADLESS "Linux: the headless build (no window, frames render offscreen) instead of the Wayland window" OFF)
+option(NV_BUILD_VISUAL_TEST "Build the visual regression test app (needs the Wayland window: NV_HEADLESS off)" OFF)
 
 # Three builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU), the Windows x64 build
-# (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, headless: no window, frames render offscreen).
+# (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, in a Wayland window or, with NV_HEADLESS on, offscreen).
 if(EMSCRIPTEN)
     set(NV_WEB TRUE)
 elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NV_LINUX TRUE)
-    if(NOT NV_LINUX_WINDOWED)
-        set(NV_HEADLESS TRUE)
-    endif()
     # The sandbox and the Node-run tests belong to the web and Windows builds for now.
     set(NV_BUILD_SANDBOX OFF)
     set(NV_BUILD_TESTS OFF)
@@ -28,6 +25,9 @@ else()
     message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja), for Windows x64 with MSVC "
         "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64) and for Linux "
         "(cmake -S . -B build -G Ninja).")
+endif()
+if(NV_HEADLESS AND NOT NV_LINUX)
+    message(FATAL_ERROR "NV_HEADLESS is a Linux build's option: the web and Windows builds always have their window.")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -313,8 +313,8 @@ if(NV_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 if(NV_BUILD_VISUAL_TEST)
-    if(NOT NV_LINUX OR NOT NV_LINUX_WINDOWED)
-        message(FATAL_ERROR "NV_BUILD_VISUAL_TEST needs the Linux windowed build: -DNV_LINUX_WINDOWED=ON on Linux "
+    if(NOT NV_LINUX OR NV_HEADLESS)
+        message(FATAL_ERROR "NV_BUILD_VISUAL_TEST needs the Linux windowed build: -DNV_HEADLESS=OFF on Linux "
             "(docs/specs/visual_regression.md)")
     endif()
     include(cmake/odiff.cmake)
@@ -330,7 +330,7 @@ if(NOT PROJECT_IS_TOP_LEVEL)
         set(NV_COMPILE_OPTIONS /W4 /utf-8 /Zc:preprocessor)
         set(NV_COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     endif()
-    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_LINUX_WINDOWED NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
+    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
             CMAKE_C_STANDARD CMAKE_C_STANDARD_REQUIRED CMAKE_C_EXTENSIONS CMAKE_CXX_STANDARD CMAKE_CXX_STANDARD_REQUIRED)
         set(${var} "${${var}}" PARENT_SCOPE)
     endforeach()
