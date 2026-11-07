@@ -5,15 +5,16 @@ Guidance for AI coding agents working in this repository.
 ## Communication
 
 - Answer in both English and Korean in every response. Write the English version first, then the
-  Korean version with the same content.
+Korean version with the same content.
 - Commit messages and code comments stay in English.
 - Commit messages have no `Co-Authored-By` trailer and name no model.
 - Branch names have no `claude` prefix.
 - Feature specs (`docs/specs/`) are written in Korean only. Every other document is written in both
-  Korean and English in one file: the Korean version first, then the English version with the same
-  content.
+Korean and English in one file: the Korean version first, then the English version with the same
+content.
 - When a response refers to code, give the file path and line (`engine/file.c:16`) and quote the code itself in a snippet
-  under it, so the reader sees what is meant without opening the file.
+under it, so the reader sees what is meant without opening the file.
+- Give me a TL;DR in ASD-STE100 Simplified Technical English in your response in english, and translate it into korean in your response in korean.
 
 ## Project
 
@@ -130,269 +131,268 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
 - Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
 - Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. A file that does not know the platform
-  includes none of their headers and never tests `__EMSCRIPTEN__` or `_WIN32` (debug exports are `NV_DEBUG_EXPORT`). Our code compiles
-  with emcc and MSVC (`/W4`, no warnings): no VLAs or GNU extensions, `NV_LITERAL(type){...}` for a compound literal that C++ also
-  sees, `NV_TRAP` and `NV_PRINTF_FORMAT` instead of `__builtin_trap` and `__attribute__`, and `windows.h` before `engine/base.h` (its
-  `internal` macro) where a file includes it at all. Shaders compile to WGSL for the web and to DXIL (shader model 6.6) for Windows.
+includes none of their headers and never tests `__EMSCRIPTEN__` or `_WIN32` (debug exports are `NV_DEBUG_EXPORT`). Our code compiles
+with emcc and MSVC (`/W4`, no warnings): no VLAs or GNU extensions, `NV_LITERAL(type){...}` for a compound literal that C++ also
+sees, `NV_TRAP` and `NV_PRINTF_FORMAT` instead of `__builtin_trap` and `__attribute__`, and `windows.h` before `engine/base.h` (its
+`internal` macro) where a file includes it at all. Shaders compile to WGSL for the web and to DXIL (shader model 6.6) for Windows.
 - Blocking waits (in `gpu_webgpu.c`) use `wgpuInstanceWaitAny`, which works through Asyncify. The build does not ignore indirect calls
-  (`ASYNCIFY_IGNORE_INDIRECT` is off), so a frame may wait through Asyncify: a scene built on first show awaits its image decodes.
+(`ASYNCIFY_IGNORE_INDIRECT` is off), so a frame may wait through Asyncify: a scene built on first show awaits its image decodes.
 - `nv_window_run` never returns, so app state must not live on `main`'s stack.
 - ImGui input reads page client coordinates, which match canvas coordinates only because the page
-  pins the canvas to the top-left corner. Keep that true in `web/index.html.in`.
+pins the canvas to the top-left corner. Keep that true in `web/index.html.in`.
 - UI code uses the cimgui API (`ig*` functions, `ImGuiIO_*`), fetched by CMake. Call it between
-  `nv_imgui_new_frame` and `nv_imgui_render`.
+`nv_imgui_new_frame` and `nv_imgui_render`.
 - On touch screens ImGui text arrives through a hidden `<input id="nv-text-agent">` so phones
-  show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
-  in `engine/imgui_web.c`.
+show their keyboard; clipboard pastes arrive through the page's `paste` event. Both are set up
+in `engine/imgui_web.c`.
 - `NvImgui.ui_scale` is 1.3 on touch screens; size ImGui windows with it. The UI font is Pretendard
-  Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
-  syllable, not ImGui's built-in one. The Lucide icons are merged into it: `NV_ICON_*` from `engine/icons.h` is a string that
-  draws the icon in any ImGui text, and a button that is an icon alone names itself in a tooltip. `engine/icons.h` is generated
-  (`tools/lucide_icons.mjs`) from the same Lucide release as the font; never edit it by hand.
+Regular (`assets/fonts/`, 14 px, `nv_imgui_load_ui_font`; `docs/specs/fonts.md`), which has Latin and every Hangul
+syllable, not ImGui's built-in one. The Lucide icons are merged into it: `NV_ICON_*` from `engine/icons.h` is a string that
+draws the icon in any ImGui text, and a button that is an icon alone names itself in a tooltip. `engine/icons.h` is generated
+(`tools/lucide_icons.mjs`) from the same Lucide release as the font; never edit it by hand.
 - The sandbox has two editor UIs, chosen once at start from the primary pointer (`Sandbox.ui_mode`; touch
-  gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `sandbox_layout` fills
-  `Sandbox.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
-  bar (menus, Play / Stop), left, right and bottom docks with draggable splitters, and the viewport
-  in the middle (`sandbox/ui_desktop.c`); the **phone** has a top bar (Undo, Play / Stop, Redo), the
-  viewport (60%) and one tabbed panel (40%) (`sandbox/ui_phone.c`). Neither file branches on the other's
-  device; they share only the section functions in `sandbox/ui.c` (`ui_scene_tab`, `ui_inspector_tab`,
-  `ui_view_tab`, `console_tab`, `stress_ui`). The viewport is any rectangle, not the top-left corner:
-  pass `Sandbox.layout.viewport` to the renderer, picking and the gizmo. Play / Stop is at the top center
-  in both UIs, its center on the canvas's; it is a pixel icon (a 16 x 16 text bitmap in `sandbox/ui.c`, `draw_pixel_icon`: a new icon is a new table, no image or font), not text; the desktop top bar starts with the Cthulhu mark (`ui_logo`). Each dock is a window from `nv_imgui_begin_panel`, which
-  scrolls on a vertical touch drag. Keep editor UI inside the docks and panel. The exceptions are the
-  build label (with its badge) in the viewport's top-left corner and the transform gizmo on the
-  selection. A splitter must not use `nv_imgui_begin_panel`: its NoBringToFrontOnFocus puts a new
-  window behind the earlier ones. Debug builds export `Module._sandbox_debug_layout(region, component)`,
-  `_sandbox_debug_ui_mode`, `_sandbox_debug_dock`, `_sandbox_debug_view` and `_sandbox_debug_playing` for tests.
+gives the phone UI, anything else the desktop UI; `docs/specs/layout.md`). `sandbox_layout` fills
+`Sandbox.layout` (framebuffer pixels) each frame before `nv_imgui_new_frame`: the **desktop** has a top
+bar (menus, Play / Stop), left, right and bottom docks with draggable splitters, and the viewport
+in the middle (`sandbox/ui_desktop.c`); the **phone** has a top bar (Undo, Play / Stop, Redo), the
+viewport (60%) and one tabbed panel (40%) (`sandbox/ui_phone.c`). Neither file branches on the other's
+device; they share only the section functions in `sandbox/ui.c` (`ui_scene_tab`, `ui_inspector_tab`,
+`ui_view_tab`, `console_tab`, `stress_ui`). The viewport is any rectangle, not the top-left corner:
+pass `Sandbox.layout.viewport` to the renderer, picking and the gizmo. Play / Stop is at the top center
+in both UIs, its center on the canvas's; it is a pixel icon (a 16 x 16 text bitmap in `sandbox/ui.c`, `draw_pixel_icon`: a new icon is a new table, no image or font), not text; the desktop top bar starts with the Cthulhu mark (`ui_logo`). Each dock is a window from `nv_imgui_begin_panel`, which
+scrolls on a vertical touch drag. Keep editor UI inside the docks and panel. The exceptions are the
+build label (with its badge) in the viewport's top-left corner and the transform gizmo on the
+selection. A splitter must not use `nv_imgui_begin_panel`: its NoBringToFrontOnFocus puts a new
+window behind the earlier ones. Debug builds export `Module._sandbox_debug_layout(region, component)`,
+`_sandbox_debug_ui_mode`, `_sandbox_debug_dock`, `_sandbox_debug_view` and `_sandbox_debug_playing` for tests.
 - Shaders are Slang (`engine/shaders/*.slang`, `docs/specs/slang_shader_port.md`); no WGSL is written by hand. `nv_add_shader`
-  (`engine/CMakeLists.txt`) makes each one in three steps that stop the build when one fails: `slangc` writes WGSL
-  (`<build>/shaders/<name>.wgsl`, kept: the browser's and Tint's errors name its lines), `tint` checks it (`slangc` does not: it writes invalid WGSL
-  without a word), and the C header `shaders/<name>_shader.h` is made (`const char <name>_wgsl[]` and `const NvGpuShaderCode <name>_shader`, which the
-  pipeline descriptions of `engine/gpu.h` take).
-  The same source also compiles to DXIL (shader model 6.6, `cmake/make_dxil.cmake`) for the D3D12 backend: every resource has a
-  `register(...)` beside its `[[vk::binding]]` that says the same, a struct the C code lays out has explicit scalar padding (WGSL and HLSL
-  strides differ: `Object` has `padding0` to `padding2`), and `NV_D3D12` marks the few places that differ (`half_bits` in `vfx_common.slang`
-  rounds like WGSL's `pack2x16float`). Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
-  the same as the bind group layout in C; a vertex input or a varying gets its location from the number of its `TEXCOORD<n>` semantic (the
-  WGSL ignores `[[vk::location]]` and closes gaps, so a pipeline stops matching); a depth texture is `DepthTexture2D` or `DepthTexture2DMS`
-  (`Texture2D<float>` writes `texture_2d<f32>`, which a comparison sampler and a depth binding refuse); `import` does not pass on what the
-  imported module imports (`__exported import`) and only the entry points of the file `slangc` is given are compiled. A new binding or struct
-  is a row in `tests/shader_layout_test.mjs` (reflection and the generated WGSL against the sizes and locations the C code relies on, which
-  its `_Static_assert`s hold), and a browser run with no WebGPU error is the check Tint cannot be: it sees one shader, not the bind group layouts.
+(`engine/CMakeLists.txt`) makes each one in three steps that stop the build when one fails: `slangc` writes WGSL
+(`<build>/shaders/<name>.wgsl`, kept: the browser's and Tint's errors name its lines), `tint` checks it (`slangc` does not: it writes invalid WGSL
+without a word), and the C header `shaders/<name>_shader.h` is made (`const char <name>_wgsl[]` and `const NvGpuShaderCode <name>_shader`, which the
+pipeline descriptions of `engine/gpu.h` take).
+The same source also compiles to DXIL (shader model 6.6, `cmake/make_dxil.cmake`) for the D3D12 backend: every resource has a
+`register(...)` beside its `[[vk::binding]]` that says the same, a struct the C code lays out has explicit scalar padding (WGSL and HLSL
+strides differ: `Object` has `padding0` to `padding2`), and `NV_D3D12` marks the few places that differ (`half_bits` in `vfx_common.slang`
+rounds like WGSL's `pack2x16float`). Rules that cost a day: every resource has `[[vk::binding(binding, group)]]`
+the same as the bind group layout in C; a vertex input or a varying gets its location from the number of its `TEXCOORD<n>` semantic (the
+WGSL ignores `[[vk::location]]` and closes gaps, so a pipeline stops matching); a depth texture is `DepthTexture2D` or `DepthTexture2DMS`
+(`Texture2D<float>` writes `texture_2d<f32>`, which a comparison sampler and a depth binding refuse); `import` does not pass on what the
+imported module imports (`__exported import`) and only the entry points of the file `slangc` is given are compiled. A new binding or struct
+is a row in `tests/shader_layout_test.mjs` (reflection and the generated WGSL against the sizes and locations the C code relies on, which
+its `_Static_assert`s hold), and a browser run with no WebGPU error is the check Tint cannot be: it sees one shader, not the bind group layouts.
 - The GPU is used through `engine/gpu.h` only (`docs/specs/d3d12_port.md`, "GPU API"). Its objects are handles (an index and a generation) that
-  assert when stale; `nv_gpu_begin_frame` opens the frame's command list and `nv_gpu_end_frame` submits it, so `nv_renderer_draw` and
-  `nv_imgui_render` take only the target view. Buffer and texture writes take effect before every command of the next submit, wherever
-  they are made. Pass times and buffer reads come back by polling (`nv_gpu_poll_timestamps`, `nv_gpu_poll_readback`), a few frames late, and
-  a new request waits until the earlier one was taken. A use of the GPU the API lacks is a row in that spec's table and a function in the
-  backend, never a backend call from the renderer, the effects or an app.
+assert when stale; `nv_gpu_begin_frame` opens the frame's command list and `nv_gpu_end_frame` submits it, so `nv_renderer_draw` and
+`nv_imgui_render` take only the target view. Buffer and texture writes take effect before every command of the next submit, wherever
+they are made. Pass times and buffer reads come back by polling (`nv_gpu_poll_timestamps`, `nv_gpu_poll_readback`), a few frames late, and
+a new request waits until the earlier one was taken. A use of the GPU the API lacks is a row in that spec's table and a function in the
+backend, never a backend call from the renderer, the effects or an app.
 - A function Playwright calls by name is marked `NV_DEBUG_EXPORT` (`engine/base.h`; `EMSCRIPTEN_KEEPALIVE` on the web).
 - Mouse and touch input that starts in the viewport (`NvImgui.view_rect`) skips ImGui and arrives in
-  `NvImgui.view` (orbit, pan, dolly, tap); the sandbox turns it into camera moves and picking
-  (`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
-  `SceneView.orbit`, with the limits `ORBIT_LIMITS` set where a view is made). Playwright drives it with mouse drags,
-  the wheel and CDP `Input.dispatchTouchEvent` for multi-touch.
+`NvImgui.view` (orbit, pan, dolly, tap); the sandbox turns it into camera moves and picking
+(`nv_renderer_tap_ray`, `nv_renderer_pick`; the orbit camera is `NvOrbitCamera` in `engine/camera.h`, kept in
+`SceneView.orbit`, with the limits `ORBIT_LIMITS` set where a view is made). Playwright drives it with mouse drags,
+the wheel and CDP `Input.dispatchTouchEvent` for multi-touch.
 - The transform gizmo is ImGuizmo through cimguizmo (`#include <cimguizmo.h>`, `ImGuizmo_*`).
-  A press on its handle reaches ImGui through `NvImgui.view_grab`: a left press or one-finger touch
-  in the viewport waits two frames before the hook decides. Tests must hold the press longer than
-  that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
-  stays behind the panel.
+A press on its handle reaches ImGui through `NvImgui.view_grab`: a left press or one-finger touch
+in the viewport waits two frames before the hook decides. Tests must hold the press longer than
+that before moving. `ImGuizmo_BeginFrame` runs before the panel is built, so the gizmo's window
+stays behind the panel.
 - The sandbox's scenes are files (`sandbox/data/*.nvscene`, `docs/specs/scene_file.md`), listed in `sandbox/scenes.c`, read by
-  `sandbox/scene_file.c` (line-based text, `engine/text.c`); the first is built at start and the others when first shown, each into a
-  `SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
-  (Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
-  and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of
-  types (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`; one `switch` branch each in `sandbox/behaviors.c`, no function
-  pointers). A behavior's keys are rows of a `SceneField` table in `scene_file.c`: structure keys are read once, **parameters** are
-  what the UI changes, the save keeps (`BHVR`) and undo takes back. The same row makes the reader, the Inspector and Stress tab
-  widgets (`generator_rows`), the search and the undo label, so a new parameter is a row with its `label`, `keywords` and range,
-  plus what it does in `behaviors.c`; a new behavior kind is a `BehaviorKind`, a table and a branch. Nodes a generator makes are not
-  in the file: `SceneDoc.authored` says which the file made, and the save, undo and the gizmo leave the others alone while the
-  Inspector shows them read-only. A glb is an asset for the whole sandbox (`Asset`): the first node that needs it loads it in
-  place, the others copy it, and its material edits are saved once (`ASET`). The first scene that fails to build stops the
-  sandbox; another is refused when picked and the View tab shows why. Debug builds export `_sandbox_debug_show_scene(index)`,
-  `_sandbox_debug_scenes`, `_sandbox_debug_set_grid`, `_set_chain`, `_set_crowd`, `_set_effects` (the shown scene's first behavior
-  of that type), `_sandbox_debug_built`, `_sandbox_debug_benchmark` and `_sandbox_debug_benchmark_start` for tests.
+`sandbox/scene_file.c` (line-based text, `engine/text.c`); the first is built at start and the others when first shown, each into a
+`SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
+(Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
+and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of
+types (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`; one `switch` branch each in `sandbox/behaviors.c`, no function
+pointers). A behavior's keys are rows of a `SceneField` table in `scene_file.c`: structure keys are read once, **parameters** are
+what the UI changes, the save keeps (`BHVR`) and undo takes back. The same row makes the reader, the Inspector and Stress tab
+widgets (`generator_rows`), the search and the undo label, so a new parameter is a row with its `label`, `keywords` and range,
+plus what it does in `behaviors.c`; a new behavior kind is a `BehaviorKind`, a table and a branch. Nodes a generator makes are not
+in the file: `SceneDoc.authored` says which the file made, and the save, undo and the gizmo leave the others alone while the
+Inspector shows them read-only. A glb is an asset for the whole sandbox (`Asset`): the first node that needs it loads it in
+place, the others copy it, and its material edits are saved once (`ASET`). The first scene that fails to build stops the
+sandbox; another is refused when picked and the View tab shows why. Debug builds export `_sandbox_debug_show_scene(index)`,
+`_sandbox_debug_scenes`, `_sandbox_debug_set_grid`, `_set_chain`, `_set_crowd`, `_set_effects` (the shown scene's first behavior
+of that type), `_sandbox_debug_built`, `_sandbox_debug_benchmark` and `_sandbox_debug_benchmark_start` for tests.
 - The sandbox autosaves its state (every scene and the editor settings; benchmark results and the nodes a generator made are not
-  saved) to `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`): one `SCNE` per scene, named by its `FILE`. A new piece of
-  editable state gets a tag in `sandbox/save.c` and a row in the spec's tables. Never change what an existing tag means
-  without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
-  save, load, save gives the same bytes; tests call `Module._sandbox_debug_save_round_trip()` after
-  editing.
+saved) to `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`): one `SCNE` per scene, named by its `FILE`. A new piece of
+editable state gets a tag in `sandbox/save.c` and a row in the spec's tables. Never change what an existing tag means
+without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
+save, load, save gives the same bytes; tests call `Module._sandbox_debug_save_round_trip()` after
+editing.
 - Every scene has Edit and Play modes (`docs/specs/play.md`). In Edit mode nothing may move the
-  scene by itself: anything time-driven (spins, walking, sweeps, jumps, churn, effects) goes in the
-  `sandbox->playing` branch of its behavior in `sandbox/behaviors.c`, and the animation only previews in place. Play
-  snapshots the sandbox in the save format and Stop loads the shown scene back (`SAVE_PART_SCENE | SAVE_PART_SHOWN`), so
-  anything Stop must restore has to be in the save. There is one playing state; switching scenes stops Play first. The autosave writes that snapshot while
-  playing, and undo is off. Debug builds expose `Module._sandbox_debug_save_crc()` to compare the
-  state before Play and after Stop. A benchmark run (`sandbox/stress.c`) starts Play in Edit mode, sets each step from the
-  scene file's values, and ends with Stop, or puts the parameters back when Play was already running.
+scene by itself: anything time-driven (spins, walking, sweeps, jumps, churn, effects) goes in the
+`sandbox->playing` branch of its behavior in `sandbox/behaviors.c`, and the animation only previews in place. Play
+snapshots the sandbox in the save format and Stop loads the shown scene back (`SAVE_PART_SCENE | SAVE_PART_SHOWN`), so
+anything Stop must restore has to be in the save. There is one playing state; switching scenes stops Play first. The autosave writes that snapshot while
+playing, and undo is off. Debug builds expose `Module._sandbox_debug_save_crc()` to compare the
+state before Play and after Stop. A benchmark run (`sandbox/stress.c`) starts Play in Edit mode, sets each step from the
+scene file's values, and ends with Stop, or puts the parameters back when Play was already running.
 - Undo (`docs/specs/undo.md`) needs no code at edit sites: whenever no widget, gizmo or popup is in
-  use, `sandbox/undo.c` compares the selected nodes, the behaviors' parameters and the scene settings (written by
-  `save_write_scope`) with the last commit. There is one history; a step carries its scene. So a new editable value is undoable once it is saved in
-  its scope; a value the sandbox changes every frame in Edit mode must be left out there
-  (`driven_fields` in `sandbox/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._sandbox_debug_undo_steps()`
-  and `_sandbox_debug_undo_done()` for tests.
+use, `sandbox/undo.c` compares the selected nodes, the behaviors' parameters and the scene settings (written by
+`save_write_scope`) with the last commit. There is one history; a step carries its scene. So a new editable value is undoable once it is saved in
+its scope; a value the sandbox changes every frame in Edit mode must be left out there
+(`driven_fields` in `sandbox/save.c`, now only the orbit camera), or every frame becomes a step. Debug builds expose `Module._sandbox_debug_undo_steps()`
+and `_sandbox_debug_undo_done()` for tests.
 - The selection (`docs/specs/selection.md`) is `SceneView.selected`, the primary node (picked last: the
-  Inspector edits it, the camera follows it), plus up to 255 `others`. Change it only through
-  `sandbox/selection.c` (`selection_set`, `selection_add`, `selection_toggle`, `selection_keep_primary`),
-  never by assigning `selected`, so the others and the Shift+click anchor stay consistent; read it with
-  `selection_count` / `selection_get` / `selection_has`. Ctrl or Shift+click (viewport and Scene tab)
-  and the phone's Multi toggle add and remove; Shift+click in the Scene tab selects a range of last
-  frame's rows. A viewport tap's modifiers are `NvViewInput.tap_mods`, the keys held at the press, not
-  the keys at the frame the tap arrives. `selection_prune` drops nodes that no longer exist each frame.
-  The gizmo moves every selected node except the active camera and nodes under a selected node,
-  around their center, applying its change since the drag started to each node's starting world
-  matrix; undo's Node scope holds every selected node, so such a drag is one step. The save keeps the
-  others as `SELO`. Debug builds export `_sandbox_debug_selection_count`, `_sandbox_debug_selection(i)`,
-  `_sandbox_debug_select(index, mode)`, `_sandbox_debug_set_multi`, `_sandbox_debug_tree_row`,
-  `_sandbox_debug_find_node` and `_sandbox_debug_node` for tests. A node a generator made can be selected but not edited: it is not
-  saved (`SELN`, `SELO` skip it), undo leaves it out and the gizmo does not move it.
+Inspector edits it, the camera follows it), plus up to 255 `others`. Change it only through
+`sandbox/selection.c` (`selection_set`, `selection_add`, `selection_toggle`, `selection_keep_primary`),
+never by assigning `selected`, so the others and the Shift+click anchor stay consistent; read it with
+`selection_count` / `selection_get` / `selection_has`. Ctrl or Shift+click (viewport and Scene tab)
+and the phone's Multi toggle add and remove; Shift+click in the Scene tab selects a range of last
+frame's rows. A viewport tap's modifiers are `NvViewInput.tap_mods`, the keys held at the press, not
+the keys at the frame the tap arrives. `selection_prune` drops nodes that no longer exist each frame.
+The gizmo moves every selected node except the active camera and nodes under a selected node,
+around their center, applying its change since the drag started to each node's starting world
+matrix; undo's Node scope holds every selected node, so such a drag is one step. The save keeps the
+others as `SELO`. Debug builds export `_sandbox_debug_selection_count`, `_sandbox_debug_selection(i)`,
+`_sandbox_debug_select(index, mode)`, `_sandbox_debug_set_multi`, `_sandbox_debug_tree_row`,
+`_sandbox_debug_find_node` and `_sandbox_debug_node` for tests. A node a generator made can be selected but not edited: it is not
+saved (`SELN`, `SELO` skip it), undo leaves it out and the gizmo does not move it.
 - Desktop keyboard shortcuts are rows of one table in `sandbox/shortcuts.c` (`docs/specs/shortcuts.md`):
-  add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
-  the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
-  browser, so Ctrl+S is not "Save page") stay in step. Nothing fires while a text field is being
-  edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
-  Tests press keys with Playwright and read `Module._sandbox_debug_gizmo`, `_sandbox_debug_state` and the
-  other debug exports.
+add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
+the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
+browser, so Ctrl+S is not "Save page") stay in step. Nothing fires while a text field is being
+edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
+Tests press keys with Playwright and read `Module._sandbox_debug_gizmo`, `_sandbox_debug_state` and the
+other debug exports.
 - Every widget of a searchable panel (Scene, Inspector, View, Textures and Stress tabs; the Console has
-  its own filters) goes through `search_row` (one widget carrying its label), `search_group` (several
-  widgets or a button) or, for text that is no setting, `if (search_plain(sandbox))`; sections start with
-  `search_section(sandbox, "Heading")`, which draws the heading with its first visible row
-  (`docs/specs/search.md`). A panel's content sits between `search_panel_begin` and `search_panel_end`
-  (the box above, a scrolling child below). The same calls make the palette's list of settings: it runs
-  the panels in collect mode, where `search_row` notes the row and draws nothing. A new setting is
-  searchable and in the palette by being written that way. Commands (actions the palette lists and the
-  desktop's keys) are rows of the table in `sandbox/shortcuts.c`; a row without keys is palette only. Debug
-  builds export `Module._sandbox_debug_search_buffer`, `_sandbox_debug_search_set(panel)`,
-  `_sandbox_debug_search_rows(panel)`, `_sandbox_debug_palette(n)`, `_sandbox_debug_palette_result(i, k)` and
-  `_sandbox_debug_palette_query(k)` for tests.
+its own filters) goes through `search_row` (one widget carrying its label), `search_group` (several
+widgets or a button) or, for text that is no setting, `if (search_plain(sandbox))`; sections start with
+`search_section(sandbox, "Heading")`, which draws the heading with its first visible row
+(`docs/specs/search.md`). A panel's content sits between `search_panel_begin` and `search_panel_end`
+(the box above, a scrolling child below). The same calls make the palette's list of settings: it runs
+the panels in collect mode, where `search_row` notes the row and draws nothing. A new setting is
+searchable and in the palette by being written that way. Commands (actions the palette lists and the
+desktop's keys) are rows of the table in `sandbox/shortcuts.c`; a row without keys is palette only. Debug
+builds export `Module._sandbox_debug_search_buffer`, `_sandbox_debug_search_set(panel)`,
+`_sandbox_debug_search_rows(panel)`, `_sandbox_debug_palette(n)`, `_sandbox_debug_palette_result(i, k)` and
+`_sandbox_debug_palette_query(k)` for tests.
 - UI text is written in English in the code and goes through `T("text")` (a printf format keeps
-  its conversions) or `TL("label")` (a widget label: it keeps its ImGui id in both languages),
-  from `engine/strings.h`; each executable keeps its own table of Korean rows (the sandbox's is `sandbox/strings.c`, handed to
-  the engine by `sandbox_strings_init`) and each string needs a row there (`docs/specs/korean.md`).
-  `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
-  conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
-  rows, node, clip and texture names and the benchmark's copied table stay English. Text copied into a fixed
-  buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`engine/base.h`), never in the middle of a character. The desktop types
-  through the text agent too (an input method composes there); a key that types no text is kept from it
-  in `on_key`.
+its conversions) or `TL("label")` (a widget label: it keeps its ImGui id in both languages),
+from `engine/strings.h`; each executable keeps its own table of Korean rows (the sandbox's is `sandbox/strings.c`, handed to
+the engine by `sandbox_strings_init`) and each string needs a row there (`docs/specs/korean.md`).
+`tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
+conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
+rows, node, clip and texture names and the benchmark's copied table stay English. Text copied into a fixed
+buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`engine/base.h`), never in the middle of a character. The desktop types
+through the text agent too (an input method composes there); a key that types no text is kept from it
+in `on_key`.
 - Report through `nv_log(level, source, format, ...)` (`engine/log.h`), not `fprintf(stderr, ...)`
-  (`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
-  Console tab shows; an equal message in a row is one row with a count. The page's own output
-  (`Module.print`, `printErr`, uncaught errors, `Module.nvLog` for `EM_JS` code) is queued in
-  `web/index.html.in` and `nv_log_pump()` moves it in at the start of each frame, since a hook
-  must not call into WebAssembly. The ring is not saved and not undoable. Every `EM_JS` message goes
-  through `Module.nvLog(level, source, text)` (0 info, 1 warning, 2 error), not `console.*`. Rows
-  the Console tab lists are indices into the ring, so nothing may add or clear messages while it
-  draws (Clear is done after the list). Debug builds export `Module._sandbox_debug_log(level, n)`,
-  `_sandbox_debug_log_count`, `_sandbox_debug_wgpu_error` and the `_sandbox_debug_console_*` functions (item
-  rects, rows, scroll, selection) for tests.
+(`docs/specs/console.md`). It writes to the browser console and to one fixed log ring that the
+Console tab shows; an equal message in a row is one row with a count. The page's own output
+(`Module.print`, `printErr`, uncaught errors, `Module.nvLog` for `EM_JS` code) is queued in
+`web/index.html.in` and `nv_log_pump()` moves it in at the start of each frame, since a hook
+must not call into WebAssembly. The ring is not saved and not undoable. Every `EM_JS` message goes
+through `Module.nvLog(level, source, text)` (0 info, 1 warning, 2 error), not `console.*`. Rows
+the Console tab lists are indices into the ring, so nothing may add or clear messages while it
+draws (Clear is done after the list). Debug builds export `Module._sandbox_debug_log(level, n)`,
+`_sandbox_debug_log_count`, `_sandbox_debug_wgpu_error` and the `_sandbox_debug_console_*` functions (item
+rects, rows, scroll, selection) for tests.
 - The build label in the viewport's top-left corner shows the build type, the commit's short hash
-  (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
-  viewport's width; every app draws it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
-  `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
-  makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
-  (`Sandbox.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
-  `.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
-  errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
-  instead of picking (`pick` in `sandbox/main.c`, through `Sandbox.badge_box`).
+(`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
+viewport's width; every app draws it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
+`NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
+makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
+(`Sandbox.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
+`.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
+errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
+instead of picking (`pick` in `sandbox/main.c`, through `Sandbox.badge_box`).
 - The Textures tab (`docs/specs/textures.md`, `sandbox/textures.c`) draws engine textures with
-  `nv_imgui_preview` (preview slots in `imgui.c`, ImTextureIDs from `NV_IMGUI_MAX_TEXTURES` on; a
-  color pipeline for channels, a depth pipeline reading with `textureLoad`). The depth target is
-  samplable (`NvRenderer.depth_sampled`) and its depth stored only while the tab is shown. A new
-  kind of texture belongs in its list (`gather`), and a texture it shows needs
-  `NV_GPU_TEXTURE_SAMPLED`. Renderer textures carry a name (`nv_renderer_add_texture`).
-  Debug builds export `Module._sandbox_debug_textures_*`, `_sandbox_debug_preview_slots` and
-  `_sandbox_debug_depth_sampled` for tests.
+`nv_imgui_preview` (preview slots in `imgui.c`, ImTextureIDs from `NV_IMGUI_MAX_TEXTURES` on; a
+color pipeline for channels, a depth pipeline reading with `textureLoad`). The depth target is
+samplable (`NvRenderer.depth_sampled`) and its depth stored only while the tab is shown. A new
+kind of texture belongs in its list (`gather`), and a texture it shows needs
+`NV_GPU_TEXTURE_SAMPLED`. Renderer textures carry a name (`nv_renderer_add_texture`).
+Debug builds export `Module._sandbox_debug_textures_*`, `_sandbox_debug_preview_slots` and
+`_sandbox_debug_depth_sampled` for tests.
 - The first directional light casts shadows through one shadow map fitted to the view
-  (`docs/specs/shadows.md`); the sandbox sets `NvRenderer.shadows` and the renderer remakes the map and
-  its depth-only pipelines when the size or format changes. The shadow pass binds
-  `shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
-  A new mesh vertex layout needs a matching entry point in `engine/shaders/shadow.slang` too.
+(`docs/specs/shadows.md`); the sandbox sets `NvRenderer.shadows` and the renderer remakes the map and
+its depth-only pipelines when the size or format changes. The shadow pass binds
+`shadow_frame_group`, which leaves the map out: a pass cannot sample the texture it renders to.
+A new mesh vertex layout needs a matching entry point in `engine/shaders/shadow.slang` too.
 - The scene renders at a resolution of its own (`docs/specs/resolution.md`): `nv_renderer_draw`
-  takes an `NvSceneOutput` (the scene's width and height, and the image rectangle of the canvas it
-  is shown in, with `pixel_size` screen pixels per scene pixel), draws into the renderer's own color
-  (`scene_color`), MSAA and depth targets (allocated rounded up to 64 and kept while large enough),
-  then an upscale pass clears the canvas to black and shows it with the nearest filter
-  (`textureLoad`). The sandbox computes it each frame in `sandbox_layout` from `Sandbox.resolution` (Scale: a
-  divisor 1 to 4 of the viewport; Fixed: an exact size, by default at the largest whole multiple
-  that fits, centered, with black bars, or fitted or stretched to the viewport: `NvFixedFit`; `NvResolution` and
-  `nv_renderer_scene_output` are the engine's):
-  `Sandbox.layout.scene`. Picking, panning and the gizmo use it
-  (`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
-  does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
-  Debug builds export `_sandbox_debug_scene`, `_sandbox_debug_set_resolution` and `_sandbox_debug_project`.
+takes an `NvSceneOutput` (the scene's width and height, and the image rectangle of the canvas it
+is shown in, with `pixel_size` screen pixels per scene pixel), draws into the renderer's own color
+(`scene_color`), MSAA and depth targets (allocated rounded up to 64 and kept while large enough),
+then an upscale pass clears the canvas to black and shows it with the nearest filter
+(`textureLoad`). The sandbox computes it each frame in `sandbox_layout` from `Sandbox.resolution` (Scale: a
+divisor 1 to 4 of the viewport; Fixed: an exact size, by default at the largest whole multiple
+that fits, centered, with black bars, or fitted or stretched to the viewport: `NvFixedFit`; `NvResolution` and
+`nv_renderer_scene_output` are the engine's):
+`Sandbox.layout.scene`. Picking, panning and the gizmo use it
+(`nv_renderer_view_ray` and `nv_renderer_camera_matrices` take it), and a tap outside the image
+does nothing. Do not size a target by the canvas or the viewport; use the scene's resolution.
+Debug builds export `_sandbox_debug_scene`, `_sandbox_debug_set_resolution` and `_sandbox_debug_project`.
 - The scene renders in linear HDR (`docs/specs/vfx.md`): the scene targets are `NV_SCENE_FORMAT`
-  (`RGBA16Float`) and every pipeline of the scene pass targets it. Exposure, tone mapping (`NvPostSettings.tone`:
-  Clamp, PBR Neutral, ACES) and the bloom composite happen in the upscale pass; the canvas's sRGB view encodes at the
-  end. A shader writes linear light that may exceed 1; never apply a transfer curve in a scene shader. The MSAA resolve
-  averages in linear space. Bloom (`renderer.c`: `update_bloom`, `record_bloom`) is a 6-level chain between the scene
-  pass and the upscale pass, remade only when the scene's size changes.
+(`RGBA16Float`) and every pipeline of the scene pass targets it. Exposure, tone mapping (`NvPostSettings.tone`:
+Clamp, PBR Neutral, ACES) and the bloom composite happen in the upscale pass; the canvas's sRGB view encodes at the
+end. A shader writes linear light that may exceed 1; never apply a transfer curve in a scene shader. The MSAA resolve
+averages in linear space. Bloom (`renderer.c`: `update_bloom`, `record_bloom`) is a 6-level chain between the scene
+pass and the upscale pass, remade only when the scene's size changes.
 - Effects (`engine/vfx.h`, `engine/vfx.c`, `docs/specs/vfx.md`): particles live on the GPU only, simulated by compute
-  passes recorded in `nv_renderer_draw` (emit, simulate, prepare; the free list, two alive lists and a visible list).
-  The sandbox registers effects once (`nv_vfx_add_effect`, see `sandbox/effects.c`), calls `nv_vfx_update(dt)` with the game
-  clock's dt every frame (0 pauses them) and `nv_vfx_burst`, `nv_vfx_emit`, `nv_vfx_trail`, `nv_vfx_beam` and
-  `nv_vfx_decal` where things happen; `NvRenderer.vfx` makes the renderer run and draw them. Draw order in the scene
-  pass: opaque meshes, decals, debug lines, segments, alpha particles, additive particles; none write depth. A pass
-  binds only the buffers it uses (an indirect-argument buffer cannot be bound where it is also read as arguments).
-  Segments and decals are rings the CPU stages and uploads in runs; their shaders drop an expired slot by moving it
-  outside the clip volume. Alpha particles are unsorted on purpose (`// TODO:` in `sandbox/effects.c`). Stats come back
-  a frame or two late. Debug builds export `Module._sandbox_debug_vfx(n)`, `_sandbox_debug_vfx_fire(effect)`,
-  `_sandbox_debug_set_effects(...)` (the shown scene's `effects` behavior, whose workload runs in Play), `_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
-  (`TONE`, `EXPO`, `BLOM`, `BLMI`).
+passes recorded in `nv_renderer_draw` (emit, simulate, prepare; the free list, two alive lists and a visible list).
+The sandbox registers effects once (`nv_vfx_add_effect`, see `sandbox/effects.c`), calls `nv_vfx_update(dt)` with the game
+clock's dt every frame (0 pauses them) and `nv_vfx_burst`, `nv_vfx_emit`, `nv_vfx_trail`, `nv_vfx_beam` and
+`nv_vfx_decal` where things happen; `NvRenderer.vfx` makes the renderer run and draw them. Draw order in the scene
+pass: opaque meshes, decals, debug lines, segments, alpha particles, additive particles; none write depth. A pass
+binds only the buffers it uses (an indirect-argument buffer cannot be bound where it is also read as arguments).
+Segments and decals are rings the CPU stages and uploads in runs; their shaders drop an expired slot by moving it
+outside the clip volume. Alpha particles are unsorted on purpose (`// TODO:` in `sandbox/effects.c`). Stats come back
+a frame or two late. Debug builds export `Module._sandbox_debug_vfx(n)`, `_sandbox_debug_vfx_fire(effect)`,
+`_sandbox_debug_set_effects(...)` (the shown scene's `effects` behavior, whose workload runs in Play), `_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
+(`TONE`, `EXPO`, `BLOM`, `BLMI`).
 - The scene pass is multisampled by default (`docs/specs/msaa.md`): the sandbox sets `NvRenderer.msaa`
-  (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
-  4-sample color target (made like the canvas: its own format with the sRGB view format, rendered
-  through the sRGB view; a texture created directly in the sRGB format resolved too dark) and the
-  scene pipelines, and `update_depth_buffer` the 4-sample depth; the canvas view passed to
-  `nv_renderer_draw` is the resolve target. A pipeline used in the scene pass takes
-  `renderer->scene_samples`; the shadow and ImGui passes stay single-sample. A multisampled depth
-  texture is previewed through `depth_ms_pipeline`. Debug builds export `_sandbox_debug_msaa` and
-  `_sandbox_debug_set_msaa`.
+(1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
+4-sample color target (made like the canvas: its own format with the sRGB view format, rendered
+through the sRGB view; a texture created directly in the sRGB format resolved too dark) and the
+scene pipelines, and `update_depth_buffer` the 4-sample depth; the canvas view passed to
+`nv_renderer_draw` is the resolve target. A pipeline used in the scene pass takes
+`renderer->scene_samples`; the shadow and ImGui passes stay single-sample. A multisampled depth
+texture is previewed through `depth_ms_pipeline`. Debug builds export `_sandbox_debug_msaa` and
+`_sandbox_debug_set_msaa`.
 - The scene pass uses reverse Z: a `depth32float` buffer cleared to 0, compare `Greater`, and clip z
-  turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
-  camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay
-  standard 0..1. The shadow map keeps standard depth, since its projection is orthographic.
+turned into w - z by `reverse_depth` in `renderer.c`, so depth runs 1 (near) to 0 (far). The
+camera matrices the API returns (`nv_renderer_camera_matrices`, `nv_renderer_view_ray`) stay
+standard 0..1. The shadow map keeps standard depth, since its projection is orthographic.
 - In `engine/anim.cpp`, ozz headers are included before engine headers: `engine/base.h` defines
-  `internal` as a macro, which breaks ozz's `internal::` namespace.
+`internal` as a macro, which breaks ozz's `internal::` namespace.
 - Joint names are case-sensitive and come from the asset (the Quaternius rig has `Head`, `hand_r`).
-  Assert on `nv_anim_find_joint` results.
+Assert on `nv_anim_find_joint` results.
 - Animation runs through the scene: `nv_anim_update_scene` (before `nv_scene_update`) updates
-  every animator, moves its `owner` node by root motion, aims look-at at `target_node` and fills
-  `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
+every animator, moves its `owner` node by root motion, aims look-at at `target_node` and fills
+`NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model, under the `parent` it is given; call `nv_anim_init`
-  first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so a generator keeps the characters it made.
+first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so a generator keeps the characters it made.
 - The sandbox is this repository's executable. `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])`
-  packs the files a program reads into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at
-  `/assets`) and its `data/`. CI installs its Release and Debug builds into the `engine-web` artifact (`release/`, `debug/`). The sandbox has
-  no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
-  developer tools download.
+packs the files a program reads into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at
+`/assets`) and its `data/`. CI installs its Release and Debug builds into the `engine-web` artifact (`release/`, `debug/`). The sandbox has
+no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
+developer tools download.
 - `NV_BUILD_SANDBOX` and `NV_BUILD_TESTS` default to on only when this is the top-level project, so an app that adds the engine as a
-  subdirectory builds the engine alone. The functions an app calls find the engine's files through `CMAKE_CURRENT_FUNCTION_LIST_DIR`,
-  never `PROJECT_SOURCE_DIR` (the caller's project there), and the engine passes its parent the variables it needs (end of
-  `CMakeLists.txt`). `tests/strings_test.mjs` takes folders relative to this repository's root, and an app runs it on its own folder
-  (`strings_test.mjs ../src`), so keep that.
+subdirectory builds the engine alone. The functions an app calls find the engine's files through `CMAKE_CURRENT_FUNCTION_LIST_DIR`,
+never `PROJECT_SOURCE_DIR` (the caller's project there), and the engine passes its parent the variables it needs (end of
+`CMakeLists.txt`). `tests/strings_test.mjs` takes folders relative to this repository's root, and an app runs it on its own folder
+(`strings_test.mjs ../src`), so keep that.
 
 ## Assets
 
 - Binary assets live under `assets/` and are stored with Git LFS. `.gitattributes` lists the
-  tracked types; add a pattern there before committing a new binary type.
+tracked types; add a pattern there before committing a new binary type.
 - Check `git lfs ls-files` after adding assets, so a binary never lands in plain Git history.
 
 ## Third-party libraries
 
 - When implementing a feature or designing a spec, first look for third-party libraries that
-  would help. Present the candidates to the user (what each does, language, license, how it fits
-  this engine and the coding standard, trade-offs) with a recommendation, including "write it
-  ourselves" when that is the better fit.
+would help. Present the candidates to the user (what each does, language, license, how it fits
+this engine and the coding standard, trade-offs) with a recommendation, including "write it
+ourselves" when that is the better fit.
 - Do not add a library until the user confirms it. Then record the reason in the Dependencies
-  section of `docs/CODING_STANDARD.md`.
+section of `docs/CODING_STANDARD.md`.
 
 ## Testing without a display
 
 There is no physical display in cloud sessions. Headless Chromium renders WebGPU with
-`--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader
---use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-fallback-to-gl-for-testing`.
+`--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-fallback-to-gl-for-testing`.
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
