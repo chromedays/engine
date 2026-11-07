@@ -1,6 +1,6 @@
 # The native builds. Windows (docs/specs/d3d12_port.md): the Visual Studio generator, every configuration in one build folder.
 # Linux: Ninja, a folder for each configuration (build-linux/Debug, build-linux/Release) and the downloaded tools shared between
-# them. `just` lists the recipes of the system it runs on; `just build Release`, `just test Release`, `just run sandbox` (Windows).
+# them. `just` lists the recipes of the system it runs on; `just build Release`, `just test Release`, `just run sandbox`.
 
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
@@ -56,6 +56,11 @@ configure config="Debug":
 build config="Debug":
     [ -f {{linux_build_dir}}/{{config}}/CMakeCache.txt ] || just configure {{config}}
     cmake --build {{linux_build_dir}}/{{config}}
+
+# Linux: build, then run an executable (the sandbox); the arguments after the configuration go to it.
+[linux]
+run app="sandbox" config="Debug" *args: (build config)
+    {{linux_build_dir}}/{{config}}/{{app}}/{{app}} {{args}}
 
 # Linux: run the tests of one configuration (the C tests natively, the .mjs ones with Node when there is one).
 [linux]

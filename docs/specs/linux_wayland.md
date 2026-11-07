@@ -1,7 +1,7 @@
 # Linux Wayland 빌드 스펙 (입력, 창, 샌드박스 실행)
 
-상태: 초안 (2026-11-07). 범위(포인터, 키보드, 창 크기와 정수 배율)와 의존성(libxkbcommon)은 합의했다(2026-11-07). 이미지 디코딩은
-`image_decoding.md`가 했다. 이 스펙의 변경은 먼저 합의한다.
+상태: 끝남 (2026-11-07). 단계 1–5를 했다("만든 결과"). 범위(포인터, 키보드, 창 크기와 정수 배율)와 의존성(libxkbcommon)은 합의했다
+(2026-11-07). 이미지 디코딩은 `image_decoding.md`가 했다. 이 스펙의 변경은 먼저 합의한다. "나중"의 일은 각자 새 스펙에서 한다.
 
 ### 목표
 
@@ -220,3 +220,30 @@ Linux에는 자동으로 입력을 넣을 수단이 없다(Wayland는 다른 앱
 - **의존성:** libxkbcommon을 `docs/CODING_STANDARD.md`의 의존성 절에 적었다. 창 빌드는 이제 `xkbcommon`(pkg-config)을 요구한다.
 - **확인:** Linux Debug와 Release가 우리 코드의 경고 없이 빌드되고 ctest 15개가 통과한다. `just visual` 합격. 샌드박스 로그에 경고가 없다
   (키맵이 컴파일되었다). Ctrl과 Shift 클릭, 단축키, 글자 치기, 반복, 앱 안의 복사와 붙여 넣기는 사용자가 확인했다.
+
+#### 단계 5 (2026-11-07)
+
+- AGENTS.md: 프로젝트 소개(Linux 빌드가 있다), 구조도의 Linux 소스, "On Linux" 절(요구 사항, 빌드와 실행, 창의 동작, 저장 폴더, 아직 없는
+  것), `just` 문단, Wayland를 부르는 파일의 규칙. `justfile`에 Linux의 `just run`을 더했다(이제 샌드박스를 빌드하므로).
+- `visual_regression.md`: 범위 밖의 두 줄(뒤에 이 스펙이 했다), 창 백엔드의 고정 크기(`nv_window_linux_set_fixed_size`)와 frame callback,
+  결정성, 검증의 "옵션 기본값이 꺼짐".
+- README.md: 앱에 넘기는 플랫폼 변수에 `NV_LINUX`, `NV_HEADLESS`.
+
+### 만든 결과
+
+| 단계 | 커밋 | 무엇 |
+|---|---|---|
+| 1 | `0660977` | 샌드박스가 Linux 창 빌드에서 빌드되고 뜬다: 실행 파일 옆의 에셋, `~/.local/share/nv/<target>/`의 저장, `execv`로 다시 시작. 가려진 창에서 Fifo present가 멈춰서 Mailbox와 frame callback으로 프레임을 맞춘다 |
+| 2 | `53400e3` | 창이 컴포지터의 크기와 정수 배율을 따르고, 활성을 잃거나 suspended가 되면 숨김 콜백을 부르고, suspended 동안 그리지 않는다. `visual_test`는 `nv_window_linux_set_fixed_size`로 고정 크기를 지킨다 |
+| 3 | `aa9b6f9` | `engine/imgui_linux.c`: 포인터(버튼, 끌기, 휠)가 ImGui와 뷰의 카메라로 간다 |
+| 4 | `9a6b08b` | 키보드(libxkbcommon): 키, 모디파이어, 글자, 반복, 포커스 |
+| 5 | 이 커밋 | 문서와 Linux의 `just run` |
+
+계획과 달라진 것:
+
+- **에셋 경로의 규칙:** Windows처럼 맨 앞의 `/`를 언제나 실행 파일 폴더로 바꾸지 않고, 실행 파일 옆에서 먼저 찾는다(단계 1, "찾은 것").
+- **프레임 속도:** 계획에 없었다. 가려진 창에서 프로그램이 멈춰서 단계 1에서 더했다("창"의 "프레임 속도").
+- **Ctrl과 Shift 클릭의 확인**은 단계 3에서 단계 4로 옮겼다(모디파이어는 키보드에서 온다).
+- **GCC 경고:** GCC가 샌드박스를 처음 컴파일하며 찾은 경고를 고쳤다(`sandbox/ui.c`, `sandbox/save.c`, `engine/storage_linux.c`,
+  `engine/gpu_webgpu.c`). emcc와 MSVC에는 없던 것이다.
+- **`--script`**는 옮기지 않았다(사용자가 없앨 계획이다). 그래서 입력이 있는 단계의 확인은 모두 사용자가 손으로 했다.
