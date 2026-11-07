@@ -67,6 +67,14 @@ endif()
 # The orbit camera in engine/camera.h: no GPU, so nothing from the WebGPU port is needed.
 nv_add_test(camera_test camera_test.c ${PROJECT_SOURCE_DIR}/engine/camera.c)
 
+# The Linux image decoder (engine/image_linux.c: stb_image, every allocation from the arena). The web and Windows decode with the
+# browser and WIC, which no test here can run. NOTE: the Linux build does not build the tests yet (CMakeLists.txt); this one is
+# ready for when it does.
+if(NV_LINUX)
+    nv_add_test(image_test image_test.c ${PROJECT_SOURCE_DIR}/engine/image_linux.c ${PROJECT_SOURCE_DIR}/engine/log.c)
+    target_link_libraries(image_test PRIVATE stb_image stb_image_write)
+endif()
+
 # The line-based text reading in engine/text.c: lines, tokens, numbers, names and error reports.
 nv_add_test(text_test text_test.c ${PROJECT_SOURCE_DIR}/engine/text.c ${PROJECT_SOURCE_DIR}/engine/log.c)
 

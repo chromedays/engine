@@ -231,15 +231,32 @@ add_library(cgltf STATIC "${PROJECT_BINARY_DIR}/cgltf_impl.c")
 target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
 target_compile_options(cgltf PRIVATE ${NV_NO_WARNINGS})
 
-# stb_image_write: single-header PNG writer, only the Linux build's nv_image_write_png uses it
-# (engine/image_linux.c). The stb repository tags no releases, so a commit is pinned; the
-# implementation gets its own translation unit like cgltf's.
+# stb, for the Linux build only (engine/image_linux.c): the web decodes with the browser and Windows with WIC
+# (docs/specs/image_decoding.md). The repository tags no releases, so a commit is pinned; each implementation gets its own
+# translation unit like cgltf's.
+#   stb_image decodes JPEG and PNG, from memory only. Every allocation it makes comes from the arena nv_image_decode is given,
+#   never from the heap: the implementation's STBI_MALLOC, STBI_REALLOC_SIZED and STBI_FREE are image_linux.c's functions.
+#   stb_image_write writes PNGs (nv_image_write_png).
 if(NV_LINUX)
     FetchContent_Declare(stb
         GIT_REPOSITORY https://github.com/nothings/stb.git
         GIT_TAG        4e9b368bfc071e97206ea5c6adba68dd0cbf8897
         SOURCE_SUBDIR  no-cmake)
     FetchContent_MakeAvailable(stb)
+    file(WRITE "${PROJECT_BINARY_DIR}/stb_image_impl.c"
+        "#include <stddef.h>\n"
+        "void* nv_image_stb_malloc(size_t size);\n"
+        "void* nv_image_stb_realloc(void* block, size_t old_size, size_t new_size);\n"
+        "void nv_image_stb_free(void* block);\n"
+        "#define STBI_MALLOC(size) nv_image_stb_malloc(size)\n"
+        "#define STBI_REALLOC_SIZED(block, old_size, new_size) nv_image_stb_realloc(block, old_size, new_size)\n"
+        "#define STBI_FREE(block) nv_image_stb_free(block)\n"
+        "#define STB_IMAGE_IMPLEMENTATION\n"
+        "#include <stb_image.h>\n")
+    add_library(stb_image STATIC "${PROJECT_BINARY_DIR}/stb_image_impl.c")
+    target_include_directories(stb_image SYSTEM PUBLIC ${stb_SOURCE_DIR})
+    target_compile_definitions(stb_image PUBLIC STBI_ONLY_JPEG STBI_ONLY_PNG STBI_NO_STDIO)
+    target_compile_options(stb_image PRIVATE ${NV_NO_WARNINGS})
     file(WRITE "${PROJECT_BINARY_DIR}/stb_image_write_impl.c" "#define STB_IMAGE_WRITE_IMPLEMENTATION\n#include <stb_image_write.h>\n")
     add_library(stb_image_write STATIC "${PROJECT_BINARY_DIR}/stb_image_write_impl.c")
     target_include_directories(stb_image_write SYSTEM PUBLIC ${stb_SOURCE_DIR})

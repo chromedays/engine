@@ -96,7 +96,7 @@ if(NV_WEB)
     target_link_options(nv PUBLIC -lidbfs.js)
     target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
 elseif(NV_LINUX)
-    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base stb_image_write)
+    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base stb_image stb_image_write)
 else()
     # The Agility SDK's headers come before the Windows SDK's, so they match the runtime the executables carry; the loader reads
     # the version from the symbols gpu_d3d12.c exports.

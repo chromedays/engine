@@ -40,7 +40,7 @@ engine/                    each module's header and source side by side, include
                            image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers),
                            the Linux sources of the same modules: window_linux.c (a Wayland window, the default; with
                            window_linux.h, engine-private) or window_headless.c (offscreen frames, NV_HEADLESS on), imgui_headless.c (no input),
-                           storage_linux.c, local_file_linux.c, image_linux.c (writes a PNG with stb_image_write; decoding not yet);
+                           storage_linux.c, local_file_linux.c, image_linux.c (decodes with stb_image inside the caller's arena, writes PNGs with stb_image_write);
                            CMake picks one source of each,
                            debug_script.c/.h (Windows Debug only: a scripted run, `--script`; see "Testing on Windows"),
                            log.c/.h (the log ring the Console tab shows),
