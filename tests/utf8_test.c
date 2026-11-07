@@ -35,16 +35,18 @@ int main(void)
     snprintf(buffer, sizeof(buffer), "%s", hangul); // fits
     nv_utf8_trim(buffer);
     CHECK(strcmp(buffer, hangul) == 0);
-    snprintf(buffer, 8, "%s", hangul); // cut after 7 bytes: two syllables and a lead byte
+    // The cuts are meant (GCC's -Wformat-truncation is off for this test, tests/CMakeLists.txt); snprintf still says how long the
+    // whole text is, however much of it fits.
+    CHECK(snprintf(buffer, 8, "%s", hangul) == 9); // cut after 7 bytes: two syllables and a lead byte
     nv_utf8_trim(buffer);
     CHECK(strcmp(buffer, "\xEA\xB0\x80\xEB\x82\x98") == 0);
-    snprintf(buffer, 5, "%s", hangul); // one syllable and a lead byte
+    CHECK(snprintf(buffer, 5, "%s", hangul) == 9); // one syllable and a lead byte
     nv_utf8_trim(buffer);
     CHECK(strcmp(buffer, "\xEA\xB0\x80") == 0);
-    snprintf(buffer, 3, "%s", hangul); // two bytes of one syllable
+    CHECK(snprintf(buffer, 3, "%s", hangul) == 9); // two bytes of one syllable
     nv_utf8_trim(buffer);
     CHECK(buffer[0] == 0);
-    snprintf(buffer, 5, "%s", "ab\xC3\xA9z"); // "ab" + é + z cut to 4 bytes: a, b, a whole é
+    CHECK(snprintf(buffer, 5, "%s", "ab\xC3\xA9z") == 5); // "ab" + é + z cut to 4 bytes: a, b, a whole é
     nv_utf8_trim(buffer);
     CHECK(strcmp(buffer, "ab\xC3\xA9") == 0);
 

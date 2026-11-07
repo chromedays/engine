@@ -214,9 +214,8 @@ Linux 개발 PC, Google Chrome stable headless(`playwright-core`로 띄움), Rel
 - `tests/image_test.c`(Linux 디코더): 위의 검사에 더해, 512x512 PNG를 `stb_image_write`로 만들어 정확히 되돌아오는지(zlib 출력과
   데이터가 자라는 경로), 디코딩 뒤 아레나에 픽셀만 시작 자리에 남는지, 픽셀 크기만큼의 아레나(576바이트)에서는 stb의 상태(18,568바이트)가
   들어가지 않아 실패하고 아레나가 그대로인지. AddressSanitizer와 UndefinedBehaviorSanitizer로, `-Wall -Wextra` 경고 없이 통과.
-  NOTE: Linux 빌드는 아직 테스트를 빌드하지 않는다(`CMakeLists.txt`의 `set(NV_BUILD_TESTS OFF)`). 이 테스트는 `tests/CMakeLists.txt`에
-  Linux 것으로 적어 두었고, 지금은 손으로 컴파일해 돌렸다. Linux에서 테스트를 켜면 기존 테스트 중 4개(`mesh_test`, `resolution_test`,
-  `camera_test`, `scene_file_test`)가 `libm`을 링크하지 않아 링크에서 실패한다.
+  그때 Linux 빌드는 테스트를 빌드하지 않아 손으로 컴파일해 돌렸다. 그 뒤 Linux에서 ctest를 켰다(`nv_add_test`가 Linux에서 `libm`을
+  링크한다): `image_test`를 포함한 15개가 창 빌드(Debug, Release)와 헤드리스 빌드에서 통과한다.
 - 웹 Release: stb가 빌드에 없고, `sandbox.wasm`이 단계 1과 같은 크기다(빌드 라벨의 커밋 글자만큼 다르다). ctest 15개 통과.
 - `engine/image_web.c`, `engine/image_win32.c`가 이 작업 전(`93e8e79`)과 같다.
 - Linux 창 빌드와 헤드리스 빌드가 빌드된다.

@@ -65,7 +65,7 @@ assets/                    binary assets (Git LFS); assets/quaternius/ is built 
                            (Lucide, merged into it)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo) and dev_server.mjs (the web
                            builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
-tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest;
+tests/                     tests that need no browser, built for Node (web) or natively (Windows, Linux) and run with ctest;
                            tests/visual/ is the exception: the visual regression test's capture app and its baselines
                            (docs/specs/visual_regression.md), run explicitly with `just visual`, never by ctest or CI; it ends
                            with a link to its result page, build-visual/visual-out/report.html (and report.json for scripts;
@@ -408,7 +408,8 @@ Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
 A touch on a panel widget takes a few frames to count as a tap: tests that touch buttons wait about two seconds.
-`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds). A Linux build runs the same
+tests natively (and the `.mjs` ones with the system's Node, when it has one); its `image_test` checks the Linux image decoder.
 Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can
