@@ -255,7 +255,13 @@ set(ozz_build_samples  OFF CACHE BOOL "" FORCE)
 set(ozz_build_howtos   OFF CACHE BOOL "" FORCE)
 set(ozz_build_tests    OFF CACHE BOOL "" FORCE)
 set(ozz_build_postfix  OFF CACHE BOOL "" FORCE)
-set(ozz_build_msvc_rt_dll ON CACHE BOOL "" FORCE) # the same C runtime as ours (MSVC): the dynamic one
+# ozz reads ozz_build_msvc_rt_dll only when the compiler is MSVC; elsewhere it only prints it in its configure
+# summary, so it is OFF there (forced, since older build folders cached ON).
+if(MSVC)
+    set(ozz_build_msvc_rt_dll ON CACHE BOOL "" FORCE) # the same C runtime as ours: the dynamic one
+else()
+    set(ozz_build_msvc_rt_dll OFF CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(ozz
     GIT_REPOSITORY https://github.com/guillaumeblanc/ozz-animation.git
     GIT_TAG        0.17.0
