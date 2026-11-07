@@ -5,29 +5,28 @@ project(engine LANGUAGES C CXX)
 # from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
-# The Linux build is headless unless this asks for its Wayland window (docs/specs/visual_regression.md); the visual regression
-# test's app is what needs the window, and it is built only when asked for.
-option(NV_LINUX_WINDOWED "Linux: a Wayland window instead of the headless build" OFF)
-option(NV_BUILD_VISUAL_TEST "Build the visual regression test app (needs NV_LINUX_WINDOWED)" OFF)
+# The Linux build draws into a Wayland window (docs/specs/visual_regression.md) unless this asks for the headless build (no
+# window, frames render offscreen). The visual regression test's app needs the window, and it is built only when asked for.
+option(NV_HEADLESS "Linux: the headless build (no window, frames render offscreen) instead of the Wayland window" OFF)
+option(NV_BUILD_VISUAL_TEST "Build the visual regression test app (needs the Wayland window: NV_HEADLESS off)" OFF)
 
 # Three builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU), the Windows x64 build
-# (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, headless: no window, frames render offscreen).
+# (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, in a Wayland window or, with NV_HEADLESS on, offscreen).
 if(EMSCRIPTEN)
     set(NV_WEB TRUE)
 elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NV_LINUX TRUE)
-    if(NOT NV_LINUX_WINDOWED)
-        set(NV_HEADLESS TRUE)
-    endif()
-    # The sandbox and the Node-run tests belong to the web and Windows builds for now.
+    # The sandbox belongs to the web and Windows builds for now.
     set(NV_BUILD_SANDBOX OFF)
-    set(NV_BUILD_TESTS OFF)
 else()
     message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja), for Windows x64 with MSVC "
         "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64) and for Linux "
         "(cmake -S . -B build -G Ninja).")
+endif()
+if(NV_HEADLESS AND NOT NV_LINUX)
+    message(FATAL_ERROR "NV_HEADLESS is a Linux build's option: the web and Windows builds always have their window.")
 endif()
 
 set(CMAKE_C_STANDARD 17)
@@ -231,15 +230,32 @@ add_library(cgltf STATIC "${PROJECT_BINARY_DIR}/cgltf_impl.c")
 target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
 target_compile_options(cgltf PRIVATE ${NV_NO_WARNINGS})
 
-# stb_image_write: single-header PNG writer, only the Linux build's nv_image_write_png uses it
-# (engine/image_linux.c). The stb repository tags no releases, so a commit is pinned; the
-# implementation gets its own translation unit like cgltf's.
+# stb, for the Linux build only (engine/image_linux.c): the web decodes with the browser and Windows with WIC
+# (docs/specs/image_decoding.md). The repository tags no releases, so a commit is pinned; each implementation gets its own
+# translation unit like cgltf's.
+#   stb_image decodes JPEG and PNG, from memory only. Every allocation it makes comes from the arena nv_image_decode is given,
+#   never from the heap: the implementation's STBI_MALLOC, STBI_REALLOC_SIZED and STBI_FREE are image_linux.c's functions.
+#   stb_image_write writes PNGs (nv_image_write_png).
 if(NV_LINUX)
     FetchContent_Declare(stb
         GIT_REPOSITORY https://github.com/nothings/stb.git
         GIT_TAG        4e9b368bfc071e97206ea5c6adba68dd0cbf8897
         SOURCE_SUBDIR  no-cmake)
     FetchContent_MakeAvailable(stb)
+    file(WRITE "${PROJECT_BINARY_DIR}/stb_image_impl.c"
+        "#include <stddef.h>\n"
+        "void* nv_image_stb_malloc(size_t size);\n"
+        "void* nv_image_stb_realloc(void* block, size_t old_size, size_t new_size);\n"
+        "void nv_image_stb_free(void* block);\n"
+        "#define STBI_MALLOC(size) nv_image_stb_malloc(size)\n"
+        "#define STBI_REALLOC_SIZED(block, old_size, new_size) nv_image_stb_realloc(block, old_size, new_size)\n"
+        "#define STBI_FREE(block) nv_image_stb_free(block)\n"
+        "#define STB_IMAGE_IMPLEMENTATION\n"
+        "#include <stb_image.h>\n")
+    add_library(stb_image STATIC "${PROJECT_BINARY_DIR}/stb_image_impl.c")
+    target_include_directories(stb_image SYSTEM PUBLIC ${stb_SOURCE_DIR})
+    target_compile_definitions(stb_image PUBLIC STBI_ONLY_JPEG STBI_ONLY_PNG STBI_NO_STDIO)
+    target_compile_options(stb_image PRIVATE ${NV_NO_WARNINGS})
     file(WRITE "${PROJECT_BINARY_DIR}/stb_image_write_impl.c" "#define STB_IMAGE_WRITE_IMPLEMENTATION\n#include <stb_image_write.h>\n")
     add_library(stb_image_write STATIC "${PROJECT_BINARY_DIR}/stb_image_write_impl.c")
     target_include_directories(stb_image_write SYSTEM PUBLIC ${stb_SOURCE_DIR})
@@ -313,8 +329,8 @@ if(NV_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 if(NV_BUILD_VISUAL_TEST)
-    if(NOT NV_LINUX OR NOT NV_LINUX_WINDOWED)
-        message(FATAL_ERROR "NV_BUILD_VISUAL_TEST needs the Linux windowed build: -DNV_LINUX_WINDOWED=ON on Linux "
+    if(NOT NV_LINUX OR NV_HEADLESS)
+        message(FATAL_ERROR "NV_BUILD_VISUAL_TEST needs the Linux windowed build: -DNV_HEADLESS=OFF on Linux "
             "(docs/specs/visual_regression.md)")
     endif()
     include(cmake/odiff.cmake)
@@ -330,7 +346,7 @@ if(NOT PROJECT_IS_TOP_LEVEL)
         set(NV_COMPILE_OPTIONS /W4 /utf-8 /Zc:preprocessor)
         set(NV_COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     endif()
-    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_LINUX_WINDOWED NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
+    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
             CMAKE_C_STANDARD CMAKE_C_STANDARD_REQUIRED CMAKE_C_EXTENSIONS CMAKE_CXX_STANDARD CMAKE_CXX_STANDARD_REQUIRED)
         set(${var} "${${var}}" PARENT_SCOPE)
     endforeach()

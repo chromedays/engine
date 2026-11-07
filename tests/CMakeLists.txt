@@ -1,10 +1,14 @@
-# Tests that need no browser. Emscripten builds them for Node, which ctest runs them with; on Windows they are plain executables.
-#   nv_add_test(<name> <sources...>): the executable, run by ctest. On the web `-sENVIRONMENT=node` links it for Node.
+# Tests that need no browser. Emscripten builds them for Node, which ctest runs them with; on Windows and Linux they are plain
+# executables.
+#   nv_add_test(<name> <sources...>): the executable, run by ctest. On the web `-sENVIRONMENT=node` links it for Node; on Linux
+#   the math functions are a library of their own (libm), which emcc and MSVC link without being asked.
 function(nv_add_test name)
     add_executable(${name} ${ARGN})
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR})
     if(NV_WEB)
         target_link_options(${name} PRIVATE -sENVIRONMENT=node)
+    elseif(NV_LINUX)
+        target_link_libraries(${name} PRIVATE m)
     endif()
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
@@ -47,6 +51,8 @@ endif()
 
 # nv_utf8_fit and nv_utf8_trim: text cut to fit stays valid UTF-8.
 nv_add_test(utf8_test utf8_test.c)
+# It cuts text short with snprintf on purpose, which GCC warns about.
+target_compile_options(utf8_test PRIVATE $<$<C_COMPILER_ID:GNU>:-Wno-format-truncation>)
 
 # The effects system's CPU side: splitting bursts into workgroup jobs, the ring buffers' slots.
 nv_add_test(vfx_test vfx_test.c ${PROJECT_SOURCE_DIR}/engine/vfx_cpu.c)
@@ -67,6 +73,13 @@ endif()
 # The orbit camera in engine/camera.h: no GPU, so nothing from the WebGPU port is needed.
 nv_add_test(camera_test camera_test.c ${PROJECT_SOURCE_DIR}/engine/camera.c)
 
+# The Linux image decoder (engine/image_linux.c: stb_image, every allocation from the arena). The web and Windows decode with the
+# browser and WIC, which no test here can run.
+if(NV_LINUX)
+    nv_add_test(image_test image_test.c ${PROJECT_SOURCE_DIR}/engine/image_linux.c ${PROJECT_SOURCE_DIR}/engine/log.c)
+    target_link_libraries(image_test PRIVATE stb_image stb_image_write)
+endif()
+
 # The line-based text reading in engine/text.c: lines, tokens, numbers, names and error reports.
 nv_add_test(text_test text_test.c ${PROJECT_SOURCE_DIR}/engine/text.c ${PROJECT_SOURCE_DIR}/engine/log.c)
 
@@ -79,10 +92,13 @@ target_compile_definitions(scene_file_test PRIVATE SCENE_DATA_DIR="${PROJECT_SOU
 nv_add_file_test(file_test file_test.c ${PROJECT_SOURCE_DIR}/engine/file.c)
 target_compile_definitions(file_test PRIVATE FILE_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/file_test.c")
 
-# The shaders' reflection (slangc's, written when they are built) against the layouts the C code relies on. On Windows the
-# reflection is of the HLSL (cmake/make_dxil.cmake), whose numbers are D3D12's registers rather than WebGPU's bindings.
+# The shaders' reflection (slangc's, written when they are built) against the layouts the C code relies on. The Linux build makes
+# the same WGSL as the web. On Windows the reflection is of the HLSL (cmake/make_dxil.cmake), whose numbers are D3D12's registers
+# rather than WebGPU's bindings.
 if(NV_WEB)
     add_test(NAME shader_layout_test COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${PROJECT_SOURCE_DIR}/tests/shader_layout_test.mjs ${PROJECT_BINARY_DIR}/shaders)
+elseif(NV_LINUX AND NV_NODE)
+    add_test(NAME shader_layout_test COMMAND ${NV_NODE} ${PROJECT_SOURCE_DIR}/tests/shader_layout_test.mjs ${PROJECT_BINARY_DIR}/shaders)
 endif()
 
 # Files on the user's computer on Windows (engine/local_file_win32.c). A Debug build takes the path the dialogs would give from

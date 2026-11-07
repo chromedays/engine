@@ -38,9 +38,9 @@ engine/                    each module's header and source side by side, include
                            the Windows sources of the same modules: window_win32.c (message loop, DPI; with window_win32.h,
                            engine-private), imgui_win32.c (keys, IME, clipboard, cursor), storage_win32.c, local_file_win32.c,
                            image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers),
-                           the Linux sources of the same modules: window_headless.c (offscreen frames) or window_linux.c (a Wayland
-                           window when NV_LINUX_WINDOWED is on; with window_linux.h, engine-private), imgui_headless.c (no input),
-                           storage_linux.c, local_file_linux.c, image_linux.c (writes a PNG with stb_image_write; decoding not yet);
+                           the Linux sources of the same modules: window_linux.c (a Wayland window, the default; with
+                           window_linux.h, engine-private) or window_headless.c (offscreen frames, NV_HEADLESS on), imgui_headless.c (no input),
+                           storage_linux.c, local_file_linux.c, image_linux.c (decodes with stb_image inside the caller's arena, writes PNGs with stb_image_write);
                            CMake picks one source of each,
                            debug_script.c/.h (Windows Debug only: a scripted run, `--script`; see "Testing on Windows"),
                            log.c/.h (the log ring the Console tab shows),
@@ -65,7 +65,7 @@ assets/                    binary assets (Git LFS); assets/quaternius/ is built 
                            (Lucide, merged into it)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo) and dev_server.mjs (the web
                            builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
-tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest;
+tests/                     tests that need no browser, built for Node (web) or natively (Windows, Linux) and run with ctest;
                            tests/visual/ is the exception: the visual regression test's capture app and its baselines
                            (docs/specs/visual_regression.md), run explicitly with `just visual`, never by ctest or CI; it ends
                            with a link to its result page, build-visual/visual-out/report.html (and report.json for scripts;
@@ -125,8 +125,11 @@ build-win\sandbox\Release\sandbox.exe      # Debug\ for the Debug build
 ```
 
 The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run sandbox Release`, `just test`,
-`just script <file>`; `just` lists them, and each takes Debug by default. Its only non-Windows recipes are the Linux
-visual regression test's (`just visual`, `just visual-update-ref`; shell recipes, marked `[unix]`).
+`just script <file>`; `just` lists them, and each takes Debug by default. On Linux the same names are shell recipes marked
+`[linux]`: `just configure`, `just build`, `just test`, `just clean` (Ninja, a folder for each configuration:
+`build-linux/Debug`, `build-linux/Release`, with the downloaded tools in `build-linux/tools`); there is no `run` or `script`
+there yet, since Linux builds no sandbox. The Linux visual regression test has `just visual` and `just visual-update-ref`
+(marked `[unix]`).
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
 runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
@@ -408,7 +411,8 @@ Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
 A touch on a panel widget takes a few frames to count as a tap: tests that touch buttons wait about two seconds.
-`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds).
+`ctest --test-dir build --output-on-failure` runs `tests/` under Node (CI runs it for both builds). A Linux build runs the same
+tests natively (and the `.mjs` ones with the system's Node, when it has one); its `image_test` checks the Linux image decoder.
 Each Playwright browser launch starts with empty storage, and `page.reload()` keeps it, which is
 how autosave is tested. Do not delete the IndexedDB database while the page is open: the deletion
 waits for the page to close and then removes the save. The page's `FS` is a global, so tests can

@@ -154,6 +154,10 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
 - stb의 `stb_image_write`(public domain / MIT, 단일 헤더): Linux의 PNG 쓰기(`engine/image_linux.c`)에 쓴다. PNG 인코딩(deflate)은
   이 프로젝트의 목적이 아니고, Windows는 WIC가, 웹은 브라우저가 하지만 Linux에는 같은 자리의 것이 없다. 저장소 커밋을 고정해
   FetchContent로 받고, 구현은 cgltf처럼 경고를 끈 별도 번역 단위에 둔다.
+- stb의 `stb_image`(public domain / MIT, 단일 헤더): Linux의 JPEG와 PNG 디코딩(`engine/image_linux.c`,
+  `docs/specs/image_decoding.md`)에만 쓴다. 웹은 브라우저가, Windows는 WIC가 디코딩하지만 Linux에는 같은 자리의 것이 없다. 모든
+  플랫폼에서 쓰는 것도 재 보았으나 웹에서 느리고 wasm 메모리를 늘려서 Linux로 한정했다. `stb_image_write`와 같은 고정 커밋에서 오고,
+  JPEG와 PNG만 켜며, 모든 할당은 호출자의 아레나에서 한다(`STBI_MALLOC` 등을 `image_linux.c`의 함수로 바꾼다. 힙을 쓰지 않는다).
 - 시각 회귀 테스트의 그림 비교에는 odiff(MIT, `docs/specs/visual_regression.md`): 픽셀 단위 비교와 diff 그림을 맡는다. 직접 쓰면
   PNG 디코더부터 필요해 테스트의 목적에서 벗어난다. **테스트를 돌릴 때만 실행하고 어디에도 링크하지 않는다.** 공식 릴리스의 미리
   빌드된 바이너리를 버전과 SHA-256을 고정해 내려받으며(`cmake/odiff.cmake`), 소스에서 빌드하지 않는다.
@@ -344,6 +348,11 @@ The table sets the shape of names. What a name has to say:
   (deflate) is not the point of this project, and where Windows has WIC and the web its browser, Linux has nothing in that place.
   A commit of its repository is pinned and fetched with FetchContent, and the implementation sits in its own translation unit
   with warnings off, like cgltf's.
+- stb's `stb_image` (public domain / MIT, a single header) for decoding JPEG and PNG on Linux only (`engine/image_linux.c`,
+  `docs/specs/image_decoding.md`): the web decodes with its browser and Windows with WIC, and Linux has nothing in that place.
+  Using it on every platform was measured too, and it was slower on the web and grew the wasm memory, so it stays on Linux. It
+  comes from the same pinned commit as `stb_image_write`, only JPEG and PNG are compiled in, and every allocation it makes comes
+  from the caller's arena (`STBI_MALLOC` and the others are `image_linux.c`'s functions; it never uses the heap).
 - odiff (MIT, `docs/specs/visual_regression.md`) for the visual regression test's picture comparison: it does the pixel-by-pixel
   compare and the diff picture. Writing our own starts with a PNG decoder, which is not the test's point. **It runs only when
   the test runs and is linked into nothing.** The official release's prebuilt binary is downloaded with the version and SHA-256

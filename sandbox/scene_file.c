@@ -687,7 +687,8 @@ internal void close_block(SceneReader* reader)
 internal const char* top_name(Top top)
 {
     local_persist const char* const names[] = {"", "nvscene_version", "title", "view", "lighting", "palette", "model", "node", "benchmark"};
-    return names[top];
+    // Every Top has a name; the check is what lets GCC see that no index past the table is read.
+    return (u32)top < NV_ARRAY_COUNT(names) ? names[top] : "?";
 }
 
 // Whether the statement may come now. It is reported when not; the caller then skips its block.

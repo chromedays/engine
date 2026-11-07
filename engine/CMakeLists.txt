@@ -14,6 +14,8 @@ add_library(nv STATIC
     text.c
     vfx.c
     vfx_cpu.c)
+# Whether the Linux build is headless, for the engine's own sources: always defined, as 0 or 1 (0 on the web and Windows).
+target_compile_definitions(nv PRIVATE NV_HEADLESS=$<BOOL:${NV_HEADLESS}>)
 
 # The modules whose code depends on the platform have one source for each (docs/specs/d3d12_port.md, "Platform layer"): the
 # header is shared, the source is picked here.
@@ -26,7 +28,7 @@ if(NV_WEB)
         storage_web.c
         window_web.c)
 elseif(NV_LINUX)
-    if(NV_LINUX_WINDOWED)
+    if(NOT NV_HEADLESS)
         # The Wayland window (docs/specs/visual_regression.md): wayland-scanner makes the xdg-shell client code in the
         # build directory from the system's protocol file; it is generated, so its warnings are off like a library's.
         find_package(PkgConfig REQUIRED)
@@ -53,7 +55,6 @@ elseif(NV_LINUX)
             window_linux.c
             "${xdg_shell_header}"
             "${xdg_shell_source}")
-        target_compile_definitions(nv PRIVATE NV_LINUX_WINDOWED)
         target_link_libraries(nv PRIVATE PkgConfig::WAYLAND_CLIENT)
     else()
         target_sources(nv PRIVATE
@@ -95,7 +96,7 @@ if(NV_WEB)
     target_link_options(nv PUBLIC -lidbfs.js)
     target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
 elseif(NV_LINUX)
-    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base stb_image_write)
+    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base stb_image stb_image_write)
 else()
     # The Agility SDK's headers come before the Windows SDK's, so they match the runtime the executables carry; the loader reads
     # the version from the symbols gpu_d3d12.c exports.
