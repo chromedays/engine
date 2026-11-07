@@ -14,6 +14,6 @@ typedef struct NvImage {
 // bytes are no image. On the web this waits for the browser's decoder (Asyncify), so a frame that decodes images yields.
 NvImage nv_image_decode(NvArena* arena, const u8* bytes, umm size, const char* mime);
 
-// Windows only (the scripted runs' screenshots): `width` x `height` RGBA8 pixels, rows from the top, as a PNG file. False, and logs
-// why, when the file cannot be written.
+// The native builds only (the scripted runs' and the visual test's screenshots): `width` x `height` RGBA8 pixels, rows from the
+// top, as a PNG file. False, and logs why, when the file cannot be written.
 b32 nv_image_write_png(const char* path, const u8* rgba, u32 width, u32 height);

@@ -26,13 +26,44 @@ if(NV_WEB)
         storage_web.c
         window_web.c)
 elseif(NV_LINUX)
-    target_sources(nv PRIVATE
-        gpu_webgpu.c
-        image_linux.c
-        imgui_headless.c
-        local_file_linux.c
-        storage_linux.c
-        window_headless.c)
+    if(NV_LINUX_WINDOWED)
+        # The Wayland window (docs/specs/visual_regression.md): wayland-scanner makes the xdg-shell client code in the
+        # build directory from the system's protocol file; it is generated, so its warnings are off like a library's.
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+        pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
+        pkg_get_variable(wayland_protocols_dir wayland-protocols pkgdatadir)
+        find_program(NV_WAYLAND_SCANNER wayland-scanner REQUIRED)
+        set(xdg_shell_xml "${wayland_protocols_dir}/stable/xdg-shell/xdg-shell.xml")
+        set(xdg_shell_header "${PROJECT_BINARY_DIR}/xdg-shell-client-protocol.h")
+        set(xdg_shell_source "${PROJECT_BINARY_DIR}/xdg-shell-protocol.c")
+        add_custom_command(OUTPUT "${xdg_shell_header}"
+            COMMAND "${NV_WAYLAND_SCANNER}" client-header "${xdg_shell_xml}" "${xdg_shell_header}"
+            DEPENDS "${xdg_shell_xml}" COMMENT "xdg-shell client header" VERBATIM)
+        add_custom_command(OUTPUT "${xdg_shell_source}"
+            COMMAND "${NV_WAYLAND_SCANNER}" private-code "${xdg_shell_xml}" "${xdg_shell_source}"
+            DEPENDS "${xdg_shell_xml}" COMMENT "xdg-shell protocol code" VERBATIM)
+        set_source_files_properties("${xdg_shell_source}" PROPERTIES COMPILE_OPTIONS "${NV_NO_WARNINGS}")
+        target_sources(nv PRIVATE
+            gpu_webgpu.c
+            image_linux.c
+            imgui_headless.c
+            local_file_linux.c
+            storage_linux.c
+            window_linux.c
+            "${xdg_shell_header}"
+            "${xdg_shell_source}")
+        target_compile_definitions(nv PRIVATE NV_LINUX_WINDOWED)
+        target_link_libraries(nv PRIVATE PkgConfig::WAYLAND_CLIENT)
+    else()
+        target_sources(nv PRIVATE
+            gpu_webgpu.c
+            image_linux.c
+            imgui_headless.c
+            local_file_linux.c
+            storage_linux.c
+            window_headless.c)
+    endif()
 else()
     target_sources(nv PRIVATE
         debug_script.c
@@ -64,7 +95,7 @@ if(NV_WEB)
     target_link_options(nv PUBLIC -lidbfs.js)
     target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
 elseif(NV_LINUX)
-    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base)
+    target_link_libraries(nv PUBLIC webgpu cimgui PRIVATE cgltf ozz_animation_offline ozz_animation ozz_base stb_image_write)
 else()
     # The Agility SDK's headers come before the Windows SDK's, so they match the runtime the executables carry; the loader reads
     # the version from the symbols gpu_d3d12.c exports.

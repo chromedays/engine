@@ -5,6 +5,10 @@ project(engine LANGUAGES C CXX)
 # from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
+# The Linux build is headless unless this asks for its Wayland window (docs/specs/visual_regression.md); the visual regression
+# test's app is what needs the window, and it is built only when asked for.
+option(NV_LINUX_WINDOWED "Linux: a Wayland window instead of the headless build" OFF)
+option(NV_BUILD_VISUAL_TEST "Build the visual regression test app (needs NV_LINUX_WINDOWED)" OFF)
 
 # Three builds from one source (docs/specs/d3d12_port.md): the web build (Emscripten, WebGPU), the Windows x64 build
 # (MSVC, Direct3D 12) and the Linux build (Dawn-native WebGPU, headless: no window, frames render offscreen).
@@ -14,7 +18,9 @@ elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NV_LINUX TRUE)
-    set(NV_HEADLESS TRUE)
+    if(NOT NV_LINUX_WINDOWED)
+        set(NV_HEADLESS TRUE)
+    endif()
     # The sandbox and the Node-run tests belong to the web and Windows builds for now.
     set(NV_BUILD_SANDBOX OFF)
     set(NV_BUILD_TESTS OFF)
@@ -225,6 +231,21 @@ add_library(cgltf STATIC "${PROJECT_BINARY_DIR}/cgltf_impl.c")
 target_include_directories(cgltf SYSTEM PUBLIC ${cgltf_SOURCE_DIR})
 target_compile_options(cgltf PRIVATE ${NV_NO_WARNINGS})
 
+# stb_image_write: single-header PNG writer, only the Linux build's nv_image_write_png uses it
+# (engine/image_linux.c). The stb repository tags no releases, so a commit is pinned; the
+# implementation gets its own translation unit like cgltf's.
+if(NV_LINUX)
+    FetchContent_Declare(stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        4e9b368bfc071e97206ea5c6adba68dd0cbf8897
+        SOURCE_SUBDIR  no-cmake)
+    FetchContent_MakeAvailable(stb)
+    file(WRITE "${PROJECT_BINARY_DIR}/stb_image_write_impl.c" "#define STB_IMAGE_WRITE_IMPLEMENTATION\n#include <stb_image_write.h>\n")
+    add_library(stb_image_write STATIC "${PROJECT_BINARY_DIR}/stb_image_write_impl.c")
+    target_include_directories(stb_image_write SYSTEM PUBLIC ${stb_SOURCE_DIR})
+    target_compile_options(stb_image_write PRIVATE ${NV_NO_WARNINGS})
+endif()
+
 # ozz-animation: runtime and the offline builders we use to build skeletons and clips at load time.
 set(ozz_build_tools    OFF CACHE BOOL "" FORCE)
 set(ozz_build_fbx      OFF CACHE BOOL "" FORCE)
@@ -285,6 +306,14 @@ endif()
 if(NV_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+if(NV_BUILD_VISUAL_TEST)
+    if(NOT NV_LINUX OR NOT NV_LINUX_WINDOWED)
+        message(FATAL_ERROR "NV_BUILD_VISUAL_TEST needs the Linux windowed build: -DNV_LINUX_WINDOWED=ON on Linux "
+            "(docs/specs/visual_regression.md)")
+    endif()
+    include(cmake/odiff.cmake)
+    add_subdirectory(tests/visual)
+endif()
 
 # An app that adds the engine as a subdirectory gets what its own CMakeLists.txt and nv_setup_executable read: the platform, the
 # language standards, the options our code compiles with (it applies them to its own targets) and the D3D12 runtime's folder.
@@ -295,7 +324,7 @@ if(NOT PROJECT_IS_TOP_LEVEL)
         set(NV_COMPILE_OPTIONS /W4 /utf-8 /Zc:preprocessor)
         set(NV_COMPILE_DEFINITIONS _CRT_SECURE_NO_WARNINGS WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
     endif()
-    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
+    foreach(var NV_WEB NV_WINDOWS NV_LINUX NV_LINUX_WINDOWED NV_HEADLESS NV_NO_WARNINGS NV_AGILITY_BIN NV_COMPILE_OPTIONS NV_COMPILE_DEFINITIONS
             CMAKE_C_STANDARD CMAKE_C_STANDARD_REQUIRED CMAKE_C_EXTENSIONS CMAKE_CXX_STANDARD CMAKE_CXX_STANDARD_REQUIRED)
         set(${var} "${${var}}" PARENT_SCOPE)
     endforeach()

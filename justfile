@@ -37,3 +37,27 @@ test config="Debug": (build config)
 # Remove one configuration's build output (the solution and the downloaded tools stay).
 clean config="Debug":
     cmake --build {{build_dir}} --config {{config}} --target clean
+
+# The recipes below are the Linux visual regression test (docs/specs/visual_regression.md): the Wayland windowed build,
+# run explicitly, never by CI. The recipes above stay the Windows build's (PowerShell).
+
+# Build the visual test's app (Debug, build-visual/) and capture its cases into build-visual/visual-out/.
+[private]
+[unix]
+_visual-capture:
+    cmake -S . -B build-visual -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNV_LINUX_WINDOWED=ON -DNV_BUILD_VISUAL_TEST=ON
+    cmake --build build-visual --target visual_test
+    mkdir -p build-visual/visual-out
+    build-visual/tests/visual/visual_test build-visual/visual-out
+
+# Capture, then compare with the baselines in tests/visual/baseline (odiff; diff PNGs land beside the captures).
+[unix]
+visual: _visual-capture
+    node tools/visual/compare.mjs --odiff build-visual/tools/odiff --baseline tests/visual/baseline --actual build-visual/visual-out
+
+# Capture, then make the captures the baselines. View the change before committing what this writes.
+[unix]
+visual-update-ref: _visual-capture
+    mkdir -p tests/visual/baseline
+    for f in build-visual/visual-out/*.png; do case "$f" in *.diff.png) ;; *) cp "$f" tests/visual/baseline/ ;; esac; done
+    @echo "baselines updated in tests/visual/baseline: view them, then commit"

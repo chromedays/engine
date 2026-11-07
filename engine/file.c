@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(_WIN32)
+#if NV_PLATFORM_WINDOWS
 #include "engine/win32.h"
 
 // The folder of the executable, with a '\' at the end, found once.

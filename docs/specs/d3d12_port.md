@@ -227,7 +227,7 @@ typedef struct NvGpuReadback { b32 ok; const void* bytes; umm size; } NvGpuReadb
 b32           nv_gpu_copy_for_readback(NvGpu* gpu, u32 slot, NvGpuBuffer source, u64 offset, umm size); // 그 자리가 바쁘면 거짓
 NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot); // 준비되면 한 번 ok
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 void nv_gpu_debug_raise_error(NvGpu* gpu); // 검증 오류를 일부러 낸다: _sandbox_debug_wgpu_error와 그 D3D12 짝
 #endif
 ```
@@ -338,7 +338,7 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 | `storage` | `storage_web.c` | `storage_win32.c` |
 | `local_file` | `local_file_web.c` | `local_file_win32.c` |
 | `gltf`의 이미지 디코딩 | `image_web.c` | `image_win32.c` (WIC) |
-| `log`, `strings`, `file` | 작은 차이라 한 파일 안의 `#if defined(__EMSCRIPTEN__)` | |
+| `log`, `strings`, `file` | 작은 차이라 한 파일 안의 `#if NV_PLATFORM_WEB`(`engine/base.h`) | |
 
 `renderer.c`, `vfx.c`, `scene.c`, `anim.cpp`, `gltf.c`의 나머지, 샌드박스와 오토배틀러의 코드는 플랫폼을 모른다. 플랫폼을 모르는
 파일에 `__EMSCRIPTEN__`이 남지 않는 것이 단계 2의 끝 조건이다(디버그 내보내기는 아래 "디버그 내보내기").

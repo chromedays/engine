@@ -47,7 +47,7 @@ internal void tree_marks(Sandbox* sandbox, SceneView* view)
 // Notes a row in the order the tree draws them; a Shift+click range runs over last frame's rows.
 internal void tree_row(Sandbox* sandbox, u32 index)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (sandbox->tree_row_count[0] < NV_ARRAY_COUNT(sandbox->tree_row_rects)) {
         ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
         f32* r = sandbox->tree_row_rects[sandbox->tree_row_count[0]];

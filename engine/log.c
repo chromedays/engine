@@ -10,7 +10,7 @@ NvLog nv_log_ring;
 // Where messages go besides the ring, and where the page's own come from
 //
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 #include <emscripten/emscripten.h>
 
 EM_JS_DEPS(nv_log, "$UTF8ToString,$stringToUTF8,$lengthBytesUTF8");
@@ -62,7 +62,7 @@ internal int page_take(int* level, char* source, int source_size, char* text, in
 {
     return js_log_take(level, source, source_size, text, text_size, time);
 }
-#elif defined(_WIN32)
+#elif NV_PLATFORM_WINDOWS
 #include "engine/win32.h"
 
 // The console (standard error) and the debugger's output window, one line each, as "[source] text".

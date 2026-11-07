@@ -36,6 +36,9 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`). 소스는 `engine/CMakeLists.txt`가 플랫폼에 따라 고르고, 헤더는 플랫폼을
   가리지 않으며(플랫폼 헤더는 `engine/window_win32.h`처럼 엔진 안에서만 쓴다), 한 플랫폼의 소스가 다른 플랫폼의 것을 호출하지 않는다.
   Windows Debug 빌드의 스크립트 실행(`engine/debug_script.h`)처럼 한 플랫폼에만 있는 모듈은 파일 전체를 그 플랫폼 조건으로 감싼다.
+- 플랫폼 조건은 `engine/base.h`의 `NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS`, `NV_PLATFORM_LINUX`로 쓴다(항상 0이나 1로 정의되고, 정확히
+  하나가 1이다: `#if NV_PLATFORM_WINDOWS && NV_DEBUG`). 컴파일러의 매크로(`__EMSCRIPTEN__`, `_WIN32`, `__linux__`)는 `base.h`만 읽는다.
+  `!NV_PLATFORM_WEB`처럼 "어느 플랫폼이 아님"으로 쓰지 말고 뜻하는 플랫폼을 적는다: 그 파일이 어느 플랫폼에서 빌드되는지 몰라도 읽힌다.
 - 모든 파일이 `engine/base.h`를 (직접 또는 다른 엔진 헤더를 통해) 포함한다.
 
 ### 이름 짓기
@@ -146,6 +149,14 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   C API로 쓰였고, Dawn이 그것을 네이티브로(Vulkan 위에서) 구현하므로, Linux 헤드리스 빌드는 웹 빌드와 같은 백엔드를 화면 없이 돌린다.
   `tint`와 같은, 고정된 Dawn 패키지에서 헤더와 정적 라이브러리를 가져오며(`cmake/shaders.cmake`에 버전과 SHA-256이 이미 고정되어 있다),
   실행 파일에 정적으로 링크한다. Dawn을 소스에서 빌드하지 않는다.
+- Linux 창 빌드(`docs/specs/visual_regression.md`)가 플랫폼에 요구하는 것: `wayland-client`와 `wayland-protocols`의
+  `xdg-shell`(헤더와 라이브러리). 빌드 때는 `wayland-scanner`가 프로토콜 코드를 생성한다. Windows SDK와 같은 종류다.
+- stb의 `stb_image_write`(public domain / MIT, 단일 헤더): Linux의 PNG 쓰기(`engine/image_linux.c`)에 쓴다. PNG 인코딩(deflate)은
+  이 프로젝트의 목적이 아니고, Windows는 WIC가, 웹은 브라우저가 하지만 Linux에는 같은 자리의 것이 없다. 저장소 커밋을 고정해
+  FetchContent로 받고, 구현은 cgltf처럼 경고를 끈 별도 번역 단위에 둔다.
+- 시각 회귀 테스트의 그림 비교에는 odiff(MIT, `docs/specs/visual_regression.md`): 픽셀 단위 비교와 diff 그림을 맡는다. 직접 쓰면
+  PNG 디코더부터 필요해 테스트의 목적에서 벗어난다. **테스트를 돌릴 때만 실행하고 어디에도 링크하지 않는다.** 공식 릴리스의 미리
+  빌드된 바이너리를 버전과 SHA-256을 고정해 내려받으며(`cmake/odiff.cmake`), 소스에서 빌드하지 않는다.
 - Windows 빌드(`docs/specs/d3d12_port.md`)가 요구하는 것: Visual Studio의 MSVC(`cl`)와 Windows SDK(Win32, DXGI, WIC의 헤더와 라이브러리).
   D3D12 헤더와 런타임은 아래 Agility SDK의 것을 쓴다.
 - 셰이더를 DXIL로 컴파일하려면 DirectX Shader Compiler(DXC, `dxc.exe`, `dxcompiler.dll`, 서명용 `dxil.dll`; Microsoft 라이선스와 LLVM(NCSA)
@@ -201,6 +212,10 @@ visible, own your memory, and add abstraction only when repetition asks for it.
   `engine/window_win32.h`, is private to the engine), and one platform's source never calls another's. A module that exists
   on one platform only, like the Windows Debug build's scripted runs (`engine/debug_script.h`), wraps its whole file in that
   platform's condition.
+- A platform condition is written with `NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS` and `NV_PLATFORM_LINUX` from `engine/base.h` (always
+  defined, as 0 or 1, and exactly one is 1: `#if NV_PLATFORM_WINDOWS && NV_DEBUG`). Only `base.h` reads the compilers' own macros
+  (`__EMSCRIPTEN__`, `_WIN32`, `__linux__`). Name the platform meant rather than one it is not (`!NV_PLATFORM_WEB`): the condition
+  then reads right without knowing which platforms build the file.
 - `engine/base.h` is included (directly or through another engine header) by every file.
 
 ### Naming
@@ -322,6 +337,17 @@ The table sets the shape of names. What a name has to say:
   headless build runs the same backend the web build runs, offscreen. It comes from the same pinned Dawn package as
   `tint` — its headers and static library, version and SHA-256 already pinned in `cmake/shaders.cmake` — and is linked
   statically into the executable; Dawn is not built from source.
+- What the Linux windowed build asks of the platform (`docs/specs/visual_regression.md`): `wayland-client` and `xdg-shell` from
+  `wayland-protocols` (their headers and libraries); at build time `wayland-scanner` generates the protocol code. The same
+  kind of thing as the Windows SDK.
+- stb's `stb_image_write` (public domain / MIT, a single header) for writing PNGs on Linux (`engine/image_linux.c`): PNG encoding
+  (deflate) is not the point of this project, and where Windows has WIC and the web its browser, Linux has nothing in that place.
+  A commit of its repository is pinned and fetched with FetchContent, and the implementation sits in its own translation unit
+  with warnings off, like cgltf's.
+- odiff (MIT, `docs/specs/visual_regression.md`) for the visual regression test's picture comparison: it does the pixel-by-pixel
+  compare and the diff picture. Writing our own starts with a PNG decoder, which is not the test's point. **It runs only when
+  the test runs and is linked into nothing.** The official release's prebuilt binary is downloaded with the version and SHA-256
+  pinned (`cmake/odiff.cmake`); it is not built from source.
 - What the Windows build asks of the platform (`docs/specs/d3d12_port.md`): Visual Studio's MSVC (`cl`) and the Windows SDK (the Win32, DXGI
   and WIC headers and libraries). The D3D12 headers and runtime are the Agility SDK's, below.
 - The DirectX Shader Compiler (DXC: `dxc.exe`, `dxcompiler.dll` and `dxil.dll`, which signs; Microsoft's license and LLVM's NCSA license)

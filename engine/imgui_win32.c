@@ -170,7 +170,7 @@ internal b32 on_message(void* userdata, void* hwnd_raw, u32 message, u64 wparam,
     }
     case WM_MOUSELEAVE:
         input.tracking_leave = 0;
-#if !defined(NDEBUG)
+#if NV_DEBUG
         if (nv_window_win32_input_is_injected())
             return 1;
 #endif

@@ -617,7 +617,7 @@ typedef struct Sandbox {
     // The Scene tab's rows in the order drawn, this frame's and last frame's, for Shift+click ranges.
     u32 tree_rows[2][TREE_ROWS_MAX];
     u32 tree_row_count[2];
-#if !defined(NDEBUG)
+#if NV_DEBUG
     f32 tree_row_rects[64][4]; // the first rows' rects last frame, CSS pixels (x0, y0, x1, y1), for tests
 #endif
     b32 selection_full_warned;
@@ -867,7 +867,7 @@ b32 save_round_trip_matches(Sandbox* sandbox);
 // debug_script.c (Windows Debug builds): the sandbox's part of a scripted run, `sandbox.exe --script <file>` (engine/debug_script.h;
 // docs/specs/d3d12_port.md, "Debug exports and native tests"). Its `call` finds the debug exports of main.c by name in a table,
 // sandbox_debug_calls.
-#if defined(_WIN32) && !defined(NDEBUG)
+#if NV_PLATFORM_WINDOWS && NV_DEBUG
 extern const NvDebugCall sandbox_debug_calls[];
 extern const u32 sandbox_debug_call_count;
 

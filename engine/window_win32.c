@@ -93,7 +93,7 @@ internal LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LP
     }
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // A Debug build says where it stopped (an NV_ASSERT is a breakpoint): the return addresses as offsets into the executable, which
 // llvm-symbolizer turns into functions and lines (--obj=<exe> --relative-address <offset>).
 internal LONG WINAPI report_crash(EXCEPTION_POINTERS* pointers)
@@ -114,7 +114,7 @@ internal LONG WINAPI report_crash(EXCEPTION_POINTERS* pointers)
 
 void nv_window_create(NvWindow* window, const char* title)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     SetUnhandledExceptionFilter(report_crash);
 #endif
     NV_ASSERT(!state.hwnd);
@@ -181,11 +181,6 @@ void nv_window_download_text(char* out, umm capacity)
     NV_ASSERT(capacity > 0);
     (void)capacity;
     out[0] = 0; // nothing was downloaded: the files are on the disk
-}
-
-b32 nv_window_is_mac(void)
-{
-    return 0;
 }
 
 // Windows 10.0.<build>, as the system says it (a manifest without the newest "supported OS" would make GetVersionEx lie).
@@ -282,7 +277,7 @@ b32 nv_window_win32_command_line_value(const char* option, char* out, umm capaci
     return found;
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 global b32 injected_modifiers_on;
 global b32 pointer_injected;
 global u32 injected_modifiers;
@@ -290,7 +285,7 @@ global u32 injected_modifiers;
 
 b32 nv_window_win32_key_is_down(int virtual_key)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (injected_modifiers_on) {
         if (virtual_key == VK_CONTROL)
             return (injected_modifiers & 1u) != 0;
@@ -303,7 +298,7 @@ b32 nv_window_win32_key_is_down(int virtual_key)
     return (GetKeyState(virtual_key) & 0x8000) != 0;
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 b32 nv_window_win32_input_is_injected(void)
 {
     return pointer_injected;

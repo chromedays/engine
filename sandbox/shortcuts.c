@@ -205,27 +205,14 @@ internal const char* key_name(ImGuiKey key, char* out)
     }
 }
 
-internal b32 is_mac(void)
-{
-    local_persist s32 mac = -1;
-    if (mac < 0)
-        mac = nv_window_is_mac();
-    return mac;
-}
-
-// "Ctrl+Shift+Z / Ctrl+Y": the modifiers spelled out (the default font has no command symbol), Cmd on
-// a Mac.
+// "Ctrl+Shift+Z / Ctrl+Y": the modifiers spelled out (the default font has no command symbol).
 const char* shortcut_label(ShortcutId id)
 {
     local_persist char labels[SHORTCUT_COUNT][64];
     char* out = labels[id];
     const Command* shortcut = &shortcuts[id];
     if (shortcut->keys_text) {
-        const char* text = T(shortcut->keys_text);
-        if (is_mac() && strncmp(text, "Ctrl", 4) == 0)
-            snprintf(out, sizeof(labels[id]), "Cmd%s", text + 4);
-        else
-            snprintf(out, sizeof(labels[id]), "%s", text);
+        snprintf(out, sizeof(labels[id]), "%s", T(shortcut->keys_text));
         return out;
     }
     umm used = 0;
@@ -236,7 +223,7 @@ const char* shortcut_label(ShortcutId id)
             continue;
         char key[8];
         used += (umm)snprintf(out + used, sizeof(labels[id]) - used, "%s%s%s%s%s", used ? " / " : "",
-                              (chord & ImGuiMod_Ctrl) ? (is_mac() ? "Cmd+" : "Ctrl+") : "", (chord & ImGuiMod_Shift) ? "Shift+" : "",
+                              (chord & ImGuiMod_Ctrl) ? "Ctrl+" : "", (chord & ImGuiMod_Shift) ? "Shift+" : "",
                               (chord & ImGuiMod_Alt) ? "Alt+" : "", key_name((ImGuiKey)(chord & ~ImGuiMod_Mask_), key));
     }
     return out;

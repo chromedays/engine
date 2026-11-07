@@ -559,7 +559,7 @@ internal void frame(void* userdata)
     save_update(sandbox);
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // For tests: Module._sandbox_debug_layout(region, component) is a region's rectangle in CSS pixels
 // (region 0 viewport, 1 top bar, 2 left dock, 3 right dock, 4 bottom dock, 5 phone panel, 6 the
 // Play button; component 0 x, 1 y, 2 width, 3 height). Module._sandbox_debug_ui_mode() is 0 for the
@@ -1187,7 +1187,7 @@ NV_DEBUG_EXPORT unsigned sandbox_debug_save_crc(void)
     return crc;
 }
 
-#if defined(_WIN32)
+#if NV_PLATFORM_WINDOWS
 // The scripted runs' `call` finds a debug export by name here (sandbox/debug_script.c). The letters before the `>` are the arguments (i: int,
 // f: float), the one after it the result (v: none, i: int, f: float, d: double, s: char*, u: unsigned).
 const NvDebugCall sandbox_debug_calls[] = {

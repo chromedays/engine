@@ -37,7 +37,11 @@ engine/                    each module's header and source side by side, include
                            agent, clipboard; with imgui_platform.h, engine-private), storage_web.c, local_file_web.c, image_web.c,
                            the Windows sources of the same modules: window_win32.c (message loop, DPI; with window_win32.h,
                            engine-private), imgui_win32.c (keys, IME, clipboard, cursor), storage_win32.c, local_file_win32.c,
-                           image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers); CMake picks one source of each,
+                           image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers),
+                           the Linux sources of the same modules: window_headless.c (offscreen frames) or window_linux.c (a Wayland
+                           window when NV_LINUX_WINDOWED is on; with window_linux.h, engine-private), imgui_headless.c (no input),
+                           storage_linux.c, local_file_linux.c, image_linux.c (writes a PNG with stb_image_write; decoding not yet);
+                           CMake picks one source of each,
                            debug_script.c/.h (Windows Debug only: a scripted run, `--script`; see "Testing on Windows"),
                            log.c/.h (the log ring the Console tab shows),
                            vfx.c/.h (effects: compute particles, trails, beams, decals) and vfx_cpu.c/.h (the
@@ -61,7 +65,9 @@ assets/                    binary assets (Git LFS); assets/quaternius/ is built 
                            (Lucide, merged into it)
 tools/                     offline asset scripts (run with npx; nothing installed into the repo) and dev_server.mjs (the web
                            builds' development server: rebuilds on save, reloads open pages; docs/specs/dev_server.md)
-tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest
+tests/                     tests that need no browser, built for Node (web) or natively (Windows) and run with ctest;
+                           tests/visual/ is the exception: the visual regression test's capture app and its baselines
+                           (docs/specs/visual_regression.md), run explicitly with `just visual`, never by ctest or CI
 web/                       index.html.in (the page: downloads the sandbox with a progress bar, then
                            starts it, all files of one build: docs/specs/page_loading.md), manifest.cmake (the
                            build's version and file sizes for that page)
@@ -117,7 +123,8 @@ build-win\sandbox\Release\sandbox.exe      # Debug\ for the Debug build
 ```
 
 The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run sandbox Release`, `just test`,
-`just script <file>`; `just` lists them, and each takes Debug by default.
+`just script <file>`; `just` lists them, and each takes Debug by default. Its only non-Windows recipes are the Linux
+visual regression test's (`just visual`, `just visual-update-ref`; shell recipes, marked `[unix]`).
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
 runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
@@ -131,7 +138,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
 - Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
 - Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. A file that does not know the platform
-includes none of their headers and never tests `__EMSCRIPTEN__` or `_WIN32` (debug exports are `NV_DEBUG_EXPORT`). Our code compiles
+includes none of their headers and never tests the platform (debug exports are `NV_DEBUG_EXPORT`). Where code does test it, it tests
+`NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS` or `NV_PLATFORM_LINUX` (`engine/base.h`; always 0 or 1, `#if NV_PLATFORM_WEB`), never the
+compilers' own `__EMSCRIPTEN__`, `_WIN32` or `__linux__`. Our code compiles
 with emcc and MSVC (`/W4`, no warnings): no VLAs or GNU extensions, `NV_LITERAL(type){...}` for a compound literal that C++ also
 sees, `NV_TRAP` and `NV_PRINTF_FORMAT` instead of `__builtin_trap` and `__attribute__`, and `windows.h` before `engine/base.h` (its
 `internal` macro) where a file includes it at all. Shaders compile to WGSL for the web and to DXIL (shader model 6.6) for Windows.
