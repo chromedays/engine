@@ -22,7 +22,7 @@
 
 #include "engine/base.h"
 
-#if defined(_WIN32) && !defined(NDEBUG)
+#if defined(_WIN32) && NV_DEBUG
 
 #include "engine/gpu.h"
 #include "engine/window.h"

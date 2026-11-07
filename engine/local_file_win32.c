@@ -70,7 +70,7 @@ internal void read_kept_file(void)
     state.status = NV_LOCAL_FILE_READ;
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // A Debug build can be told where the dialogs would have put the file, so a test needs no one at them: the environment variable
 // NV_LOCAL_FILE names the path.
 internal b32 path_from_test(wchar_t* out, umm capacity)
@@ -90,7 +90,7 @@ b32 nv_local_file_open(const char* extension)
     swprintf(filter + length + 1, NV_ARRAY_COUNT(filter) - length - 2, L"*%ls", wide_extension);
 
     wchar_t path[PATH_CAPACITY] = {0};
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (path_from_test(path, NV_ARRAY_COUNT(path))) {
         wcscpy(state.path, path);
         read_kept_file();
@@ -161,7 +161,7 @@ b32 nv_local_file_save(const char* name, const void* bytes, umm size, b32 save_a
     }
 
     wchar_t suggested[PATH_CAPACITY] = {0};
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (path_from_test(suggested, NV_ARRAY_COUNT(suggested))) {
         write_file(suggested, bytes, size);
         return 1;

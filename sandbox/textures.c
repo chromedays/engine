@@ -308,7 +308,7 @@ internal void row(Sandbox* sandbox, const TextureEntry* entry, f32 height, u32 n
         pick(viewer, entry->kind, entry->index);
     if (number == 0)
         textures_record(viewer, TEXTURES_RECT_FIRST_ROW);
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (number < TEXTURES_MAX_ROW_RECTS) {
         ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
         f32* r = viewer->row_rects[number];
@@ -580,7 +580,7 @@ void textures_tab(Sandbox* sandbox)
     igTextDisabled(T("%u textures, %s"), count, memory);
     igSetItemTooltip("%s", T("GPU memory of the textures listed, not counting the swapchain (the browser owns it)"));
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
     memset(viewer->row_rects, 0, sizeof(viewer->row_rects));
     memset(viewer->rects[TEXTURES_RECT_IMAGE], 0, sizeof(viewer->rects[0]));
 #endif
@@ -645,7 +645,7 @@ void textures_inspector_thumbnail(Sandbox* sandbox, NvTextureId texture)
 
 void textures_record(TextureViewer* viewer, TexturesRect id)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     ImVec2_c min = igGetItemRectMin(), max = igGetItemRectMax();
     viewer->rects[id][0] = min.x;
     viewer->rects[id][1] = min.y;

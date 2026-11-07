@@ -227,7 +227,7 @@ typedef struct NvGpuReadback { b32 ok; const void* bytes; umm size; } NvGpuReadb
 b32           nv_gpu_copy_for_readback(NvGpu* gpu, u32 slot, NvGpuBuffer source, u64 offset, umm size); // 그 자리가 바쁘면 거짓
 NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot); // 준비되면 한 번 ok
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 void nv_gpu_debug_raise_error(NvGpu* gpu); // 검증 오류를 일부러 낸다: _sandbox_debug_wgpu_error와 그 D3D12 짝
 #endif
 ```

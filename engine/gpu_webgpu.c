@@ -1528,7 +1528,7 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot)
     return (NvGpuReadback){.ok = 1, .bytes = readback->mapped, .size = readback->size};
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 void nv_gpu_debug_raise_error(NvGpu* gpu)
 {
     (void)gpu;

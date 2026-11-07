@@ -559,7 +559,7 @@ internal void frame(void* userdata)
     save_update(sandbox);
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // For tests: Module._sandbox_debug_layout(region, component) is a region's rectangle in CSS pixels
 // (region 0 viewport, 1 top bar, 2 left dock, 3 right dock, 4 bottom dock, 5 phone panel, 6 the
 // Play button; component 0 x, 1 y, 2 width, 3 height). Module._sandbox_debug_ui_mode() is 0 for the

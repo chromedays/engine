@@ -944,7 +944,7 @@ internal void show_no_gpu_message(const char* skipped)
 // has on. They have to be on before the device exists.
 internal void enable_debug_layer(void)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     // NV_D3D12_VALIDATION=0 turns both off: a run that measures time (the scripted benchmark) cannot afford them, and the GPU's passes
     // and buffer copies are what it measures.
     wchar_t setting[8];
@@ -974,7 +974,7 @@ internal void enable_debug_layer(void)
 
 internal void setup_info_queue(void)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (FAILED(ID3D12Device_QueryInterface(backend.device, &IID_ID3D12InfoQueue, (void**)&backend.info_queue)))
         return;
     // The messages are read once a frame (drain_info_queue). Clearing a target with a color other than the one it was made with
@@ -2039,7 +2039,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     return (NvGpuFrame){.ok = 1, .view = backend.back_view[backend.back_index]};
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 void nv_gpu_debug_screenshot(NvGpu* gpu, const char* path, u32 x, u32 y, u32 width, u32 height)
 {
     NV_ASSERT(!backend.screenshot.pending);
@@ -2112,7 +2112,7 @@ void nv_gpu_end_frame(NvGpu* gpu)
 {
     (void)gpu;
     NV_ASSERT(backend.in_frame && !backend.in_render_pass && !backend.in_compute_pass);
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (backend.screenshot.pending)
         record_screenshot_copy();
 #endif
@@ -2129,7 +2129,7 @@ void nv_gpu_end_frame(NvGpu* gpu)
     backend.timestamp_written = 0;
     backend.in_frame = 0;
     submit(1);
-#if !defined(NDEBUG)
+#if NV_DEBUG
     if (backend.screenshot.pending)
         write_screenshot();
 #endif
@@ -2561,7 +2561,7 @@ b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture texture)
     return 0;
 }
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 void nv_gpu_debug_raise_error(NvGpu* gpu)
 {
     (void)gpu;

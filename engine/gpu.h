@@ -392,12 +392,12 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot);
 // NV_GPU_TEXTURE_COPY_SRC. Returns false, copying nothing, while the slot's earlier request has not been polled.
 b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture texture);
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // Makes the device report a validation error, for tests of the error path (the sandbox's debug error export).
 void nv_gpu_debug_raise_error(NvGpu* gpu);
 #endif
 
-#if !defined(NDEBUG) && defined(_WIN32)
+#if NV_DEBUG && defined(_WIN32)
 // Windows Debug builds, for the scripted runs (sandbox/debug_script.c): the canvas of the next frame, the part of it at (x, y)
 // of `width` x `height` pixels (0: all), as a PNG file at `path`. The file is written when that frame has been drawn, before the
 // call returns to the caller of nv_gpu_end_frame; nv_gpu_debug_screenshot_pending is true until then.

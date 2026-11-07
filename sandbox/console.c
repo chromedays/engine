@@ -30,7 +30,7 @@ internal const char* level_name(NvLogLevel level)
 
 internal void record_rect(Console* console, ConsoleRect id, ImVec2_c min, ImVec2_c max)
 {
-#if !defined(NDEBUG)
+#if NV_DEBUG
     f32* rect = console->rects[id];
     rect[0] = min.x;
     rect[1] = min.y;

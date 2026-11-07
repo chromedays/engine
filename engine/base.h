@@ -42,7 +42,18 @@ typedef size_t   umm;
 #    define NV_LITERAL(type) (type)
 #endif
 
-#if !defined(NDEBUG)
+// Whether this is a debug build: our own name for it, so the code tests NV_DEBUG and this is the
+// one place that reads the C library's NDEBUG (which CMake and MSVC set from the build type).
+// A -DNV_DEBUG=0 or 1 of one's own wins over the build type. Always defined, as 0 or 1.
+#if !defined(NV_DEBUG)
+#    if defined(NDEBUG)
+#        define NV_DEBUG 0
+#    else
+#        define NV_DEBUG 1
+#    endif
+#endif
+
+#if NV_DEBUG
 #    define NV_ASSERT(expr) do { if (!(expr)) NV_TRAP(); } while (0)
 #else
 #    define NV_ASSERT(expr) ((void)0)

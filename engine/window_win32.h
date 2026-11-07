@@ -23,7 +23,7 @@ b32 nv_window_win32_command_line_value(const char* option, char* out, umm capaci
 // Whether a key is down: the system's answer, or the modifiers a scripted run holds (nv_window_win32_inject_modifiers).
 b32 nv_window_win32_key_is_down(int virtual_key);
 
-#if !defined(NDEBUG)
+#if NV_DEBUG
 // For the scripted runs (sandbox/debug_script.c): messages as the input devices would send them, to the window's procedure. Positions are
 // client pixels. `button` is 0 left, 1 middle, 2 right, -1 for a move.
 void nv_window_win32_inject_mouse(NvWindow* window, s32 x, s32 y, s32 button, b32 down);
