@@ -30,8 +30,8 @@ typedef enum NvMouseEvent {
 } NvMouseEvent;
 b32 nv_imgui_view_mouse(NvImgui* imgui, NvMouseEvent event, s32 button, f32 x, f32 y, u32 mods);
 
-// The wheel turning `scroll_pixels` (positive: away from the user, about 100 a notch) while the pointer is in the view zooms the
-// camera and returns true; ImGui does not get it then.
+// The wheel turning `scroll_pixels` (positive: toward the user, as the DOM's deltaY; about 100 a notch) while the pointer is in the
+// view zooms the camera and returns true; ImGui does not get it then.
 b32 nv_imgui_view_wheel(NvImgui* imgui, f32 scroll_pixels);
 
 // The touch that started as undecided is a press now: ImGui sees the left button go down where the finger started.

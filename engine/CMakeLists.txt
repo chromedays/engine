@@ -49,7 +49,7 @@ elseif(NV_LINUX)
         target_sources(nv PRIVATE
             gpu_webgpu.c
             image_linux.c
-            imgui_headless.c
+            imgui_linux.c
             local_file_linux.c
             storage_linux.c
             window_linux.c
