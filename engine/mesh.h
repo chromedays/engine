@@ -11,19 +11,18 @@ typedef struct NvVertex {
     f32 uv[2];
 } NvVertex;
 
-typedef struct NvSkinnedVertex {
-    f32 position[3];
-    f32 normal[3];
-    f32 uv[2];
+// The joints that move a vertex of a skinned mesh, and how much each one does.
+typedef struct NvSkinWeights {
     u16 joints[4];
     f32 weights[4];
-} NvSkinnedVertex;
+} NvSkinWeights;
 
-// Mesh data to upload. Exactly one of `vertices` / `skinned_vertices` is set.
+// Mesh data to upload. It describes the mesh, not the GPU's vertex layout: the renderer lays the arrays out as its shaders
+// read them.
 typedef struct NvMeshData {
-    const NvVertex* vertices;
-    const NvSkinnedVertex* skinned_vertices;
-    u32 vertex_count;
+    const NvVertex* vertices;  // always set
+    const NvSkinWeights* skin; // NULL for a static mesh; else one per vertex, which makes the mesh skinned
+    u32 vertex_count;          // of `vertices`, and of `skin` when it is set
     const u32* indices;
     u32 index_count;
 } NvMeshData;

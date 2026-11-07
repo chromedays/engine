@@ -49,6 +49,17 @@ typedef struct MaterialUniforms {
     f32 base_color[4];
 } MaterialUniforms;
 
+// A skinned mesh's vertex as its vertex buffer holds it: an NvVertex and its NvSkinWeights, interleaved by
+// nv_renderer_add_mesh.
+typedef struct SkinnedVertex {
+    f32 position[3];
+    f32 normal[3];
+    f32 uv[2];
+    u16 joints[4];
+    f32 weights[4];
+} SkinnedVertex;
+
+_Static_assert(sizeof(SkinnedVertex) % 4 == 0, "nv_gpu_write_buffer writes whole 4-byte words");
 _Static_assert(sizeof(FrameUniforms) == 224, "the shaders read a 224-byte frame");
 _Static_assert(sizeof(NvObjectData) == 80, "the shaders read 80-byte objects");
 _Static_assert(sizeof(MaterialUniforms) == 16, "the shader reads a 16-byte material");
@@ -104,11 +115,11 @@ global const NvGpuVertexAttribute static_attributes[3] = {
     {.location = 2, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(NvVertex, uv)},
 };
 global const NvGpuVertexAttribute skinned_attributes[5] = {
-    {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, position)},
-    {.location = 1, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, normal)},
-    {.location = 2, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(NvSkinnedVertex, uv)},
-    {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(NvSkinnedVertex, joints)},
-    {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(NvSkinnedVertex, weights)},
+    {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(SkinnedVertex, position)},
+    {.location = 1, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(SkinnedVertex, normal)},
+    {.location = 2, .format = NV_GPU_VERTEX_FLOAT2, .offset = offsetof(SkinnedVertex, uv)},
+    {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(SkinnedVertex, joints)},
+    {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(SkinnedVertex, weights)},
 };
 
 // The pipelines the scene pass uses, for `scene_samples` samples per pixel.
@@ -125,7 +136,7 @@ internal void create_pipelines(NvRenderer* renderer)
                 .fragment_entry = "fs_main",
                 .layouts = {renderer->frame_layout, renderer->material_layout},
                 .layout_count = 2,
-                .vertex_stride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex),
+                .vertex_stride = skinned ? sizeof(SkinnedVertex) : sizeof(NvVertex),
                 .attribute_count = skinned ? NV_ARRAY_COUNT(skinned_attributes) : NV_ARRAY_COUNT(static_attributes),
                 .topology = NV_GPU_TOPOLOGY_TRIANGLES,
                 .cull = double_sided ? NV_GPU_CULL_NONE : NV_GPU_CULL_BACK,
@@ -185,9 +196,9 @@ internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat forma
         {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvVertex, position)},
     };
     local_persist const NvGpuVertexAttribute shadow_skinned_attributes[3] = {
-        {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(NvSkinnedVertex, position)},
-        {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(NvSkinnedVertex, joints)},
-        {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(NvSkinnedVertex, weights)},
+        {.location = 0, .format = NV_GPU_VERTEX_FLOAT3, .offset = offsetof(SkinnedVertex, position)},
+        {.location = 3, .format = NV_GPU_VERTEX_UINT16X4, .offset = offsetof(SkinnedVertex, joints)},
+        {.location = 4, .format = NV_GPU_VERTEX_FLOAT4, .offset = offsetof(SkinnedVertex, weights)},
     };
     for (u32 skinned = 0; skinned < 2; ++skinned) {
         for (u32 double_sided = 0; double_sided < 2; ++double_sided) {
@@ -197,7 +208,7 @@ internal void create_shadow_pipelines(NvRenderer* renderer, NvShadowFormat forma
                 .vertex_entry = skinned ? "vs_skinned" : "vs_static",
                 .layouts = {renderer->shadow_frame_layout},
                 .layout_count = 1,
-                .vertex_stride = skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex),
+                .vertex_stride = skinned ? sizeof(SkinnedVertex) : sizeof(NvVertex),
                 .attribute_count = skinned ? NV_ARRAY_COUNT(shadow_skinned_attributes) : NV_ARRAY_COUNT(shadow_static_attributes),
                 .topology = NV_GPU_TOPOLOGY_TRIANGLES,
                 .cull = double_sided ? NV_GPU_CULL_NONE : NV_GPU_CULL_BACK,
@@ -309,18 +320,39 @@ void nv_renderer_init(NvRenderer* renderer, NvGpu* gpu, NvArena* arena)
 NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
 {
     NV_ASSERT(renderer->mesh_count < NV_MAX_MESHES);
-    NV_ASSERT((data->vertices != NULL) != (data->skinned_vertices != NULL));
+    NV_ASSERT(data->vertices);
     NvRenderMesh* mesh = &renderer->meshes[renderer->mesh_count];
-    mesh->skinned = data->skinned_vertices != NULL;
-    umm vertex_size = mesh->skinned ? sizeof(NvSkinnedVertex) : sizeof(NvVertex);
-    const void* vertices = mesh->skinned ? (const void*)data->skinned_vertices : (const void*)data->vertices;
-    mesh->vertices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_VERTEX, vertices, data->vertex_count * vertex_size);
+    mesh->skinned = data->skin != NULL;
+    if (mesh->skinned) {
+        // The skinned pipelines read one interleaved buffer, so the vertices and their weights are put together here, a
+        // stack chunk at a time.
+        // IMPORTANT: The web build's stack is 64 KB and a scene is built inside a frame, so the chunk stays small (3.5 KB).
+        mesh->vertices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_VERTEX, NULL, data->vertex_count * sizeof(SkinnedVertex));
+        SkinnedVertex chunk[64];
+        for (u32 first = 0; first < data->vertex_count; first += NV_ARRAY_COUNT(chunk)) {
+            u32 count = data->vertex_count - first;
+            if (count > NV_ARRAY_COUNT(chunk))
+                count = NV_ARRAY_COUNT(chunk);
+            for (u32 i = 0; i < count; ++i) {
+                const NvVertex* vertex = &data->vertices[first + i];
+                const NvSkinWeights* skin = &data->skin[first + i];
+                memcpy(chunk[i].position, vertex->position, sizeof(chunk[i].position));
+                memcpy(chunk[i].normal, vertex->normal, sizeof(chunk[i].normal));
+                memcpy(chunk[i].uv, vertex->uv, sizeof(chunk[i].uv));
+                memcpy(chunk[i].joints, skin->joints, sizeof(chunk[i].joints));
+                memcpy(chunk[i].weights, skin->weights, sizeof(chunk[i].weights));
+            }
+            nv_gpu_write_buffer(renderer->gpu, mesh->vertices, (u64)first * sizeof(SkinnedVertex), chunk, count * sizeof(SkinnedVertex));
+        }
+    } else {
+        mesh->vertices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_VERTEX, data->vertices, data->vertex_count * sizeof(NvVertex));
+    }
     mesh->indices = create_buffer(renderer->gpu, NULL, NV_GPU_BUFFER_INDEX, data->indices, data->index_count * sizeof(u32));
     mesh->index_count = data->index_count;
 
     mesh->bounds = nv_box_empty();
     for (u32 v = 0; v < data->vertex_count; ++v) {
-        const f32* p = mesh->skinned ? data->skinned_vertices[v].position : data->vertices[v].position;
+        const f32* p = data->vertices[v].position;
         mesh->bounds = nv_box_add_point(mesh->bounds, nv_vec3(p[0], p[1], p[2]));
     }
 
@@ -330,8 +362,8 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
         u32 joint_count = 0;
         for (u32 v = 0; v < data->vertex_count; ++v) {
             for (u32 k = 0; k < 4; ++k) {
-                if (data->skinned_vertices[v].weights[k] > 0.0f && data->skinned_vertices[v].joints[k] + 1u > joint_count)
-                    joint_count = data->skinned_vertices[v].joints[k] + 1u;
+                if (data->skin[v].weights[k] > 0.0f && data->skin[v].joints[k] + 1u > joint_count)
+                    joint_count = data->skin[v].joints[k] + 1u;
             }
         }
         NV_ASSERT(renderer->joint_bounds_used + joint_count <= NV_MAX_JOINT_BOUNDS);
@@ -342,11 +374,12 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
         for (u32 j = 0; j < joint_count; ++j)
             boxes[j] = nv_box_empty();
         for (u32 v = 0; v < data->vertex_count; ++v) {
-            const NvSkinnedVertex* vertex = &data->skinned_vertices[v];
-            NvVec3 p = nv_vec3(vertex->position[0], vertex->position[1], vertex->position[2]);
+            const f32* position = data->vertices[v].position;
+            const NvSkinWeights* skin = &data->skin[v];
+            NvVec3 p = nv_vec3(position[0], position[1], position[2]);
             for (u32 k = 0; k < 4; ++k) {
-                if (vertex->weights[k] > 0.0f)
-                    boxes[vertex->joints[k]] = nv_box_add_point(boxes[vertex->joints[k]], p);
+                if (skin->weights[k] > 0.0f)
+                    boxes[skin->joints[k]] = nv_box_add_point(boxes[skin->joints[k]], p);
             }
         }
     }
@@ -356,7 +389,7 @@ NvMeshId nv_renderer_add_mesh(NvRenderer* renderer, const NvMeshData* data)
 void nv_renderer_replace_mesh(NvRenderer* renderer, NvMeshId id, const NvMeshData* data)
 {
     NV_ASSERT(id.index > 0 && id.index < renderer->mesh_count);
-    NV_ASSERT(data->vertices && !data->skinned_vertices);
+    NV_ASSERT(data->vertices && !data->skin);
     NvRenderMesh* mesh = &renderer->meshes[id.index];
     NV_ASSERT(!mesh->skinned);
     // Commands already submitted keep the old buffers alive until they finish; releasing only drops our reference.

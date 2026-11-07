@@ -255,7 +255,7 @@ int main(void)
 
     // What the renderer takes.
     NvMeshData data = nv_mesh_builder_data(&mesh);
-    CHECK(data.vertices == vertices && data.skinned_vertices == NULL && data.vertex_count == 52);
+    CHECK(data.vertices == vertices && data.skin == NULL && data.vertex_count == 52);
     CHECK(data.indices == indices && data.index_count == 78);
 
     // NOTE: Running out of room is an assert (a trap), so it cannot be tested in-process.

@@ -109,49 +109,44 @@ internal NvMeshId load_primitive(const cgltf_primitive* prim, const cgltf_node* 
     b32 skinned = node && node->skin && joints && weights;
 
     // Skinned meshes are posed by their joints, which glTF defines to ignore the mesh node's own transform.
-    NvMat4 transform = transform_or_null ? *transform_or_null : nv_mat4_identity();
+    // So a skinned primitive's vertices stay as the file has them.
+    b32 baked = transform_or_null && !skinned;
 
     u32 count = (u32)positions->count;
     NvMeshData data = {.vertex_count = count};
     umm mark = scratch->used;
-    NvVertex* vertices = skinned ? NULL : NV_PUSH_ARRAY(scratch, count, NvVertex);
-    NvSkinnedVertex* skinned_vertices = skinned ? NV_PUSH_ARRAY(scratch, count, NvSkinnedVertex) : NULL;
+    NvVertex* vertices = NV_PUSH_ARRAY(scratch, count, NvVertex);
+    NvSkinWeights* skin = skinned ? NV_PUSH_ARRAY(scratch, count, NvSkinWeights) : NULL;
     for (u32 v = 0; v < count; ++v) {
-        f32 position[3] = {0};
-        f32 normal[3] = {0, 1, 0};
-        f32 uv[2] = {0};
-        cgltf_accessor_read_float(positions, v, position, 3);
+        NvVertex* out = &vertices[v];
+        out->normal[1] = 1.0f; // up when the file has no normals
+        cgltf_accessor_read_float(positions, v, out->position, 3);
         if (normals)
-            cgltf_accessor_read_float(normals, v, normal, 3);
+            cgltf_accessor_read_float(normals, v, out->normal, 3);
         if (uvs)
-            cgltf_accessor_read_float(uvs, v, uv, 2);
-
-        if (skinned) {
-            NvSkinnedVertex* out = &skinned_vertices[v];
-            memcpy(out->position, position, sizeof(position));
-            memcpy(out->normal, normal, sizeof(normal));
-            memcpy(out->uv, uv, sizeof(uv));
-            cgltf_uint joint_indices[4] = {0};
-            cgltf_accessor_read_uint(joints, v, joint_indices, 4);
-            for (u32 k = 0; k < 4; ++k)
-                out->joints[k] = (u16)joint_indices[k];
-            cgltf_accessor_read_float(weights, v, out->weights, 4);
-        } else {
-            NvVertex* out = &vertices[v];
-            NvVec3 p = nv_vec3(position[0], position[1], position[2]);
-            NvVec3 n = nv_vec3(normal[0], normal[1], normal[2]);
-            const f32* m = transform.e;
+            cgltf_accessor_read_float(uvs, v, out->uv, 2);
+        if (baked) {
+            NvVec3 p = nv_vec3(out->position[0], out->position[1], out->position[2]);
+            NvVec3 n = nv_vec3(out->normal[0], out->normal[1], out->normal[2]);
+            const f32* m = transform_or_null->e;
             out->position[0] = m[0] * p.x + m[4] * p.y + m[8] * p.z + m[12];
             out->position[1] = m[1] * p.x + m[5] * p.y + m[9] * p.z + m[13];
             out->position[2] = m[2] * p.x + m[6] * p.y + m[10] * p.z + m[14];
             out->normal[0] = m[0] * n.x + m[4] * n.y + m[8] * n.z;
             out->normal[1] = m[1] * n.x + m[5] * n.y + m[9] * n.z;
             out->normal[2] = m[2] * n.x + m[6] * n.y + m[10] * n.z;
-            memcpy(out->uv, uv, sizeof(uv));
+        }
+
+        if (skinned) {
+            cgltf_uint joint_indices[4] = {0};
+            cgltf_accessor_read_uint(joints, v, joint_indices, 4);
+            for (u32 k = 0; k < 4; ++k)
+                skin[v].joints[k] = (u16)joint_indices[k];
+            cgltf_accessor_read_float(weights, v, skin[v].weights, 4);
         }
     }
     data.vertices = vertices;
-    data.skinned_vertices = skinned_vertices;
+    data.skin = skin;
 
     u32 index_count = prim->indices ? (u32)prim->indices->count : count;
     u32* indices = NV_PUSH_ARRAY(scratch, index_count, u32);
