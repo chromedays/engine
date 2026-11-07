@@ -1187,7 +1187,7 @@ NV_DEBUG_EXPORT unsigned sandbox_debug_save_crc(void)
     return crc;
 }
 
-#if defined(_WIN32)
+#if NV_PLATFORM_WINDOWS
 // The scripted runs' `call` finds a debug export by name here (sandbox/debug_script.c). The letters before the `>` are the arguments (i: int,
 // f: float), the one after it the result (v: none, i: int, f: float, d: double, s: char*, u: unsigned).
 const NvDebugCall sandbox_debug_calls[] = {

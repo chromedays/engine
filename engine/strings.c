@@ -25,7 +25,7 @@ void nv_strings_set_table(const NvStringPair* pairs, u32 count)
     }
 }
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 #include <emscripten.h>
 
 EM_JS(int, js_browser_is_korean, (void), {
@@ -37,7 +37,7 @@ internal b32 system_is_korean(void)
 {
     return js_browser_is_korean();
 }
-#elif defined(_WIN32)
+#elif NV_PLATFORM_WINDOWS
 #include "engine/win32.h"
 
 // Korean when the user's Windows display language is.

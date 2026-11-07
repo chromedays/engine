@@ -36,6 +36,9 @@ nv는 Handmade Hero 철학을 따른다. 일을 하는 코드를 쓰고, 데이�
   (`engine/window.h`, `engine/window_web.c`, `engine/window_win32.c`). 소스는 `engine/CMakeLists.txt`가 플랫폼에 따라 고르고, 헤더는 플랫폼을
   가리지 않으며(플랫폼 헤더는 `engine/window_win32.h`처럼 엔진 안에서만 쓴다), 한 플랫폼의 소스가 다른 플랫폼의 것을 호출하지 않는다.
   Windows Debug 빌드의 스크립트 실행(`engine/debug_script.h`)처럼 한 플랫폼에만 있는 모듈은 파일 전체를 그 플랫폼 조건으로 감싼다.
+- 플랫폼 조건은 `engine/base.h`의 `NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS`, `NV_PLATFORM_LINUX`로 쓴다(항상 0이나 1로 정의되고, 정확히
+  하나가 1이다: `#if NV_PLATFORM_WINDOWS && NV_DEBUG`). 컴파일러의 매크로(`__EMSCRIPTEN__`, `_WIN32`, `__linux__`)는 `base.h`만 읽는다.
+  `!NV_PLATFORM_WEB`처럼 "어느 플랫폼이 아님"으로 쓰지 말고 뜻하는 플랫폼을 적는다: 그 파일이 어느 플랫폼에서 빌드되는지 몰라도 읽힌다.
 - 모든 파일이 `engine/base.h`를 (직접 또는 다른 엔진 헤더를 통해) 포함한다.
 
 ### 이름 짓기
@@ -201,6 +204,10 @@ visible, own your memory, and add abstraction only when repetition asks for it.
   `engine/window_win32.h`, is private to the engine), and one platform's source never calls another's. A module that exists
   on one platform only, like the Windows Debug build's scripted runs (`engine/debug_script.h`), wraps its whole file in that
   platform's condition.
+- A platform condition is written with `NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS` and `NV_PLATFORM_LINUX` from `engine/base.h` (always
+  defined, as 0 or 1, and exactly one is 1: `#if NV_PLATFORM_WINDOWS && NV_DEBUG`). Only `base.h` reads the compilers' own macros
+  (`__EMSCRIPTEN__`, `_WIN32`, `__linux__`). Name the platform meant rather than one it is not (`!NV_PLATFORM_WEB`): the condition
+  then reads right without knowing which platforms build the file.
 - `engine/base.h` is included (directly or through another engine header) by every file.
 
 ### Naming

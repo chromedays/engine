@@ -397,7 +397,7 @@ b32 nv_gpu_copy_texture_for_readback(NvGpu* gpu, u32 slot, NvGpuTexture texture)
 void nv_gpu_debug_raise_error(NvGpu* gpu);
 #endif
 
-#if NV_DEBUG && defined(_WIN32)
+#if NV_DEBUG && NV_PLATFORM_WINDOWS
 // Windows Debug builds, for the scripted runs (sandbox/debug_script.c): the canvas of the next frame, the part of it at (x, y)
 // of `width` x `height` pixels (0: all), as a PNG file at `path`. The file is written when that frame has been drawn, before the
 // call returns to the caller of nv_gpu_end_frame; nv_gpu_debug_screenshot_pending is true until then.

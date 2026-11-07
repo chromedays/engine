@@ -867,7 +867,7 @@ b32 save_round_trip_matches(Sandbox* sandbox);
 // debug_script.c (Windows Debug builds): the sandbox's part of a scripted run, `sandbox.exe --script <file>` (engine/debug_script.h;
 // docs/specs/d3d12_port.md, "Debug exports and native tests"). Its `call` finds the debug exports of main.c by name in a table,
 // sandbox_debug_calls.
-#if defined(_WIN32) && NV_DEBUG
+#if NV_PLATFORM_WINDOWS && NV_DEBUG
 extern const NvDebugCall sandbox_debug_calls[];
 extern const u32 sandbox_debug_call_count;
 

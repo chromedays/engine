@@ -1,6 +1,6 @@
 #include "sandbox.h"
 
-#if defined(_WIN32) && NV_DEBUG
+#if NV_PLATFORM_WINDOWS && NV_DEBUG
 
 #include <engine/debug_script.h>
 

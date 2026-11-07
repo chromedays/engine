@@ -25,6 +25,25 @@ typedef size_t   umm;
 #define global        static
 #define local_persist static
 
+// The platform this is built for: our own names for it, so the code tests these and this is the one place that reads the
+// compilers' own macros (__EMSCRIPTEN__, _WIN32, __linux__). Always defined, as 0 or 1; exactly one is 1. Emscripten is
+// tested first: its clang defines __unix__ (not __linux__), and the web is the platform whatever the host is.
+#if defined(__EMSCRIPTEN__)
+#    define NV_PLATFORM_WEB     1
+#    define NV_PLATFORM_WINDOWS 0
+#    define NV_PLATFORM_LINUX   0
+#elif defined(_WIN32)
+#    define NV_PLATFORM_WEB     0
+#    define NV_PLATFORM_WINDOWS 1
+#    define NV_PLATFORM_LINUX   0
+#elif defined(__linux__)
+#    define NV_PLATFORM_WEB     0
+#    define NV_PLATFORM_WINDOWS 0
+#    define NV_PLATFORM_LINUX   1
+#else
+#    error "nv builds for the web, Windows and Linux only"
+#endif
+
 // Our code compiles with emcc (clang) and MSVC (docs/specs/d3d12_port.md, "Build"): what only one of them spells is wrapped here.
 #if defined(_MSC_VER)
 #    define NV_TRAP() __debugbreak() // the debugger stops on the spot
@@ -61,7 +80,7 @@ typedef size_t   umm;
 #define NV_INVALID_CODE_PATH NV_ASSERT(!"invalid code path")
 
 // Marks a function the debug harness calls by name: Playwright reads it as Module._name on the web build.
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 #    define NV_DEBUG_EXPORT __attribute__((used, visibility("default")))
 #else
 #    define NV_DEBUG_EXPORT

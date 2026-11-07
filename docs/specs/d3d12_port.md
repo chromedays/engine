@@ -338,7 +338,7 @@ C17에서 `COBJMACROS`로 D3D12와 DXGI의 C 인터페이스를 부른다(`ID3D1
 | `storage` | `storage_web.c` | `storage_win32.c` |
 | `local_file` | `local_file_web.c` | `local_file_win32.c` |
 | `gltf`의 이미지 디코딩 | `image_web.c` | `image_win32.c` (WIC) |
-| `log`, `strings`, `file` | 작은 차이라 한 파일 안의 `#if defined(__EMSCRIPTEN__)` | |
+| `log`, `strings`, `file` | 작은 차이라 한 파일 안의 `#if NV_PLATFORM_WEB`(`engine/base.h`) | |
 
 `renderer.c`, `vfx.c`, `scene.c`, `anim.cpp`, `gltf.c`의 나머지, 샌드박스와 오토배틀러의 코드는 플랫폼을 모른다. 플랫폼을 모르는
 파일에 `__EMSCRIPTEN__`이 남지 않는 것이 단계 2의 끝 조건이다(디버그 내보내기는 아래 "디버그 내보내기").

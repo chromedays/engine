@@ -131,7 +131,9 @@ Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
 - Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
 - Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. A file that does not know the platform
-includes none of their headers and never tests `__EMSCRIPTEN__` or `_WIN32` (debug exports are `NV_DEBUG_EXPORT`). Our code compiles
+includes none of their headers and never tests the platform (debug exports are `NV_DEBUG_EXPORT`). Where code does test it, it tests
+`NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS` or `NV_PLATFORM_LINUX` (`engine/base.h`; always 0 or 1, `#if NV_PLATFORM_WEB`), never the
+compilers' own `__EMSCRIPTEN__`, `_WIN32` or `__linux__`. Our code compiles
 with emcc and MSVC (`/W4`, no warnings): no VLAs or GNU extensions, `NV_LITERAL(type){...}` for a compound literal that C++ also
 sees, `NV_TRAP` and `NV_PRINTF_FORMAT` instead of `__builtin_trap` and `__attribute__`, and `windows.h` before `engine/base.h` (its
 `internal` macro) where a file includes it at all. Shaders compile to WGSL for the web and to DXIL (shader model 6.6) for Windows.

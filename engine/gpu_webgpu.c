@@ -2,7 +2,7 @@
 #include "engine/log.h"
 #include "engine/window.h"
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 #include <emscripten/emscripten.h>
 #include <webgpu/webgpu.h>
 #else
@@ -22,7 +22,7 @@
 #define SV_FMT "%.*s"
 #define SV_ARG(sv) (int)((sv).data ? ((sv).length == WGPU_STRLEN ? strlen((sv).data) : (sv).length) : 0), (sv).data
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 EM_JS_DEPS(nv_gpu, "$stringToUTF8");
 
 // What the page can tell about the machine. The browser hides the CPU's model, so this is what a
@@ -86,7 +86,7 @@ internal WGPUTextureFormat wgpu_format(NvGpuFormat format)
     }
 }
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 internal NvGpuFormat format_from_wgpu(WGPUTextureFormat format)
 {
     switch (format) {
@@ -363,7 +363,7 @@ internal DeviceRequest request_device(WGPUInstance instance, WGPUAdapter adapter
 }
 
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
 internal NvGpuFormat srgb_view_format(NvGpuFormat format)
 {
     switch (format) {
@@ -378,7 +378,7 @@ internal void configure_surface(NvGpu* gpu)
 {
     if (gpu->width == 0 || gpu->height == 0)
         return;
-#if !defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_LINUX
     // Headless there is no surface to configure: the frame's texture is made in nv_gpu_begin_frame.
     nv_log(NV_LOG_INFO, "nv", "headless color target: %ux%u, format %s (offscreen texture, no surface)",
            gpu->width, gpu->height, nv_gpu_format_name(gpu->surface_format));
@@ -447,7 +447,7 @@ internal void log_system(NvGpu* gpu)
     char agent[256];
     nv_window_system_text(agent, sizeof(agent));
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
     nv_log(NV_LOG_INFO, "nv", "CPU: %d logical cores, memory %s%.0f GB (browser-rounded), platform %s, WebAssembly 32-bit; the browser hides the CPU model",
            cores, memory_gb > 0.0f ? "" : "unknown ", memory_gb, platform[0] ? platform : "unknown");
     nv_log(NV_LOG_INFO, "nv", "browser: %s", agent);
@@ -476,7 +476,7 @@ internal void log_system(NvGpu* gpu)
 
     NvWindow* window = gpu->window;
     f32 ratio = window->pixel_ratio > 0.0f ? window->pixel_ratio : pixel_ratio;
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
     nv_log(NV_LOG_INFO, "nv", "display: screen %dx%d, canvas %ux%u CSS pixels, device pixel ratio %.2f, framebuffer %ux%u pixels",
            screen_width, screen_height, (u32)((f32)gpu->width / ratio + 0.5f), (u32)((f32)gpu->height / ratio + 0.5f), (f64)ratio,
            gpu->width, gpu->height);
@@ -520,7 +520,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         goto fail;
     }
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
     WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvas = WGPU_EMSCRIPTEN_SURFACE_SOURCE_CANVAS_HTML_SELECTOR_INIT;
     canvas.selector = (WGPUStringView){window->canvas_selector, WGPU_STRLEN};
     WGPUSurfaceDescriptor surface_desc = WGPU_SURFACE_DESCRIPTOR_INIT;
@@ -551,7 +551,7 @@ b32 nv_gpu_create(NvGpu* gpu, NvWindow* window)
         gpu->max_storage_binding_bytes = limits.maxStorageBufferBindingSize;
     }
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
     WGPUSurfaceCapabilities caps = WGPU_SURFACE_CAPABILITIES_INIT;
     wgpuSurfaceGetCapabilities(backend.surface, backend.adapter, &caps);
     if (caps.formatCount == 0) {
@@ -1092,7 +1092,7 @@ NvGpuFrame nv_gpu_begin_frame(NvGpu* gpu)
     if (gpu->width == 0 || gpu->height == 0)
         return (NvGpuFrame){0}; // canvas is hidden or collapsed
 
-#if defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_WEB
     WGPUSurfaceTexture surface_texture = WGPU_SURFACE_TEXTURE_INIT;
     wgpuSurfaceGetCurrentTexture(backend.surface, &surface_texture);
     switch (surface_texture.status) {
@@ -1384,7 +1384,7 @@ b32 nv_gpu_resolve_timestamps(NvGpu* gpu, u32 count)
 NvGpuTimestamps nv_gpu_poll_timestamps(NvGpu* gpu)
 {
     (void)gpu;
-#if !defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_LINUX
     wgpuInstanceProcessEvents(backend.instance); // no browser loop turns the callbacks here
 #endif
     if (backend.timestamp_state != READBACK_READY)
@@ -1518,7 +1518,7 @@ NvGpuReadback nv_gpu_poll_readback(NvGpu* gpu, u32 slot)
 {
     (void)gpu;
     NV_ASSERT(slot < NV_GPU_MAX_READBACKS);
-#if !defined(__EMSCRIPTEN__)
+#if NV_PLATFORM_LINUX
     wgpuInstanceProcessEvents(backend.instance); // no browser loop turns the callbacks here
 #endif
     Readback* readback = &backend.readbacks[slot];

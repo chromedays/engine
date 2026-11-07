@@ -1,6 +1,6 @@
 #include <engine/debug_script.h>
 
-#if defined(_WIN32) && NV_DEBUG
+#if NV_PLATFORM_WINDOWS && NV_DEBUG
 
 #include <engine/file.h>
 #include <engine/log.h>
