@@ -7,7 +7,7 @@
 
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
-> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
 > 검색할 수 있는 패널은 Scene, Inspector, View, Textures다. 아래에서 스트레스 씬과 Stress 탭을 말하는 곳은 그때의 기록이다.
 
 ### 목표
@@ -182,7 +182,7 @@ if (search_row(&sandbox->search, "Anti-aliasing", "msaa samples"))
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
-> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
 > The searchable panels are Scene, Inspector, View and Textures. Where the text below speaks of the stress scene or the Stress tab, it is the record of that time.
 
 ### Goal

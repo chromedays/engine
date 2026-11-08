@@ -59,10 +59,10 @@ sandbox/                   the sandbox (the engine's test ground): main.c (windo
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), sandbox.h (shared state)
-samples/                   the samples (docs/specs/samples.md): one feature each, each a standalone executable in its own folder
-                           that links the engine alone and needs no input. stress/ (target `stress`; docs/specs/stress.md): main.c
-                           (the shell: frame, camera, panel, the benchmark that runs by itself), workloads.c (the scene, the
-                           workloads, the effects, the benchmark's steps), stress.h
+samples/                   the samples (docs/specs/samples.md): one feature each, each a standalone executable made of one file
+                           that links the engine alone and needs no input, built into its own folder (samples/<name>/):
+                           triangle.c (one triangle), stress.c (docs/specs/stress.md: the scene, the workloads, the effects,
+                           the benchmark that runs by itself, the panel); CMakeLists.txt has one add_sample line each
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file) and the icon font
                            (Lucide, merged into it)
@@ -305,7 +305,8 @@ rects, rows, scroll, selection) for tests.
 (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
 viewport's width; every app draws it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
 `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
-makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
+makes (into `<binary dir>/<target>_version/`, so two targets of one CMake folder do not write one file), so they are never those of
+an older configure. Beside the build it shows what the page downloaded
 (`Sandbox.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
 `.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
 errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
@@ -380,14 +381,16 @@ first. Animators are never destroyed (`nv_anim_free_animators` says how many are
 packs the files a program reads into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at
 `/assets`) and its `data/`; a sample takes only the folders it reads (`PRELOAD`). CI installs their Release and Debug builds into the
 `engine-web` artifact (`release/`, `debug/`; the sandbox at the root, a sample in `<name>/`). Neither has a hosted page: they run from
-that artifact or a local build. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
+that artifact or a local build. The page goes where the target's files go: its `RUNTIME_OUTPUT_DIRECTORY` when set (each sample
+sets its own), else the calling CMake folder's binary directory. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
 developer tools download.
-- A sample (`docs/specs/samples.md`) is a folder of `samples/` and an executable of its own: it includes only `engine/` headers (never
-`sandbox/` or another sample), has its scene and logic fixed in C, and needs no input: no sliders or buttons, no script commands,
+- A sample (`docs/specs/samples.md`) is one file of `samples/` and an executable of its own (an `add_sample` line in `samples/CMakeLists.txt`): it
+includes only `engine/` headers (never `sandbox/` or another sample), has its scene and logic fixed in C, and needs no input: no sliders or buttons, no script commands,
 no command-line options, only a camera drag. Its debug exports (`Module._<name>_debug_*`) only read, so a test loads it, waits and
-checks. Code two samples need is a question for the engine, not a shared sample file. The stress sample runs its benchmark by
+checks. Code two samples need is a question for the engine, not a file the samples share. The stress sample runs its benchmark by
 itself, step after step, logs the table at the end of each run and starts again; it exports `_stress_debug_stat`,
-`_stress_debug_built` and `_stress_debug_benchmark`.
+`_stress_debug_built` and `_stress_debug_benchmark`; the triangle sample draws one triangle and exports `_triangle_debug_stat`. `just
+sample-web <name>` builds one for the web and serves it.
 - `NV_BUILD_SANDBOX`, `NV_BUILD_SAMPLES` and `NV_BUILD_TESTS` default to on only when this is the top-level project, so an app that adds the engine as a
 subdirectory builds the engine alone. The functions an app calls find the engine's files through `CMAKE_CURRENT_FUNCTION_LIST_DIR`,
 never `PROJECT_SOURCE_DIR` (the caller's project there), and the engine passes its parent the variables it needs (end of

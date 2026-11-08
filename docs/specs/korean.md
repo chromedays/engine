@@ -15,7 +15,7 @@
 
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
-> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
 > 스트레스 샘플의 UI는 영어이고 `T()`를 거치지 않는다. 그 행들은 `sandbox/strings.c`에서 지웠다.
 
 ### 목표
@@ -199,7 +199,7 @@ old names. The Hangul font is read by `nv_imgui_load_ui_font`.
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
-> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
 > The stress sample's UI is English and does not go through `T()`. Its rows are gone from `sandbox/strings.c`.
 
 ### Goal

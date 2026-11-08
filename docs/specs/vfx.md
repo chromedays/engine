@@ -9,7 +9,7 @@
 
 상태: 구현됨, 다섯 단계 모두 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 구현이 스펙과 다른 곳은 "구현 결과"에 있다.
 
-> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
 > 이펙트 워크로드, 그 통계, 벤치마크의 이펙트 단계는 스트레스 샘플에 있다. 샌드박스에는 View 탭의 Effects 섹션(시험 발사)이 남는다. `_sandbox_debug_set_effects`는 없다.
 
 참고 (2026-10-12, `d3d12_port.md`): 컴퓨트 패스와 간접 그리기와 디스패치는 Windows에서는 D3D12(UAV 배리어, `ExecuteIndirect`)로 돈다. 파티클 상태와 버퍼 구성은 그대로이고, 네이티브 쪽 차이는 half float를 가장 가까운 값으로 반올림하는 `half_bits`(`NV_D3D12`), 보이는 개수의 GPU별 어긋남(3%까지), 알파 파티클의 그리기 순서가 GPU마다 다른 것이다. 모두 `d3d12_port.md`의 "찾은 것"에 있다. 파티클 패스 시간(`gpu_particles_ms`)은 D3D12에서 0이 아니다.
@@ -282,7 +282,7 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 Status: built, all five phases (2026-10-02). Changes to this spec are agreed first. Where the build differs from the spec, see "As built".
 
-> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
 > The effects workload, its stats and the benchmark's effects steps are in the stress sample. The sandbox keeps the View tab's Effects section (test fire). `_sandbox_debug_set_effects` is gone.
 
 ### Goal

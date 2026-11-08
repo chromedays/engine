@@ -7,7 +7,7 @@
 
 상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
 
-> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
 > 하단 도크는 Console 탭만, 폰 패널은 Scene, Inspector, View, Textures, Console 탭을 가진다. 아래의 Stress 탭은 그때의 기록이다.
 
 ### 목표
@@ -158,7 +158,7 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
 
 Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
-> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
 > The bottom dock holds the Console tab alone, and the phone panel the Scene, Inspector, View, Textures and Console tabs. The Stress tab below is the record of that time.
 
 ### Goal

@@ -2,7 +2,7 @@
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
-> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
 > The gizmo moves every selected node but the active camera and nodes under a selected one, and the save keeps them all. `_sandbox_debug_set_grid` is gone; `selection_prune` stays, for nodes that no longer exist. The stress scene below is the record of that time.
 
 ## Goal

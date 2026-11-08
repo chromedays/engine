@@ -141,9 +141,10 @@ sandbox/             the sandbox: scenes read from text files (sandbox/data/*.nv
                      depth target) with their mips and channels. The scene is drawn in linear HDR through tone
                      mapping (Clamp, PBR Neutral, ACES) and bloom, with GPU particles simulated by compute
                      shaders (2 million by default), trails, beams and ground decals (the View tab's Effects)
-samples/             one standalone executable per feature, linked to the engine alone, needing no input
-                     (docs/specs/samples.md). stress/ loads the engine with cubes, a deep chain, a crowd of
-                     animated characters and fire effects, and runs its benchmark by itself, step after step
+samples/             one standalone executable per feature, each one file, linked to the engine alone, needing
+                     no input (docs/specs/samples.md): triangle.c draws one triangle; stress.c loads the engine
+                     with cubes, a deep chain, a crowd of animated characters and fire effects, and runs its
+                     benchmark by itself, step after step (`just sample-web stress`)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts and the web builds' development server (dev_server.mjs)

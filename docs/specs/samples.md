@@ -16,8 +16,11 @@
 
 합의된 결정:
 
-- **샘플 하나가 실행 파일 하나다.** `samples/<name>/`에 있고, 타깃 이름이 샘플 이름이다(`stress`). 샘플끼리 코드를 나누지 않는다:
-  공유 셸, 샘플 표, 샘플 고르기가 없다.
+- **샘플 하나가 파일 하나이고 실행 파일 하나다.** `samples/<name>.c`이고, 타깃 이름이 샘플 이름이다(`stress`, `triangle`). 타깃은
+  `samples/CMakeLists.txt`의 `add_sample(<name> [PRELOAD ...])` 한 줄이다. 샘플끼리 코드를 나누지 않는다: 공유 셸, 샘플 표, 샘플
+  고르기가 없다.
+- **샘플마다 빌드 폴더 하나.** `add_sample`이 타깃의 `RUNTIME_OUTPUT_DIRECTORY`를 `<빌드>/samples/<name>`으로 둔다. 웹에서는 그 폴더에
+  페이지(`index.html`), `.js`, `.wasm`, `.data`가, 네이티브에서는 실행 파일과 복사한 에셋이 모인다(Windows는 그 아래 구성 폴더).
 - 샘플은 **엔진에만** 의존한다. `sandbox/`도 다른 샘플도 include하거나 링크하지 않는다. 두 샘플이 같은 코드를 필요로 하면, 그때
   그 코드를 엔진으로 옮길지 정한다(코딩 표준: 두 번째로 필요할 때 뽑는다). 지금은 카메라 입력, 프레임 통계, 벤치마크가 stress 안에 있다.
 - **입력이 필요 없다.** 슬라이더, 버튼, 스크립트(`--script`, Windows의 `call` 표), 명령줄 옵션이 없다. 샘플은 시작하자마자 스스로
@@ -25,21 +28,33 @@
 - **디버그 export는 읽기만 한다**(Debug 빌드, `Module._<name>_debug_*`): 테스트가 끝나기를 기다리고 결과를 확인하는 데 쓴다.
   값을 바꾸는 export는 없다.
 - 웹, Windows, Linux가 모두 빌드한다(`NV_BUILD_SAMPLES`, 최상위 프로젝트일 때만 켜짐). 웹은 `<prefix>/<name>/`에 설치된다.
+- **한 CMake 폴더의 여러 실행 파일 (엔진의 CMake 함수 변경).** 전에는 둘 다 `CMakeLists.txt`의 빌드 폴더에 하나뿐인 파일을 썼다.
+  - `nv_setup_executable`은 페이지를 타깃의 `RUNTIME_OUTPUT_DIRECTORY`에 쓴다(없으면 전처럼 빌드 폴더). 샌드박스와 엔진을 쓰는 앱은
+    그 속성을 두지 않으므로 그대로다.
+  - `nv_add_version`은 `nv_version.h`를 `<빌드 폴더>/<target>_version/`에 쓰고 그 폴더를 타깃의 include 경로에 넣는다. 한 폴더의 두
+    타깃이 같은 파일을 쓰지 않는다. `#include "nv_version.h"`는 그대로다.
+- `just sample-web <name>`이 웹 빌드에서 샘플 하나를 빌드하고 띄운다.
 - 샘플은 그 샘플이 읽는 에셋만 담는다(`nv_setup_executable`의 `PRELOAD`).
 - UI 문자열은 영어이고 `T()`를 거치지 않는다.
 - 서드파티: 없음.
 
-### 첫 샘플: stress
+### triangle
+
+가장 작은 샘플: 삼각형 하나, 카메라, 빛을 C로 만들어 그린다(시각 테스트의 삼각형 씬과 같다). 그 밖에는 모든 앱이 그리는 빌드
+라벨뿐이고, 그래서 UI 글꼴(`assets/fonts`)만 담는다. 렌더러는 기본 설정(MSAA 1, Clamp, 블룸과 그림자 없음)이다. 디버그 export:
+`triangle_debug_stat(which)` (0 그린 프레임, 1 로그의 경고와 오류 수).
+
+### stress
 
 샌드박스의 스트레스 씬(`stress.md`)을 옮겼다. 샌드박스에서는 그 씬, 워크로드 동작 넷, 생성기, `palette`와 `benchmark` 블록,
 Stress 탭, 벤치마크, 그 디버그 export와 스크립트 명령을 지웠다(`scene_file.md`의 2026-11-08 메모).
 
 ```
-samples/stress/
-  CMakeLists.txt   타깃 stress: nv에만 링크. assets/fonts와 assets/quaternius만 담는다
-  stress.h         상태(Stress), 워크로드(Workloads, WorkloadSettings), 프레임 시간, 벤치마크
-  main.c           셸: 창, 프레임, 카메라, 패널(벤치마크와 통계), 스스로 도는 벤치마크, 읽기 전용 디버그 export
-  workloads.c      씬, 워크로드(그리드, 체인, 군중, 이펙트, 뼈), 이펙트 정의, 벤치마크 단계 표
+samples/
+  CMakeLists.txt   add_sample 한 줄씩 (stress: assets/fonts와 assets/quaternius만 담는다)
+  triangle.c       삼각형 샘플
+  stress.c         스트레스 샘플 전체, 한 파일: 상태, 씬과 워크로드(그리드, 체인, 군중, 이펙트, 뼈)와 이펙트 정의와 벤치마크 단계
+                   표, 셸(창, 프레임, 카메라, 패널, 스스로 도는 벤치마크, 읽기 전용 디버그 export)
 ```
 
 - **씬:** `stress.nvscene`과 같다. 카메라 (fov 50°, yaw 0.45, pitch 0.42, 거리 28), 태양, 바닥, 팔레트 (바탕과 색상환 199색),
@@ -54,7 +69,7 @@ samples/stress/
 - **노드 예산:** 군중, 체인, 그리드 순서로 남은 노드와 애니메이터 안에서 나누고, 줄이는 것을 늘리는 것보다 먼저 한다. 캐릭터는
   만들면 남는다(애니메이터는 지울 수 없다). 그래서 두 번째 바퀴부터 Cubes 16000은 캐릭터 200명의 노드만큼 적게 만든다.
 
-### 디버그 export (stress, Debug 빌드)
+### stress의 디버그 export (Debug 빌드)
 
 | export | 값 |
 |---|---|
