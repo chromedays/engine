@@ -7,6 +7,11 @@
 
 상태: 구현됨 (2026-09-27). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 엔진에만 의존하고, 씬과 워크로드는
+> C로 고정되어 있으며, 입력이 필요 없다: 시작하자마자 벤치마크를 스스로 돌리고 끝나면 다시 돈다. 단계에 Colors 199, Churn 256,
+> Chain 1000, Bones 200, Explosions 200, Decals 2000이 더해져 모든 워크로드가 한 번씩 재진다. 샌드박스에는 Stress 탭, 워크로드 동작,
+> 벤치마크, 그 디버그 export가 없다. 아래는 샌드박스 시절의 기록이다.
+
 > 2026-10: 스트레스 씬은 이제 코드가 아니라 씬 파일(`sandbox/data/stress.nvscene`)이 정의한다. 워크로드는 `grid`, `chain`, `crowd`,
 > `effects` 동작이고, 벤치마크의 단계도 파일에 있으며, 모든 씬이 쇼케이스와 같은 Edit/Play, undo, 자동 저장 규칙을 따른다
 > (`scene_file.md`). 아래에서 그 때문에 바뀐 곳에 표시했다.
@@ -111,6 +116,12 @@ SwiftShader의 숫자는 의미가 없다; 실제 측정은 실제 장치에서 
 ## English
 
 Status: implemented (2026-09-27). Changes to this spec are agreed first.
+
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). It depends on the
+> engine only, its scene and workloads are fixed in C, and it needs no input: it runs the benchmark by itself from the start and starts
+> again at the end. The steps gained Colors 199, Churn 256, Chain 1000, Bones 200, Explosions 200 and Decals 2000, so every workload is
+> measured once. The sandbox has no Stress tab, workload behaviors, benchmark or their debug exports. What follows is the record of the
+> sandbox's time.
 
 > 2026-10: The stress scene is now defined by a scene file (`sandbox/data/stress.nvscene`), not by code. The workloads are the `grid`,
 > `chain`, `crowd` and `effects` behaviors, the benchmark's steps are in the file, and every scene follows the same Edit/Play, undo

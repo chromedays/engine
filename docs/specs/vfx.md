@@ -9,6 +9,9 @@
 
 상태: 구현됨, 다섯 단계 모두 (2026-10-02). 이 스펙의 변경은 먼저 합의한다. 구현이 스펙과 다른 곳은 "구현 결과"에 있다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 이펙트 워크로드, 그 통계, 벤치마크의 이펙트 단계는 스트레스 샘플에 있다. 샌드박스에는 View 탭의 Effects 섹션(시험 발사)이 남는다. `_sandbox_debug_set_effects`는 없다.
+
 참고 (2026-10-12, `d3d12_port.md`): 컴퓨트 패스와 간접 그리기와 디스패치는 Windows에서는 D3D12(UAV 배리어, `ExecuteIndirect`)로 돈다. 파티클 상태와 버퍼 구성은 그대로이고, 네이티브 쪽 차이는 half float를 가장 가까운 값으로 반올림하는 `half_bits`(`NV_D3D12`), 보이는 개수의 GPU별 어긋남(3%까지), 알파 파티클의 그리기 순서가 GPU마다 다른 것이다. 모두 `d3d12_port.md`의 "찾은 것"에 있다. 파티클 패스 시간(`gpu_particles_ms`)은 D3D12에서 0이 아니다.
 
 ### 목표
@@ -87,7 +90,7 @@
 | 순서 | 한 command encoder 안에서: emit → simulate → prepare (간접 인자를 채우는 1스레드 패스) → 그림자 패스 → 씬 패스. WebGPU가 패스 사이의 버퍼 사용을 맞춰 주므로 배리어를 따로 두지 않는다. 렌더러가 `nv_renderer_draw` 안에서 `NvRenderer.vfx`의 compute 패스를 기록한다 |
 | 시각 | dt가 0 (일시정지)이면 simulate를 건너뛰고 목록을 바꾸지 않는다. 슬로 모션은 작은 dt다. 큰 dt (탭이 숨었다 돌아옴)는 0.1초로 자른다 |
 | 그리기 | vertex pulling: 블렌드 모드마다 `drawIndirect` 한 번 (정점 수 = 6 × 보이는 수). 정점 셰이더가 `vertex_index / 6`으로 보이는 목록에서 번호를 찾는다. 정점 4–6개짜리 작은 인스턴스는 GPU의 정점 웨이브를 덜 채울 수 있어서 인스턴싱 대신 이 방식을 쓴다 |
-| 통계 | 살아 있는 수, 보이는 수, 버려진 생성 수는 GPU에만 있으므로, 타임스탬프처럼 작은 버퍼로 복사해 비동기로 읽는다 (한두 프레임 늦음). Effects 섹션과 Stress 탭이 보여 준다 |
+| 통계 | 살아 있는 수, 보이는 수, 버려진 생성 수는 GPU에만 있으므로, 타임스탬프처럼 작은 버퍼로 복사해 비동기로 읽는다 (한두 프레임 늦음). View 탭의 Effects 섹션이 보여 준다 (스트레스 샘플의 통계도) |
 | 비용 | compute는 살아 있는 파티클마다 매 프레임 상태 32바이트를 읽고 쓰고, 그리기가 다시 읽는다: 2M이면 프레임당 약 190 MB, 60 fps에서 초당 약 11 GB. 대역폭은 용량이 아니라 실제로 살아 있는 수에 비례한다: 용량을 2M으로 잡아도 살아 있는 파티클이 적으면 메모리 96 MB만 든다. 2M이 모두 살아 있으면 데스크톱 GPU에는 감당할 만하지만 폰에는 크다. 폰에서도 같은 2M을 쓰되, 실제로 감당하는 수는 스트레스 씬으로 재고, 폰 브라우저가 96 MB 할당을 거부하거나 탭을 종료하는지 함께 확인한다. 그다음 한계는 겹친 큰 가산 파티클의 fill rate다. compute 패스에 타임스탬프 쌍을 하나 더하고, 둘 다 스트레스 씬으로 잰다 |
 | 모양 | 첫 단계는 텍스처 없이 셰이더가 그린다: 부드러운 원, 고리 (충격파), 속도로 늘인 줄 (불꽃), 노이즈 덩어리 (연기). 스프라이트 아틀라스는 나중에 같은 모양 번호 자리에 더한다 |
 | 카메라 정렬 | 사각형은 카메라를 향한다. 늘이기가 켜진 이미터는 상태의 속도를 화면 공간으로 옮긴 방향으로 늘인다 |
@@ -279,6 +282,9 @@ void nv_vfx_clear(NvVfx* vfx);            // Play and Stop
 
 Status: built, all five phases (2026-10-02). Changes to this spec are agreed first. Where the build differs from the spec, see "As built".
 
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The effects workload, its stats and the benchmark's effects steps are in the stress sample. The sandbox keeps the View tab's Effects section (test fire). `_sandbox_debug_set_effects` is gone.
+
 ### Goal
 
 Item 8 of `docs/autobattler.md`: add the visual effects an auto-battler's battles need to the engine.
@@ -359,7 +365,7 @@ Systems", AMD, GDC 2014). It matches "GPU particles (compute shaders)" in `autob
 | Order | In one command encoder: emit → simulate → prepare (a one-thread pass that fills the indirect arguments) → shadow pass → scene pass. WebGPU synchronizes buffer use between passes, so there are no explicit barriers. The renderer records `NvRenderer.vfx`'s compute passes inside `nv_renderer_draw` |
 | Time | With dt 0 (paused) simulate is skipped and the lists stay as they are. Slow motion is a small dt. A large dt (a tab hidden and back) is cut to 0.1 s |
 | Drawing | Vertex pulling: one `drawIndirect` per blend mode (vertex count = 6 × visible count). The vertex shader finds the index in the visible list as `vertex_index / 6`. Small instances of 4 to 6 vertices can fill the GPU's vertex waves poorly, so this is used instead of instancing |
-| Stats | The living and visible counts and dropped spawns live on the GPU, so they are copied to a small buffer and read asynchronously, like the timestamps (a frame or two late). The Effects section and the Stress tab show them |
+| Stats | The living and visible counts and dropped spawns live on the GPU, so they are copied to a small buffer and read asynchronously, like the timestamps (a frame or two late). The View tab's Effects section shows them (and the stress sample's stats) |
 | Cost | Compute reads and writes 32 bytes of state per living particle every frame, and drawing reads it again: about 190 MB per frame at 2M, about 11 GB/s at 60 fps. Bandwidth follows the number actually alive, not the capacity: with 2M capacity and few particles alive, only the 96 MB of memory is spent. With all 2M alive it is fine for a desktop GPU and heavy for a phone. Phones use the same 2M; the count a phone really sustains is measured with the stress scene, along with whether a phone browser refuses the 96 MB or kills the tab. The next limit is the fill rate of large overlapping additive particles. A timestamp pair is added for the compute passes; both are measured with the stress scene |
 | Shapes | The first step draws them in the shader with no texture: a soft disc, a ring (shockwave), a streak stretched by velocity (sparks), a noisy puff (smoke). A sprite atlas comes later in the same shape-number slots |
 | Facing | Quads face the camera. Emitters with stretching are lengthened along the state's velocity taken to screen space |

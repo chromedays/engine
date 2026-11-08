@@ -7,6 +7,9 @@
 
 상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 하단 도크는 Console 탭만, 폰 패널은 Scene, Inspector, View, Textures, Console 탭을 가진다. 아래의 Stress 탭은 그때의 기록이다.
+
 ### 목표
 
 데스크톱과 폰에 각자의 입력 장치에 맞춘 별개의 에디터 UI 두 개를 주고, 둘 다 Play / Stop 버튼을 화면 위쪽
@@ -36,8 +39,8 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
 | Play / Stop | 두 UI 모두 화면 위쪽 가운데: 씬 뷰포트 위에 전체 폭으로 걸친 **상단 바** 안에, 중심이 캔버스의 가로 중심인 버튼. 지금처럼 Edit 모드에서는 Play를, 재생 중에는 Stop을 보여 주고, 스트레스 씬이 보이는 동안은 숨는다 (`play.md`) |
 | 상단 바, 데스크톱 | 높이 32 px. 왼쪽: 메뉴 바 (File, Edit, View). 가운데: Play / Stop, 그리고 재생 중에는 바로 뒤에 "Playing: edits are lost on Stop" 안내. 오른쪽: 프레임 시간과 보이는 씬의 이름 |
 | 상단 바, 폰 | 높이 48 CSS 픽셀 (손가락이 닿는 터치 영역). 왼쪽: Undo, 그다음 Find (명령 팔레트를 연다, `search.md`). 가운데: Play / Stop. 오른쪽: Redo. 다른 것은 없다. Play, Undo, Redo 줄이 패널을 떠나고, 패널은 그 줄을 돌려받는다 |
-| 데스크톱 영역 | 상단 바 아래: **왼쪽 도크** (Scene 트리, 폭 260 px), **오른쪽 도크** (탭 Inspector와 View, 폭 340 px), **하단 도크** (탭 Console과, 스트레스 씬이 보이는 동안 Stress; 높이 220 px, 탭 줄까지 접을 수 있음), 그리고 가운데 남은 곳을 채우는 **씬 뷰포트** |
-| 폰 영역 | 상단 바 아래, 지금처럼: 나머지의 위쪽 60%에 뷰포트, 아래쪽 40%에 탭이 있는 패널 하나 (Scene, Inspector, View, Console, 보이는 동안 Stress). 노드를 고르면 여전히 Inspector로 넘어간다 |
+| 데스크톱 영역 | 상단 바 아래: **왼쪽 도크** (Scene 트리, 폭 260 px), **오른쪽 도크** (탭 Inspector와 View, 폭 340 px), **하단 도크** (탭 Console; 높이 220 px, 탭 줄까지 접을 수 있음), 그리고 가운데 남은 곳을 채우는 **씬 뷰포트** |
+| 폰 영역 | 상단 바 아래, 지금처럼: 나머지의 위쪽 60%에 뷰포트, 아래쪽 40%에 탭이 있는 패널 하나 (Scene, Inspector, View, Console). 노드를 고르면 여전히 Inspector로 넘어간다 |
 | 빌드 라벨 | 두 UI 모두 배지와 함께 뷰포트 왼쪽 위 모서리에 남는다; 그것을 탭하거나 클릭하면 Console이 열린다 (데스크톱에서는 하단 도크 탭, 폰에서는 Console 탭). 폰에서는 상단 바 바로 아래에 있어 Play 버튼과 만나지 않는다 |
 | Play 색조 | 쇼케이스가 재생되는 동안 패널 (데스크톱의 도크, 폰의 패널)과 상단 바에 색조가 든다, 지금 패널처럼 |
 | 단위 | 이 스펙의 크기는 CSS 픽셀 × `ui_scale` (데스크톱 1.0, 폰 1.3)이다; 렌더러, picking, `view_rect`에 넘기는 사각형은 프레임버퍼 픽셀이고, 지금처럼 pixel ratio로 변환한다 |
@@ -155,6 +158,9 @@ Inspector 사이에서 탭을 바꿔야 하고, Play, Undo, Redo가 패널 안�
 
 Status: implemented (2026-09-30). Changes to this spec are agreed first.
 
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The bottom dock holds the Console tab alone, and the phone panel the Scene, Inspector, View, Textures and Console tabs. The Stress tab below is the record of that time.
+
 ### Goal
 
 Give the desktop and the phone two separate editor UIs, each built for its input device, and put
@@ -186,8 +192,8 @@ here rules it out.
 | Play / Stop | Top center of the screen in both UIs: a button whose center is the canvas's horizontal center, in a **top bar** across the full width above the scene viewport. It shows Play in Edit mode and Stop while playing, as today, and is hidden while the stress scene is shown (`play.md`) |
 | Top bar, desktop | 32 px high. Left: the menu bar (File, Edit, View). Center: Play / Stop, and right after it, while playing, the note "Playing: edits are lost on Stop". Right: frame time and the shown scene's name |
 | Top bar, phone | 48 CSS pixels high (hit areas a finger can reach). Left: Undo, then Find (opens the command palette, `search.md`). Center: Play / Stop. Right: Redo. Nothing else. The row of Play, Undo and Redo leaves the panel, which gets that line back |
-| Desktop regions | Below the top bar: **left dock** (Scene tree, 260 px wide), **right dock** (tabs Inspector and View, 340 px wide), **bottom dock** (tabs Console and, while the stress scene is shown, Stress; 220 px high, collapsible to its tab strip), and the **scene viewport** filling what is left in the middle |
-| Phone regions | Below the top bar, as today: the viewport on the top 60% of the rest and one tabbed panel on the bottom 40% (Scene, Inspector, View, Console, and Stress while shown). Picking a node still jumps to Inspector |
+| Desktop regions | Below the top bar: **left dock** (Scene tree, 260 px wide), **right dock** (tabs Inspector and View, 340 px wide), **bottom dock** (tab Console; 220 px high, collapsible to its tab strip), and the **scene viewport** filling what is left in the middle |
+| Phone regions | Below the top bar, as today: the viewport on the top 60% of the rest and one tabbed panel on the bottom 40% (Scene, Inspector, View, Console). Picking a node still jumps to Inspector |
 | Build label | Stays in the viewport's top-left corner in both UIs, with its badge; a tap or click on it opens the Console (the bottom dock tab on desktop, the Console tab on phone). On phone it sits just below the top bar, so it never meets the Play button |
 | Play tint | The panels (docks on desktop, the panel on phone) and the top bar are tinted while the showcase plays, as the panel is today |
 | Units | Sizes in this spec are CSS pixels times `ui_scale` (1.0 on desktop, 1.3 on phone); rectangles handed to the renderer, picking and `view_rect` are in framebuffer pixels, converted by the pixel ratio as now |

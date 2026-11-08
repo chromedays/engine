@@ -7,7 +7,7 @@
 // Scene tab
 //
 
-// Deeper than this, the tree stops and says how much is hidden (the stress chain is 1000 deep).
+// Deeper than this, the tree stops and says how much is hidden.
 #define TREE_MAX_DEPTH 24
 
 // The Scene tree's filter marks (Search.tree): a node matches, or is on the way to one.
@@ -451,12 +451,7 @@ void ui_inspector_tab(Sandbox* sandbox)
         igSetItemTooltip("%s", T("Keep only the node shown here selected"));
     }
     NvNode* node = nv_scene_get(view->scene, view->selected);
-    // What a generator made is shown but not edited: the generator makes and removes it (docs/specs/scene_file.md).
     SceneDoc* doc = sandbox_doc(sandbox);
-    Behavior* made_by = doc_generator_of(doc, view->selected.index);
-    if (made_by && search_plain(sandbox))
-        igTextDisabled(T("Made by %s"), nv_scene_get(view->scene, made_by->node)->name);
-    igBeginDisabled(made_by != NULL);
     if (search_row(sandbox, "Name", "node rename"))
         igInputText(TL("Name"), node->name, sizeof(node->name), 0, NULL, NULL);
     if (view->selected.index != view->scene->active_camera.index) {
@@ -530,7 +525,7 @@ void ui_inspector_tab(Sandbox* sandbox)
     }
     if (node->attach.animator.index)
         attach_section(sandbox, node);
-    // A node's behaviors have their sections; an animator without one (the crowd's) shows what it plays.
+    // A node's behaviors have their sections; an animator without one shows what it plays.
     Behavior* character = behavior_inspector(sandbox, doc, view->scene, view->selected);
     NvAnimatorId animator = sandbox_node_animator(view->scene, view->selected);
     if (!character && animator.index) {
@@ -539,7 +534,6 @@ void ui_inspector_tab(Sandbox* sandbox)
         if (layer->clip.index && search_group(sandbox, "Playing", "animation clip"))
             igText("%s  %.2f / %.2f s", nv_anim_clip_name(layer->clip), layer->time, nv_anim_clip_duration(layer->clip));
     }
-    igEndDisabled();
     search_panel_end(sandbox);
 }
 

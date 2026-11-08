@@ -47,18 +47,7 @@ static void expect_ok_at(int line, const char* text)
 #define HEAD "nvscene_version 1\ntitle \"T\"\nview\n    camera cam\n    yaw 0\n    pitch 0\n    distance 5\n"
 #define CAM "node cam\n    camera\n        projection perspective\n        fov 45\n        near 0.1\n        far 100\n"
 #define CUBE "model cube\n    box 0 0 0 0.5 0.5 0.5\n"
-#define PALETTE "palette colors\n    base 0.6 0.6 0.6\n    wheel 10\n"
 #define CHARACTER "model person\n    file \"/a.glb\"\n    clips \"/c.glb\"\n"
-#define GRID_BODY                                                                  \
-    "        model cube\n        palette colors\n        max 100\n        columns 10\n" \
-    "        spacing 1\n        height 0.5\n        scale 1\n        count 10\n"
-
-static f32 as_f32(u32 bits)
-{
-    f32 value;
-    memcpy(&value, &bits, sizeof(value));
-    return value;
-}
 
 static char* read_file(const char* path, size_t* size)
 {
@@ -98,7 +87,7 @@ static void test_showcase(void)
     for (u32 i = 0; i < 8 && i < desc.node_count; ++i)
         CHECK(strcmp(desc.nodes[i].name, names[i]) == 0);
     CHECK(desc.nodes[4].parent == 3 && desc.nodes[6].parent == 5 && desc.nodes[3].parent == -1 && desc.nodes[7].parent == -1);
-    CHECK(desc.model_count == 5 && desc.palette_count == 0);
+    CHECK(desc.model_count == 5);
 
     // The values are the code's, as f32.
     CHECK(desc.nodes[0].camera.projection == NV_PROJECTION_PERSPECTIVE);
@@ -142,55 +131,6 @@ static void test_showcase(void)
     CHECK(strcmp(c->clip, "Idle_Loop") == 0 && c->blend[0] == 0);
     // What the file leaves out is the table's fallback: speed 1, fade 0.3 s, turn 0.6 rad/s, the rest off.
     CHECK(c->speed == 1.0f && c->fade == 0.3f && c->turn == 0.6f && c->blend_weight == 0.0f && !c->root_motion && !c->look_at);
-    CHECK(!desc.has_benchmark);
-}
-
-static void test_stress(void)
-{
-    size_t size;
-    char* text = read_file(SCENE_DATA_DIR "/stress.nvscene", &size);
-    CHECK(text != NULL);
-    if (!text)
-        return;
-    SceneRead read = scene_read(&desc, "stress.nvscene", text, size);
-    if (!read.ok)
-        printf("%s\n", read.first_error);
-    CHECK(read.ok);
-    free(text);
-    if (!read.ok)
-        return;
-
-    CHECK(strcmp(desc.title, "Stress") == 0);
-    CHECK(desc.node_count == 7 && desc.palette_count == 1 && desc.model_count == 3 && desc.behavior_count == 4);
-    CHECK(desc.palettes[0].wheel == 200 && desc.palettes[0].base[0] == 0.6f && desc.palettes[0].base[2] == 0.66f);
-    CHECK(desc.nodes[2].scale.x == 260.0f && desc.nodes[2].scale.y == 0.1f && desc.nodes[2].position.z == -50.0f);
-    CHECK(desc.nodes[4].position.x == 14.0f && desc.nodes[4].position.y == 0.5f && desc.nodes[4].position.z == 8.0f);
-    CHECK(desc.view.focus_index == 3 && desc.view.select_index == -1 && desc.view.distance == 28.0f);
-
-    GridDesc* grid = &desc.behaviors[0].grid;
-    CHECK(desc.behaviors[0].kind == BEHAVIOR_GRID && desc.behaviors[0].node == 3);
-    CHECK(grid->max == 16000 && grid->columns == 128 && grid->spacing == 0.9f && grid->height == 0.25f && grid->scale == 0.5f);
-    CHECK(grid->on == 1 && grid->count == 1000 && grid->colors_on == 0 && grid->colors == 16 && grid->churn_on == 0 && grid->churn == 32);
-    CHECK(grid->model_index == 1 - 1 && grid->palette_index == 0);
-    ChainDesc* chain = &desc.behaviors[1].chain;
-    CHECK(chain->max == 1000 && chain->stride == 7 && chain->link.x == 0.12f && chain->link.y == 0.03f && chain->on == 0 && chain->count == 300);
-    CHECK(chain->twist == 0.25f && chain->wobble == 0.04f && chain->model_index == 1);
-    CrowdDesc* crowd = &desc.behaviors[2].crowd;
-    CHECK(crowd->max == 200 && crowd->columns == 20 && crowd->spacing == 1.6f && crowd->offset == 0.37f && crowd->on == 1 && crowd->count == 16);
-    CHECK(crowd->model_index == 2);
-    EffectsDesc* effects = &desc.behaviors[3].effects;
-    CHECK(effects->area[0] == 16.0f && effects->area[1] == 12.0f && effects->on == 0 && effects->particles == 0);
-
-    // The benchmark: today's sixteen steps.
-    CHECK(desc.has_benchmark && desc.warmup == 1.0f && desc.measure == 3.0f && desc.step_count == 16);
-    CHECK(strcmp(desc.steps[0].name, "Cubes 250") == 0 && desc.steps[0].line_count == 1);
-    CHECK(desc.steps[0].lines[0].behavior == 0 && as_f32(0) == 0.0f && desc.steps[0].lines[0].value == 250);
-    const SceneField* count = &scene_behavior_def(BEHAVIOR_GRID)->fields[desc.steps[0].lines[0].field];
-    CHECK(strcmp(count->key, "count") == 0 && count->parameter);
-    CHECK(strcmp(desc.steps[10].name, "Particles 250k") == 0 && desc.steps[10].lines[0].behavior == 3 && desc.steps[10].lines[0].value == 250000);
-    const SceneField* particles = &scene_behavior_def(BEHAVIOR_EFFECTS)->fields[desc.steps[10].lines[0].field];
-    CHECK(strcmp(particles->key, "particles") == 0);
-    CHECK(strcmp(desc.steps[15].name, "Beams 500") == 0 && desc.steps[15].lines[0].value == 500);
 }
 
 // The chess scene: its one model is a file, the board is scaled by 10, and it has the lighting its file names.
@@ -229,8 +169,8 @@ static void test_good_files(void)
     CHECK(strcmp(thing->name, "thing") == 0 && thing->position.y == 2.0f && thing->rotation.w == 1.0f && thing->scale.x == 1.0f);
     CHECK(thing->visible == 1 && thing->model_index == -1 && !thing->has_color && !thing->has_camera && !thing->has_light);
 
-    // Ids have a namespace for each kind of thing: a model, a palette and a node may share one.
-    EXPECT_OK(HEAD "palette cam\n    base 1 1 1\n    wheel 4\nmodel cam\n    box 0 0 0 1 1 1\n" CAM "node x\n    model cam\n");
+    // Ids have a namespace for each kind of thing: a model and a node may share one.
+    EXPECT_OK(HEAD "model cam\n    box 0 0 0 1 1 1\n" CAM "node x\n    model cam\n");
 
     // `name` takes quoted text with spaces; `euler` is degrees and becomes the rotation.
     read = read_text(HEAD CAM "node a\n    name \"two words\"\n    euler 90 0 0\n");
@@ -274,8 +214,9 @@ static void test_top_level(void)
     EXPECT_ERROR(HEAD CAM "view\n    camera cam\n", "'view' must come before 'node'");
     EXPECT_ERROR(HEAD CAM CUBE, "'model' must come before 'node'");
     EXPECT_ERROR(HEAD CAM "bogus\n    key 1\n", "unknown key 'bogus'");
-    SceneRead twice = read_text(HEAD CAM "benchmark\n    warmup 1\n    measure 1\nbenchmark\n");
-    CHECK(!twice.ok && twice.error_count == 2 && strstr(twice.first_error, "has no 'step' blocks") != NULL);
+    // The stress scene's blocks went with it (it is the stress sample now, docs/specs/samples.md).
+    EXPECT_ERROR(HEAD CAM "benchmark\n    warmup 1\n", "unknown key 'benchmark'");
+    EXPECT_ERROR(HEAD "palette colors\n    base 1 1 1\n" CAM, "unknown key 'palette'");
     EXPECT_ERROR("nvscene_version 1\ntitle \"T\"\nview\n    yaw 0\n    pitch 0\n    distance 5\n" CAM, "block 'view' is missing 'camera'");
     EXPECT_ERROR("nvscene_version 1\ntitle \"T\"\nview\n    camera cam\n    pitch 0\n    distance 5\n" CAM, "block 'view' is missing 'yaw'");
     EXPECT_ERROR(HEAD "      extra 1\n" CAM, "inconsistent indentation");
@@ -369,15 +310,15 @@ static void test_cameras_and_lights(void)
     EXPECT_ERROR(HEAD CAM "node l\n    light\n        type sun\n", "unknown type 'sun'");
 }
 
-// `lighting` is optional, its ambient is 0.15 each without it, and it comes after the view and before the palettes.
+// `lighting` is optional, its ambient is 0.15 each without it, and it comes after the view and before the models.
 static void test_lighting(void)
 {
     SceneRead read = read_text(HEAD CAM);
     CHECK(read.ok && desc.lighting.ambient[0] == 0.15f && desc.lighting.ambient[1] == 0.15f && desc.lighting.ambient[2] == 0.15f);
     read = read_text(HEAD "lighting\n    ambient 0.3 0.25 0.2\n" CAM);
     CHECK(read.ok && desc.lighting.ambient[0] == 0.3f && desc.lighting.ambient[1] == 0.25f && desc.lighting.ambient[2] == 0.2f);
-    EXPECT_OK(HEAD "lighting\n    ambient 0 0 0\n" PALETTE CAM);
-    EXPECT_ERROR(HEAD PALETTE "lighting\n    ambient 0.3 0.3 0.3\n" CAM, "'lighting' must come before 'palette'");
+    EXPECT_OK(HEAD "lighting\n    ambient 0 0 0\n" CUBE CAM);
+    EXPECT_ERROR(HEAD CUBE "lighting\n    ambient 0.3 0.3 0.3\n" CAM, "'lighting' must come before 'model'");
     EXPECT_ERROR(HEAD "lighting\n    ambient 0.3 0.3 0.3\n" "lighting\n    ambient 0 0 0\n" CAM, "'lighting' is given twice");
     EXPECT_ERROR(HEAD "lighting\n    ambient 1.5 0 0\n" CAM, "'ambient' must be");
     EXPECT_ERROR(HEAD "lighting\n    ambient 0.3 0.3\n" CAM, "'ambient' takes 3 values");
@@ -414,11 +355,6 @@ static void test_models(void)
     strcat(shapes, "    box 0 0 0 1 1 1\n");
     snprintf(eight, sizeof(eight), "%s%s", shapes, CAM);
     EXPECT_ERROR(eight, "too many shapes in a model");
-    EXPECT_ERROR(HEAD PALETTE PALETTE CAM, "palette 'colors' is defined twice");
-    EXPECT_ERROR(HEAD "palette p\n    base 0.5 0.5 0.5\n" CAM, "is missing 'wheel'");
-    EXPECT_ERROR(HEAD "palette p\n    wheel 10\n" CAM, "is missing 'base'");
-    EXPECT_ERROR(HEAD "palette p\n    base 2 0 0\n    wheel 10\n" CAM, "'base' must be");
-    EXPECT_ERROR(HEAD "palette p\n    base 0 0 0\n    wheel 1\n" CAM, "'wheel' must be");
 }
 
 static void test_behaviors(void)
@@ -436,9 +372,6 @@ static void test_behaviors(void)
                  "at most one 'spin'");
     EXPECT_ERROR(HEAD CAM "node a\n    spin 1\n        axis 0 1 0\n        speed 1\n", "'spin' takes no value");
 
-    // A node holds one generator.
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node a\n    grid\n" GRID_BODY "    chain\n        model cube\n", "at most one generator");
-
     // The character needs a file model with clips; look_at needs a look target.
     EXPECT_OK(HEAD CHARACTER CAM "node a\n    model person\n    character\n        look_target Head cam\n        look_at 1\n");
     EXPECT_ERROR(HEAD CUBE CAM "node a\n    model cube\n    character\n", "character: node 'a' needs a file model");
@@ -451,123 +384,14 @@ static void test_behaviors(void)
     EXPECT_ERROR(HEAD CHARACTER CAM "node a\n    model person\n    character\n        speed 3\n", "'speed' must be");
     EXPECT_ERROR(HEAD CHARACTER CAM "node a\n    model person\n    character\n        root_motion 2\n", "'root_motion' must be 0 or 1");
 
-    // Grid: the fallbacks, and what a model needs.
-    read = read_text(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY);
-    CHECK(read.ok);
-    GridDesc* grid = &desc.behaviors[0].grid;
-    CHECK(grid->on == 1 && grid->colors_on == 0 && grid->churn_on == 0 && grid->churn == 32);
-    CHECK(grid->colors == 9); // the fallback is 16, and a palette of 10 colors has 9 besides its base: cut while colors are off
-    CHECK(grid->model_index == 0 && grid->palette_index == 0 && desc.behaviors[0].node == 1);
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "        colors_on 1\n", "palette 'colors' has 9 colors besides its base");
-    EXPECT_OK(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "        colors_on 1\n        colors 9\n");
-    EXPECT_ERROR(HEAD CUBE CAM "node g\n    grid\n        model cube\n        max 100\n        columns 10\n        spacing 1\n        height 0\n"
-                 "        scale 1\n        count 10\n", "grid: model 'cube' is a shape model: it needs a 'palette'");
-    EXPECT_ERROR(HEAD PALETTE CHARACTER CAM "node g\n    grid\n        model person\n        palette colors\n        max 100\n        columns 10\n"
-                 "        spacing 1\n        height 0\n        scale 1\n        count 10\n", "is a file model, which has its own materials");
-    EXPECT_OK(HEAD CHARACTER CAM "node g\n    grid\n        model person\n        max 100\n        columns 10\n        spacing 1\n"
-              "        height 0\n        scale 1\n        count 10\n");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "        palette nothing\n", "'palette' is given twice");
-    EXPECT_ERROR(HEAD CUBE CAM "node g\n    grid\n        model cube\n        palette nothing\n        max 100\n        columns 10\n"
-                 "        spacing 1\n        height 0\n        scale 1\n        count 10\n", "grid: no palette 'nothing'");
-    EXPECT_ERROR(HEAD PALETTE CAM "node g\n    grid\n        model nothing\n        palette colors\n        max 100\n        columns 10\n"
-                 "        spacing 1\n        height 0\n        scale 1\n        count 10\n", "grid: no model 'nothing'");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "        count 101\n", "'count' is given twice");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n        model cube\n        palette colors\n        max 100\n        columns 10\n"
-                 "        spacing 1\n        height 0\n        scale 1\n        count 101\n", "grid: 'count' is above 'max' (100)");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n        model cube\n        palette colors\n        columns 10\n        spacing 1\n"
-                 "        height 0\n        scale 1\n        count 10\n", "behavior 'grid' is missing 'max'");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n        model cube\n        palette colors\n        max 100\n        columns 10\n"
-                 "        spacing 1\n        height 0\n        scale 1\n", "behavior 'grid' is missing 'count'");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "        churn 300\n", "'churn' must be");
-
-    // Chain and crowd.
-    EXPECT_OK(HEAD PALETTE CUBE CAM "node c\n    chain\n        model cube\n        palette colors\n        max 10\n        link 1 0 0\n"
-              "        twist 10\n        wobble 1\n        count 5\n");
-    read = read_text(HEAD PALETTE CUBE CAM "node c\n    chain\n        model cube\n        palette colors\n        max 10\n        link 1 0 0\n"
-                     "        twist 10\n        wobble 1\n        count 5\n");
-    CHECK(read.ok && desc.behaviors[0].chain.stride == 1 && desc.behaviors[0].chain.on == 1 && desc.behaviors[0].chain.count == 5);
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node c\n    chain\n        model cube\n        palette colors\n        max 10\n        link 1 0 0\n"
-                 "        twist 10\n        wobble 1\n        count 11\n", "chain: 'count' is above 'max' (10)");
-    EXPECT_ERROR(HEAD PALETTE CUBE CAM "node c\n    chain\n        model cube\n        palette colors\n        max 10\n        link 1 0\n"
-                 "        twist 10\n        wobble 1\n        count 5\n", "'link' takes 3 values");
-    EXPECT_OK(HEAD CHARACTER CAM "node d\n    crowd\n        model person\n        max 10\n        columns 5\n        spacing 1\n        count 3\n");
-    read = read_text(HEAD CHARACTER CAM "node d\n    crowd\n        model person\n        max 10\n        columns 5\n        spacing 1\n        count 3\n");
-    CHECK(read.ok && desc.behaviors[0].crowd.offset == 0.0f && desc.behaviors[0].crowd.on == 1 && desc.behaviors[0].crowd.model_index == 0);
-    EXPECT_ERROR(HEAD CUBE CAM "node d\n    crowd\n        model cube\n        max 10\n        columns 5\n        spacing 1\n        count 3\n",
-                 "crowd: model 'cube' needs to be a file model with 'clips'");
-    EXPECT_ERROR(HEAD "model person\n    file \"/a.glb\"\n" CAM "node d\n    crowd\n        model person\n        max 10\n        columns 5\n"
-                 "        spacing 1\n        count 3\n", "needs to be a file model with 'clips'");
-    EXPECT_ERROR(HEAD CHARACTER CAM "node d\n    crowd\n        model person\n        max 10\n        columns 5\n        spacing 1\n        count 201\n",
-                 "'count' must be");
-    EXPECT_ERROR(HEAD CHARACTER CAM "node d\n    crowd\n        model person\n        max 10\n        columns 5\n        spacing 1\n        count 11\n",
-                 "crowd: 'count' is above 'max' (10)");
-
-    // Effects.
-    read = read_text(HEAD CAM "node e\n    effects\n        area 16 12\n        particles 1000\n");
-    CHECK(read.ok && desc.behaviors[0].effects.on == 1 && desc.behaviors[0].effects.particles == 1000 && desc.behaviors[0].effects.area[1] == 12.0f);
-    EXPECT_ERROR(HEAD CAM "node e\n    effects\n        particles 1\n", "behavior 'effects' is missing 'area'");
-    EXPECT_ERROR(HEAD CAM "node e\n    effects\n        area 16 12\n        missiles 3000\n", "'missiles' must be");
-}
-
-static void test_benchmark(void)
-{
-    const char* base = HEAD PALETTE CUBE CAM "node g\n    grid\n" GRID_BODY "node e\n    effects\n        area 1 1\n";
-    char text[1400];
-    snprintf(text, sizeof(text), "%sbenchmark\n    warmup 1\n    measure 3\n    step \"Ten\"\n        g count 10\n"
-             "    step \"Beams and cubes\"\n        e beams 7\n        g count 20\n", base);
-    SceneRead read = read_text(text);
-    CHECK(read.ok && desc.has_benchmark && desc.step_count == 2 && strcmp(desc.steps[1].name, "Beams and cubes") == 0);
-    CHECK(desc.steps[1].line_count == 2 && desc.steps[1].lines[0].behavior == 1 && desc.steps[1].lines[0].value == 7);
-    CHECK(desc.steps[1].lines[1].behavior == 0 && desc.steps[1].lines[1].value == 20);
-    // A float parameter keeps its bits as a float.
-    snprintf(text, sizeof(text), "%sbenchmark\n    warmup 0.5\n    measure 2\n    step \"x\"\n        g on 0\n", base);
-    read = read_text(text);
-    CHECK(read.ok && desc.warmup == 0.5f && desc.steps[0].lines[0].value == 0);
-
-    const char* steps = "benchmark\n    warmup 1\n    measure 3\n";
-    char with[1400];
-#define STEP_CASE(body, expected)                                              \
-    do {                                                                       \
-        snprintf(with, sizeof(with), "%s%s%s", base, steps, body);             \
-        expect_error_at(__LINE__, with, expected);                             \
-    } while (0)
-    STEP_CASE("    step \"x\"\n        nobody count 5\n", "unknown node 'nobody'");
-    STEP_CASE("    step \"x\"\n        cam count 5\n", "node 'cam' has no generator");
-    STEP_CASE("    step \"x\"\n        g max 5\n", "'max' is not a parameter of grid");
-    STEP_CASE("    step \"x\"\n        g speed 5\n", "'speed' is not a parameter of grid");
-    STEP_CASE("    step \"x\"\n        g count 101\n", "'count' is above the generator's 'max' (100)");
-    STEP_CASE("    step \"x\"\n        g count 5.5\n", "not an integer");
-    STEP_CASE("    step \"x\"\n        g count\n", "a step line is '<node id> <key> <value>'");
-    STEP_CASE("    step \"x\"\n        g count 1\n        g count 2\n", "'count' is given twice in this step");
-    STEP_CASE("    step \"x\"\n", "step 'x' has no lines");
-    STEP_CASE("    step x\n        g count 1\n", "not text");
-    STEP_CASE("    step\n", "'step' takes quoted text");
-    STEP_CASE("    bogus 1\n", "unknown key 'bogus'");
-    STEP_CASE("", "'benchmark' has no 'step' blocks");
-    snprintf(with, sizeof(with), "%sbenchmark\n    measure 3\n    step \"x\"\n        g count 1\n", base);
-    expect_error_at(__LINE__, with, "block 'benchmark' is missing 'warmup'");
-    snprintf(with, sizeof(with), "%sbenchmark\n    warmup 1\n    measure 0\n    step \"x\"\n        g count 1\n", base);
-    expect_error_at(__LINE__, with, "'measure' must be");
-
-    // Four lines in a step and sixteen steps are the most.
-    snprintf(with, sizeof(with), "%s%s    step \"x\"\n        g count 1\n        g on 1\n        g colors_on 1\n        g churn_on 1\n"
-             "        g churn 3\n", base, steps);
-    expect_error_at(__LINE__, with, "too many lines in a step");
-    static char many[2600];
-    snprintf(many, sizeof(many), "%s%s", base, steps);
-    for (int i = 0; i < SCENE_MAX_STEPS + 1; ++i) {
-        char step[64];
-        snprintf(step, sizeof(step), "    step \"s%d\"\n        g count 1\n", i);
-        strcat(many, step);
-    }
-    expect_error_at(__LINE__, many, "too many steps");
+    // The workload behaviors went with the stress scene.
+    EXPECT_ERROR(HEAD CUBE CAM "node g\n    grid\n        model cube\n", "unknown key 'grid'");
 }
 
 int main(void)
 {
     test_showcase();
     test_chess();
-    test_stress();
     test_good_files();
     test_top_level();
     test_nodes();
@@ -575,7 +399,6 @@ int main(void)
     test_lighting();
     test_models();
     test_behaviors();
-    test_benchmark();
     if (!failures)
         printf("scene_file_test: ok\n");
     return failures ? 1 : 0;

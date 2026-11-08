@@ -7,6 +7,9 @@
 
 상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 씬 명령은 씬 목록에서 나온다: 이제 "Show the Showcase scene"과 "Show the Chess scene"이다.
+
 ### 목표
 
 데스크톱 UI (`layout.md`)에 키보드 단축키를 빠짐없이 주고, 키, 메뉴의 단축키 라벨, 도움말 창을 움직이는 표 하나에
@@ -75,7 +78,7 @@ Ctrl+S가 브라우저의 "페이지 저장" 대화 상자를 연다.
 | Find | Ctrl+Shift+P, F1 | 명령 팔레트 열기 (Firefox는 Ctrl+Shift+P를 비공개 창에 쓰므로, F1이 거기서의 방법이다) | |
 | Find | Ctrl+F | 포인터 아래 패널의 검색 상자, 아니면 오른쪽 도크의 현재 탭의 검색 상자에 포커스 | |
 
-표에서 키가 없는 행 (Show save, Reset everything..., Showcase / Stress 씬 보이기, Textures 탭 열기, 콘솔 지우기)은 팔레트
+표에서 키가 없는 행 (Show save, Reset everything..., 씬 목록의 씬마다 그 씬 보이기, Textures 탭 열기, 콘솔 지우기)은 팔레트
 전용이다: 팔레트는 실행할 것이 있는 모든 행을, 도움말 창은 키가 있는 행만 나열한다.
 
 ### 변경
@@ -124,6 +127,9 @@ Ctrl+S가 브라우저의 "페이지 저장" 대화 상자를 연다.
 ## English
 
 Status: implemented (2026-09-30). Changes to this spec are agreed first.
+
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The scene commands come from the scene list: "Show the Showcase scene" and "Show the Chess scene" now.
 
 ### Goal
 
@@ -195,7 +201,7 @@ Added by `search.md`:
 | Find | Ctrl+Shift+P, F1 | Open the command palette (Firefox keeps Ctrl+Shift+P for its private window, so F1 is the way there) | |
 | Find | Ctrl+F | Focus the search box of the panel under the pointer, else of the right dock's current tab | |
 
-The rows without keys in the table (Show save, Reset everything..., Show the Showcase / Stress
+The rows without keys in the table (Show save, Reset everything..., Show the <title>
 scene, Open the Textures tab, Clear the console) are palette only: the palette lists every row
 that has something to run, and the help window only the rows that have keys.
 

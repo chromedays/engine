@@ -109,20 +109,6 @@ internal void make_styles(Effects* effects)
         .life = 12.0f, .fade = 0.4f, .color = RGBA(0.02f, 0.015f, 0.01f, 0.8f), .shape = NV_VFX_SHAPE_PUFF};
 }
 
-// Embers thrown up and falling back: what an `effects` behavior fires in bursts to hold a number of live
-// particles. Small, additive, bouncing on the ground.
-internal NvVfxEffectId make_swarm(NvVfx* vfx)
-{
-    NvVfxEffectDesc effect = {.name = "Swarm", .emitter_count = 1};
-    effect.emitters[0] = (NvVfxEmitterDesc){
-        .count = 512, .life_min = 2.0f, .life_max = 3.0f, .speed_min = 2.0f, .speed_max = 10.0f, .cone = 1.2f,
-        .gravity = 6.0f, .drag = 0.3f, .use_ground = 1, .ground = 0.02f, .restitution = 0.4f, .friction = 0.3f,
-        .size_start = 0.05f, .size_end = 0.03f,
-        .colors = {RGBA(3.0f, 1.4f, 0.4f, 1.0f), RGBA(1.5f, 0.5f, 0.1f, 0.8f), RGBA(0.3f, 0.08f, 0.02f, 0.0f)},
-        .shape = NV_VFX_SHAPE_DISC, .blend = NV_VFX_BLEND_ADD};
-    return nv_vfx_add_effect(vfx, &effect);
-}
-
 void effects_init(Sandbox* sandbox)
 {
     Effects* effects = &sandbox->effects;
@@ -133,7 +119,6 @@ void effects_init(Sandbox* sandbox)
     effects->sparks = make_sparks(&sandbox->vfx);
     effects->smoke = make_smoke(&sandbox->vfx);
     effects->missile = make_missile(&sandbox->vfx);
-    effects->swarm = make_swarm(&sandbox->vfx);
     sandbox->renderer.vfx = &sandbox->vfx;
 }
 
@@ -191,7 +176,6 @@ void effects_clear(Sandbox* sandbox)
 {
     nv_vfx_clear(&sandbox->vfx);
     sandbox->effects.flight_count = 0;
-    behaviors_clear_flights(sandbox);
 }
 
 void effects_update(Sandbox* sandbox, f32 dt)

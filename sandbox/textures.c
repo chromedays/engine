@@ -396,7 +396,7 @@ internal void used_by(Sandbox* sandbox, u32 texture)
         if (!(node->gen & 1) || !node->mesh.index ||
             renderer->materials[node->material.index].desc.base_color_texture.index != texture)
             continue;
-        // The stress scene's grid has thousands: the first few say enough.
+        // A scene may have thousands: the first few say enough.
         if (shown == 16) {
             igTextDisabled("...");
             break;

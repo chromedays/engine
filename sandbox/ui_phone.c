@@ -98,14 +98,6 @@ void phone_build_ui(Sandbox* sandbox)
             console_tab(sandbox);
             igEndTabItem();
         }
-        if (stress_tab_shown(sandbox)) {
-            ImGuiTabItemFlags stress_flags = sandbox->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
-            sandbox->open_stress = 0;
-            if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {
-                stress_ui(sandbox);
-                igEndTabItem();
-            }
-        }
         igEndTabBar();
     }
     igEnd();

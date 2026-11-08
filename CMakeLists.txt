@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
 # The engine is also used as a Git submodule by an app that adds it with add_subdirectory (README.md, "Using the engine
-# from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
+# from another repository"). Then only the engine is built: the sandbox, the samples and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
+option(NV_BUILD_SAMPLES "Build the samples, one executable each (docs/specs/samples.md)" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
 # The Linux build draws into a Wayland window (docs/specs/visual_regression.md) unless this asks for the headless build (no
 # window, frames render offscreen). The visual regression test's app needs the window, and it is built only when asked for.
@@ -324,6 +325,9 @@ endif()
 add_subdirectory(engine)
 if(NV_BUILD_SANDBOX)
     add_subdirectory(sandbox)
+endif()
+if(NV_BUILD_SAMPLES)
+    add_subdirectory(samples)
 endif()
 if(NV_BUILD_TESTS)
     add_subdirectory(tests)

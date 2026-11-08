@@ -53,8 +53,6 @@ internal void show_built(Sandbox* sandbox, u32 index)
     sandbox_stop_playing(sandbox);
     sandbox->shown = index;
     effects_clear(sandbox); // what the other scene fired does not carry over
-    if (stress_tab_shown(sandbox))
-        sandbox->open_stress = 1;
 }
 
 // A scene not built yet is built at the frame's end, after one frame that says it loads (draw_loading, finish_loading).
@@ -290,15 +288,14 @@ internal void set_node_world(NvScene* scene, NvNode* node, NvMat4 world)
 }
 
 // The nodes the gizmo moves: the selected ones, without the active camera (the orbit camera's to
-// move), without those under a selected node, which already move with it, and without what a generator made.
-internal u32 gizmo_targets(Sandbox* sandbox, SceneView* view, NvNodeId* out)
+// move) and without those under a selected node, which already move with it.
+internal u32 gizmo_targets(SceneView* view, NvNodeId* out)
 {
     NvScene* scene = view->scene;
-    SceneDoc* doc = sandbox_doc(sandbox);
     u32 count = 0;
     for (u32 i = 0; i < selection_count(view); ++i) {
         NvNodeId id = selection_get(view, i);
-        if (id.index == scene->active_camera.index || !doc_authored(doc, id.index))
+        if (id.index == scene->active_camera.index)
             continue;
         b32 under_selected = 0;
         for (u32 p = scene->nodes[id.index].parent; p && !under_selected; p = scene->nodes[p].parent)
@@ -339,7 +336,7 @@ internal void draw_gizmo(Sandbox* sandbox, const NvSceneOutput* scene_output)
     sandbox->gizmo_shown = 0;
     // While a drag runs, the nodes it started with stay its nodes; otherwise the selection's.
     if (!ImGuizmo_IsUsingAny()) {
-        sandbox->gizmo_node_count = gizmo_targets(sandbox, view, sandbox->gizmo_nodes);
+        sandbox->gizmo_node_count = gizmo_targets(view, sandbox->gizmo_nodes);
         if (!sandbox->gizmo_node_count)
             return;
         for (u32 i = 0; i < sandbox->gizmo_node_count; ++i)
@@ -399,50 +396,6 @@ internal void draw_gizmo(Sandbox* sandbox, const NvSceneOutput* scene_output)
     }
 }
 
-internal f64 now_ms(void)
-{
-    return nv_time_seconds() * 1000.0;
-}
-
-f64 sandbox_load(const FrameTimes* t)
-{
-    f64 cpu = t->anim + t->scene + t->draw + t->ui;
-    f64 gpu = t->gpu + t->gpu_shadow + t->gpu_upscale + t->gpu_bloom + t->gpu_particles;
-    f64 busy = cpu > gpu ? cpu : gpu;
-    return t->frame > 0.0 ? busy / t->frame * 100.0 : 0.0;
-}
-
-// Averages the frame times over windows of about a second, for the stats and the benchmark.
-internal void accumulate_times(Sandbox* sandbox, f64 now)
-{
-    FrameTimes* t = &sandbox->times;
-    FrameTimes* sum = &sandbox->window_sum;
-    sum->frame += t->frame;
-    sum->anim += t->anim;
-    sum->scene += t->scene;
-    sum->draw += t->draw;
-    sum->ui += t->ui;
-    sum->gpu += t->gpu;
-    sum->gpu_shadow += t->gpu_shadow;
-    sum->gpu_upscale += t->gpu_upscale;
-    sum->gpu_bloom += t->gpu_bloom;
-    sum->gpu_particles += t->gpu_particles;
-    if (t->frame > sandbox->window_worst_frame)
-        sandbox->window_worst_frame = t->frame;
-    ++sandbox->window_frames;
-    if (now - sandbox->window_start < 1.0)
-        return;
-    f64 n = (f64)sandbox->window_frames;
-    sandbox->shown_average = (FrameTimes){sum->frame / n, sum->anim / n, sum->scene / n, sum->draw / n, sum->ui / n, sum->gpu / n,
-                                      sum->gpu_shadow / n, sum->gpu_upscale / n,
-                                      sum->gpu_bloom / n, sum->gpu_particles / n};
-    sandbox->shown_worst_frame = sandbox->window_worst_frame;
-    *sum = (FrameTimes){0};
-    sandbox->window_worst_frame = 0.0;
-    sandbox->window_frames = 0;
-    sandbox->window_start = now;
-}
-
 void sandbox_start_playing(Sandbox* sandbox)
 {
     if (sandbox->playing)
@@ -462,7 +415,6 @@ void sandbox_stop_playing(Sandbox* sandbox)
     if (!sandbox->playing)
         return;
     sandbox->playing = 0;
-    benchmark_end(sandbox); // a run ends with the Play it ran in
     // The scene as it was at Play: nodes, behaviors, scene settings. The view, the selection and the editor settings stay as they
     // are now.
     SaveLoad load = save_load_parts(sandbox, sandbox->play_snapshot, sandbox->play_snapshot_size, SAVE_PART_SCENE | SAVE_PART_SHOWN);
@@ -488,9 +440,6 @@ internal void frame(void* userdata)
         return;
     NvGpuView target = gpu_frame.view;
 
-    FrameTimes* times = &sandbox->times;
-    times->frame = (f64)ui_dt * 1000.0;
-    f64 t = now_ms();
     sandbox_layout(sandbox);
     const Layout* layout = &sandbox->layout;
     sandbox->imgui.view_rect = layout->viewport;
@@ -510,22 +459,15 @@ internal void frame(void* userdata)
     ImGuizmo_BeginFrame();
     selection_prune(sandbox_view(sandbox));
     sandbox_build_ui(sandbox);
-    times->ui = now_ms() - t;
 
     if (sandbox->loading_scene)
         draw_loading(sandbox);
     SceneDoc* doc = sandbox_doc(sandbox);
     NvScene* scene = doc->scene;
     behaviors_update(sandbox, doc, dt);
-    selection_prune(sandbox_view(sandbox)); // a generator may have removed selected nodes
-
     effects_update(sandbox, dt);
-    t = now_ms();
     nv_anim_update_scene(scene, dt);
-    times->anim = now_ms() - t;
-    t = now_ms();
     nv_scene_update(scene);
-    times->scene = now_ms() - t;
     pick(sandbox, &layout->scene);
     update_camera(sandbox, &layout->scene);
     draw_gizmo(sandbox, &layout->scene);
@@ -534,26 +476,15 @@ internal void frame(void* userdata)
     if (doc->show_bones)
         behaviors_draw_bones(sandbox, doc);
 
-    t = now_ms();
     // The depth target is samplable while the Textures tab shows it (docs/specs/textures.md).
     sandbox->renderer.depth_sampled = sandbox->textures.shown_now;
     // The shown scene's ambient light (chess_scene.md): the renderer takes it from the renderer, which the scene does not know.
     memcpy(sandbox->renderer.ambient, sandbox_doc(sandbox)->ambient, sizeof(sandbox->renderer.ambient));
     nv_renderer_draw(&sandbox->renderer, scene, nv_anim_skins(), layout->scene, target);
-    times->draw = now_ms() - t;
-    times->gpu = sandbox->renderer.gpu_ms;
-    times->gpu_shadow = sandbox->renderer.shadows.size ? sandbox->renderer.gpu_shadow_ms : 0.0;
-    times->gpu_upscale = sandbox->renderer.gpu_upscale_ms;
-    times->gpu_bloom = sandbox->renderer.post.bloom ? sandbox->renderer.gpu_bloom_ms : 0.0;
-    times->gpu_particles = sandbox->renderer.gpu_particles_ms;
-    t = now_ms();
     nv_imgui_render(&sandbox->imgui, target);
-    times->ui += now_ms() - t;
     nv_gpu_end_frame(&sandbox->gpu);
     nv_renderer_end_frame(&sandbox->renderer);
 
-    accumulate_times(sandbox, now);
-    stress_after_frame(sandbox);
     if (sandbox->loading_scene)
         finish_loading(sandbox);
     save_update(sandbox);
@@ -678,21 +609,6 @@ NV_DEBUG_EXPORT int sandbox_debug_vfx(int which)
     return values[which];
 }
 
-// Sets the shown scene's first `effects` behavior: particles kept, explosions a second, missiles, beams, decals a second.
-NV_DEBUG_EXPORT void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
-{
-    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_EFFECTS);
-    if (!behavior)
-        return;
-    EffectsDesc* effects = &behavior->desc.effects;
-    effects->on = particles || explosions || missiles || beams || decals;
-    effects->particles = (u32)particles;
-    effects->explosions = (u32)explosions;
-    effects->missiles = (u32)missiles;
-    effects->beams = (u32)beams;
-    effects->decals = (u32)decals;
-}
-
 NV_DEBUG_EXPORT void sandbox_debug_vfx_fire(int effect)
 {
     effects_fire(&sandbox_state, (u32)effect);
@@ -813,12 +729,6 @@ NV_DEBUG_EXPORT int sandbox_debug_log_level(int i)
 NV_DEBUG_EXPORT float sandbox_debug_badge_box(int component)
 {
     return sandbox_state.badge_box[component];
-}
-
-// The average CPU time of building and recording the UI, in milliseconds.
-NV_DEBUG_EXPORT float sandbox_debug_ui_ms(void)
-{
-    return (float)sandbox_state.shown_average.ui;
 }
 
 // The shown scene's camera yaw, in radians.
@@ -1035,64 +945,6 @@ NV_DEBUG_EXPORT void sandbox_debug_rename_selected(void)
     node->name[length] = 0;
 }
 
-// Turns the shown scene's first `chain` on with `links` links (0 = off).
-NV_DEBUG_EXPORT void sandbox_debug_set_chain(int links)
-{
-    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CHAIN);
-    if (!behavior)
-        return;
-    behavior->desc.chain.on = links > 0;
-    if (links > 0)
-        behavior->desc.chain.count = (u32)links;
-}
-
-// Sets the shown scene's first `grid` to `cubes` cubes (0 = off).
-NV_DEBUG_EXPORT void sandbox_debug_set_grid(int cubes)
-{
-    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_GRID);
-    if (!behavior)
-        return;
-    behavior->desc.grid.on = cubes > 0;
-    if (cubes > 0)
-        behavior->desc.grid.count = (u32)cubes;
-}
-
-// Sets the shown scene's first `crowd` to `characters` characters (0 = off).
-NV_DEBUG_EXPORT void sandbox_debug_set_crowd(int characters)
-{
-    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CROWD);
-    if (!behavior)
-        return;
-    behavior->desc.crowd.on = characters > 0;
-    if (characters > 0)
-        behavior->desc.crowd.count = (u32)characters;
-}
-
-// What the shown scene's generators have made: 0 cubes, 1 links, 2 characters in use, 3 characters made.
-NV_DEBUG_EXPORT int sandbox_debug_built(int which)
-{
-    Behavior* grid = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_GRID);
-    Behavior* chain = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CHAIN);
-    Behavior* crowd = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CROWD);
-    int values[4] = {grid ? (int)grid->grid.built : 0, chain ? (int)chain->chain.built : 0, crowd ? (int)crowd->crowd.active : 0,
-                     crowd ? (int)crowd->crowd.created : 0};
-    return values[which];
-}
-
-// The benchmark: 0 running, 1 the step, 2 results held, 3 the run started Play. _sandbox_debug_benchmark_start runs it, as the
-// button does.
-NV_DEBUG_EXPORT int sandbox_debug_benchmark(int which)
-{
-    const Benchmark* benchmark = &sandbox_state.benchmark;
-    int values[4] = {benchmark->running, (int)benchmark->step, (int)benchmark->result_count, benchmark->started_play};
-    return values[which];
-}
-
-NV_DEBUG_EXPORT void sandbox_debug_benchmark_start(void)
-{
-    benchmark_start(&sandbox_state);
-}
-
 // The scenes: 0 the shown scene's index, 1 how many there are, 2 whether scene `a` was built.
 NV_DEBUG_EXPORT int sandbox_debug_scenes(int which, int a)
 {
@@ -1192,7 +1044,6 @@ const NvDebugCall sandbox_debug_calls[] = {
     {"set_post", "ifif>v", (void*)sandbox_debug_set_post},
     {"set_sun", "f>v", (void*)sandbox_debug_set_sun},
     {"vfx", "i>i", (void*)sandbox_debug_vfx},
-    {"set_effects", "iiiii>v", (void*)sandbox_debug_set_effects},
     {"vfx_fire", "i>v", (void*)sandbox_debug_vfx_fire},
     {"gizmo", "i>i", (void*)sandbox_debug_gizmo},
     {"state", "i>i", (void*)sandbox_debug_state},
@@ -1212,7 +1063,6 @@ const NvDebugCall sandbox_debug_calls[] = {
     {"log_repeat", "i>i", (void*)sandbox_debug_log_repeat},
     {"log_level", "i>i", (void*)sandbox_debug_log_level},
     {"badge_box", "i>f", (void*)sandbox_debug_badge_box},
-    {"ui_ms", ">f", (void*)sandbox_debug_ui_ms},
     {"camera_yaw", ">f", (void*)sandbox_debug_camera_yaw},
     {"console_unseen", ">i", (void*)sandbox_debug_console_unseen},
     {"console_rows", ">i", (void*)sandbox_debug_console_rows},
@@ -1242,12 +1092,6 @@ const NvDebugCall sandbox_debug_calls[] = {
     {"set_language", "i>v", (void*)sandbox_debug_set_language},
     {"selected_name", "i>i", (void*)sandbox_debug_selected_name},
     {"rename_selected", ">v", (void*)sandbox_debug_rename_selected},
-    {"set_chain", "i>v", (void*)sandbox_debug_set_chain},
-    {"set_grid", "i>v", (void*)sandbox_debug_set_grid},
-    {"set_crowd", "i>v", (void*)sandbox_debug_set_crowd},
-    {"built", "i>i", (void*)sandbox_debug_built},
-    {"benchmark", "i>i", (void*)sandbox_debug_benchmark},
-    {"benchmark_start", ">v", (void*)sandbox_debug_benchmark_start},
     {"scenes", "ii>i", (void*)sandbox_debug_scenes},
     {"selected_node", ">i", (void*)sandbox_debug_selected_node},
     {"selection_count", ">i", (void*)sandbox_debug_selection_count},
@@ -1336,7 +1180,6 @@ int main(void)
     sandbox->autosave = true;
     sandbox->console.auto_scroll = true;
     sandbox->play_snapshot = NV_PUSH_ARRAY(&sandbox->permanent, SAVE_MAX_SIZE, u8);
-    sandbox->window_start = nv_time_seconds();
     NV_ASSERT(save_round_trip_matches(sandbox));
     save_init(sandbox);
     undo_init(sandbox);

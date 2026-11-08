@@ -288,7 +288,7 @@ b32 command_listed(Sandbox* sandbox, u32 id)
     return shortcuts[id].run && id != SC_PALETTE && id != SC_FIND;
 }
 
-// The scenes' commands are named by the scenes: "Show the Stress scene". The title goes through the table whole, so a scene the
+// The scenes' commands are named by the scenes: "Show the Chess scene". The title goes through the table whole, so a scene the
 // table has no row for stays in English.
 const char* command_name(Sandbox* sandbox, u32 id)
 {
