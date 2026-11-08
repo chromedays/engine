@@ -678,20 +678,10 @@ NV_DEBUG_EXPORT int sandbox_debug_vfx(int which)
     return values[which];
 }
 
-// The first behavior of a kind in the shown scene, or NULL.
-internal Behavior* first_generator(BehaviorKind kind)
-{
-    SceneDoc* doc = sandbox_doc(&sandbox_state);
-    for (u32 i = 0; i < doc->behavior_count; ++i)
-        if (doc->behaviors[i].desc.kind == kind)
-            return &doc->behaviors[i];
-    return NULL;
-}
-
 // Sets the shown scene's first `effects` behavior: particles kept, explosions a second, missiles, beams, decals a second.
 NV_DEBUG_EXPORT void sandbox_debug_set_effects(int particles, int explosions, int missiles, int beams, int decals)
 {
-    Behavior* behavior = first_generator(BEHAVIOR_EFFECTS);
+    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_EFFECTS);
     if (!behavior)
         return;
     EffectsDesc* effects = &behavior->desc.effects;
@@ -1048,7 +1038,7 @@ NV_DEBUG_EXPORT void sandbox_debug_rename_selected(void)
 // Turns the shown scene's first `chain` on with `links` links (0 = off).
 NV_DEBUG_EXPORT void sandbox_debug_set_chain(int links)
 {
-    Behavior* behavior = first_generator(BEHAVIOR_CHAIN);
+    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CHAIN);
     if (!behavior)
         return;
     behavior->desc.chain.on = links > 0;
@@ -1059,7 +1049,7 @@ NV_DEBUG_EXPORT void sandbox_debug_set_chain(int links)
 // Sets the shown scene's first `grid` to `cubes` cubes (0 = off).
 NV_DEBUG_EXPORT void sandbox_debug_set_grid(int cubes)
 {
-    Behavior* behavior = first_generator(BEHAVIOR_GRID);
+    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_GRID);
     if (!behavior)
         return;
     behavior->desc.grid.on = cubes > 0;
@@ -1070,7 +1060,7 @@ NV_DEBUG_EXPORT void sandbox_debug_set_grid(int cubes)
 // Sets the shown scene's first `crowd` to `characters` characters (0 = off).
 NV_DEBUG_EXPORT void sandbox_debug_set_crowd(int characters)
 {
-    Behavior* behavior = first_generator(BEHAVIOR_CROWD);
+    Behavior* behavior = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CROWD);
     if (!behavior)
         return;
     behavior->desc.crowd.on = characters > 0;
@@ -1081,9 +1071,9 @@ NV_DEBUG_EXPORT void sandbox_debug_set_crowd(int characters)
 // What the shown scene's generators have made: 0 cubes, 1 links, 2 characters in use, 3 characters made.
 NV_DEBUG_EXPORT int sandbox_debug_built(int which)
 {
-    Behavior* grid = first_generator(BEHAVIOR_GRID);
-    Behavior* chain = first_generator(BEHAVIOR_CHAIN);
-    Behavior* crowd = first_generator(BEHAVIOR_CROWD);
+    Behavior* grid = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_GRID);
+    Behavior* chain = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CHAIN);
+    Behavior* crowd = behavior_first(sandbox_doc(&sandbox_state), BEHAVIOR_CROWD);
     int values[4] = {grid ? (int)grid->grid.built : 0, chain ? (int)chain->chain.built : 0, crowd ? (int)crowd->crowd.active : 0,
                      crowd ? (int)crowd->crowd.created : 0};
     return values[which];

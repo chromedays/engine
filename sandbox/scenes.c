@@ -102,81 +102,6 @@ internal NvMeshId make_shape_mesh(Sandbox* sandbox, const ModelDesc* model)
 }
 
 //
-// Behaviors
-//
-
-// The joint-space axis (+-X, +-Y or +-Z) that points most along `direction` in model space.
-internal NvVec3 joint_axis_towards(NvMat4 joint_model, NvVec3 direction)
-{
-    NvVec3 best = nv_vec3(1, 0, 0);
-    f32 best_dot = -2.0f;
-    for (u32 axis = 0; axis < 3; ++axis) {
-        NvVec3 column = nv_vec3_normalize(nv_vec3(joint_model.e[axis * 4], joint_model.e[axis * 4 + 1], joint_model.e[axis * 4 + 2]));
-        f32 d = nv_vec3_dot(column, direction);
-        for (s32 sign = -1; sign <= 1; sign += 2) {
-            if (d * (f32)sign > best_dot) {
-                best_dot = d * (f32)sign;
-                best = nv_vec3(axis == 0 ? (f32)sign : 0.0f, axis == 1 ? (f32)sign : 0.0f, axis == 2 ? (f32)sign : 0.0f);
-            }
-        }
-    }
-    return best;
-}
-
-// A character: the animator of its model, aim IK from the rest pose (before any clip plays) and the clip it starts with.
-internal b32 build_character(Behavior* behavior, const SceneDesc* desc, const NvGltfModel* model, Asset* asset,
-                             const NvNodeId* node_ids)
-{
-    CharacterDesc* c = &behavior->desc.character;
-    CharacterState* state = &behavior->character;
-    state->model = *model;
-    state->asset = asset;
-    if (!model->animator.index) {
-        nv_log(NV_LOG_ERROR, "scene", "the model %s of character '%s' has no skeleton", asset->path, desc->nodes[behavior->desc.node].id);
-        return 0;
-    }
-    NvAnimator* animator = nv_anim_get(model->animator);
-    if (c->look_target[0][0]) {
-        s32 joint = nv_anim_find_joint(model->skeleton, c->look_target[0]);
-        if (joint < 0) {
-            nv_log(NV_LOG_ERROR, "scene", "the model %s has no joint '%s' for look_target", asset->path, c->look_target[0]);
-            return 0;
-        }
-        NvMat4 head = animator->joint_model[joint];
-        state->look_target = node_ids[c->look_node_index];
-        animator->look_at = (NvLookAt){
-            .joint = joint,
-            .forward = joint_axis_towards(head, nv_vec3(0, 0, 1)),
-            .up = joint_axis_towards(head, nv_vec3(0, 1, 0)),
-            .weight = 1.0f,
-            .target_node = state->look_target,
-        };
-    }
-    // The clips the file names must be in the asset.
-    if (c->clip[0] && !character_find_clip(state, c->clip).index) {
-        nv_log(NV_LOG_ERROR, "scene", "the model %s has no clip '%s'", asset->path, c->clip);
-        return 0;
-    }
-    if (c->jump.clip[0][0]) {
-        for (u32 i = 0; i < 3; ++i) {
-            if (!character_find_clip(state, c->jump.clip[i]).index) {
-                nv_log(NV_LOG_ERROR, "scene", "the model %s has no clip '%s' for jump", asset->path, c->jump.clip[i]);
-                return 0;
-            }
-        }
-    }
-    state->blend_clip = 0;
-    for (u32 i = 0; i < asset->clip_count; ++i)
-        if (c->blend[0] && strcmp(nv_anim_clip_name(asset->clips[i]), c->blend) == 0)
-            state->blend_clip = (s32)i;
-    // The parameter always names the clip that is blended in: the first, until another is chosen.
-    if (asset->clip_count)
-        snprintf(c->blend, sizeof(c->blend), "%s", nv_anim_clip_name(asset->clips[state->blend_clip]));
-    animator->layers[0].speed = c->speed;
-    return 1;
-}
-
-//
 // Palettes
 //
 
@@ -303,64 +228,8 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
     }
 
     // The behaviors, in the file's order (the benchmark's steps name them by that place).
-    for (u32 b = 0; b < desc->behavior_count; ++b) {
-        const BehaviorDesc* source = &desc->behaviors[b];
-        Behavior* behavior = &doc->behaviors[doc->behavior_count++];
-        behavior->desc = *source;
-        behavior->node = node_ids[source->node];
-        switch (source->kind) {
-        case BEHAVIOR_SPIN:
-            behavior->spin.authored = nv_scene_get(scene, behavior->node)->rotation;
-            break;
-        case BEHAVIOR_CHARACTER: {
-            if (!build_character(behavior, desc, &file_models[source->node], node_assets[source->node], node_ids))
-                return 0;
-            // It starts in the clip the file names, or in the first loop of its model.
-            const CharacterState* state = &behavior->character;
-            NvClipId start = behavior->desc.character.clip[0] ? character_find_clip(state, behavior->desc.character.clip) : (NvClipId){0};
-            for (u32 i = 0; !start.index && i < state->asset->clip_count; ++i)
-                if (strstr(nv_anim_clip_name(state->asset->clips[i]), "_Loop"))
-                    start = state->asset->clips[i];
-            if (!start.index && state->asset->clip_count)
-                start = state->asset->clips[0];
-            if (start.index)
-                character_play(sandbox, behavior, start);
-        } break;
-        case BEHAVIOR_GRID: {
-            const GridDesc* grid = &behavior->desc.grid;
-            if (desc->models[grid->model_index].is_file) {
-                nv_log(NV_LOG_ERROR, "scene", "node '%s': a grid of file models is not supported yet", desc->nodes[source->node].id);
-                return 0;
-            }
-            behavior->grid.mesh = doc->model_meshes[grid->model_index];
-            behavior->grid.materials = doc->palette_materials[grid->palette_index];
-            behavior->grid.material_count = desc->palettes[grid->palette_index].wheel;
-            behavior->grid.nodes = NV_PUSH_ARRAY(&sandbox->permanent, grid->max, NvNodeId);
-        } break;
-        case BEHAVIOR_CHAIN: {
-            const ChainDesc* chain = &behavior->desc.chain;
-            if (desc->models[chain->model_index].is_file) {
-                nv_log(NV_LOG_ERROR, "scene", "node '%s': a chain of file models is not supported yet", desc->nodes[source->node].id);
-                return 0;
-            }
-            behavior->chain.mesh = doc->model_meshes[chain->model_index];
-            behavior->chain.materials = doc->palette_materials[chain->palette_index];
-            behavior->chain.material_count = desc->palettes[chain->palette_index].wheel;
-            behavior->chain.nodes = NV_PUSH_ARRAY(&sandbox->permanent, chain->max, NvNodeId);
-        } break;
-        case BEHAVIOR_CROWD: {
-            const CrowdDesc* crowd = &behavior->desc.crowd;
-            behavior->crowd.asset = asset_of(sandbox, &desc->models[crowd->model_index]);
-            behavior->crowd.models = NV_PUSH_ARRAY(&sandbox->permanent, crowd->max, NvGltfModel);
-        } break;
-        case BEHAVIOR_EFFECTS:
-            behavior->effects.flights = NV_PUSH_ARRAY(&sandbox->permanent, EFFECTS_MAX_MISSILES, Flight);
-            break;
-        case BEHAVIOR_COUNT:
-            NV_INVALID_CODE_PATH;
-            break;
-        }
-    }
+    if (!behaviors_build(sandbox, doc, scene, file_models, node_assets, node_ids))
+        return 0;
 
     // The view.
     const ViewDesc* v = &desc->view;

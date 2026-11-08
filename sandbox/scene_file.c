@@ -2,7 +2,7 @@
 // (SceneField) that says what it reads into, its range and whether it may be left out. No GPU or scene is used, so tests give it
 // strings. A bad line never stops the read: every error is reported and the read fails at the end.
 
-#include "scene_file.h"
+#include "sandbox.h"
 
 #include <engine/log.h>
 #include <engine/mesh.h>
