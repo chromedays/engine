@@ -73,7 +73,7 @@ Windows의 Firefox 141+.
 
 앱은 이 저장소를 Git submodule로 `engine/`에 두고 `add_subdirectory(engine)`으로 더한다. 그러면 엔진(`nv` 라이브러리와
 `nv_setup_executable`, `nv_add_version`)만 빌드되고, 샌드박스와 테스트는 빌드되지 않는다(`NV_BUILD_SANDBOX`,
-`NV_BUILD_TESTS`로 켤 수 있다). 엔진은 앱의 디렉터리에 플랫폼(`NV_WEB`, `NV_WINDOWS`), C와 C++
+`NV_BUILD_TESTS`로 켤 수 있다). 엔진은 앱의 디렉터리에 플랫폼(`NV_WEB`, `NV_WINDOWS`, `NV_LINUX`, 헤드리스 Linux 빌드면 `NV_HEADLESS`), C와 C++
 표준, 우리 코드의 컴파일 옵션(`NV_COMPILE_OPTIONS`, `NV_COMPILE_DEFINITIONS`)을 넘긴다. `nv_add_version`은 앱 저장소의
 커밋을 적는다.
 
@@ -180,7 +180,7 @@ recent Chrome/Edge, Safari 26+, or Firefox 141+ on Windows.
 An app keeps this repository as a Git submodule at `engine/` and adds it with `add_subdirectory(engine)`. Then only the engine
 is built (the `nv` library, `nv_setup_executable` and `nv_add_version`), not the sandbox or the tests
 (`NV_BUILD_SANDBOX` and `NV_BUILD_TESTS` turn them on). The engine hands the app's directory the
-platform (`NV_WEB`, `NV_WINDOWS`), the C and C++ standards and the options our code compiles with (`NV_COMPILE_OPTIONS`,
+platform (`NV_WEB`, `NV_WINDOWS`, `NV_LINUX`, and `NV_HEADLESS` for a headless Linux build), the C and C++ standards and the options our code compiles with (`NV_COMPILE_OPTIONS`,
 `NV_COMPILE_DEFINITIONS`). `nv_add_version` records the commit of the app's repository.
 
 ```cmake

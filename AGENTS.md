@@ -18,9 +18,11 @@ under it, so the reader sees what is meant without opening the file.
 
 ## Project
 
-nv ("night view") is a C17 rendering engine that runs in the browser and on Windows from one source. The web build
+nv ("night view") is a C17 rendering engine that runs in the browser, on Windows and on Linux from one source. The web build
 compiles to WebAssembly with Emscripten, and WebGPU calls go to the browser through the `emdawnwebgpu` port. The Windows
-build (x64, MSVC) draws through Direct3D 12 (`docs/specs/d3d12_port.md`). There is no build for any other platform.
+build (x64, MSVC) draws through Direct3D 12 (`docs/specs/d3d12_port.md`). The Linux build (x64, GCC or Clang) draws through Dawn's
+native WebGPU on Vulkan, in a Wayland window (`docs/specs/linux_wayland.md`), or offscreen with `NV_HEADLESS` on. There is no
+build for any other platform.
 
 ```
 engine/                    each module's header and source side by side, included as <engine/name.h>:
@@ -38,9 +40,12 @@ engine/                    each module's header and source side by side, include
                            the Windows sources of the same modules: window_win32.c (message loop, DPI; with window_win32.h,
                            engine-private), imgui_win32.c (keys, IME, clipboard, cursor), storage_win32.c, local_file_win32.c,
                            image_win32.c (WIC), win32.h (the Win32 headers and UTF-8 / UTF-16 helpers),
-                           the Linux sources of the same modules: window_linux.c (a Wayland window, the default; with
-                           window_linux.h, engine-private) or window_headless.c (offscreen frames, NV_HEADLESS on), imgui_headless.c (no input),
-                           storage_linux.c, local_file_linux.c, image_linux.c (decodes with stb_image inside the caller's arena, writes PNGs with stb_image_write);
+                           the Linux sources of the same modules: window_linux.c (a Wayland window, the default: the compositor's
+                           size and integer scale, frames paced by its frame callbacks; with window_linux.h, engine-private) and
+                           imgui_linux.c (pointer, and keyboard through libxkbcommon), or with NV_HEADLESS on window_headless.c
+                           (offscreen frames) and imgui_headless.c (no input); storage_linux.c (~/.local/share/nv/<target>/),
+                           local_file_linux.c (no dialogs yet), image_linux.c (decodes with stb_image inside the caller's arena,
+                           writes PNGs with stb_image_write);
                            CMake picks one source of each,
                            debug_script.c/.h (Windows Debug only: a scripted run, `--script`; see "Testing on Windows"),
                            log.c/.h (the log ring the Console tab shows),
@@ -128,9 +133,9 @@ build-win\sandbox\Release\sandbox.exe      # Debug\ for the Debug build
 The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just run sandbox Release`, `just test`,
 `just script <file>`; `just` lists them, and each takes Debug by default. On Linux the same names are shell recipes marked
 `[linux]`: `just configure`, `just build`, `just test`, `just clean` (Ninja, a folder for each configuration:
-`build-linux/Debug`, `build-linux/Release`, with the downloaded tools in `build-linux/tools`); there is no `run` or `script`
-there yet, since Linux builds no sandbox. The Linux visual regression test has `just visual` and `just visual-update-ref`
-(marked `[unix]`).
+`build-linux/Debug`, `build-linux/Release`, with the downloaded tools in `build-linux/tools`) and `just run` (`just run sandbox
+Release`); there is no `script` there. The Linux visual regression test has `just visual` and `just visual-update-ref` (marked
+`[unix]`).
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
 runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_SDK` name copies of your own). The executables read
@@ -138,12 +143,33 @@ runtime goes in a `D3D12\` folder beside each executable (`NV_DXC`, `NV_AGILITY_
 published by CI, so a change to a file that does not know the platform, or to `engine/gpu.h`, is built for both the web and Windows
 before it is pushed.
 
+### On Linux
+
+Requires x64 Linux with a Wayland compositor and a Vulkan driver, GCC or Clang, CMake 3.30+, Ninja and Git LFS, and the
+development packages of `wayland-client`, `wayland-protocols` (with `wayland-scanner`) and `xkbcommon`, which pkg-config finds; no
+Emscripten. The build downloads Dawn's package (headers and static library, pinned with `tint` in `cmake/shaders.cmake`). Ninja keeps
+one configuration in a folder, so each has its own:
+
+```sh
+cmake -S . -B build-linux/Debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DNV_TOOLS_DIR=$PWD/build-linux/tools
+cmake --build build-linux/Debug
+build-linux/Debug/sandbox/sandbox
+```
+
+or `just run` and `just test` (above). The window follows the compositor's size and integer scale, and its frames follow the
+compositor's frame callbacks: a covered window draws once a second, and its present (Mailbox) never waits. The sandbox reads
+`assets/` and `data/` beside itself and keeps its saves in `$XDG_DATA_HOME/nv/<target>/`, by default `~/.local/share/nv/<target>/`
+(a Debug build takes `NV_STORAGE_DIR`). Not there yet (`docs/specs/linux_wayland.md`, "나중"): the clipboard with other programs, the
+cursor's shape, fractional scale, the Korean IME and file dialogs. `-DNV_HEADLESS=ON` builds the engine offscreen, with no input
+and no sandbox. No CI builds Linux either.
+
 ## Conventions
 
 Follow `docs/CODING_STANDARD.md`. The web-specific rules:
 
 - Only `engine/gpu_webgpu.c` calls WebGPU. `wgpuSurfacePresent` must not be called there; the browser presents the canvas.
-- Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. A file that does not know the platform
+- Only `engine/gpu_d3d12.c` calls Direct3D 12, and only the `*_win32.c` files call Win32. Only `engine/window_linux.c` and
+`engine/imgui_linux.c` call Wayland (`gpu_webgpu.c` makes its surface from the display and surface `window_linux.h` hands it). A file that does not know the platform
 includes none of their headers and never tests the platform (debug exports are `NV_DEBUG_EXPORT`). Where code does test it, it tests
 `NV_PLATFORM_WEB`, `NV_PLATFORM_WINDOWS` or `NV_PLATFORM_LINUX` (`engine/base.h`; always 0 or 1, `#if NV_PLATFORM_WEB`), never the
 compilers' own `__EMSCRIPTEN__`, `_WIN32` or `__linux__`. Our code compiles

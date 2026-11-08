@@ -783,12 +783,16 @@ internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, S
     set_param(character, "blend_weight", &blend_weight);
     set_param(character, "fade", &fade);
     set_param(character, "speed", &speed);
-    if (blend_name[0])
-        snprintf(c->blend, sizeof(c->blend), "%s", blend_name);
+    // A clip's name is a scene ID: one longer than that holds is no clip of this build, and is left out as an unknown one is.
+    umm blend_length = strlen(blend_name);
+    if (blend_name[0] && blend_length < sizeof(c->blend))
+        memcpy(c->blend, blend_name, blend_length + 1);
     if (has_clip) {
         // A clip name the build does not have falls back to Idle_Loop.
-        snprintf(c->clip, sizeof(c->clip), "%s",
-                 character_find_clip(&character->character, clip_name).index ? clip_name : "Idle_Loop");
+        const char* clip = character_find_clip(&character->character, clip_name).index ? clip_name : "Idle_Loop";
+        umm clip_length = strlen(clip);
+        if (clip_length < sizeof(c->clip))
+            memcpy(c->clip, clip, clip_length + 1);
     }
     behavior_apply(sandbox, character);
     if (has_time)

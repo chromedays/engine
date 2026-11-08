@@ -9,6 +9,7 @@
 #include <engine/renderer.h>
 #include <engine/scene.h>
 #include <engine/window.h>
+#include <engine/window_linux.h> // engine-private: the fixed size this test asks for
 
 #include <stdio.h>
 
@@ -111,6 +112,8 @@ int main(int argc, char** argv)
     test->scene = NV_PUSH_STRUCT(&test->permanent, NvScene);
 
     nv_window_create(&test->window, "visual_test");
+    // The baseline's size, at scale 1, whatever the compositor makes of the window (docs/specs/linux_wayland.md, "고정 크기").
+    nv_window_linux_set_fixed_size(&test->window, 1280, 720);
     if (!nv_gpu_create(&test->gpu, &test->window)) {
         nv_log(NV_LOG_ERROR, "visual", "fatal: failed to initialize the GPU");
         return 1;

@@ -28,6 +28,38 @@ void nv_file_resolve_path(const char* path, char* out, umm capacity)
     else
         snprintf(out, capacity, "%s", path);
 }
+#elif NV_PLATFORM_LINUX
+#include <unistd.h>
+
+// The folder of the executable, with a '/' at the end, found once; "" when the system does not say (or the path is too long).
+internal const char* executable_folder(void)
+{
+    local_persist char folder[520];
+    local_persist b32 found;
+    if (!found) {
+        found = 1;
+        ssize_t length = readlink("/proc/self/exe", folder, sizeof(folder) - 1);
+        if (length < 0 || length >= (ssize_t)sizeof(folder) - 1)
+            length = 0;
+        while (length && folder[length - 1] != '/')
+            --length;
+        folder[length] = 0;
+    }
+    return folder;
+}
+
+// The packed files ("/assets/...", "/data/...") are beside the executable and are looked for there first. A real absolute path
+// also starts with '/' here (a save folder, a file a test reads), and is used as it is when the executable's folder has no such
+// file.
+void nv_file_resolve_path(const char* path, char* out, umm capacity)
+{
+    if (path[0] == '/' && executable_folder()[0]) {
+        snprintf(out, capacity, "%s%s", executable_folder(), path + 1);
+        if (access(out, F_OK) == 0)
+            return;
+    }
+    snprintf(out, capacity, "%s", path);
+}
 #else
 void nv_file_resolve_path(const char* path, char* out, umm capacity)
 {

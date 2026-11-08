@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
-// Files through the user's own dialogs, on Linux: there are no dialogs headless, so nothing can
-// be opened or saved this way. Asking fails at once and a poll reports it, rather than waiting
-// forever for a dialog that will never come.
+// Files through the user's own dialogs, on Linux: not implemented yet (docs/specs/linux_wayland.md; the desktop portal needs
+// D-Bus), so nothing can be opened or saved this way. Asking fails at once and a poll reports it, rather than waiting forever for a
+// dialog that will never come.
 
 global NvLocalFile state;
 global b32 failed; // a failure is waiting to be reported by the next poll
@@ -16,8 +16,8 @@ b32 nv_local_file_open(const char* extension)
     (void)extension;
     if (state.status == NV_LOCAL_FILE_BUSY)
         return 0;
-    nv_log(NV_LOG_WARNING, "nv", "file dialogs are not available headless");
-    snprintf(state.error, sizeof(state.error), "file dialogs are not available headless");
+    nv_log(NV_LOG_WARNING, "nv", "file dialogs are not implemented on Linux");
+    snprintf(state.error, sizeof(state.error), "file dialogs are not implemented on Linux");
     failed = 1;
     return 1;
 }
@@ -32,8 +32,8 @@ b32 nv_local_file_save(const char* name, const void* bytes, umm size, b32 save_a
     (void)name, (void)bytes, (void)size, (void)save_as;
     if (state.status == NV_LOCAL_FILE_BUSY)
         return 0;
-    nv_log(NV_LOG_WARNING, "nv", "file dialogs are not available headless");
-    snprintf(state.error, sizeof(state.error), "file dialogs are not available headless");
+    nv_log(NV_LOG_WARNING, "nv", "file dialogs are not implemented on Linux");
+    snprintf(state.error, sizeof(state.error), "file dialogs are not implemented on Linux");
     failed = 1;
     return 1;
 }

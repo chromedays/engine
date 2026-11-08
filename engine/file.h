@@ -11,9 +11,10 @@ typedef struct NvFileData {
     umm size;
 } NvFileData;
 
-// The path as the C file API takes it. The web's packed files are at "/assets/..." and "/data/..."; on Windows they are beside the
-// executable (nv_setup_executable copies them), so a path that starts with "/" is relative to the executable's folder there. Any
-// other path is as it is. `out` is cut to `capacity` and always terminated.
+// The path as the C file API takes it. The web's packed files are at "/assets/..." and "/data/..."; on Windows and Linux they are
+// beside the executable (nv_setup_executable copies them). On Windows a path that starts with "/" is relative to the executable's
+// folder. On Linux, where real absolute paths start with "/" too, it is looked for beside the executable first and used as it is
+// when it is not there. Any other path is as it is. `out` is cut to `capacity` and always terminated.
 void nv_file_resolve_path(const char* path, char* out, umm capacity);
 
 // The bytes of the file at `path` (resolved as above), pushed from `arena` (not aligned) with a 0 byte after them, so a text file is also a

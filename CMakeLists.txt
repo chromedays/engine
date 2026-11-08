@@ -18,8 +18,10 @@ elseif(WIN32 AND MSVC AND CMAKE_C_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
     set(NV_WINDOWS TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NV_LINUX TRUE)
-    # The sandbox belongs to the web and Windows builds for now.
-    set(NV_BUILD_SANDBOX OFF)
+    # The headless build has no window to run the sandbox in; the Wayland window does (docs/specs/linux_wayland.md).
+    if(NV_HEADLESS)
+        set(NV_BUILD_SANDBOX OFF)
+    endif()
 else()
     message(FATAL_ERROR "nv builds for the web (emcmake cmake -S . -B build -G Ninja), for Windows x64 with MSVC "
         "(cmake -S . -B build-win -G \"Visual Studio 18 2026\" -A x64) and for Linux "
