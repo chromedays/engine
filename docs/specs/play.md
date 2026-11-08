@@ -7,6 +7,9 @@
 
 상태: 구현됨 (2026-09-28). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 아래 표의 생성기 행과 스트레스 씬의 언급은 그때의 기록이다. 규칙은 그대로 남은 두 동작(`spin`, `character`)에 적용된다.
+
 > 2026-10: Edit와 Play는 이제 모든 씬의 규칙이다 (`scene_file.md`). 아래의 "쇼케이스"는 보이는 씬을, 행성, 캐릭터, 칼, 시선 타깃은
 > 씬 파일의 `spin`과 `character` 동작을 뜻한다. 스트레스 씬도 Play/Stop을 가진다: churn, 체인의 흔들림, 이펙트 워크로드는 Play에서만
 > 돈다. 재생 중에 씬을 바꾸면 먼저 Stop한다.
@@ -96,6 +99,9 @@ Play 시간은 Play에서 0으로 시작하므로, 실행은 항상 같은 방�
 ## English
 
 Status: implemented (2026-09-28). Changes to this spec are agreed first.
+
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The generator rows and the stress scene below are the record of that time. The rules stand for the two behaviors left (`spin`, `character`).
 
 > 2026-10: Edit and Play are now the rules of every scene (`scene_file.md`). "The showcase" below means the shown scene; the planet,
 > the character, the sword and the look target are the scene file's `spin` and `character` behaviors. The stress scene has Play/Stop

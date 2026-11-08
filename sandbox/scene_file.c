@@ -38,11 +38,6 @@ global const SceneField lighting_fields[] = {
     ROW("ambient", FIELD_NUMBER, LightingDesc, ambient, .count = 3, .min = 0, .max = 1),
 };
 
-global const SceneField palette_fields[] = {
-    ROW("base", FIELD_NUMBER, PaletteDesc, base, .count = 3, .min = 0, .max = 1, .required = 1),
-    ROW("wheel", FIELD_INTEGER, PaletteDesc, wheel, .count = 1, .min = 2, .max = SCENE_MAX_PALETTE_COLORS, .required = 1),
-};
-
 enum { MODEL_FILE, MODEL_CLIPS, MODEL_ROOT_MOTION };
 global const SceneField model_fields[] = {
     ROW("file", FIELD_TEXT, ModelDesc, file, .size = SCENE_PATH_SIZE),
@@ -89,12 +84,6 @@ global const SceneField light_fields[] = {
     ROW("cone", FIELD_DEGREES, NodeDesc, light.inner_cone, .count = 2, .min = 0, .max = 180),
 };
 
-global const SceneField benchmark_fields[] = {
-    {.key = "warmup", .kind = FIELD_NUMBER, .offset = offsetof(SceneDesc, warmup), .count = 1, .min = 0, .max = 60, .required = 1},
-    {.key = "measure", .kind = FIELD_NUMBER, .offset = offsetof(SceneDesc, measure), .count = 1, .min = 0, .max = 60, .min_open = 1,
-     .required = 1},
-};
-
 // Behaviors: a parameter is changed by the UI, kept by the save and taken back by undo; the other keys are structure.
 global const SceneField spin_fields[] = {
     ROW("axis", FIELD_NUMBER, SpinDesc, axis, .count = 3, ANY, .required = 1),
@@ -119,76 +108,11 @@ global const SceneField character_fields[] = {
     ROW("look_at", FIELD_BOOL, CharacterDesc, look_at, .count = 1, .parameter = 1, .label = "Look at target", .keywords = "head ik aim"),
 };
 
-global const SceneField grid_fields[] = {
-    ROW("model", FIELD_NAME, GridDesc, model, .required = 1),
-    ROW("palette", FIELD_NAME, GridDesc, palette),
-    ROW("max", FIELD_INTEGER, GridDesc, max, .count = 1, .min = 1, .max = 16000, .required = 1),
-    ROW("columns", FIELD_INTEGER, GridDesc, columns, .count = 1, .min = 1, .max = 4096, .required = 1),
-    ROW("spacing", FIELD_NUMBER, GridDesc, spacing, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("height", FIELD_NUMBER, GridDesc, height, .count = 1, ANY, .required = 1),
-    ROW("scale", FIELD_NUMBER, GridDesc, scale, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("on", FIELD_BOOL, GridDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Cube grid", .keywords = "workload cubes"),
-    ROW("count", FIELD_INTEGER, GridDesc, count, .count = 1, .min = 0, .max = 16000, .required = 1, .parameter = 1, .label = "Cubes",
-        .keywords = "workload grid count", .format = "%d", .logarithmic = 1),
-    ROW("colors_on", FIELD_BOOL, GridDesc, colors_on, .count = 1, .parameter = 1, .label = "Many colors",
-        .keywords = "workload materials"),
-    ROW("colors", FIELD_INTEGER, GridDesc, colors, .count = 1, .min = 2, .max = SCENE_MAX_PALETTE_COLORS - 1, .parameter = 1,
-        .fallback = 16, .label = "Colors", .keywords = "workload materials count", .format = "%d"),
-    ROW("churn_on", FIELD_BOOL, GridDesc, churn_on, .count = 1, .parameter = 1, .label = "Churn", .keywords = "workload add remove nodes"),
-    ROW("churn", FIELD_INTEGER, GridDesc, churn, .count = 1, .min = 1, .max = 256, .parameter = 1, .fallback = 32,
-        .label = "Cubes / frame", .keywords = "workload churn count", .format = "%d"),
-};
-
-global const SceneField chain_fields[] = {
-    ROW("model", FIELD_NAME, ChainDesc, model, .required = 1),
-    ROW("palette", FIELD_NAME, ChainDesc, palette),
-    ROW("stride", FIELD_INTEGER, ChainDesc, stride, .count = 1, .min = 1, .max = 1000, .fallback = 1),
-    ROW("max", FIELD_INTEGER, ChainDesc, max, .count = 1, .min = 1, .max = 1000, .required = 1),
-    ROW("link", FIELD_NUMBER, ChainDesc, link, .count = 3, ANY, .required = 1),
-    ROW("twist", FIELD_DEGREES, ChainDesc, twist, .count = 1, .min = -360, .max = 360, .required = 1),
-    ROW("wobble", FIELD_DEGREES, ChainDesc, wobble, .count = 1, .min = -360, .max = 360, .required = 1),
-    ROW("on", FIELD_BOOL, ChainDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Deep chain", .keywords = "workload hierarchy"),
-    ROW("count", FIELD_INTEGER, ChainDesc, count, .count = 1, .min = 1, .max = 1000, .required = 1, .parameter = 1, .label = "Links",
-        .keywords = "workload chain count", .format = "%d"),
-};
-
-global const SceneField crowd_fields[] = {
-    ROW("model", FIELD_NAME, CrowdDesc, model, .required = 1),
-    ROW("max", FIELD_INTEGER, CrowdDesc, max, .count = 1, .min = 1, .max = 200, .required = 1),
-    ROW("columns", FIELD_INTEGER, CrowdDesc, columns, .count = 1, .min = 1, .max = 4096, .required = 1),
-    ROW("spacing", FIELD_NUMBER, CrowdDesc, spacing, .count = 1, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("offset", FIELD_NUMBER, CrowdDesc, offset, .count = 1, .min = 0, .max = NO_LIMIT),
-    ROW("on", FIELD_BOOL, CrowdDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Crowd",
-        .keywords = "workload characters animation"),
-    ROW("count", FIELD_INTEGER, CrowdDesc, count, .count = 1, .min = 1, .max = 200, .required = 1, .parameter = 1, .label = "Characters",
-        .keywords = "workload crowd count", .format = "%d"),
-};
-
-global const SceneField effects_fields[] = {
-    ROW("area", FIELD_NUMBER, EffectsDesc, area, .count = 2, .min = 0, .max = NO_LIMIT, .min_open = 1, .required = 1),
-    ROW("on", FIELD_BOOL, EffectsDesc, on, .count = 1, .parameter = 1, .fallback = 1, .label = "Fire effects",
-        .keywords = "workload particles vfx"),
-    ROW("particles", FIELD_INTEGER, EffectsDesc, particles, .count = 1, .min = 0, .max = 4000000, .parameter = 1,
-        .label = "Live particles", .keywords = "workload effects vfx count", .format = "%d", .logarithmic = 1),
-    ROW("explosions", FIELD_INTEGER, EffectsDesc, explosions, .count = 1, .min = 0, .max = 200, .parameter = 1,
-        .label = "Explosions / s", .keywords = "workload effects vfx", .format = "%d"),
-    ROW("missiles", FIELD_INTEGER, EffectsDesc, missiles, .count = 1, .min = 0, .max = 2000, .parameter = 1,
-        .label = "Missiles in flight", .keywords = "workload effects vfx trails", .format = "%d"),
-    ROW("beams", FIELD_INTEGER, EffectsDesc, beams, .count = 1, .min = 0, .max = 500, .parameter = 1, .label = "Beams",
-        .keywords = "workload effects vfx laser", .format = "%d"),
-    ROW("decals", FIELD_INTEGER, EffectsDesc, decals, .count = 1, .min = 0, .max = 2000, .parameter = 1,
-        .label = "Decals / s", .keywords = "workload effects vfx scorch", .format = "%d"),
-};
-
 #define TABLE(fields) fields, (u32)NV_ARRAY_COUNT(fields)
 
 global const BehaviorDef behavior_defs[BEHAVIOR_COUNT] = {
-    [BEHAVIOR_SPIN] = {"spin", TABLE(spin_fields), 0},
-    [BEHAVIOR_CHARACTER] = {"character", TABLE(character_fields), 0},
-    [BEHAVIOR_GRID] = {"grid", TABLE(grid_fields), 1},
-    [BEHAVIOR_CHAIN] = {"chain", TABLE(chain_fields), 1},
-    [BEHAVIOR_CROWD] = {"crowd", TABLE(crowd_fields), 1},
-    [BEHAVIOR_EFFECTS] = {"effects", TABLE(effects_fields), 1},
+    [BEHAVIOR_SPIN] = {"spin", TABLE(spin_fields)},
+    [BEHAVIOR_CHARACTER] = {"character", TABLE(character_fields)},
 };
 
 const BehaviorDef* scene_behavior_def(BehaviorKind kind)
@@ -212,15 +136,12 @@ typedef enum BlockKind {
     BLOCK_SKIP, // the inside of a block that was already reported
     BLOCK_VIEW,
     BLOCK_LIGHTING,
-    BLOCK_PALETTE,
     BLOCK_MODEL,
     BLOCK_NODE,
     BLOCK_MODEL_USE, // the `model <id>` line of a node and the keys under it
     BLOCK_CAMERA,
     BLOCK_LIGHT,
     BLOCK_BEHAVIOR,
-    BLOCK_BENCHMARK,
-    BLOCK_STEP,
 } BlockKind;
 
 // An open block. Its lines are indented deeper than its header, all by the same amount.
@@ -230,11 +151,11 @@ typedef struct Block {
     s32 child_indent; // -1 until the first line inside it
     u32 header_line;
     u32 seen; // a bit per key of its table that was given
-    s32 index; // the model, palette, node, behavior or step being read
+    s32 index; // the model, node or behavior being read
 } Block;
 
 // The top-level statements, in the order they must come in.
-typedef enum Top { TOP_NONE, TOP_VERSION, TOP_TITLE, TOP_VIEW, TOP_LIGHTING, TOP_PALETTE, TOP_MODEL, TOP_NODE, TOP_BENCHMARK } Top;
+typedef enum Top { TOP_NONE, TOP_VERSION, TOP_TITLE, TOP_VIEW, TOP_LIGHTING, TOP_MODEL, TOP_NODE } Top;
 
 typedef struct SceneReader {
     NvTextReader text;
@@ -245,7 +166,6 @@ typedef struct SceneReader {
     u32 seen_top; // a bit per Top given
     b32 first_statement;
     b32 stop; // nothing more can be read (a newer format)
-    BehaviorDesc scratch; // a benchmark line's value, read the way a behavior's is
 } SceneReader;
 
 NV_PRINTF_FORMAT(3, 4) internal void fail(SceneReader* reader, u32 line, const char* format, ...)
@@ -584,10 +504,6 @@ internal void close_block(SceneReader* reader)
         break;
     case BLOCK_LIGHTING: // every key is optional
         break;
-    case BLOCK_PALETTE:
-        check_required(reader, palette_fields, (u32)NV_ARRAY_COUNT(palette_fields), block->seen, block->header_line, "palette",
-                       desc->palettes[block->index].id);
-        break;
     case BLOCK_MODEL: {
         ModelDesc* model = &desc->models[block->index];
         b32 is_file = (block->seen & (1u << MODEL_FILE)) != 0;
@@ -664,16 +580,6 @@ internal void close_block(SceneReader* reader)
         if (behavior->kind == BEHAVIOR_SPIN && (block->seen & 1u))
             normalize_spin(reader, behavior);
     } break;
-    case BLOCK_BENCHMARK:
-        check_required(reader, benchmark_fields, (u32)NV_ARRAY_COUNT(benchmark_fields), block->seen, block->header_line, "block",
-                       "benchmark");
-        if (desc->step_count == 0)
-            fail(reader, block->header_line, "'benchmark' has no 'step' blocks");
-        break;
-    case BLOCK_STEP:
-        if (desc->steps[block->index].line_count == 0)
-            fail(reader, block->header_line, "step '%s' has no lines", desc->steps[block->index].name);
-        break;
     case BLOCK_ROOT:
     case BLOCK_SKIP:
         break;
@@ -686,7 +592,7 @@ internal void close_block(SceneReader* reader)
 
 internal const char* top_name(Top top)
 {
-    local_persist const char* const names[] = {"", "nvscene_version", "title", "view", "lighting", "palette", "model", "node", "benchmark"};
+    local_persist const char* const names[] = {"", "nvscene_version", "title", "view", "lighting", "model", "node"};
     // Every Top has a name; the check is what lets GCC see that no index past the table is read.
     return (u32)top < NV_ARRAY_COUNT(names) ? names[top] : "?";
 }
@@ -698,7 +604,7 @@ internal b32 check_order(SceneReader* reader, const NvTextLine* line, Top top)
         fail(reader, line->number, "'%s' must come before '%s'", top_name(top), top_name(reader->last));
         return 0;
     }
-    if (reader->last == top && top != TOP_PALETTE && top != TOP_MODEL && top != TOP_NODE) {
+    if (reader->last == top && top != TOP_MODEL && top != TOP_NODE) {
         fail(reader, line->number, "'%s' is given twice", top_name(top));
         return 0;
     }
@@ -738,31 +644,6 @@ internal b32 id_is_free(SceneReader* reader, const NvTextLine* line, const char*
         return 0;
     }
     return 1;
-}
-
-internal void read_palette_header(SceneReader* reader, const NvTextLine* line)
-{
-    SceneDesc* desc = reader->desc;
-    char id[SCENE_ID_SIZE];
-    if (line->token_count != 2 || !nv_text_parse_name(&reader->text, line->number, line->tokens[1], id, sizeof(id))) {
-        if (line->token_count != 2)
-            fail(reader, line->number, "'palette' takes an id");
-        open_block(reader, BLOCK_SKIP, line, -1);
-        return;
-    }
-    if (!id_is_free(reader, line, "palette", scene_find_palette(desc, id))) {
-        open_block(reader, BLOCK_SKIP, line, -1);
-        return;
-    }
-    if (desc->palette_count == SCENE_MAX_PALETTES) {
-        fail(reader, line->number, "too many palettes (at most %d)", SCENE_MAX_PALETTES);
-        open_block(reader, BLOCK_SKIP, line, -1);
-        return;
-    }
-    PaletteDesc* palette = &desc->palettes[desc->palette_count];
-    memcpy(palette->id, id, sizeof(id));
-    palette->line = line->number;
-    open_block(reader, BLOCK_PALETTE, line, (s32)desc->palette_count++);
 }
 
 internal void read_model_header(SceneReader* reader, const NvTextLine* line)
@@ -867,11 +748,6 @@ internal void read_top_line(SceneReader* reader, const NvTextLine* line)
         if (line->token_count != 1)
             fail(reader, line->number, "'lighting' takes no value");
         open_block(reader, BLOCK_LIGHTING, line, -1);
-    } else if (nv_text_token_is(key, "palette")) {
-        if (!check_order(reader, line, TOP_PALETTE))
-            open_block(reader, BLOCK_SKIP, line, -1);
-        else
-            read_palette_header(reader, line);
     } else if (nv_text_token_is(key, "model")) {
         if (!check_order(reader, line, TOP_MODEL))
             open_block(reader, BLOCK_SKIP, line, -1);
@@ -882,15 +758,6 @@ internal void read_top_line(SceneReader* reader, const NvTextLine* line)
             open_block(reader, BLOCK_SKIP, line, -1);
         else
             read_node_header(reader, line);
-    } else if (nv_text_token_is(key, "benchmark")) {
-        if (!check_order(reader, line, TOP_BENCHMARK)) {
-            open_block(reader, BLOCK_SKIP, line, -1);
-            return;
-        }
-        if (line->token_count != 1)
-            fail(reader, line->number, "'benchmark' takes no value");
-        reader->desc->has_benchmark = 1;
-        open_block(reader, BLOCK_BENCHMARK, line, -1);
     } else {
         fail(reader, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
         open_block(reader, BLOCK_SKIP, line, -1);
@@ -954,9 +821,6 @@ internal void read_node_line(SceneReader* reader, const NvTextLine* line, Block*
                 if (other->kind == (BehaviorKind)k) {
                     fail(reader, line->number, "a node has at most one '%s'", def->name);
                     repeated = 1;
-                } else if (def->generator && behavior_defs[other->kind].generator) {
-                    fail(reader, line->number, "a node has at most one generator ('%s' and '%s')", behavior_defs[other->kind].name, def->name);
-                    repeated = 1;
                 }
             }
             if (!repeated && desc->behavior_count == SCENE_MAX_BEHAVIORS) {
@@ -974,15 +838,6 @@ internal void read_node_line(SceneReader* reader, const NvTextLine* line, Block*
             apply_fallbacks(def->fields, def->field_count, behavior_data(behavior));
             if (k == BEHAVIOR_CHARACTER)
                 behavior->character.look_node_index = -1;
-            if (k == BEHAVIOR_GRID || k == BEHAVIOR_CHAIN || k == BEHAVIOR_CROWD) {
-                // The three begin alike (model, palette, model_index, palette_index are at their own places in each)
-                if (k == BEHAVIOR_GRID)
-                    behavior->grid.model_index = behavior->grid.palette_index = -1;
-                else if (k == BEHAVIOR_CHAIN)
-                    behavior->chain.model_index = behavior->chain.palette_index = -1;
-                else
-                    behavior->crowd.model_index = -1;
-            }
             open_block(reader, BLOCK_BEHAVIOR, line, (s32)desc->behavior_count++);
             return;
         }
@@ -1008,69 +863,6 @@ internal void read_model_line(SceneReader* reader, const NvTextLine* line, Block
         fail(reader, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
     else
         read_field(reader, line, field, (u32)(field - model_fields), model, &block->seen);
-}
-
-// A benchmark step's line: `<node id> <key> <value>`. The node's generator is turned on and the parameter given.
-internal void read_step_line(SceneReader* reader, const NvTextLine* line, Block* block)
-{
-    SceneDesc* desc = reader->desc;
-    StepDesc* step = &desc->steps[block->index];
-    char id[SCENE_ID_SIZE];
-    if (line->token_count != 3) {
-        fail(reader, line->number, "a step line is '<node id> <key> <value>'");
-        return;
-    }
-    if (!nv_text_parse_name(&reader->text, line->number, line->tokens[0], id, sizeof(id)))
-        return;
-    s32 node = scene_find_node(desc, id);
-    if (node < 0) {
-        fail(reader, line->number, "unknown node '%s'", id);
-        return;
-    }
-    s32 generator = scene_find_generator(desc, node);
-    if (generator < 0) {
-        fail(reader, line->number, "node '%s' has no generator", id);
-        return;
-    }
-    const BehaviorDef* def = &behavior_defs[desc->behaviors[generator].kind];
-    const SceneField* field = find_field(def->fields, def->field_count, line->tokens[1]);
-    if (!field || !field->parameter || field->kind == FIELD_NAME || field->kind == FIELD_JUMP) {
-        fail(reader, line->number, "'%.*s' is not a parameter of %s", nv_text_shown(line->tokens[1]), line->tokens[1].text, def->name);
-        return;
-    }
-    if (step->line_count == SCENE_MAX_STEP_LINES) {
-        fail(reader, line->number, "too many lines in a step (at most %d)", SCENE_MAX_STEP_LINES);
-        return;
-    }
-    for (u32 i = 0; i < step->line_count; ++i) {
-        if (step->lines[i].behavior == generator && step->lines[i].field == (u32)(field - def->fields)) {
-            fail(reader, line->number, "'%s' is given twice in this step", field->key);
-            return;
-        }
-    }
-    // The value is read the way the behavior's own line is: the key and the value, in a scratch behavior.
-    NvTextLine shifted = {.number = line->number, .indent = line->indent, .token_count = 2};
-    shifted.tokens[0] = line->tokens[1];
-    shifted.tokens[1] = line->tokens[2];
-    memset(&reader->scratch, 0, sizeof(reader->scratch));
-    u32 seen = 0;
-    u32 before = reader->text.errors;
-    read_field(reader, &shifted, field, 0, behavior_data(&reader->scratch), &seen);
-    if (reader->text.errors != before)
-        return;
-    u32 bits;
-    memcpy(&bits, (u8*)behavior_data(&reader->scratch) + field->offset, sizeof(bits));
-    // A count cannot pass the generator's own maximum.
-    if (strcmp(field->key, "count") == 0) {
-        u32 max = def == &behavior_defs[BEHAVIOR_GRID] ? desc->behaviors[generator].grid.max
-                  : def == &behavior_defs[BEHAVIOR_CHAIN] ? desc->behaviors[generator].chain.max
-                                                           : desc->behaviors[generator].crowd.max;
-        if (bits > max) {
-            fail(reader, line->number, "'count' is above the generator's 'max' (%u)", max);
-            return;
-        }
-    }
-    step->lines[step->line_count++] = (StepLine){.behavior = generator, .field = (u32)(field - def->fields), .value = bits};
 }
 
 internal void read_scene_line(SceneReader* reader, const NvTextLine* line)
@@ -1107,13 +899,6 @@ internal void read_scene_line(SceneReader* reader, const NvTextLine* line)
         else
             read_field(reader, line, field, (u32)(field - lighting_fields), &desc->lighting, &block->seen);
     } break;
-    case BLOCK_PALETTE: {
-        const SceneField* field = find_field(palette_fields, (u32)NV_ARRAY_COUNT(palette_fields), key);
-        if (!field)
-            fail(reader, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
-        else
-            read_field(reader, line, field, (u32)(field - palette_fields), &desc->palettes[block->index], &block->seen);
-    } break;
     case BLOCK_MODEL:
         read_model_line(reader, line, block);
         break;
@@ -1146,30 +931,6 @@ internal void read_scene_line(SceneReader* reader, const NvTextLine* line)
         else
             read_field(reader, line, field, (u32)(field - def->fields), behavior_data(behavior), &block->seen);
     } break;
-    case BLOCK_BENCHMARK: {
-        if (nv_text_token_is(key, "step")) {
-            if (desc->step_count == SCENE_MAX_STEPS) {
-                fail(reader, line->number, "too many steps (at most %d)", SCENE_MAX_STEPS);
-                open_block(reader, BLOCK_SKIP, line, -1);
-            } else if (line->token_count != 2 ||
-                       !nv_text_parse_text(&reader->text, line->number, line->tokens[1], desc->steps[desc->step_count].name, SCENE_ID_SIZE)) {
-                if (line->token_count != 2)
-                    fail(reader, line->number, "'step' takes quoted text");
-                open_block(reader, BLOCK_SKIP, line, -1);
-            } else {
-                open_block(reader, BLOCK_STEP, line, (s32)desc->step_count++);
-            }
-            break;
-        }
-        const SceneField* field = find_field(benchmark_fields, (u32)NV_ARRAY_COUNT(benchmark_fields), key);
-        if (!field)
-            fail(reader, line->number, "unknown key '%.*s'", nv_text_shown(key), key.text);
-        else
-            read_field(reader, line, field, (u32)(field - benchmark_fields), desc, &block->seen);
-    } break;
-    case BLOCK_STEP:
-        read_step_line(reader, line, block);
-        break;
     case BLOCK_SKIP:
         break;
     }
@@ -1195,22 +956,6 @@ s32 scene_find_model(const SceneDesc* desc, const char* id)
     return -1;
 }
 
-s32 scene_find_palette(const SceneDesc* desc, const char* id)
-{
-    for (u32 i = 0; i < desc->palette_count; ++i)
-        if (strcmp(desc->palettes[i].id, id) == 0)
-            return (s32)i;
-    return -1;
-}
-
-s32 scene_find_generator(const SceneDesc* desc, s32 node)
-{
-    for (u32 i = 0; i < desc->behavior_count; ++i)
-        if (desc->behaviors[i].node == node && behavior_defs[desc->behaviors[i].kind].generator)
-            return (s32)i;
-    return -1;
-}
-
 // A reference by id: found, or reported at `line`.
 internal s32 resolve_node(SceneReader* reader, u32 line, const char* what, const char* id)
 {
@@ -1226,30 +971,6 @@ internal s32 resolve_model(SceneReader* reader, u32 line, const char* what, cons
     if (index < 0)
         fail(reader, line, "%s: no model '%s'", what, id);
     return index;
-}
-
-// A generator's model and palette: a shape model takes a palette's colors, a file model its own materials.
-internal void resolve_generator_model(SceneReader* reader, const BehaviorDesc* behavior, const char* model_id, const char* palette_id,
-                                      s32* model_index, s32* palette_index, u32 colors_needed)
-{
-    const SceneDesc* desc = reader->desc;
-    const char* name = behavior_defs[behavior->kind].name;
-    *model_index = resolve_model(reader, behavior->line, name, model_id);
-    if (*model_index < 0)
-        return;
-    b32 is_file = desc->models[*model_index].is_file;
-    if (is_file && palette_id[0]) {
-        fail(reader, behavior->line, "%s: model '%s' is a file model, which has its own materials: no 'palette'", name, model_id);
-    } else if (!is_file && !palette_id[0]) {
-        fail(reader, behavior->line, "%s: model '%s' is a shape model: it needs a 'palette'", name, model_id);
-    } else if (palette_id[0]) {
-        *palette_index = scene_find_palette(desc, palette_id);
-        if (*palette_index < 0)
-            fail(reader, behavior->line, "%s: no palette '%s'", name, palette_id);
-        else if (colors_needed > desc->palettes[*palette_index].wheel - 1)
-            fail(reader, behavior->line, "%s: palette '%s' has %u colors besides its base: not enough", name, palette_id,
-                 desc->palettes[*palette_index].wheel - 1);
-    }
 }
 
 internal void resolve(SceneReader* reader)
@@ -1287,7 +1008,6 @@ internal void resolve(SceneReader* reader)
         const NodeDesc* node = &desc->nodes[behavior->node];
         switch (behavior->kind) {
         case BEHAVIOR_SPIN:
-        case BEHAVIOR_EFFECTS:
             break;
         case BEHAVIOR_CHARACTER: {
             CharacterDesc* character = &behavior->character;
@@ -1299,30 +1019,6 @@ internal void resolve(SceneReader* reader)
                 character->look_node_index = resolve_node(reader, behavior->line, "character look_target", character->look_target[1]);
             else if (character->look_at)
                 fail(reader, behavior->line, "character: 'look_at' needs a 'look_target'");
-        } break;
-        case BEHAVIOR_GRID: {
-            GridDesc* grid = &behavior->grid;
-            // The colors are used only while they are on; a count the palette cannot give is then an error, and is otherwise cut.
-            resolve_generator_model(reader, behavior, grid->model, grid->palette, &grid->model_index, &grid->palette_index,
-                                    grid->colors_on ? grid->colors : 0);
-            if (grid->palette_index >= 0 && grid->colors > desc->palettes[grid->palette_index].wheel - 1)
-                grid->colors = desc->palettes[grid->palette_index].wheel - 1;
-            if (grid->count > grid->max)
-                fail(reader, behavior->line, "grid: 'count' is above 'max' (%u)", grid->max);
-        } break;
-        case BEHAVIOR_CHAIN: {
-            ChainDesc* chain = &behavior->chain;
-            resolve_generator_model(reader, behavior, chain->model, chain->palette, &chain->model_index, &chain->palette_index, 1);
-            if (chain->count > chain->max)
-                fail(reader, behavior->line, "chain: 'count' is above 'max' (%u)", chain->max);
-        } break;
-        case BEHAVIOR_CROWD: {
-            CrowdDesc* crowd = &behavior->crowd;
-            crowd->model_index = resolve_model(reader, behavior->line, "crowd", crowd->model);
-            if (crowd->model_index >= 0 && (!desc->models[crowd->model_index].is_file || !desc->models[crowd->model_index].clips[0]))
-                fail(reader, behavior->line, "crowd: model '%s' needs to be a file model with 'clips'", crowd->model);
-            if (crowd->count > crowd->max)
-                fail(reader, behavior->line, "crowd: 'count' is above 'max' (%u)", crowd->max);
         } break;
         case BEHAVIOR_COUNT:
             break;

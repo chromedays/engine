@@ -54,12 +54,15 @@ engine/                    each module's header and source side by side, include
 sandbox/                   the sandbox (the engine's test ground): main.c (window, frame, debug exports), scene_file.c/.h (reads a
                            .nvscene file into plain data; no GPU), scenes.c (builds each scene of the list from its file), behaviors.c
                            (the behaviors a scene's objects have, and their Inspector rows), data/*.nvscene (the scenes: showcase,
-                           stress, chess; docs/specs/scene_file.md, chess_scene.md), stress.c (the Stress tab: statistics, the benchmark), ui.c (editor
-                           panel), save.c (autosave), undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures
+                           chess; docs/specs/scene_file.md, chess_scene.md), ui.c (editor panel), save.c (autosave), undo.c (undo and redo), console.c (the Console tab), textures.c (the Textures
                            tab), effects.c (the effect definitions and the View tab's test effects),
                            ui_desktop.c and ui_phone.c (the two editor UIs), shortcuts.c (desktop shortcuts and the
                            palette's actions), search.c (panel search boxes, command palette), selection.c (the
                            multiple selection), sandbox.h (shared state)
+samples/                   the samples (docs/specs/samples.md): one feature each, each a standalone executable made of one file
+                           that links the engine alone and needs no input, built into its own folder (samples/<name>/):
+                           triangle.c (one triangle), stress.c (docs/specs/stress.md: the scene, the workloads, the effects,
+                           the benchmark that runs by itself, the panel); CMakeLists.txt has one add_sample line each
 assets/                    binary assets (Git LFS); assets/quaternius/ is built by tools/trim_assets.sh,
                            assets/fonts/ holds the UI font (Pretendard: English and Korean in one file) and the icon font
                            (Lucide, merged into it)
@@ -129,7 +132,7 @@ The `justfile` (recipes in PowerShell) wraps these: `just build Release`, `just 
 `just script <file>`; `just` lists them, and each takes Debug by default. On Linux the same names are shell recipes marked
 `[linux]`: `just configure`, `just build`, `just test`, `just clean` (Ninja, a folder for each configuration:
 `build-linux/Debug`, `build-linux/Release`, with the downloaded tools in `build-linux/tools`); there is no `run` or `script`
-there yet, since Linux builds no sandbox. The Linux visual regression test has `just visual` and `just visual-update-ref`
+there yet, since Linux builds no sandbox (it builds the samples: `build-linux/<config>/samples/<name>/<name>`). The Linux visual regression test has `just visual` and `just visual-update-ref`
 (marked `[unix]`).
 
 The build also downloads DXC (`dxcompiler.dll`, `dxil.dll`; pinned like `slangc`) for the shaders, and the Agility SDK, whose
@@ -172,7 +175,7 @@ bar (menus, Play / Stop), left, right and bottom docks with draggable splitters,
 in the middle (`sandbox/ui_desktop.c`); the **phone** has a top bar (Undo, Play / Stop, Redo), the
 viewport (60%) and one tabbed panel (40%) (`sandbox/ui_phone.c`). Neither file branches on the other's
 device; they share only the section functions in `sandbox/ui.c` (`ui_scene_tab`, `ui_inspector_tab`,
-`ui_view_tab`, `console_tab`, `stress_ui`). The viewport is any rectangle, not the top-left corner:
+`ui_view_tab`, `console_tab`). The viewport is any rectangle, not the top-left corner:
 pass `Sandbox.layout.viewport` to the renderer, picking and the gizmo. Play / Stop is at the top center
 in both UIs, its center on the canvas's; it is a pixel icon (a 16 x 16 text bitmap in `sandbox/ui.c`, `draw_pixel_icon`: a new icon is a new table, no image or font), not text; the desktop top bar starts with the Cthulhu mark (`ui_logo`). Each dock is a window from `nv_imgui_begin_panel`, which
 scrolls on a vertical touch drag. Keep editor UI inside the docks and panel. The exceptions are the
@@ -217,31 +220,27 @@ stays behind the panel.
 `SceneDoc` that owns its `NvScene`, `SceneView`, behaviors and node bookkeeping. **Rules are the same in every scene**
 (Edit/Play, undo, autosave, selection, the save format, switching, errors); **only the file differs**: its objects, their types
 and values. Never branch on a scene's place in the list, its file or a node's id. An object gets behaviors of a fixed set of
-types (`spin`, `character`, `grid`, `chain`, `crowd`, `effects`; one `switch` branch each in `sandbox/behaviors.c`, no function
+types (`spin`, `character`; one `switch` branch each in `sandbox/behaviors.c`, no function
 pointers). A behavior's keys are rows of a `SceneField` table in `scene_file.c`: structure keys are read once, **parameters** are
-what the UI changes, the save keeps (`BHVR`) and undo takes back. The same row makes the reader, the Inspector and Stress tab
-widgets (`generator_rows`), the search and the undo label, so a new parameter is a row with its `label`, `keywords` and range,
-plus what it does in `behaviors.c`; a new behavior kind is a `BehaviorKind`, a table and a branch. Nodes a generator makes are not
-in the file: `SceneDoc.authored` says which the file made, and the save, undo and the gizmo leave the others alone while the
-Inspector shows them read-only. A glb is an asset for the whole sandbox (`Asset`): the first node that needs it loads it in
+what the UI changes, the save keeps (`BHVR`) and undo takes back. The same row makes the reader, the Inspector widgets, the search
+and the undo label, so a new parameter is a row with its `label`, `keywords` and range, plus what it does in `behaviors.c`; a new
+behavior kind is a `BehaviorKind`, a table and a branch. Every node of a scene is the file's: nothing in the sandbox makes nodes
+at run time (the stress scene that did is the stress sample now, docs/specs/samples.md). A glb is an asset for the whole sandbox (`Asset`): the first node that needs it loads it in
 place, the others copy it, and its material edits are saved once (`ASET`). The first scene that fails to build stops the
 sandbox; another is refused when picked and the View tab shows why. Debug builds export `_sandbox_debug_show_scene(index)`,
-`_sandbox_debug_scenes`, `_sandbox_debug_set_grid`, `_set_chain`, `_set_crowd`, `_set_effects` (the shown scene's first behavior
-of that type), `_sandbox_debug_built`, `_sandbox_debug_benchmark` and `_sandbox_debug_benchmark_start` for tests.
-- The sandbox autosaves its state (every scene and the editor settings; benchmark results and the nodes a generator made are not
-saved) to `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`): one `SCNE` per scene, named by its `FILE`. A new piece of
+`_sandbox_debug_scenes` for tests.
+- The sandbox autosaves its state (every scene and the editor settings) to `/nv-save/state.nvs` in IndexedDB (`docs/specs/save.md`): one `SCNE` per scene, named by its `FILE`. A new piece of
 editable state gets a tag in `sandbox/save.c` and a row in the spec's tables. Never change what an existing tag means
 without raising `SAVE_VERSION`: old saves must keep loading. Debug builds check at start that
 save, load, save gives the same bytes; tests call `Module._sandbox_debug_save_round_trip()` after
 editing.
 - Every scene has Edit and Play modes (`docs/specs/play.md`). In Edit mode nothing may move the
-scene by itself: anything time-driven (spins, walking, sweeps, jumps, churn, effects) goes in the
+scene by itself: anything time-driven (spins, walking, sweeps, jumps, effects) goes in the
 `sandbox->playing` branch of its behavior in `sandbox/behaviors.c`, and the animation only previews in place. Play
 snapshots the sandbox in the save format and Stop loads the shown scene back (`SAVE_PART_SCENE | SAVE_PART_SHOWN`), so
 anything Stop must restore has to be in the save. There is one playing state; switching scenes stops Play first. The autosave writes that snapshot while
 playing, and undo is off. Debug builds expose `Module._sandbox_debug_save_crc()` to compare the
-state before Play and after Stop. A benchmark run (`sandbox/stress.c`) starts Play in Edit mode, sets each step from the
-scene file's values, and ends with Stop, or puts the parameters back when Play was already running.
+state before Play and after Stop.
 - Undo (`docs/specs/undo.md`) needs no code at edit sites: whenever no widget, gizmo or popup is in
 use, `sandbox/undo.c` compares the selected nodes, the behaviors' parameters and the scene settings (written by
 `save_write_scope`) with the last commit. There is one history; a step carries its scene. So a new editable value is undoable once it is saved in
@@ -261,8 +260,7 @@ around their center, applying its change since the drag started to each node's s
 matrix; undo's Node scope holds every selected node, so such a drag is one step. The save keeps the
 others as `SELO`. Debug builds export `_sandbox_debug_selection_count`, `_sandbox_debug_selection(i)`,
 `_sandbox_debug_select(index, mode)`, `_sandbox_debug_set_multi`, `_sandbox_debug_tree_row`,
-`_sandbox_debug_find_node` and `_sandbox_debug_node` for tests. A node a generator made can be selected but not edited: it is not
-saved (`SELN`, `SELO` skip it), undo leaves it out and the gizmo does not move it.
+`_sandbox_debug_find_node` and `_sandbox_debug_node` for tests.
 - Desktop keyboard shortcuts are rows of one table in `sandbox/shortcuts.c` (`docs/specs/shortcuts.md`):
 add a key there, never a `igIsKeyPressed` at the action, so the menus' labels (`shortcut_label`),
 the help window (`?`) and the browser claim (`NvImgui.claims_key`: a bound key does not reach the
@@ -270,7 +268,7 @@ browser, so Ctrl+S is not "Save page") stay in step. Nothing fires while a text 
 edited, a widget is held, a popup is open or the gizmo is dragged. The phone UI has no shortcuts.
 Tests press keys with Playwright and read `Module._sandbox_debug_gizmo`, `_sandbox_debug_state` and the
 other debug exports.
-- Every widget of a searchable panel (Scene, Inspector, View, Textures and Stress tabs; the Console has
+- Every widget of a searchable panel (Scene, Inspector, View and Textures tabs; the Console has
 its own filters) goes through `search_row` (one widget carrying its label), `search_group` (several
 widgets or a button) or, for text that is no setting, `if (search_plain(sandbox))`; sections start with
 `search_section(sandbox, "Heading")`, which draws the heading with its first visible row
@@ -288,7 +286,7 @@ from `engine/strings.h`; each executable keeps its own table of Korean rows (the
 the engine by `sandbox_strings_init`) and each string needs a row there (`docs/specs/korean.md`).
 `tests/strings_test.mjs` (ctest) fails on a missing row or on a row that changes the printf
 conversions. Combo item arrays are built at the call with `T()`, not `local_persist`. Console log
-rows, node, clip and texture names and the benchmark's copied table stay English. Text copied into a fixed
+rows and node, clip and texture names stay English; the samples' UI is English and does not use `T()`. Text copied into a fixed
 buffer ends with `nv_utf8_trim`, and cut with `nv_utf8_fit` (`engine/base.h`), never in the middle of a character. The desktop types
 through the text agent too (an input method composes there); a key that types no text is kept from it
 in `on_key`.
@@ -307,7 +305,8 @@ rects, rows, scroll, selection) for tests.
 (`+` when the tree has uncommitted changes) and, under it, the commit's subject line, cut to the
 viewport's width; every app draws it with `nv_imgui_draw_build_label` (`engine/imgui.h`), the sandbox adding its badge. `cmake/version.cmake` writes them into `nv_version.h` (`NV_GIT_COMMIT`,
 `NV_GIT_SUBJECT`) on every build, through the `<target>_version` target that `nv_add_version(<target>)`
-makes, so they are never those of an older configure. Beside the build it shows what the page downloaded
+makes (into `<binary dir>/<target>_version/`, so two targets of one CMake folder do not write one file), so they are never those of
+an older configure. Beside the build it shows what the page downloaded
 (`Sandbox.download_text`, from `nv_window_download_text`: the Resource Timing entries of `<target>.wasm`, `.data` and
 `.js`, the target being `Module.nvTarget`: "3.2 MB downloaded", or "from cache"). The label also gets a badge (a dot and the count of warnings and
 errors that arrived while the Console tab was not shown); a tap on it opens the Console tab
@@ -354,7 +353,7 @@ binds only the buffers it uses (an indirect-argument buffer cannot be bound wher
 Segments and decals are rings the CPU stages and uploads in runs; their shaders drop an expired slot by moving it
 outside the clip volume. Alpha particles are unsorted on purpose (`// TODO:` in `sandbox/effects.c`). Stats come back
 a frame or two late. Debug builds export `Module._sandbox_debug_vfx(n)`, `_sandbox_debug_vfx_fire(effect)`,
-`_sandbox_debug_set_effects(...)` (the shown scene's `effects` behavior, whose workload runs in Play), `_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
+`_sandbox_debug_post` and `_sandbox_debug_set_post(...)`; the scene's post settings are saved
 (`TONE`, `EXPO`, `BLOM`, `BLMI`).
 - The scene pass is multisampled by default (`docs/specs/msaa.md`): the sandbox sets `NvRenderer.msaa`
 (1 or 4; the View tab's Anti-aliasing combo, saved as `MSAA`), and `update_msaa` makes the
@@ -377,13 +376,22 @@ Assert on `nv_anim_find_joint` results.
 every animator, moves its `owner` node by root motion, aims look-at at `target_node` and fills
 `NvNode.attach` for nodes that follow a joint. Do not move those nodes by hand.
 - `nv_gltf_load_model` creates the skeleton and animator for a skinned model, under the `parent` it is given; call `nv_anim_init`
-first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so a generator keeps the characters it made.
-- The sandbox is this repository's executable. `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])`
+first. Animators are never destroyed (`nv_anim_free_animators` says how many are left), so the stress sample keeps the characters it made.
+- The sandbox and the samples are this repository's executables. `nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])`
 packs the files a program reads into `<target>.data`, read with `fopen`: `sandbox` takes the whole `assets/` directory (`ASSETS`, at
-`/assets`) and its `data/`. CI installs its Release and Debug builds into the `engine-web` artifact (`release/`, `debug/`). The sandbox has
-no hosted page: it runs from that artifact or a local build. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
+`/assets`) and its `data/`; a sample takes only the folders it reads (`PRELOAD`). CI installs their Release and Debug builds into the
+`engine-web` artifact (`release/`, `debug/`; the sandbox at the root, a sample in `<name>/`). Neither has a hosted page: they run from
+that artifact or a local build. The page goes where the target's files go: its `RUNTIME_OUTPUT_DIRECTORY` when set (each sample
+sets its own), else the calling CMake folder's binary directory. Debug builds keep their DWARF in `<target>.debug.wasm`, which only browser
 developer tools download.
-- `NV_BUILD_SANDBOX` and `NV_BUILD_TESTS` default to on only when this is the top-level project, so an app that adds the engine as a
+- A sample (`docs/specs/samples.md`) is one file of `samples/` and an executable of its own (an `add_sample` line in `samples/CMakeLists.txt`): it
+includes only `engine/` headers (never `sandbox/` or another sample), has its scene and logic fixed in C, and needs no input: no sliders or buttons, no script commands,
+no command-line options, only a camera drag. Its debug exports (`Module._<name>_debug_*`) only read, so a test loads it, waits and
+checks. Code two samples need is a question for the engine, not a file the samples share. The stress sample runs its benchmark by
+itself, step after step, logs the table at the end of each run and starts again; it exports `_stress_debug_stat`,
+`_stress_debug_built` and `_stress_debug_benchmark`; the triangle sample draws one triangle and exports `_triangle_debug_stat`. `just
+sample-web <name>` builds one for the web and serves it.
+- `NV_BUILD_SANDBOX`, `NV_BUILD_SAMPLES` and `NV_BUILD_TESTS` default to on only when this is the top-level project, so an app that adds the engine as a
 subdirectory builds the engine alone. The functions an app calls find the engine's files through `CMAKE_CURRENT_FUNCTION_LIST_DIR`,
 never `PROJECT_SOURCE_DIR` (the caller's project there), and the engine passes its parent the variables it needs (end of
 `CMakeLists.txt`). `tests/strings_test.mjs` takes folders relative to this repository's root, and an app runs it on its own folder
@@ -424,7 +432,7 @@ read and damage `/nv-save/state.nvs` (then `FS.syncfs(false, ...)`).
 A Windows PC has a display and a GPU, so the native build is run as it is, and its Debug build can be driven by a script
 (`docs/specs/d3d12_port.md`, "Debug exports and native tests"): `sandbox.exe --script <file> --out <dir>`
 runs one command a line in the app's frames (`size`, `call <export> <numbers>`, `frames`, `screenshot`, `move`, `mouse`, `wheel`,
-`key`, `text`, `close`, `quit`; the sandbox adds `benchmark`; `engine/debug_script.h`) and exits with 1 when
+`key`, `text`, `close`, `quit`; `engine/debug_script.h`; the samples take no script) and exits with 1 when
 the log holds an error. `call` finds the debug exports in the table the app gives (`sandbox_debug_calls` in `sandbox/main.c`): a new export is a row there. The Debug build turns on the D3D12 debug layer and
 GPU-based validation, so a run with no `[d3d12]` message in its log is the native counterpart of "no WebGPU error";
 `NV_D3D12_VALIDATION=0` turns them off for a timed run, `NV_STORAGE_DIR` points the save at a folder (a run starts from empty storage)

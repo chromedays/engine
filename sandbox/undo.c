@@ -15,18 +15,13 @@ internal UndoStep* step_at(Undo* undo, u32 i)
     return &undo->steps[(undo->first + i) % UNDO_MAX_STEPS];
 }
 
-// The nodes the Node scope follows: the shown scene's selection, the primary first (docs/specs/selection.md). What a generator made
-// is not saved, so it is not undoable either.
+// The nodes the Node scope follows: the shown scene's selection, the primary first (docs/specs/selection.md).
 internal u32 selected_nodes(Sandbox* sandbox, NvNodeId* out)
 {
     SceneView* view = sandbox_view(sandbox);
-    SceneDoc* doc = sandbox_doc(sandbox);
-    u32 count = 0;
-    for (u32 i = 0; i < selection_count(view); ++i) {
-        NvNodeId id = selection_get(view, i);
-        if (doc_authored(doc, id.index))
-            out[count++] = id;
-    }
+    u32 count = selection_count(view);
+    for (u32 i = 0; i < count; ++i)
+        out[i] = selection_get(view, i);
     return count;
 }
 

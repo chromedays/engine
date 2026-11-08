@@ -1,4 +1,4 @@
-// Building the scenes from their files (docs/specs/scene_file.md): the models, the palettes, the nodes and their components, the
+// Building the scenes from their files (docs/specs/scene_file.md): the models, the nodes and their components, the
 // behaviors, and the view. scene_file.c reads the text into plain data; this file makes the renderer's meshes and materials, the nodes
 // of the scene, and the runtime of the behaviors from it. The glb files the models name are assets for the whole sandbox, loaded by
 // the first node that needs one and copied by the others.
@@ -13,7 +13,7 @@
 #include <string.h>
 
 // The scenes of the sandbox, in the order the pickers list them. The first is the one shown at start.
-global const char* const scene_files[] = {"/data/showcase.nvscene", "/data/stress.nvscene", "/data/chess.nvscene"};
+global const char* const scene_files[] = {"/data/showcase.nvscene", "/data/chess.nvscene"};
 
 //
 // Assets
@@ -102,41 +102,6 @@ internal NvMeshId make_shape_mesh(Sandbox* sandbox, const ModelDesc* model)
 }
 
 //
-// Palettes
-//
-
-// A color wheel, so neighboring colors differ.
-internal void color_wheel(u32 i, u32 count, f32* rgb)
-{
-    f32 h = (f32)i / (f32)count * 6.0f;
-    f32 x = 1.0f - fabsf(fmodf(h, 2.0f) - 1.0f);
-    f32 r = 0, g = 0, b = 0;
-    switch ((u32)h % 6) {
-    case 0: r = 1; g = x; break;
-    case 1: r = x; g = 1; break;
-    case 2: g = 1; b = x; break;
-    case 3: g = x; b = 1; break;
-    case 4: r = x; b = 1; break;
-    default: r = 1; b = x; break;
-    }
-    rgb[0] = 0.15f + 0.8f * r;
-    rgb[1] = 0.15f + 0.8f * g;
-    rgb[2] = 0.15f + 0.8f * b;
-}
-
-// Color 0 is the base; the others go around the wheel.
-internal void make_palette(Sandbox* sandbox, const PaletteDesc* palette, NvMaterialId* out)
-{
-    NvMaterialDesc base = {.base_color = {palette->base[0], palette->base[1], palette->base[2], 1.0f}};
-    out[0] = nv_renderer_add_material(&sandbox->renderer, &base);
-    for (u32 i = 1; i < palette->wheel; ++i) {
-        NvMaterialDesc desc = {.base_color = {0, 0, 0, 1}};
-        color_wheel(i, palette->wheel, desc.base_color);
-        out[i] = nv_renderer_add_material(&sandbox->renderer, &desc);
-    }
-}
-
-//
 // Building a scene
 //
 
@@ -154,14 +119,11 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
     doc->desc = desc;
     NvScene* scene = NV_PUSH_STRUCT(&sandbox->permanent, NvScene);
     doc->scene = scene;
-    doc->authored = NV_PUSH_ARRAY(&sandbox->permanent, NV_MAX_NODES, u8);
 
     // The shape models are meshes of their own; a file model is loaded where the first node that uses it is.
     for (u32 m = 0; m < desc->model_count; ++m)
         if (!desc->models[m].is_file)
             doc->model_meshes[m] = make_shape_mesh(sandbox, &desc->models[m]);
-    for (u32 p = 0; p < desc->palette_count; ++p)
-        make_palette(sandbox, &desc->palettes[p], doc->palette_materials[p]);
 
     // The nodes, in the file's order: a parent comes before its children. A file model's root is the file's node itself.
     NvNodeId node_ids[SCENE_MAX_NODES];
@@ -227,7 +189,7 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
         nv_scene_get(scene, node_ids[n])->attach = (NvJointAttach){.animator = model->animator, .joint = (u32)joint};
     }
 
-    // The behaviors, in the file's order (the benchmark's steps name them by that place).
+    // The behaviors, in the file's order.
     if (!behaviors_build(sandbox, doc, scene, file_models, node_assets, node_ids))
         return 0;
 
@@ -244,15 +206,9 @@ internal b32 build_scene(Sandbox* sandbox, u32 index)
     sandbox_set_home(&doc->view);
 
     // Taken before anything can rename or move nodes: saves apply to nodes by their place in this tree, and only while it is the
-    // same tree. What exists now is what the file made; a generator's nodes come later.
+    // same tree.
     doc->layout = save_scene_layout(scene);
     memcpy(doc->ambient, desc->lighting.ambient, sizeof(doc->ambient));
-    for (u32 i = 1; i <= scene->node_count; ++i) {
-        if (scene->nodes[i].gen & 1) {
-            doc->authored[i] = 1;
-            ++doc->authored_count;
-        }
-    }
     doc->built = 1;
     return 1;
 }
@@ -315,37 +271,6 @@ NodeRuntime* doc_node(SceneDoc* doc, NvNodeId id)
     for (u32 i = 0; i < doc->node_count; ++i)
         if (doc->nodes[i].id.index == id.index && doc->nodes[i].id.gen == id.gen)
             return &doc->nodes[i];
-    return NULL;
-}
-
-b32 doc_authored(const SceneDoc* doc, u32 index)
-{
-    return index < NV_MAX_NODES && doc->authored[index];
-}
-
-Behavior* doc_generator_of(SceneDoc* doc, u32 index)
-{
-    NvScene* scene = doc->scene;
-    if (doc_authored(doc, index))
-        return NULL;
-    while (index && !doc_authored(doc, index))
-        index = scene->nodes[index].parent;
-    if (!index)
-        return NULL;
-    // `index` is the file's node the generated one hangs from: the generator on it.
-    for (u32 i = 0; i < doc->behavior_count; ++i) {
-        Behavior* behavior = &doc->behaviors[i];
-        if (scene_behavior_def(behavior->desc.kind)->generator && behavior->node.index == index)
-            return behavior;
-    }
-    return NULL;
-}
-
-Asset* sandbox_character_asset(Sandbox* sandbox)
-{
-    for (u32 i = 0; i < sandbox->asset_count; ++i)
-        if (sandbox->assets[i].loaded && sandbox->assets[i].model.skeleton.index)
-            return &sandbox->assets[i];
     return NULL;
 }
 

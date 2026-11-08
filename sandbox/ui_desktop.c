@@ -3,7 +3,7 @@
 #include <stdio.h>
 
 // The desktop UI (docs/specs/layout.md): a top bar with the menus and the centered Play / Stop,
-// docks left (Scene), right (Inspector, View) and below (Console, Stress), and the scene viewport
+// docks left (Scene), right (Inspector, View) and below (Console), and the scene viewport
 // in the middle.
 
 #define DESKTOP_TOP_BAR 28.0f     // CSS pixels
@@ -64,7 +64,7 @@ void desktop_layout(Sandbox* sandbox, f32 width, f32 height, f32 ratio)
     // A message for a tab that lives in the bottom dock shows the dock.
     if (sandbox->open_textures)
         docks->show_right = 1; // the Textures tab lives in the right dock
-    if (sandbox->open_console || sandbox->open_stress) {
+    if (sandbox->open_console) {
         docks->show_bottom = 1;
         docks->bottom_open = 1;
     }
@@ -258,7 +258,7 @@ internal void bottom_dock(Sandbox* sandbox)
         // The Hide button sits at the tab strip's right end, drawn before the tabs so they keep the cursor.
         ImVec2_c start = igGetCursorPos();
         f32 hide_width = igCalcTextSize(T("Hide"), NULL, false, -1.0f).x + igGetStyle()->FramePadding.x * 2.0f;
-        // Left of the scrollbar the stress statistics bring.
+        // Left of the scrollbar a long tab brings.
         igSetCursorPos((ImVec2_c){igGetWindowWidth() - hide_width - igGetStyle()->WindowPadding.x - igGetStyle()->ScrollbarSize, start.y});
         if (igButton(TL("Hide###bottom"), (ImVec2_c){0.0f, 0.0f}))
             docks->bottom_open = 0;
@@ -268,14 +268,6 @@ internal void bottom_dock(Sandbox* sandbox)
             if (ui_begin_console_tab(sandbox)) {
                 console_tab(sandbox);
                 igEndTabItem();
-            }
-            if (stress_tab_shown(sandbox)) {
-                ImGuiTabItemFlags stress_flags = sandbox->open_stress ? ImGuiTabItemFlags_SetSelected : 0;
-                sandbox->open_stress = 0;
-                if (igBeginTabItem(TL("Stress"), NULL, stress_flags)) {
-                    stress_ui(sandbox);
-                    igEndTabItem();
-                }
             }
             igEndTabBar();
         }

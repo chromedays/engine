@@ -1,7 +1,7 @@
-add_executable(sandbox main.c behaviors.c console.c debug_script.c effects.c save.c scene_file.c scenes.c search.c selection.c shortcuts.c strings.c stress.c
-    textures.c ui.c ui_desktop.c ui_phone.c undo.c)
+add_executable(sandbox main.c behaviors.c console.c debug_script.c effects.c save.c scene_file.c scenes.c search.c selection.c shortcuts.c strings.c textures.c
+    ui.c ui_desktop.c ui_phone.c undo.c)
 target_link_libraries(sandbox PRIVATE nv)
 nv_setup_executable(sandbox ROOT ASSETS "${PROJECT_SOURCE_DIR}/assets" PRELOAD "${CMAKE_CURRENT_SOURCE_DIR}/data@/data")
 
-# The build label and the benchmark report name the commit the build comes from and its build type (nv_version.h, NV_BUILD_NAME).
+# The build label names the commit the build comes from and its build type (nv_version.h, NV_BUILD_NAME).
 nv_add_version(sandbox)

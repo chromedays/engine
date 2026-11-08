@@ -85,6 +85,12 @@ web config="Debug" port="8000": (_web-configure config)
     cmake --build {{web_build_dir}}/{{config}}
     node tools/dev_server.mjs --build {{web_build_dir}}/{{config}} --root {{web_build_dir}}/{{config}}/sandbox --port {{port}}
 
+# Build a sample (samples/<app>.c: stress, triangle) and serve it on http://localhost:<port>/ (docs/specs/samples.md). A name that is
+# no sample stops at the build, which has no such target.
+sample-web app="stress" config="Debug" port="8000": (_web-configure config)
+    cmake --build {{web_build_dir}}/{{config}} --target {{app}}
+    node tools/dev_server.mjs --build {{web_build_dir}}/{{config}} --root {{web_build_dir}}/{{config}}/samples/{{app}} --port {{port}}
+
 # The recipes below are the Linux visual regression test (docs/specs/visual_regression.md): the Wayland windowed build,
 # run explicitly, never by CI.
 

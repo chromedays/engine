@@ -7,11 +7,14 @@
 
 상태: 구현됨 (2026-10-01). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 검색할 수 있는 패널은 Scene, Inspector, View, Textures다. 아래에서 스트레스 씬과 Stress 탭을 말하는 곳은 그때의 기록이다.
+
 ### 목표
 
 Unreal Editor처럼 입력해서 찾는다, 두 가지 방식으로:
 
-1. **패널 검색 상자.** Console을 뺀 모든 에디터 패널 (Scene 트리, Inspector, View, Textures, Stress 탭) 맨 위의 상자가
+1. **패널 검색 상자.** Console을 뺀 모든 에디터 패널 (Scene 트리, Inspector, View, Textures 탭) 맨 위의 상자가
    입력하는 대로 그 패널을 거른다: Scene 트리는 맞는 노드와 그 부모를 남기고, 다른 패널은 섹션 제목 아래 맞는 행을
    남긴다. World Outliner와 Details 패널의 "Search Details"처럼 동작한다.
 2. **명령 팔레트.** 상자 하나 (데스크톱에서 Ctrl+Shift+P)가 모든 것을 한 번에 검색한다: 액션 (단축키 표와 몇 개 더),
@@ -44,7 +47,7 @@ Console은 자체 레벨 필터 (`console.md`)를 유지하고 상자를 받지 
 
 | 주제 | 결정 |
 |---|---|
-| 패널 | Scene, Inspector, View, Textures, Stress, 두 UI 모두. Console은 아님 |
+| 패널 | Scene, Inspector, View, Textures, 두 UI 모두. Console은 아님 |
 | 상자 | 패널 폭에 걸친 "Search" 힌트의 입력, 내용 위에, 텍스트가 있는 동안 지우기 버튼 (×)과 함께. 스크롤되어 사라지지 않는다: 아래 내용이 자식 창 안에서 스크롤되며, 터치 드래그 스크롤 (`nv_imgui_touch_scroll`)을 유지한다 |
 | 상자 안의 키 | Escape는 지우고 (떠나고); Enter는 떠난다. 상자를 편집하는 동안 모든 텍스트 필드처럼 단축키는 발동하지 않는다 |
 | 패널마다 질의 하나 | 각 패널은 자체 텍스트를 가지며, 탭, 씬, 선택을 바꿔도 유지된다 (Unreal의 Details 검색이 다른 액터를 선택해도 남는 것처럼). 저장하지 않고 undo되지 않는다 |
@@ -80,7 +83,7 @@ if (search_row(&sandbox->search, "Anti-aliasing", "msaa samples"))
 | 창 | 상단 바 아래 가운데의 모달 팝업: 데스크톱에서 폭 560 px, 폰에서 캔버스 폭에서 여백을 뺀 것; 열 때 포커스되는 상자와 최대 12개의 결과 행, 그 너머는 스크롤. 상단 바를 결코 덮지 않는다 |
 | 키 | Up과 Down은 강조된 행을 옮기고 (돌아감), Page Up과 Page Down은 한 페이지씩, Enter는 그것을 실행, Escape는 닫는다. 마우스 클릭이나 탭은 행을 실행한다. 어디서 입력하든 상자로 간다 |
 | 행 | 각 행: 왼쪽에 회색으로 종류 (Action, Node, Setting), 맞은 부분이 강조된 이름, 오른쪽에 단축키 (액션), 부모의 이름 (노드) 또는 패널과 섹션 (설정) |
-| 액션 | 실행할 것이 있는 단축키 표의 모든 행, 더하기 팔레트만 제공하는 행 (키 없음): Show save, Reset..., Showcase / Stress 씬 보이기, Textures 탭 열기, 콘솔 지우기. 그것들은 표 하나다: `Shortcut`이 `Command`가 되고, 조합 키 없는 명령은 팔레트 전용이다. 지금 적용되지 않는 액션 (`when`)은 회색으로 마지막에 나열되고 실행할 수 없다 |
+| 액션 | 실행할 것이 있는 단축키 표의 모든 행, 더하기 팔레트만 제공하는 행 (키 없음): Show save, Reset..., 씬 목록의 씬마다 그 씬 보이기 (Showcase, Chess), Textures 탭 열기, 콘솔 지우기. 그것들은 표 하나다: `Shortcut`이 `Command`가 되고, 조합 키 없는 명령은 팔레트 전용이다. 지금 적용되지 않는 액션 (`when`)은 회색으로 마지막에 나열되고 실행할 수 없다 |
 | 노드 | 보이는 씬의 모든 노드. Enter는 트리에서 클릭하듯 그것을 선택하고 Inspector를 연다; Shift+Enter는 공전 점도 그리로 옮긴다 (F). 스트레스 씬에서는 노드 결과가 최대 200개 나열되고 "and N more" |
 | 설정 | 검색 가능한 패널이 가진 모든 행, `search_row`가 행을 기록하고 false를 돌려주어 아무것도 그리지 않는 수집 모드로 그려서 모은다. Inspector의 행은 현재 선택의 것이다. Enter는 행의 도크와 탭을 보여 주고 (숨겨져 있으면 도크를 열고) 행의 라벨을 그 패널의 검색 상자에 넣으므로, 설정이 거기서 첫 번째가 된다 |
 | 빈 질의 | 팔레트에서 실행한 최근 액션 8개 (저장하지 않음), 그다음 표 순서의 모든 액션 |
@@ -179,12 +182,15 @@ if (search_row(&sandbox->search, "Anti-aliasing", "msaa samples"))
 
 Status: implemented (2026-10-01). Changes to this spec are agreed first.
 
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The searchable panels are Scene, Inspector, View and Textures. Where the text below speaks of the stress scene or the Stress tab, it is the record of that time.
+
 ### Goal
 
 Find things by typing, as in Unreal Editor, in two ways:
 
 1. **Panel search boxes.** A box at the top of every editor panel except the Console (the Scene
-   tree, Inspector, View, Textures and Stress tabs) filters that panel as you type: the Scene tree
+   tree, Inspector, View and Textures tabs) filters that panel as you type: the Scene tree
    keeps the matching nodes and their parents, the other panels keep the matching rows under their
    section headings. This works like the World Outliner and the Details panel's "Search Details".
 2. **A command palette.** One box (Ctrl+Shift+P on the desktop) searches everything at once:
@@ -221,7 +227,7 @@ Recommendation: our matcher and widgets. No third-party library.
 
 | Topic | Decision |
 |---|---|
-| Panels | Scene, Inspector, View, Textures and Stress, on both UIs. Not the Console |
+| Panels | Scene, Inspector, View and Textures, on both UIs. Not the Console |
 | The box | An input with the hint "Search" across the panel's width, above its content, with a clear button (×) while it has text. It does not scroll away: the content below scrolls in a child window, which keeps the touch-drag scroll (`nv_imgui_touch_scroll`) |
 | Keys in the box | Escape clears it (and leaves it); Enter leaves it. While the box is being edited shortcuts do not fire, as for every text field |
 | One query per panel | Each panel keeps its own text, kept when switching tabs, scenes or selections (as Unreal's Details search stays when selecting another actor). Not saved, not undoable |
@@ -257,7 +263,7 @@ them all. `search_row` also records the row for the palette (below). This become
 | Window | A modal popup centered under the top bar: 560 px wide on the desktop, the canvas's width less the margins on the phone; a box focused on open and up to 12 result rows, scrolling beyond that. It never covers the top bar |
 | Keys | Up and Down move the highlighted row (wrapping), Page Up and Page Down by a page, Enter runs it, Escape closes. A mouse click or a tap runs a row. Typing anywhere goes to the box |
 | Rows | Each row: its kind (Action, Node, Setting) greyed on the left, its name with the match highlighted, and on the right the shortcut keys (actions), the parent's name (nodes) or the panel and section (settings) |
-| Actions | Every row of the shortcut table that has something to run, plus rows that only the palette offers (no keys): Show save, Reset..., Show the Showcase / Stress scene, Open the Textures tab, Clear the console. They are one table: `Shortcut` becomes `Command`, and a command without a chord is palette-only. Actions that do not apply now (`when`) are listed last, greyed, and cannot run |
+| Actions | Every row of the shortcut table that has something to run, plus rows that only the palette offers (no keys): Show save, Reset..., Show the <title> scene for each scene of the list (Showcase, Chess), Open the Textures tab, Clear the console. They are one table: `Shortcut` becomes `Command`, and a command without a chord is palette-only. Actions that do not apply now (`when`) are listed last, greyed, and cannot run |
 | Nodes | Every node of the shown scene. Enter selects it and opens the Inspector, as a click in the tree does; Shift+Enter also moves the orbit point to it (F). In the stress scene at most 200 node results are listed, with "and N more" |
 | Settings | Every row the searchable panels have, collected by drawing them in a collect mode where `search_row` records the row and returns false, so nothing is drawn. The Inspector's rows are those of the current selection. Enter shows the row's dock and tab (opening the dock if hidden) and puts the row's label into that panel's search box, so the setting is the first thing there |
 | Empty query | The last 8 actions run from the palette (not saved), then every action in table order |

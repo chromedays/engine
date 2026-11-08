@@ -184,16 +184,13 @@ internal void write_view(NvChunkWriter* w, SceneDoc* doc)
     nv_chunk_u32(w, TAG_FOLW, view->follow_selection);
     nv_chunk_f32s(w, TAG_ORBT, &view->orbit.target.x, 3);
     nv_chunk_f32s(w, TAG_PAN, &view->pan.x, 3);
-    // What a generator made is not saved, so it is not in the selection either: the first node of the file the selection holds is the
-    // primary, the rest follow.
+    // The primary, then the others.
     u32 path[SAVE_MAX_PATH];
     u32 selected_length = 0;
     u32 others[(SELECTION_MAX - 1) * (SAVE_MAX_PATH + 1)];
     u32 count = 0;
     for (u32 i = 0; i < selection_count(view); ++i) {
         NvNodeId id = selection_get(view, i);
-        if (!doc_authored(doc, id.index))
-            continue;
         if (!selected_length) {
             NodePath primary = path_of(scene, id.index, path);
             selected_length = primary.length; // 0 when it is too deep to save
@@ -398,10 +395,8 @@ internal void write_scene(NvChunkWriter* w, Sandbox* sandbox, SceneDoc* doc)
     nv_chunk_u32(w, TAG_LAYT, doc->layout);
     write_view(w, doc);
     write_old_tags(w, doc);
-    for (u32 index = doc->scene->first_root; index; index = next_in_tree(doc->scene, index)) {
-        if (doc_authored(doc, index)) // what a generator made is the generator's, not saved
-            write_node(w, sandbox, doc, index);
-    }
+    for (u32 index = doc->scene->first_root; index; index = next_in_tree(doc->scene, index))
+        write_node(w, sandbox, doc, index);
     for (u32 i = 0; i < doc->behavior_count; ++i)
         write_behavior(w, doc, &doc->behaviors[i]);
     nv_chunk_end(w);
@@ -845,8 +840,7 @@ internal void read_node(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, Scene
     if (!node_path.ok || !node_path.count)
         return;
     u32 index = node_at(doc->scene, path, node_path.count);
-    // Only the file's nodes are saved: a path that now leads to a generator's means the tree is not the saved one.
-    read_node_fields(r, chunk, sandbox, doc, index && doc_authored(doc, index) ? index : 0, apply);
+    read_node_fields(r, chunk, sandbox, doc, index, apply);
 }
 
 // The scene a SCNE is of: the one whose file its FILE names; without one, the first's (older saves have a single SCNE).

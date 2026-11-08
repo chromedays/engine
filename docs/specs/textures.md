@@ -7,6 +7,9 @@
 
 상태: 구현됨 (2026-09-30). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 아래의 스트레스 씬은 그때의 기록이다.
+
 참고 (2026-10-12, `d3d12_port.md`): 아래의 `WGPUTexture`, `WGPUTextureFormat`, `WGPUStoreOp_Discard`는 이제 `NvGpuTexture`, `NvGpuFormat`, 패스의 저장 동작이다(`engine/gpu.h`). 미리보기 파이프라인과 `textureLoad`로 깊이 읽기는 두 백엔드에서 같다(S9의 세 그림이 SwiftShader 기준선과 같다). "WebGPU 오류 없음"의 네이티브 쪽은 D3D12 디버그 레이어와 GPU 기반 검증의 메시지가 로그에 0개인 것이다.
 
 ### 목표
@@ -131,6 +134,9 @@ Android에서 Vulkan에 닿는다.
 ## English
 
 Status: implemented (2026-09-30). Changes to this spec are agreed first.
+
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> The stress scene below is the record of that time.
 
 ### Goal
 

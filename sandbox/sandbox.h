@@ -1,10 +1,9 @@
 #pragma once
 
 // The nv sandbox: an editor and test ground for the engine. Its scenes are text files (sandbox/data/*.nvscene,
-// docs/specs/scene_file.md): a showcase with a planet and moon and an animated character, and a stress scene that loads the
-// engine with many objects (docs/specs/stress.md). scene_file.c reads a file, scenes.c builds each scene of the list, behaviors.c
-// runs what their objects do, and the panels (ui.c) inspect and change them. main.c owns the frame, stress.c the Stress tab and
-// the benchmark.
+// docs/specs/scene_file.md): a showcase with a planet and moon and an animated character, and a chess board. scene_file.c reads a
+// file, scenes.c builds each scene of the list, behaviors.c runs what their objects do, and the panels (ui.c) inspect and change
+// them. main.c owns the frame. (The stress scene is a sample of its own now: samples/stress, docs/specs/samples.md.)
 
 #include <engine/anim.h>
 #include <engine/camera.h>
@@ -39,13 +38,9 @@
 #define SCENE_PATH_SIZE 96          // a file path, with its NUL
 #define SCENE_MAX_MODELS 32
 #define SCENE_MAX_SHAPES 8          // shape lines in a model
-#define SCENE_MAX_PALETTES 4
-#define SCENE_MAX_PALETTE_COLORS 256
-#define SCENE_MAX_NODES 256         // file nodes (not the ones generators make)
+#define SCENE_MAX_NODES 256         // file nodes
 #define SCENE_MAX_DEPTH 8           // nested nodes; the save's node paths are longer than this
 #define SCENE_MAX_BEHAVIORS 64
-#define SCENE_MAX_STEPS 16
-#define SCENE_MAX_STEP_LINES 4
 #define SCENE_MAX_VERTICES 4096     // of a shape model
 
 //
@@ -106,10 +101,6 @@ typedef struct JumpDesc {
 typedef enum BehaviorKind {
     BEHAVIOR_SPIN,
     BEHAVIOR_CHARACTER,
-    BEHAVIOR_GRID,
-    BEHAVIOR_CHAIN,
-    BEHAVIOR_CROWD,
-    BEHAVIOR_EFFECTS,
     BEHAVIOR_COUNT,
 } BehaviorKind;
 
@@ -133,50 +124,6 @@ typedef struct CharacterDesc {
     s32 look_node_index; // into SceneDesc.nodes, -1 without a look target
 } CharacterDesc;
 
-typedef struct GridDesc {
-    char model[SCENE_ID_SIZE];
-    char palette[SCENE_ID_SIZE]; // empty for a file model
-    u32 max;
-    u32 columns;
-    f32 spacing, height, scale;
-    u32 on;
-    u32 count;
-    u32 colors_on;
-    u32 colors;
-    u32 churn_on;
-    u32 churn;
-    s32 model_index, palette_index; // -1: none
-} GridDesc;
-
-typedef struct ChainDesc {
-    char model[SCENE_ID_SIZE];
-    char palette[SCENE_ID_SIZE];
-    u32 stride;
-    u32 max;
-    NvVec3 link;
-    f32 twist, wobble;
-    u32 on;
-    u32 count;
-    s32 model_index, palette_index;
-} ChainDesc;
-
-typedef struct CrowdDesc {
-    char model[SCENE_ID_SIZE];
-    u32 max;
-    u32 columns;
-    f32 spacing;
-    f32 offset; // seconds
-    u32 on;
-    u32 count;
-    s32 model_index;
-} CrowdDesc;
-
-typedef struct EffectsDesc {
-    f32 area[2]; // x and z, m
-    u32 on;
-    u32 particles, explosions, missiles, beams, decals;
-} EffectsDesc;
-
 typedef struct BehaviorDesc {
     BehaviorKind kind;
     s32 node; // index into SceneDesc.nodes
@@ -184,10 +131,6 @@ typedef struct BehaviorDesc {
     union {
         SpinDesc spin;
         CharacterDesc character;
-        GridDesc grid;
-        ChainDesc chain;
-        CrowdDesc crowd;
-        EffectsDesc effects;
     };
 } BehaviorDesc;
 
@@ -195,7 +138,6 @@ typedef struct BehaviorDef {
     const char* name; // the block's key in the file
     const SceneField* fields;
     u32 field_count;
-    b32 generator; // makes nodes (at most one per node)
 } BehaviorDef;
 
 const BehaviorDef* scene_behavior_def(BehaviorKind kind);
@@ -230,13 +172,6 @@ typedef struct ModelDesc {
     char clips[SCENE_PATH_SIZE];
     RootMotionDesc root_motion;
 } ModelDesc;
-
-typedef struct PaletteDesc {
-    char id[SCENE_ID_SIZE];
-    u32 line;
-    f32 base[3];
-    u32 wheel; // colors 1 to wheel - 1
-} PaletteDesc;
 
 // The scene's light besides its lights: ambient is added to every surface, shadowed or not. Without a `lighting` block it is 0.15 each.
 typedef struct LightingDesc {
@@ -274,35 +209,16 @@ typedef struct NodeDesc {
     char attach[SCENE_ID_SIZE]; // empty: not attached
 } NodeDesc;
 
-// One line of a benchmark step: `<node id> <key> <value>`.
-typedef struct StepLine {
-    s32 behavior; // into SceneDesc.behaviors
-    u32 field;    // into the behavior's SceneField table: a parameter with one number
-    u32 value;    // the number's bits (an f32 or a u32, as the field's kind says)
-} StepLine;
-
-typedef struct StepDesc {
-    char name[SCENE_ID_SIZE];
-    StepLine lines[SCENE_MAX_STEP_LINES];
-    u32 line_count;
-} StepDesc;
-
 typedef struct SceneDesc {
     char title[SCENE_ID_SIZE];
     ViewDesc view;
     LightingDesc lighting;
-    PaletteDesc palettes[SCENE_MAX_PALETTES];
-    u32 palette_count;
     ModelDesc models[SCENE_MAX_MODELS];
     u32 model_count;
     NodeDesc nodes[SCENE_MAX_NODES];
     u32 node_count;
     BehaviorDesc behaviors[SCENE_MAX_BEHAVIORS];
     u32 behavior_count;
-    b32 has_benchmark;
-    f32 warmup, measure; // seconds
-    StepDesc steps[SCENE_MAX_STEPS];
-    u32 step_count;
 } SceneDesc;
 
 typedef struct SceneRead {
@@ -314,20 +230,15 @@ typedef struct SceneRead {
 // Reads `text` (a .nvscene file) into `desc`, which is cleared first (it is large: do not put it on the stack).
 SceneRead scene_read(SceneDesc* desc, const char* file_name, const char* text, umm size);
 
-// The index of the node, model or palette with that id, or -1.
+// The index of the node or model with that id, or -1.
 s32 scene_find_node(const SceneDesc* desc, const char* id);
 s32 scene_find_model(const SceneDesc* desc, const char* id);
-s32 scene_find_palette(const SceneDesc* desc, const char* id);
-
-// The generator (a behavior that makes nodes) of a node, or -1.
-s32 scene_find_generator(const SceneDesc* desc, s32 node);
 
 // The Korean table of this sandbox (sandbox/strings.c): hands it to the engine's T() and TL(). Call once, before the first frame.
 void sandbox_strings_init(void);
 
 // The commit's hash and subject line (nv_version.h, written by cmake/version.cmake on every
-// build) and the build type (set by sandbox/CMakeLists.txt); shown on the build label, in the View tab
-// and in benchmark reports.
+// build) and the build type (set by sandbox/CMakeLists.txt); shown on the build label and in the View tab.
 #include "nv_version.h"
 #ifndef NV_BUILD_NAME
 #define NV_BUILD_NAME "unknown"
@@ -338,7 +249,6 @@ void sandbox_strings_init(void);
 #define TREE_ROWS_MAX 4096 // Scene tab rows a Shift+click range can reach
 
 #define SANDBOX_MAX_SCENES 4 // scenes in the list (scenes.c)
-#define EFFECTS_MAX_MISSILES 2000 // the most missiles an `effects` behavior holds in flight
 
 // Which editor UI runs: chosen once at start from the primary pointer (docs/specs/layout.md).
 typedef enum UiMode {
@@ -574,55 +484,12 @@ typedef struct SceneView {
     NvOrbitCamera home;    // the view the scene starts with, for Home (sandbox_set_home)
 } SceneView;
 
-// CPU time of the frame's stages, in milliseconds.
-typedef struct FrameTimes {
-    f64 frame; // from one frame to the next
-    f64 anim;  // nv_anim_update_scene
-    f64 scene; // nv_scene_update
-    f64 draw;  // nv_renderer_draw
-    f64 ui;    // building and recording ImGui
-    f64 gpu;   // the scene pass on the GPU; 0 where the browser has no timestamps
-    f64 gpu_shadow; // the shadow pass on the GPU; 0 without timestamps or shadows
-    f64 gpu_upscale; // the upscale pass on the GPU; 0 without timestamps
-    f64 gpu_bloom;   // the bloom passes on the GPU; 0 without timestamps or bloom
-    f64 gpu_particles; // the particle compute passes on the GPU; 0 without timestamps or effects
-} FrameTimes;
-
-typedef struct BenchmarkResult {
-    u32 frames;
-    FrameTimes average;
-    f64 worst_frame;
-    f64 particles; // live particles, averaged over the step (a sum until it ends)
-} BenchmarkResult;
-
-// How busy the frame is: the larger of the CPU stages and the GPU pass, as a share of the frame
-// time. Unlike the frame time it keeps rising while vsync holds the frame rate at the display's.
-f64 sandbox_load(const FrameTimes* t);
-
-// The benchmark of the shown scene (docs/specs/scene_file.md, "Benchmark"): steps come from the scene file.
-typedef struct Benchmark {
-    b32 running;
-    u32 scene;                          // the scene the run (and the results) are of
-    b32 started_play;                   // the run began the Play it ends with Stop
-    u32 step;
-    f64 step_start;                     // seconds
-    BehaviorDesc before[SCENE_MAX_BEHAVIORS]; // the generators' parameters before the run, put back when it ends without Stop
-    BehaviorDesc applied[SCENE_MAX_BEHAVIORS]; // ... and as the current step set them: a change means the user touched one
-    NvShadowSettings shadows;           // the shadow settings the last run measured with
-    u32 msaa;                           // the sample count it measured with
-    char resolution[64];                // the scene's resolution it measured at ("585 x 497, scale 1/2")
-    char step_names[SCENE_MAX_STEPS][SCENE_ID_SIZE]; // the steps of the scene it measured
-    BenchmarkResult results[SCENE_MAX_STEPS];
-    u32 result_count;
-} Benchmark;
-
 // Search (docs/specs/search.md): the boxes at the top of the panels and the command palette.
 typedef enum SearchPanel {
     SEARCH_SCENE,
     SEARCH_INSPECTOR,
     SEARCH_VIEW,
     SEARCH_TEXTURES,
-    SEARCH_STRESS,
     SEARCH_PANEL_COUNT,
 } SearchPanel;
 
@@ -752,45 +619,11 @@ typedef struct CharacterState {
     NvNodeId look_target;
 } CharacterState;
 
-// The generators' run state. The arrays are made when the scene is built, as large as the file's `max`.
-typedef struct GridState {
-    NvMeshId mesh;
-    const NvMaterialId* materials; // the palette's
-    u32 material_count;
-    NvNodeId* nodes;               // the cubes built, in order
-    u32 built;
-    u32 painted;                   // colors the cubes were last painted with; 0 = one material
-    u32 churn_cursor;
-} GridState;
-
-typedef struct ChainState {
-    NvMeshId mesh;
-    const NvMaterialId* materials; // the palette's
-    u32 material_count;
-    NvNodeId* nodes;
-    u32 built;
-    f32 time; // seconds of Play
-} ChainState;
-
-typedef struct CrowdState {
-    Asset* asset;
-    NvGltfModel* models; // the characters made; they are never removed, since animators cannot be
-    u32 created;
-    u32 active;          // the ones asked for, drawn and animating
-    b32 failed;          // the model did not load: no more characters are tried
-} CrowdState;
-
 // A test missile in flight: it leaves a trail and explodes where its life ends.
 typedef struct Flight {
     NvVec3 pos, vel;
     f32 life;
 } Flight;
-
-typedef struct EffectsState {
-    Flight* flights; // [EFFECTS_MAX_MISSILES]
-    u32 flight_count;
-    f32 swarm_carry, explosion_carry, decal_carry; // fractions of a burst not yet fired
-} EffectsState;
 
 // A behavior as it runs: `desc` holds its structure and its parameters as they are now.
 typedef struct Behavior {
@@ -799,10 +632,6 @@ typedef struct Behavior {
     union {
         SpinState spin;
         CharacterState character;
-        GridState grid;
-        ChainState chain;
-        CrowdState crowd;
-        EffectsState effects;
     };
 } Behavior;
 
@@ -816,20 +645,17 @@ typedef struct SceneDoc {
     SceneView view;
     NodeRuntime nodes[SCENE_MAX_NODES]; // the file's nodes, in the file's order
     u32 node_count;
-    u8* authored;     // [NV_MAX_NODES] 1 for a node the file made (and a model's nodes under it); the others are a generator's
-    u32 authored_count;
     Behavior behaviors[SCENE_MAX_BEHAVIORS]; // in the file's order, so an index is the SceneDesc's
     u32 behavior_count;
     NvMeshId model_meshes[SCENE_MAX_MODELS]; // the shape models'
-    NvMaterialId palette_materials[SCENE_MAX_PALETTES][SCENE_MAX_PALETTE_COLORS];
-    u32 layout; // save_scene_layout of the tree as built (before any generator)
+    u32 layout; // save_scene_layout of the tree as built
     bool show_bones;
     f32 ambient[3]; // the ambient light the scene is drawn with (chess_scene.md): from its file, then the save and the View tab
 } SceneDoc;
 
 // The effects the sandbox fires (effects.c).
 typedef struct Effects {
-    NvVfxEffectId explosion, sparks, smoke, missile, swarm;
+    NvVfxEffectId explosion, sparks, smoke, missile;
     NvVfxLineStyle missile_trail, laser;
     NvVfxDecalStyle scorch;
     Flight flights[8];
@@ -849,17 +675,6 @@ typedef struct Sandbox {
     f64 last_time;
 
     u32 shown; // the scene on screen: an index of docs
-
-    // Frame timing: the last frame, and averages and worst case over about a second.
-    FrameTimes times;
-    FrameTimes shown_average;
-    f64 shown_worst_frame;
-    FrameTimes window_sum;
-    f64 window_worst_frame;
-    u32 window_frames;
-    f64 window_start;
-
-    Benchmark benchmark;
 
     // The save as it was loaded at start: a scene not built yet keeps its saved bytes in it, and writes them back unchanged.
     u8* loaded_save;
@@ -920,7 +735,6 @@ typedef struct Sandbox {
 #endif
     b32 selection_full_warned;
     b32 open_inspector; // switch to the Inspector tab on the next frame
-    b32 open_stress;    // switch to the Stress tab on the next frame
     b32 open_console;   // switch to the Console tab on the next frame
     b32 open_textures;  // switch to the Textures tab on the next frame
     // The build label's box while it carries a badge, in CSS pixels (x0, y0, x1, y1), grown to a
@@ -964,12 +778,6 @@ b32 scenes_init(Sandbox* sandbox);
 b32 scenes_ensure(Sandbox* sandbox, u32 index);
 SceneDoc* sandbox_doc(Sandbox* sandbox); // the shown scene's
 NodeRuntime* doc_node(SceneDoc* doc, NvNodeId id); // the runtime of a node of the file, or NULL
-// Whether the file made this node, as opposed to a generator (docs/specs/scene_file.md, "Node budget"): the save, undo and the gizmo
-// leave the others alone.
-b32 doc_authored(const SceneDoc* doc, u32 index);
-// The generator whose nodes include this one, or NULL for a node of the file.
-Behavior* doc_generator_of(SceneDoc* doc, u32 index);
-Asset* sandbox_character_asset(Sandbox* sandbox);   // the first glb with a skeleton, whose clips the crowd plays
 // The materials of an asset's meshes, each once, in the order its mesh nodes use them: what the save keeps for the asset.
 u32 asset_materials(const Asset* asset, NvMaterialId* out, u32 capacity);
 // One instance of a file model: a new root under `parent` in `scene`. The first loads the glb with its clips; the others copy it.
@@ -985,7 +793,6 @@ void character_back_to_center(Sandbox* sandbox, Behavior* behavior);
 Behavior* behavior_find(SceneDoc* doc, BehaviorKind kind, NvNodeId node);
 Behavior* behavior_character_of(SceneDoc* doc, NvAnimatorId animator); // the character that animator belongs to, or NULL
 Behavior* behavior_first(SceneDoc* doc, BehaviorKind kind); // the first of a kind in the scene, or NULL
-void behaviors_clear_flights(Sandbox* sandbox); // drops what the `effects` behaviors have in flight
 BehaviorKind behavior_kind_by_name(const char* name);       // BEHAVIOR_COUNT without one of that name
 b32 behaviors_build(Sandbox* sandbox, SceneDoc* doc, NvScene* scene, const NvGltfModel* file_models, Asset** node_assets,
                     const NvNodeId* node_ids); // makes the runtime of the file's behaviors; 0 (logged) when one does not build
@@ -998,16 +805,6 @@ void behavior_apply(Sandbox* sandbox, Behavior* behavior); // after its paramete
 void behaviors_draw_bones(Sandbox* sandbox, SceneDoc* doc);
 void spin_section(Sandbox* sandbox, Behavior* behavior);      // Inspector sections
 void character_section(Sandbox* sandbox, Behavior* behavior);
-// A generator's parameters as rows (the Inspector's section for its node and the Stress tab's Workloads share them). `index` is its
-// place among the scene's behaviors, which keeps the widgets of two generators apart.
-void generator_rows(Sandbox* sandbox, Behavior* behavior, u32 index);
-void generator_section(Sandbox* sandbox, Behavior* behavior, u32 index); // the Inspector's, with its own heading
-// The generator's "Built: ..." line.
-void generator_status(Behavior* behavior, char* out, umm capacity);
-// The generator's parameter `key` (a SceneField key), for the benchmark and tests; NULL when it has none.
-const SceneField* behavior_parameter(const Behavior* behavior, const char* key);
-void* behavior_field(Behavior* behavior, const SceneField* field);
-b32 behavior_parameters_equal(const BehaviorDesc* a, const BehaviorDesc* b);
 
 // effects.c
 void effects_init(Sandbox* sandbox);               // makes the particle system and registers the effects
@@ -1027,15 +824,6 @@ void selection_add(Sandbox* sandbox, SceneView* view, NvNodeId id);    // adds i
 void selection_toggle(Sandbox* sandbox, SceneView* view, NvNodeId id); // adds it, or removes it if selected
 void selection_keep_primary(SceneView* view);
 void selection_prune(SceneView* view); // drops nodes that no longer exist
-
-// stress.c: the Stress tab (statistics, the generators' rows, the benchmark)
-b32 stress_tab_shown(Sandbox* sandbox);       // the shown scene has a generator or a benchmark
-void stress_after_frame(Sandbox* sandbox);    // after the frame's times are known: runs the benchmark
-void benchmark_start(Sandbox* sandbox);       // "Run benchmark": the shown scene's steps, in Play
-void benchmark_end(Sandbox* sandbox);         // Play ended: a run in progress is over (Stop put the parameters back)
-void benchmark_table_text(Sandbox* sandbox, char* text, umm capacity); // the results as the Copy button's text
-u32 stress_live_nodes(NvScene* scene);
-void stress_ui(Sandbox* sandbox);
 
 // ui.c: the UI chosen at start, and the sections both UIs draw into their own windows.
 void sandbox_layout(Sandbox* sandbox); // fills sandbox->layout from the canvas size; before nv_imgui_new_frame

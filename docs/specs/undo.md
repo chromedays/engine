@@ -7,6 +7,9 @@
 
 상태: 구현됨 (2026-09-28). 이 스펙의 변경은 먼저 합의한다.
 
+> 2026-11-08: 스트레스 씬은 샌드박스를 떠나 독립 실행 파일 `samples/stress.c`가 되었다(`samples.md`). 샌드박스에는 Stress 탭, 워크로드 동작(`grid`, `chain`, `crowd`, `effects`), 생성기가 만든 노드, 벤치마크와 그 디버그 export가 없다.
+> 모든 노드가 파일의 것이므로 선택된 모든 노드가 Node 범위에 든다. 아래의 생성기와 스트레스 씬은 그때의 기록이다.
+
 > 2026-10: undo는 이제 모든 씬에 있다 (`scene_file.md`). 이력은 하나이고 단계마다 자기 씬을 지닌다. 범위는 **노드**, **동작**(`BHVR`:
 > 행성의 속도, 캐릭터의 설정, 생성기의 수 등 씬 파일의 동작 파라미터; 예전의 **캐릭터**와 `ORBS`를 대신한다), **씬 설정**이다. 라벨은
 > "노드 이름 + 파라미터 이름표"다 (예: "planet Speed", "grid Cubes", "sword Visible"). 생성기가 만든 노드는 저장되지 않으므로 undo되지
@@ -80,6 +83,9 @@ undo되지 않는 것: 카메라 뷰 (yaw, pitch, 거리, 팬, 따라가기), �
 ## English
 
 Status: implemented (2026-09-28). Changes to this spec are agreed first.
+
+> 2026-11-08: The stress scene left the sandbox and is the standalone executable `samples/stress.c` now (`samples.md`). The sandbox has no Stress tab, workload behaviors (`grid`, `chain`, `crowd`, `effects`), nodes a generator made, benchmark or their debug exports.
+> Every node is the file's, so every selected node is in the Node scope. The generators and the stress scene below are the record of that time.
 
 > 2026-10: Undo is now in every scene (`scene_file.md`). There is one history, and each step carries its scene. The scopes are **Node**,
 > **Behaviors** (`BHVR`: the scene file's behavior parameters, such as a planet's speed, a character's settings and a generator's

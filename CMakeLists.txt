@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.30) # ozz-animation 0.17 needs 3.30
 project(engine LANGUAGES C CXX)
 
 # The engine is also used as a Git submodule by an app that adds it with add_subdirectory (README.md, "Using the engine
-# from another repository"). Then only the engine is built: the sandbox and the tests are this repository's own.
+# from another repository"). Then only the engine is built: the sandbox, the samples and the tests are this repository's own.
 option(NV_BUILD_SANDBOX "Build the sandbox" ${PROJECT_IS_TOP_LEVEL})
+option(NV_BUILD_SAMPLES "Build the samples, one executable each (docs/specs/samples.md)" ${PROJECT_IS_TOP_LEVEL})
 option(NV_BUILD_TESTS "Build the tests ctest runs" ${PROJECT_IS_TOP_LEVEL})
 # The Linux build draws into a Wayland window (docs/specs/visual_regression.md) unless this asks for the headless build (no
 # window, frames render offscreen). The visual regression test's app needs the window, and it is built only when asked for.
@@ -64,7 +65,8 @@ else()
 endif()
 
 # Emits <target>.js, .wasm and .manifest.json plus index.html (from web/index.html.in) into the
-# target's directory, and installs them into <prefix>/<target>/ as an install component ("web" unless COMPONENT says
+# target's directory (its RUNTIME_OUTPUT_DIRECTORY when set, else the binary directory of the CMakeLists.txt that calls this; several
+# executables made in one directory each set their own, or their pages would overwrite each other), and installs them into <prefix>/<target>/ as an install component ("web" unless COMPONENT says
 # otherwise).
 #   nv_setup_executable(<target> [ROOT] [COMPONENT <name>] [ASSETS <dir>] [PRELOAD <dir>@<path> ...])
 # ROOT installs into <prefix>/ instead, so the page is the package's index.html.
@@ -89,13 +91,17 @@ function(nv_setup_executable target)
     if(NV_WEB)
         set_target_properties(${target} PROPERTIES SUFFIX ".js")
         set(NV_WEB_TARGET "${target}")
-        configure_file("${root}/web/index.html.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/index.html" @ONLY)
+        # The page goes where the target's files go, so each executable has its own.
+        get_target_property(page_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
+        if(NOT page_dir)
+            set(page_dir "${CMAKE_CURRENT_BINARY_DIR}")
+        endif()
+        configure_file("${root}/web/index.html.in" "${page_dir}/index.html" @ONLY)
         set(files
             "$<TARGET_FILE_DIR:${target}>/${target}.js"
             "$<TARGET_FILE_DIR:${target}>/${target}.wasm"
             "$<TARGET_FILE_DIR:${target}>/${target}.manifest.json"
-            "${CMAKE_CURRENT_BINARY_DIR}/index.html")
+            "${page_dir}/index.html")
         if(CMAKE_BUILD_TYPE STREQUAL "Debug")
             target_link_options(${target} PRIVATE
                 "-gseparate-dwarf=$<TARGET_FILE_DIR:${target}>/${target}.debug.wasm"
@@ -158,20 +164,21 @@ function(nv_setup_executable target)
     endif()
 endfunction()
 
-# Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in the target's binary
-# directory (cmake/version.cmake rewrites it on every build, so it is never the commit of an older configure), and the build
-# type as NV_BUILD_NAME. Shown on build labels and in benchmark reports. The commit is that of the project that calls it: an
+# Names the commit a target's build comes from: its short hash and subject line, as nv_version.h in a folder of the target's own
+# (<binary directory>/<target>_version, so several targets made in one directory do not write one file; cmake/version.cmake
+# rewrites it on every build, so it is never the commit of an older configure), and the build type as NV_BUILD_NAME. Shown on build labels and in benchmark reports. The commit is that of the project that calls it: an
 # app with the engine as a submodule names its own.
 #   nv_add_version(<target>)
 function(nv_add_version target)
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/nv_version.h")
+    set(header_dir "${CMAKE_CURRENT_BINARY_DIR}/${target}_version")
+    set(header "${header_dir}/nv_version.h")
     add_custom_target(${target}_version
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${PROJECT_SOURCE_DIR} -DOUTPUT=${header}
                 -P ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/cmake/version.cmake
         BYPRODUCTS ${header}
         COMMENT "Recording the commit")
     add_dependencies(${target} ${target}_version)
-    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    target_include_directories(${target} PRIVATE ${header_dir})
     if(NV_WEB)
         target_compile_definitions(${target} PRIVATE NV_BUILD_NAME="${CMAKE_BUILD_TYPE}")
     else()
@@ -324,6 +331,9 @@ endif()
 add_subdirectory(engine)
 if(NV_BUILD_SANDBOX)
     add_subdirectory(sandbox)
+endif()
+if(NV_BUILD_SAMPLES)
+    add_subdirectory(samples)
 endif()
 if(NV_BUILD_TESTS)
     add_subdirectory(tests)

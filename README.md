@@ -125,8 +125,8 @@ engine/              each module's header and source side by side: base.h, math.
                      gpu.h, imgui.h, renderer.h, gltf.h, anim.h, chunk.h, storage.h, log.h, vfx.h and
                      their .c (anim.cpp wraps ozz-animation; everything else is C). `#include <engine/scene.h>`
 sandbox/             the sandbox: scenes read from text files (sandbox/data/*.nvscene): a showcase (a planet and
-                     moon, an animated character with a sword) and a stress scene with a benchmark, picked in the
-                     View tab, and an editor (node tree, inspector, view settings, stress workloads), with a
+                     moon, an animated character with a sword) and a chess board, picked in the
+                     View tab, and an editor (node tree, inspector, view settings), with a
                      desktop UI (docks around the viewport) and a phone UI (one tabbed panel),
                      Play / Stop at the top center of both. It
                      autosaves the showcase to the browser (IndexedDB), has undo and redo,
@@ -140,8 +140,11 @@ sandbox/             the sandbox: scenes read from text files (sandbox/data/*.nv
                      and a Textures tab shows the textures in use (material maps, shadow map,
                      depth target) with their mips and channels. The scene is drawn in linear HDR through tone
                      mapping (Clamp, PBR Neutral, ACES) and bloom, with GPU particles simulated by compute
-                     shaders (2 million by default), trails, beams and ground decals (the View tab's Effects
-                     and the stress scene's effects workload)
+                     shaders (2 million by default), trails, beams and ground decals (the View tab's Effects)
+samples/             one standalone executable per feature, each one file, linked to the engine alone, needing
+                     no input (docs/specs/samples.md): triangle.c draws one triangle; stress.c loads the engine
+                     with cubes, a deep chain, a crowd of animated characters and fire effects, and runs its
+                     benchmark by itself, step after step (`just sample-web stress`)
 assets/              binary assets (Git LFS)
 tests/               tests that need no browser (run with ctest under Node)
 tools/               offline asset scripts and the web builds' development server (dev_server.mjs)

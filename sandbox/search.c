@@ -12,7 +12,7 @@
 #define PALETTE_WIDTH 560.0f // CSS pixels
 #define PALETTE_MARGIN 12.0f
 
-local_persist const char* panel_names[SEARCH_PANEL_COUNT] = {"Scene", "Inspector", "View", "Textures", "Stress"};
+local_persist const char* panel_names[SEARCH_PANEL_COUNT] = {"Scene", "Inspector", "View", "Textures"};
 
 //
 // Matching
@@ -386,7 +386,7 @@ void search_panel_begin(Sandbox* sandbox, SearchPanel panel)
     ImVec2_c bottom = {top.x + avail.x, igGetCursorScreenPos().y + avail.y};
     if (igIsMouseHoveringRect(top, bottom, false))
         s->hover_panel = (s32)panel;
-    if (panel != SEARCH_SCENE && panel != SEARCH_STRESS)
+    if (panel != SEARCH_SCENE)
         s->right_panel = (s32)panel;
 
     igPushID_Int((int)panel + 100);
@@ -570,9 +570,7 @@ internal void run_result(Sandbox* sandbox, const PaletteResult* result, b32 shif
             sandbox->open_inspector = 1;
         else if (setting->panel == SEARCH_VIEW)
             sandbox->open_view = 1;
-        else if (setting->panel == SEARCH_STRESS)
-            sandbox->open_stress = 1;
-        if (sandbox->ui_mode == UI_DESKTOP && setting->panel != SEARCH_STRESS)
+        if (sandbox->ui_mode == UI_DESKTOP)
             sandbox->docks.show_right = 1;
         close_palette(s);
     }
@@ -669,8 +667,6 @@ internal void collect_settings(Sandbox* sandbox)
     if (igBegin("##search collect", NULL, flags)) {
         ui_inspector_tab(sandbox);
         ui_view_tab(sandbox);
-        if (stress_tab_shown(sandbox))
-            stress_ui(sandbox);
     }
     igEnd();
     s->collecting = 0;
