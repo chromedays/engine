@@ -414,8 +414,14 @@ section of `docs/CODING_STANDARD.md`.
 
 ## Testing without a display
 
-There is no physical display in cloud sessions. Headless Chromium renders WebGPU with
+The SwiftShader flags below are only for machines with no display and no GPU (cloud sessions). Never copy them to a machine
+with a display: they hide the real GPU and force software rendering. Check first: a set `DISPLAY` or `WAYLAND_DISPLAY`, or
+an existing `/dev/dri`, means a display/GPU may be present. When in doubt, try the real GPU first.
+- No display and no GPU: headless Chromium renders WebGPU with
 `--enable-unsafe-webgpu --enable-features=Vulkan --use-vulkan=swiftshader --use-webgpu-adapter=swiftshader --use-angle=swiftshader --disable-vulkan-fallback-to-gl-for-testing`.
+- Display and GPU present: run headless Chromium with only `--enable-unsafe-webgpu --enable-features=Vulkan` (none of the
+`--use-vulkan`, `--use-webgpu-adapter`, `--use-angle` overrides), or drive the user's desktop Chrome. Playwright launches
+headless by default, so just leave the SwiftShader args out; use `headless: false` or `channel: "chrome"` only for interactive use.
 Test both a Release build and a Debug build (the Debug build enables `NV_ASSERT`).
 When driving ImGui with Playwright, hold clicks for about 100 ms (`mouse.down`, wait, `mouse.up`);
 an instant click can land between frames and be missed, which real users never trigger.
