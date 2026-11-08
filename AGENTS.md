@@ -27,7 +27,7 @@ engine/                    each module's header and source side by side, include
                            base.h (types, asserts, arenas), math.h, icons.h (the icon font's NV_ICON_* strings; generated), scene.c/.h, window.h, gpu.h (the GPU API: handles,
                            buffers, textures, bind groups, pipelines, passes; no backend header; gpu_webgpu.c is its web backend and
                            the only file that calls WebGPU; gpu_d3d12.c is its Windows backend and the only file that calls D3D12), imgui.c/.h (Dear ImGui, ImGuizmo: drawing, previews),
-                           renderer.c/.h (meshes, materials, skinning, debug lines),
+                           renderer.c/.h (meshes, materials, skinning, debug lines, scene resolution, camera matrices, view rays),
                            gltf.c/.h (cgltf loading), anim.cpp/.h (skeletal animation over ozz-animation; our only
                            C++ file), chunk.c/.h (tagged binary files), file.c/.h (reading a packed file whole into an arena),
                            storage.h (files kept in IndexedDB), local_file.h (opening and saving files on the
@@ -49,7 +49,6 @@ engine/                    each module's header and source side by side, include
                            mesh.c/.h (vertex types; box, plane, sphere, cylinder, cone, capsule and torus primitives;
                            docs/specs/mesh.md), camera.c/.h (orbit camera math),
                            strings.c/.h (T, TL and the language; each executable brings its own table),
-                           renderer_cpu.c (the renderer's GPU-free parts: scene resolution, camera matrices, view rays)
                            shaders/*.slang (every shader of the engine, in Slang: docs/specs/slang_shader_port.md)
 sandbox/                   the sandbox (the engine's test ground): main.c (window, frame, debug exports), scene_file.c/.h (reads a
                            .nvscene file into plain data; no GPU), scenes.c (builds each scene of the list from its file), behaviors.c

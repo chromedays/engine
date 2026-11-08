@@ -1,4 +1,4 @@
-// The scene's resolution and the rays through its image (engine/renderer_cpu.c): Scale and Fixed with their three fits,
+// The scene's resolution and the rays through its image (engine/renderer.c): Scale and Fixed with their three fits,
 // viewports that are too small or empty, and a tap on a black bar.
 #include <engine/renderer.h>
 

@@ -63,9 +63,16 @@ nv_add_test(base_test base_test.c)
 # The mesh primitives in engine/mesh.h: no GPU, so nothing from the WebGPU port is needed.
 nv_add_test(mesh_test mesh_test.c ${PROJECT_SOURCE_DIR}/engine/mesh.c)
 
-# The scene's resolution and the rays through its image (engine/renderer_cpu.c): no GPU is used, but renderer.h includes the
-# WebGPU header, which the port provides (as for gpu_format_test); nothing is linked from it.
-nv_add_test(resolution_test resolution_test.c ${PROJECT_SOURCE_DIR}/engine/renderer_cpu.c ${PROJECT_SOURCE_DIR}/engine/scene.c)
+# The scene's resolution and the rays through its image (engine/renderer.c): the test builds the
+# renderer's file itself, with trap stubs for the GPU backend (tests/gpu_stubs.c, never called), so
+# no GPU is used. renderer.h includes the WebGPU header, which the port provides (as for
+# gpu_format_test); nothing is linked from it. The renderer includes the generated shader headers,
+# which the engine build makes first (an ordering only; nothing is linked from it).
+nv_add_test(resolution_test resolution_test.c ${PROJECT_SOURCE_DIR}/engine/renderer.c ${PROJECT_SOURCE_DIR}/engine/scene.c
+    ${PROJECT_SOURCE_DIR}/engine/log.c ${PROJECT_SOURCE_DIR}/engine/vfx.c ${PROJECT_SOURCE_DIR}/engine/vfx_cpu.c
+    gpu_stubs.c)
+target_include_directories(resolution_test PRIVATE ${PROJECT_BINARY_DIR})
+add_dependencies(resolution_test nv)
 if(NV_WEB)
     target_compile_options(resolution_test PRIVATE --use-port=emdawnwebgpu)
 endif()
