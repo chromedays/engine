@@ -8,7 +8,6 @@ add_library(nv STATIC
     log.c
     mesh.c
     renderer.c
-    renderer_cpu.c
     scene.c
     strings.c
     text.c
