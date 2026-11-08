@@ -191,17 +191,7 @@ void effects_clear(Sandbox* sandbox)
 {
     nv_vfx_clear(&sandbox->vfx);
     sandbox->effects.flight_count = 0;
-    // What the `effects` behaviors had in flight goes too.
-    for (u32 s = 0; s < sandbox->scene_count; ++s) {
-        SceneDoc* doc = &sandbox->docs[s];
-        for (u32 i = 0; i < doc->behavior_count; ++i) {
-            if (doc->behaviors[i].desc.kind != BEHAVIOR_EFFECTS)
-                continue;
-            EffectsState* state = &doc->behaviors[i].effects;
-            state->flight_count = 0;
-            state->swarm_carry = state->explosion_carry = state->decal_carry = 0.0f;
-        }
-    }
+    behaviors_clear_flights(sandbox);
 }
 
 void effects_update(Sandbox* sandbox, f32 dt)

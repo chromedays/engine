@@ -531,20 +531,9 @@ void ui_inspector_tab(Sandbox* sandbox)
     if (node->attach.animator.index)
         attach_section(sandbox, node);
     // A node's behaviors have their sections; an animator without one (the crowd's) shows what it plays.
-    Behavior* spin = behavior_find(doc, BEHAVIOR_SPIN, view->selected);
-    if (spin)
-        spin_section(sandbox, spin);
-    for (u32 i = 0; i < doc->behavior_count; ++i) {
-        Behavior* generator = &doc->behaviors[i];
-        if (scene_behavior_def(generator->desc.kind)->generator && generator->node.index == view->selected.index &&
-            generator->node.gen == view->selected.gen)
-            generator_section(sandbox, generator, i);
-    }
+    Behavior* character = behavior_inspector(sandbox, doc, view->scene, view->selected);
     NvAnimatorId animator = sandbox_node_animator(view->scene, view->selected);
-    Behavior* character = animator.index ? behavior_character_of(doc, animator) : NULL;
-    if (character) {
-        character_section(sandbox, character);
-    } else if (animator.index) {
+    if (!character && animator.index) {
         search_section(sandbox, "Animator");
         NvAnimLayer* layer = &nv_anim_get(animator)->layers[0];
         if (layer->clip.index && search_group(sandbox, "Playing", "animation clip"))

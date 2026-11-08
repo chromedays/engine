@@ -211,14 +211,6 @@ internal void write_view(NvChunkWriter* w, SceneDoc* doc)
     nv_chunk_end(w);
 }
 
-internal Behavior* first_behavior(SceneDoc* doc, BehaviorKind kind)
-{
-    for (u32 i = 0; i < doc->behavior_count; ++i)
-        if (doc->behaviors[i].desc.kind == kind)
-            return &doc->behaviors[i];
-    return NULL;
-}
-
 // The runtime of the node with this slot, if it is one of the file's nodes.
 internal NodeRuntime* node_runtime(SceneDoc* doc, u32 index)
 {
@@ -294,8 +286,8 @@ internal void write_behavior(NvChunkWriter* w, const SceneDoc* doc, const Behavi
 // reads this save: PLNT is the first spin's speed, CHAR the first character's controls. BONE is every scene's.
 internal void write_old_tags(NvChunkWriter* w, SceneDoc* doc)
 {
-    Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
-    Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
+    Behavior* spin = behavior_first(doc, BEHAVIOR_SPIN);
+    Behavior* character = behavior_first(doc, BEHAVIOR_CHARACTER);
     if (spin) {
         // The orbit angle is written as 0: like the clip time, it only runs while playing.
         f32 planet[2] = {spin->desc.spin.speed, 0.0f};
@@ -703,14 +695,8 @@ internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, S
     NvChunkList node_path = nv_chunk_read_u32_list(r, chunk, TAG_PATH, path, SAVE_MAX_PATH);
     char kind_name[SCENE_ID_SIZE] = "";
     nv_chunk_read_string(r, chunk, TAG_KIND, kind_name, sizeof(kind_name));
-    const BehaviorDef* def = NULL;
-    BehaviorKind kind = BEHAVIOR_SPIN;
-    for (u32 k = 0; k < BEHAVIOR_COUNT; ++k) {
-        if (strcmp(scene_behavior_def((BehaviorKind)k)->name, kind_name) == 0) {
-            def = scene_behavior_def((BehaviorKind)k);
-            kind = (BehaviorKind)k;
-        }
-    }
+    BehaviorKind kind = behavior_kind_by_name(kind_name);
+    const BehaviorDef* def = kind < BEHAVIOR_COUNT ? scene_behavior_def(kind) : NULL;
     Behavior* behavior = NULL;
     if (apply && def && node_path.ok && node_path.count) {
         u32 index = node_at(doc->scene, path, node_path.count);
@@ -744,8 +730,8 @@ internal void read_behavior(NvChunkReader* r, NvChunk chunk, Sandbox* sandbox, S
 // to the scene's first spin and first character, and to the node that follows the character's joint.
 internal void read_old_tags(NvChunkReader* r, NvChunk scene, Sandbox* sandbox, SceneDoc* doc, b32 apply)
 {
-    Behavior* spin = first_behavior(doc, BEHAVIOR_SPIN);
-    Behavior* character = first_behavior(doc, BEHAVIOR_CHARACTER);
+    Behavior* spin = behavior_first(doc, BEHAVIOR_SPIN);
+    Behavior* character = behavior_first(doc, BEHAVIOR_CHARACTER);
     f32 planet[2] = {spin ? spin->desc.spin.speed : 0.0f, 0.0f};
     nv_chunk_read_f32s(r, scene, TAG_PLNT, planet, 2);
 

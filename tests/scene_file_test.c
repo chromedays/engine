@@ -1,6 +1,6 @@
 // The scene file reader (sandbox/scene_file.c): the packaged scenes read and mean what the code they replace did, and each rule of
 // docs/specs/scene_file.md gives its error. The tests try the format with text of their own; only the packaged files are the files.
-#include <sandbox/scene_file.h>
+#include <sandbox/sandbox.h>
 
 #include <stdio.h>
 #include <stdlib.h>

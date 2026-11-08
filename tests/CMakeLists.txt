@@ -87,6 +87,10 @@ nv_add_test(text_test text_test.c ${PROJECT_SOURCE_DIR}/engine/text.c ${PROJECT_
 nv_add_file_test(scene_file_test scene_file_test.c ${PROJECT_SOURCE_DIR}/sandbox/scene_file.c ${PROJECT_SOURCE_DIR}/engine/text.c
     ${PROJECT_SOURCE_DIR}/engine/log.c)
 target_compile_definitions(scene_file_test PRIVATE SCENE_DATA_DIR="${PROJECT_SOURCE_DIR}/sandbox/data")
+# scene_file.c now takes the sandbox's header, so this test needs cimgui's headers and the generated nv_version.h too.
+target_include_directories(scene_file_test PRIVATE ${cimgui_SOURCE_DIR})
+target_compile_definitions(scene_file_test PRIVATE CIMGUI_DEFINE_ENUMS_AND_STRUCTS IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+nv_add_version(scene_file_test)
 
 # Reading a whole file into an arena (engine/file.c). It reads this test's own source.
 nv_add_file_test(file_test file_test.c ${PROJECT_SOURCE_DIR}/engine/file.c)
