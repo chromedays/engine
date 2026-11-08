@@ -7,6 +7,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 build_dir := "build-win"
 generator := "Visual Studio 18 2026"
 linux_build_dir := "build-linux"
+web_build_dir := "build-web"
 
 default:
     @just --list
@@ -66,6 +67,23 @@ test config="Debug": (build config)
 [linux]
 clean config="Debug":
     cmake --build {{linux_build_dir}}/{{config}} --target clean
+
+# The web build (Emscripten, Ninja; README.md): a folder for each configuration (build-web/Debug, build-web/Release) and the
+# downloaded tools shared between them. Configured on the first `just web`.
+[private]
+[unix]
+_web-configure config:
+    [ -f {{web_build_dir}}/{{config}}/CMakeCache.txt ] || emcmake cmake -S . -B {{web_build_dir}}/{{config}} -G Ninja -DCMAKE_BUILD_TYPE={{config}} -DNV_TOOLS_DIR={{justfile_directory()}}/{{web_build_dir}}/tools
+
+[private]
+[windows]
+_web-configure config:
+    if (-not (Test-Path {{web_build_dir}}/{{config}}/CMakeCache.txt)) { emcmake cmake -S . -B {{web_build_dir}}/{{config}} -G Ninja -DCMAKE_BUILD_TYPE={{config}} -DNV_TOOLS_DIR={{justfile_directory()}}/{{web_build_dir}}/tools }
+
+# Build the web sandbox and serve it on http://localhost:<port>/ with the development server (docs/specs/dev_server.md).
+web config="Debug" port="8000": (_web-configure config)
+    cmake --build {{web_build_dir}}/{{config}}
+    node tools/dev_server.mjs --build {{web_build_dir}}/{{config}} --root {{web_build_dir}}/{{config}}/sandbox --port {{port}}
 
 # The recipes below are the Linux visual regression test (docs/specs/visual_regression.md): the Wayland windowed build,
 # run explicitly, never by CI.

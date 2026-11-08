@@ -104,6 +104,7 @@ that use the engine run it as `node engine/tools/dev_server.mjs --build build`. 
 
 ```sh
 node tools/dev_server.mjs --build build --root build/sandbox   # http://localhost:8000/; --no-build only reloads
+just web Release        # the same in one step: configures build-web/Release once, builds it, serves it (Debug by default; port 8000)
 ```
 
 The build downloads two prebuilt tools once (`cmake/shaders.cmake`, into `NV_TOOLS_DIR`, by default under the build directory): Slang's

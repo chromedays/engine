@@ -63,6 +63,7 @@ ctest --test-dir build --output-on-failure # tests/, run under Node
 
 ```sh
 node tools/dev_server.mjs --build build --root build/sandbox   # open http://localhost:8000/
+just web Release                   # build-web/Release를 구성(처음 한 번)하고 빌드한 뒤 개발 서버로 연다. 기본은 Debug
 ```
 
 페이지는 WebGPU가 있는 브라우저에서 (파일로 열지 말고) HTTP(S)로 제공해야 한다: 최신 Chrome/Edge, Safari 26+, 또는
@@ -168,6 +169,7 @@ source file is saved and reloads the open pages when the build changes. It needs
 
 ```sh
 node tools/dev_server.mjs --build build --root build/sandbox   # open http://localhost:8000/
+just web Release                   # configure build-web/Release (once), build it, serve it with the dev server; Debug by default
 ```
 
 The page must be served over HTTP(S) (not opened as a file) in a browser with WebGPU:
